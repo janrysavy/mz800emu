@@ -147,6 +147,12 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                                             void *data_ptr,
                                             void *result_ptr,
                                             int timeout_ms);
+en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_ex(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                                     en_DBGAPI_CMD cmd,
+                                                     en_DBGAPI_CMD_ORIGIN origin,
+                                                     void *data_ptr,
+                                                     void *result_ptr,
+                                                     int timeout_ms);
 #else
 #include "../debugger/dbgapi_ui.h"
 /* V1.E.7 - blokující emu_run / HID frame wait potřebuje sledovat
@@ -164,8 +170,63 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
 /* Konstanty a typy                                                    */
 /* ------------------------------------------------------------------ */
 
-/** @brief Default timeout (ms) pro dbgapi sync call z MCP handleru. */
-#define MCP_DISPATCH_DBGAPI_TIMEOUT_MS 1000
+/**
+ * @brief Timeout (ms) pro dbgapi sync call z MCP handleru.
+ *
+ * Omezuje jen čekání příkazu ve frontě na vyzvednutí emu vláknem (viz
+ * dbgapi_ui_submit_cmd_sync_ex); rozpracovaný příkaz se dočká vždy.
+ * Emu vlákno frontu obsluhuje jednou za snímek / za 20 ms v pauze, ale
+ * měřením (experiment bp-remove-race, 2026-09) byly zjištěny občasné
+ * prodlevy 0,3-1,5 s. Dřívější 1000 ms proto vedlo k falešným chybám;
+ * 10 s dává rezervu a zároveň nezablokuje klienta natrvalo.
+ */
+#define MCP_DISPATCH_DBGAPI_TIMEOUT_MS 10000
+
+/**
+ * @brief Chybová zpráva pro příkaz zrušený dřív, než ho emu provedlo.
+ *
+ * Stabilní prefix "Emulator busy:" je dokumentovaný kontrakt pro klienty
+ * (docs/agent): příkaz se NEprovedl a je bezpečné ho zopakovat.
+ */
+#define MCP_DISPATCH_MSG_NOT_EXECUTED \
+    "Emulator busy: command not executed (timeout waiting for the emulator thread); safe to retry"
+
+/**
+ * @brief Chybová zpráva pro vícekrokový handler, jehož pozdější krok byl
+ *        zrušen po provedení kroku dřívějšího.
+ *
+ * Stav emulátoru je změněný jen zčásti - opakování NENÍ bezpečné.
+ */
+#define MCP_DISPATCH_MSG_PARTIAL \
+    "Emulator busy: command only partially executed (timeout waiting for the emulator thread); check state before retrying"
+
+/** @brief Chybová zpráva pro plnou frontu příkazů (příkaz nezařazen). */
+#define MCP_DISPATCH_MSG_QUEUE_FULL \
+    "Emulator busy: command queue full, command not executed; safe to retry"
+
+/** @brief Chybová zpráva při ukončování emulátoru (příkaz nezařazen). */
+#define MCP_DISPATCH_MSG_ENDING \
+    "Emulator is shutting down: command not executed"
+
+/**
+ * @brief Stav dbgapi submitů v rámci právě zpracovávaného MCP požadavku.
+ *
+ * Nuluje se na začátku `mcp_dispatch_request`, plní `_submit_dbgapi`,
+ * čte `_err_response`, aby chybová odpověď pravdivě řekla, zda se příkaz
+ * provedl. Thread-local, protože TCP server může dispatchovat z více
+ * vláken současně.
+ *
+ * Členy:
+ *  - last_status: výsledek posledního submitu (OK, pokud žádný nebyl),
+ *  - executed:    aspoň jeden submit v tomto požadavku emu provedlo
+ *                 (OK nebo FAILED).
+ */
+typedef struct {
+    en_DBGAPI_SUBMIT_STATUS last_status;
+    bool executed;
+} st_MCP_DISPATCH_SUBMIT_TRACK;
+
+static _Thread_local st_MCP_DISPATCH_SUBMIT_TRACK s_submit_track;
 
 /**
  * @brief Sanity horní mez per-BP fwd_min_interval_ms (0019 v2) v ms.
@@ -999,12 +1060,41 @@ static gint64 _obj_int_or(JsonObject *obj, const char *key, gint64 def) {
  *
  * Volání: `return _err_response(req_id, "Invalid parameters",
  *         MCP_DISPATCH_INVALID_PARAMS, out_response);`
+ *
+ * U `MCP_DISPATCH_EMU_ERROR` po submitu, který emu neprovedlo (timeout ve
+ * frontě, plná fronta, ukončování - viz `s_submit_track`), předřadí
+ * zprávě handleru pravdivý popis (MCP_DISPATCH_MSG_*) ve tvaru
+ * "<popis> [<původní zpráva>]". Původní text zůstává kvůli zpětné
+ * kompatibilitě klientů, kteří testují podřetězec (např. "Emulator
+ * unavailable" při startu). Chyby handleru (DBGAPI_SUBMIT_FAILED)
+ * a validační chyby zůstávají beze změny.
  */
 static en_MCP_DISPATCH_RESULT _err_response(int64_t req_id,
                                             const char *msg,
                                             en_MCP_DISPATCH_RESULT rc,
                                             char **out_response) {
-    char *line = jsonl_build_response(req_id, false, NULL, msg);
+    const char *reason = NULL;
+    if (rc == MCP_DISPATCH_EMU_ERROR) {
+        switch (s_submit_track.last_status) {
+            case DBGAPI_SUBMIT_TIMEOUT:
+                reason = s_submit_track.executed ? MCP_DISPATCH_MSG_PARTIAL
+                                                 : MCP_DISPATCH_MSG_NOT_EXECUTED;
+                break;
+            case DBGAPI_SUBMIT_QUEUE_FULL:
+                reason = s_submit_track.executed ? MCP_DISPATCH_MSG_PARTIAL
+                                                 : MCP_DISPATCH_MSG_QUEUE_FULL;
+                break;
+            case DBGAPI_SUBMIT_ENDING:
+                reason = MCP_DISPATCH_MSG_ENDING;
+                break;
+            default:
+                break;
+        }
+    }
+    char *combined = reason ? g_strdup_printf("%s [%s]", reason, msg) : NULL;
+    char *line = jsonl_build_response(req_id, false, NULL,
+                                      combined ? combined : msg);
+    g_free(combined);
     if (!line) {
         *out_response = NULL;
         return MCP_DISPATCH_ALLOC_ERROR;
@@ -1048,21 +1138,31 @@ static en_MCP_DISPATCH_RESULT _ok_response(int64_t req_id,
 
 
 /**
- * @brief Volá dbgapi submit s origin=MCP a default timeout.
+ * @brief Volá dbgapi submit s origin=MCP a MCP timeoutem.
  *
- * Zkratka pro `dbgapi_ui_submit_cmd_sync_with_origin(&g_dbgapi_cmdrq_queue,
+ * Zkratka pro `dbgapi_ui_submit_cmd_sync_ex(&g_dbgapi_cmdrq_queue,
  *   cmd, DBGAPI_CMD_ORIGIN_MCP, data, result, MCP_DISPATCH_DBGAPI_TIMEOUT_MS)`.
  *
- * @return true při úspěchu (rq->success), false jinak (timeout / queue
- *         full / emu ending / handler vrátil success=false)
+ * Side effect: zaznamená výsledek do `s_submit_track` (per vlákno), podle
+ * kterého `_err_response` u MCP_DISPATCH_EMU_ERROR zvolí pravdivou zprávu
+ * (neprovedeno / částečně provedeno).
+ *
+ * @return true při úspěchu (DBGAPI_SUBMIT_OK), false jinak (timeout =
+ *         neprovedeno / queue full / emu ending / handler vrátil
+ *         success=false)
  */
 static bool _submit_dbgapi(en_DBGAPI_CMD cmd, void *data, void *result) {
-    return dbgapi_ui_submit_cmd_sync_with_origin(&g_dbgapi_cmdrq_queue,
-                                                  cmd,
-                                                  DBGAPI_CMD_ORIGIN_MCP,
-                                                  data,
-                                                  result,
-                                                  MCP_DISPATCH_DBGAPI_TIMEOUT_MS);
+    en_DBGAPI_SUBMIT_STATUS st =
+        dbgapi_ui_submit_cmd_sync_ex(&g_dbgapi_cmdrq_queue,
+                                     cmd,
+                                     DBGAPI_CMD_ORIGIN_MCP,
+                                     data,
+                                     result,
+                                     MCP_DISPATCH_DBGAPI_TIMEOUT_MS);
+    s_submit_track.last_status = st;
+    if (st == DBGAPI_SUBMIT_OK || st == DBGAPI_SUBMIT_FAILED)
+        s_submit_track.executed = true;
+    return st == DBGAPI_SUBMIT_OK;
 }
 
 
@@ -11856,6 +11956,10 @@ en_MCP_DISPATCH_RESULT mcp_dispatch_request(const st_JSONL_MESSAGE *req,
         return MCP_DISPATCH_NOT_A_REQUEST;
     }
     *out_response = NULL;
+
+    /* Nový požadavek - vynulovat sledování submitů (viz s_submit_track). */
+    s_submit_track.last_status = DBGAPI_SUBMIT_OK;
+    s_submit_track.executed = false;
 
     if (jsonl_msg_get_type(req) != JSONL_MSG_REQUEST) {
         return MCP_DISPATCH_NOT_A_REQUEST;

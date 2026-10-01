@@ -862,6 +862,107 @@ void test_pause_emu_failure_reports_error(void) {
 }
 
 
+/**
+ * @brief Pomocník: provede request a vrátí text pole "error" (g_strdup).
+ *
+ * Ověří, že odpověď je neúspěch s kódem MCP_DISPATCH_EMU_ERROR.
+ * Vlastnictví: volající uvolní vrácený řetězec přes g_free.
+ */
+static char *_dispatch_expect_emu_error(const char *request_json) {
+    st_JSONL_MESSAGE *req = _make_request(request_json);
+    char *resp = NULL;
+
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, rc);
+    TEST_ASSERT_NOT_NULL(resp);
+    JsonParser *parser = NULL;
+    JsonObject *obj = _parse_response_object(resp, &parser);
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(obj, "success"));
+    char *err = g_strdup(json_object_get_string_member(obj, "error"));
+    g_object_unref(parser);
+    free(resp);
+    jsonl_msg_free(req);
+    return err;
+}
+
+
+/** Timeout ve frontě: zpráva musí říct, že se příkaz neprovedl
+ *  (dřív zavádějící "unknown id?"). */
+void test_bp_remove_timeout_reports_not_executed(void) {
+    g_stub_state.fail_next = true;
+    g_stub_state.fail_status = DBGAPI_SUBMIT_TIMEOUT;
+    char *err = _dispatch_expect_emu_error(
+        "{\"type\":\"request\",\"req_id\":1581,\"cmd\":\"bp_remove\","
+        "\"data\":{\"id\":181}}");
+    TEST_ASSERT_TRUE(g_str_has_prefix(err, "Emulator busy: command not executed"));
+    TEST_ASSERT_NOT_NULL(strstr(err, "safe to retry"));
+    /* Původní zpráva handleru zůstává v hranatých závorkách (kompatibilita). */
+    TEST_ASSERT_TRUE(g_str_has_suffix(err, " [bp_remove failed (unknown id?)]"));
+    g_free(err);
+}
+
+
+/** Skutečné selhání handleru (neexistující ID) ponechá původní zprávu. */
+void test_bp_remove_handler_failure_keeps_message(void) {
+    g_stub_state.fail_next = true;   /* fail_status 0 = DBGAPI_SUBMIT_FAILED */
+    char *err = _dispatch_expect_emu_error(
+        "{\"type\":\"request\",\"req_id\":1582,\"cmd\":\"bp_remove\","
+        "\"data\":{\"id\":999}}");
+    TEST_ASSERT_EQUAL_STRING("bp_remove failed (unknown id?)", err);
+    g_free(err);
+}
+
+
+/** Plná fronta a ukončování emulátoru mají vlastní zprávy. */
+void test_queue_full_and_ending_messages(void) {
+    g_stub_state.fail_next = true;
+    g_stub_state.fail_status = DBGAPI_SUBMIT_QUEUE_FULL;
+    char *err = _dispatch_expect_emu_error(
+        "{\"type\":\"request\",\"req_id\":201,\"cmd\":\"bp_list\"}");
+    TEST_ASSERT_TRUE(g_str_has_prefix(err, "Emulator busy: command queue full"));
+    g_free(err);
+
+    g_stub_state.fail_next = true;
+    g_stub_state.fail_status = DBGAPI_SUBMIT_ENDING;
+    err = _dispatch_expect_emu_error(
+        "{\"type\":\"request\",\"req_id\":202,\"cmd\":\"pause\"}");
+    TEST_ASSERT_TRUE(g_str_has_prefix(err, "Emulator is shutting down"));
+    g_free(err);
+}
+
+
+/** Vícekrokový handler: první submit proveden, druhý zrušen timeoutem
+ *  -> "partially executed", opakování není bezpečné. */
+void test_partial_execution_reported(void) {
+    g_stub_state.fail_on_call = 2;
+    g_stub_state.fail_status = DBGAPI_SUBMIT_TIMEOUT;
+    char *err = _dispatch_expect_emu_error(
+        "{\"type\":\"request\",\"req_id\":203,"
+        "\"cmd\":\"set_user_cycle_origin\"}");
+    TEST_ASSERT_TRUE(g_str_has_prefix(err, "Emulator busy: command only partially executed"));
+    g_free(err);
+}
+
+
+/** Sledování se nuluje per request: předchozí timeout neovlivní
+ *  validační ani handlerovou chybu dalšího požadavku. */
+void test_submit_track_reset_per_request(void) {
+    g_stub_state.fail_next = true;
+    g_stub_state.fail_status = DBGAPI_SUBMIT_TIMEOUT;
+    char *err = _dispatch_expect_emu_error(
+        "{\"type\":\"request\",\"req_id\":204,\"cmd\":\"pause\"}");
+    g_free(err);
+
+    g_stub_state.fail_next = true;
+    g_stub_state.fail_status = DBGAPI_SUBMIT_OK;  /* = FAILED */
+    err = _dispatch_expect_emu_error(
+        "{\"type\":\"request\",\"req_id\":205,\"cmd\":\"pause\"}");
+    TEST_ASSERT_EQUAL_STRING("Pause failed", err);
+    g_free(err);
+}
+
+
 void test_non_request_message_rejected(void) {
     /* HELLO message není REQUEST - dispatcher musí odmítnout */
     st_JSONL_MESSAGE *msg = NULL;
@@ -5798,6 +5899,11 @@ int main(void) {
 
     /* Success path - 10 dbgapi handlerů (ping a shutdown jsou lokální) */
     RUN_TEST(test_ping_handler_returns_pong);
+    RUN_TEST(test_bp_remove_timeout_reports_not_executed);
+    RUN_TEST(test_bp_remove_handler_failure_keeps_message);
+    RUN_TEST(test_queue_full_and_ending_messages);
+    RUN_TEST(test_partial_execution_reported);
+    RUN_TEST(test_submit_track_reset_per_request);
     RUN_TEST(test_get_state_running_true);
     RUN_TEST(test_pause_handler_uses_origin_mcp);
     RUN_TEST(test_run_handler_uses_origin_mcp);

@@ -1,4 +1,6 @@
 
+	- BUGFIX: MCP server - commands (e.g. bp_remove, bp_list, run) occasionally failed with an error such as "bp_remove failed (unknown id?)" although they were valid; it was enough for the emulation thread to pick the command up about 1 s late. The server now waits up to 10 s for the pick-up, a picked-up command always completes, and the new "Emulator busy: ..." error clearly states that the command was not executed and can be retried.
+
 	- BUGFIX: Pressing RESET (F12 or menu) immediately after the window opened could crash the emulator if the emulation thread had not started yet.
 
 	- BUGFIX: Opening/closing the debugger window (Alt+D, menu) while emulation was running, and live memory reads in the Memory Browser, could rarely race with the emulation thread. Both operations are now performed safely.

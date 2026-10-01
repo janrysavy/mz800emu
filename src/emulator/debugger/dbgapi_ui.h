@@ -58,11 +58,55 @@ extern "C"
  * ============================================================================ */
 
 /*
- * Synchronní odeslání příkazu do emulátoru s explicitním origin.
+ * Synchronní odeslání příkazu do emulátoru s podrobným výsledkem.
  *
  * Vloží příkaz do CMDRQ fronty s identifikací zdroje (cmd_origin),
- * probudí emulátorové vlákno (queue_cond) a čeká na odpověď
- * (slot->cond) s timeoutem.
+ * probudí emulátorové vlákno (queue_cond) a čeká ve smyčce na zpracování
+ * (slot->cond; předčasné probuzení čekání neukončí).
+ *
+ * Sémantika timeoutu (timeout_ms > 0):
+ *   - pokud emu příkaz do timeoutu NEvyzvedlo z fronty, příkaz se zruší
+ *     (slot CANCELLED), emu ho později přeskočí a NEprovede ho; vrací
+ *     DBGAPI_SUBMIT_TIMEOUT,
+ *   - pokud emu příkaz už vyzvedlo (rozpracovaný), funkce čeká bez limitu
+ *     na jeho dokončení a vrátí skutečný výsledek handleru; timeout tedy
+ *     omezuje jen čekání ve frontě, ne dobu zpracování.
+ *   Slot se nikdy neopouští rozpracovaný, proto data_ptr/result_ptr stačí
+ *   udržet platné do návratu z funkce.
+ *
+ * Parametry:
+ *   queue:       ukazatel na CMDRQ frontu
+ *   cmd:         příkaz (en_DBGAPI_CMD), volitelně OR s DBGAPI_CMDFLAG_BLOCKING
+ *   origin:      zdroj příkazu (USER/MCP/TEST/INTERNAL)
+ *   data_ptr:    vstupní data pro emulátor (NULL pokud příkaz nepotřebuje data)
+ *   result_ptr:  buffer pro odpověď (NULL pokud příkaz nevrací data)
+ *   timeout_ms:  limit čekání na vyzvednutí emulátorem v ms (0 = neomezený)
+ *
+ * Vrací (en_DBGAPI_SUBMIT_STATUS):
+ *   DBGAPI_SUBMIT_OK         = provedeno, handler uspěl
+ *   DBGAPI_SUBMIT_FAILED     = provedeno, handler neuspěl (rq->success == false)
+ *   DBGAPI_SUBMIT_TIMEOUT    = nevyzvednuto do timeoutu, zrušeno, NEprovedeno
+ *   DBGAPI_SUBMIT_QUEUE_FULL = fronta plná, nezařazeno, NEprovedeno
+ *   DBGAPI_SUBMIT_ENDING     = emulátor se ukončuje, nezařazeno, NEprovedeno
+ *
+ * Předpoklady: nesmí se volat z emu vlákna (deadlock). Handler v dispatch
+ * nesmí čekat na vlákno odesílatele (odesílatel čeká na rozpracovaný
+ * příkaz bez limitu).
+ */
+en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_ex(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                                     en_DBGAPI_CMD cmd,
+                                                     en_DBGAPI_CMD_ORIGIN origin,
+                                                     void *data_ptr,
+                                                     void *result_ptr,
+                                                     int timeout_ms);
+
+
+/*
+ * Synchronní odeslání příkazu do emulátoru s explicitním origin.
+ *
+ * Obal nad dbgapi_ui_submit_cmd_sync_ex() se zjednodušeným výsledkem
+ * (true jen pro DBGAPI_SUBMIT_OK). Sémantika čekání a timeoutu viz
+ * dbgapi_ui_submit_cmd_sync_ex().
  *
  * Origin propagace:
  *   - cmd_origin se zkopíruje do slot->cmd_origin při zařazení do fronty
@@ -77,11 +121,12 @@ extern "C"
  *   origin:      zdroj příkazu (USER/MCP/TEST/INTERNAL)
  *   data_ptr:    vstupní data pro emulátor (NULL pokud příkaz nepotřebuje data)
  *   result_ptr:  buffer pro odpověď (NULL pokud příkaz nevrací data)
- *   timeout_ms:  maximální čekání na odpověď v milisekundách (0 = neomezený)
+ *   timeout_ms:  limit čekání na vyzvednutí emulátorem v ms (0 = neomezený)
  *
  * Vrací:
  *   true  = příkaz byl úspěšně zpracován (rq->success == true)
- *   false = chyba (timeout, fronta plná, emulátor se ukončuje, rq->success == false)
+ *   false = chyba (timeout = příkaz neproveden, fronta plná, emulátor se
+ *           ukončuje, rq->success == false); rozlišení viz _ex varianta
  */
 bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                                             en_DBGAPI_CMD cmd,

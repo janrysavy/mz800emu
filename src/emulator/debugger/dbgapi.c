@@ -471,19 +471,30 @@ st_DBGAPI_CMDRQ *dbgapi_emu_dequeue(st_DBGAPI_CMDRQ_QUEUE *queue)
 {
     APP_MUTEX_LOCK(queue->queue_mutex);
 
-    /* Fronta prázdná? */
-    if (!dbgapi_emu_has_pending_unlocked(queue))
+    while (dbgapi_emu_has_pending_unlocked(queue))
     {
+        /* Vyjmout slot z hlavy fronty */
+        st_DBGAPI_CMDRQ *slot = &queue->cmdrq[queue->head];
+        queue->head = (queue->head + 1) % DBGAPI_CMDRQ_QUEUE_SIZE;
+
+        /* Slot zrušený odesílatelem po timeoutu: přeskočit bez provedení.
+         * CANCELLED se nastavuje jen pod queue_mutex (který držíme), takže
+         * čtení je konzistentní. Odesílatel už na slot nečeká ani na něj
+         * nesahá, uvolníme ho tady. */
+        if (slot->cmd_state == DBGAPI_CMDSTATE_CANCELLED)
+        {
+            slot->cmd_state = DBGAPI_CMDSTATE_NONE;
+            continue;
+        };
+
+        /* Od teď ho odesílatel nesmí zrušit - čeká na dokončení. */
+        slot->dequeued = true;
         APP_MUTEX_UNLOCK(queue->queue_mutex);
-        return NULL;
+        return slot;
     };
 
-    /* Vyjmout slot z hlavy fronty */
-    st_DBGAPI_CMDRQ *slot = &queue->cmdrq[queue->head];
-    queue->head = (queue->head + 1) % DBGAPI_CMDRQ_QUEUE_SIZE;
-
     APP_MUTEX_UNLOCK(queue->queue_mutex);
-    return slot;
+    return NULL;
 }
 
 /**
@@ -6819,19 +6830,19 @@ void dbgapi_emu_send_msg(en_DBGAPI_MSG msg, st_DBGAPI_MSG_DATA *data)
  * UI STRANA — ODESÍLÁNÍ CMDRQ (UI → EMU)
  * ============================================================================ */
 
-bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
-                                            en_DBGAPI_CMD cmd,
-                                            en_DBGAPI_CMD_ORIGIN origin,
-                                            void *data_ptr,
-                                            void *result_ptr,
-                                            int timeout_ms)
+en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_ex(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                                     en_DBGAPI_CMD cmd,
+                                                     en_DBGAPI_CMD_ORIGIN origin,
+                                                     void *data_ptr,
+                                                     void *result_ptr,
+                                                     int timeout_ms)
 {
     /* Kontrola: emulátor se neukončuje? */
     APP_MUTEX_LOCK(queue->queue_mutex);
     if (queue->reply_state == DBGAPI_CMDREPLY_STATE_ENDING)
     {
         APP_MUTEX_UNLOCK(queue->queue_mutex);
-        return false;
+        return DBGAPI_SUBMIT_ENDING;
     };
 
     /* Kontrola: fronta není plná? Když emu vlákno blokuje (např. CMT
@@ -6848,21 +6859,34 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
     {
         APP_MUTEX_UNLOCK(queue->queue_mutex);
         g_debug("dbgapi: CMDRQ queue is full, command dropped");
-        return false;
+        return DBGAPI_SUBMIT_QUEUE_FULL;
     };
 
-    /* Vložit příkaz do slotu na pozici tail */
+    /* Slot na pozici tail. Pořadí zámků queue_mutex -> slot->mutex. */
     st_DBGAPI_CMDRQ *slot = &queue->cmdrq[queue->tail];
+    APP_MUTEX_LOCK(slot->mutex);
+
+    /* Slot může být ještě obsazený předchozím odesílatelem, který čeká na
+     * dokončení rozpracovaného příkazu (emu ho vyzvedlo, head je za ním,
+     * ale fronta mezitím obešla celé kolo). Přepsat ho nesmíme - chová se
+     * to jako plná fronta. */
+    if (slot->cmd_state != DBGAPI_CMDSTATE_NONE)
+    {
+        APP_MUTEX_UNLOCK(slot->mutex);
+        APP_MUTEX_UNLOCK(queue->queue_mutex);
+        g_debug("dbgapi: CMDRQ slot still owned, command dropped");
+        return DBGAPI_SUBMIT_QUEUE_FULL;
+    };
     queue->tail = next_tail;
 
     /* Inicializace slotu */
-    APP_MUTEX_LOCK(slot->mutex);
     slot->cmd = cmd;
     slot->cmd_origin = origin;
     slot->cmd_state = DBGAPI_CMDSTATE_PENDING;
     slot->data_ptr = data_ptr;
     slot->result_ptr = result_ptr;
     slot->success = false;
+    slot->dequeued = false;
 
     /* V1.D.1 - track last user action pro emulator://state Resource.
      * Zaznamenáváme jen origin == USER (= GUI klik / hotkey / menu).
@@ -6877,20 +6901,60 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
     APP_COND_SIGNAL(queue->queue_cond);
     APP_MUTEX_UNLOCK(queue->queue_mutex);
 
-    /* Čekat na zpracování příkazu emulátorem */
+    /* Čekat na zpracování příkazu emulátorem. Vždy ve smyčce nad stavem
+     * slotu - podmínková proměnná se smí probudit i bez signálu. */
     if (timeout_ms > 0)
     {
-        /* Čekání s timeoutem */
-        APP_COND_WAIT_TIMEOUT_MS(slot->cond, slot->mutex, timeout_ms);
+        gint64 deadline_us = g_get_monotonic_time() + (gint64)timeout_ms * 1000;
+        while (slot->cmd_state != DBGAPI_CMDSTATE_PROCESSED)
+        {
+            gint64 left_us = deadline_us - g_get_monotonic_time();
+            if (left_us <= 0)
+                break;
+            gint32 left_ms = (gint32)((left_us + 999) / 1000);
+            APP_COND_WAIT_TIMEOUT_MS(slot->cond, slot->mutex, left_ms);
+        };
     }
     else
     {
         /* Neomezené čekání */
-        APP_COND_WAIT(slot->cond, slot->mutex);
+        while (slot->cmd_state != DBGAPI_CMDSTATE_PROCESSED)
+            APP_COND_WAIT(slot->cond, slot->mutex);
+    };
+
+    if (slot->cmd_state != DBGAPI_CMDSTATE_PROCESSED)
+    {
+        /* Timeout. O zrušení se rozhoduje pod queue_mutex (tam emu nastavuje
+         * `dequeued`); kvůli pořadí zámků queue -> slot nejdřív pustíme slot. */
+        APP_MUTEX_UNLOCK(slot->mutex);
+        APP_MUTEX_LOCK(queue->queue_mutex);
+        APP_MUTEX_LOCK(slot->mutex);
+
+        if (!slot->dequeued && slot->cmd_state == DBGAPI_CMDSTATE_PENDING)
+        {
+            /* Emu slot ještě nevyzvedlo: zrušit. Emu ho přeskočí a uvolní
+             * (dbgapi_emu_dequeue), data klienta už nikdo nečte. */
+            slot->cmd_state = DBGAPI_CMDSTATE_CANCELLED;
+            slot->cmd = DBGAPI_CMD_NONE;
+            slot->cmd_origin = DBGAPI_CMD_ORIGIN_USER;
+            slot->data_ptr = NULL;
+            slot->result_ptr = NULL;
+            APP_MUTEX_UNLOCK(slot->mutex);
+            APP_MUTEX_UNLOCK(queue->queue_mutex);
+            return DBGAPI_SUBMIT_TIMEOUT;
+        };
+        APP_MUTEX_UNLOCK(queue->queue_mutex);
+
+        /* Emu příkaz právě zpracovává (nebo ho mezitím dokončilo). Slot
+         * nesmíme opustit - emu pracuje s data_ptr/result_ptr klienta.
+         * Čekáme bez limitu; handlery dispatch na odesílatele nečekají. */
+        while (slot->cmd_state != DBGAPI_CMDSTATE_PROCESSED)
+            APP_COND_WAIT(slot->cond, slot->mutex);
     };
 
     /* Přečíst výsledek */
-    bool success = (slot->cmd_state == DBGAPI_CMDSTATE_PROCESSED) && slot->success;
+    en_DBGAPI_SUBMIT_STATUS status = slot->success ? DBGAPI_SUBMIT_OK
+                                                   : DBGAPI_SUBMIT_FAILED;
 
     /* Uvolnit slot */
     slot->cmd_state = DBGAPI_CMDSTATE_NONE;
@@ -6901,7 +6965,20 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
 
     APP_MUTEX_UNLOCK(slot->mutex);
 
-    return success;
+    return status;
+}
+
+
+bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                            en_DBGAPI_CMD cmd,
+                                            en_DBGAPI_CMD_ORIGIN origin,
+                                            void *data_ptr,
+                                            void *result_ptr,
+                                            int timeout_ms)
+{
+    return dbgapi_ui_submit_cmd_sync_ex(queue, cmd, origin, data_ptr,
+                                        result_ptr, timeout_ms)
+           == DBGAPI_SUBMIT_OK;
 }
 
 

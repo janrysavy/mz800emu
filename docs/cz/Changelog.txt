@@ -1,4 +1,6 @@
 
+	- BUGFIX: MCP server - příkazy (např. bp_remove, bp_list, run) občas selhaly s chybou typu "bp_remove failed (unknown id?)", ačkoliv byly v pořádku; stačilo, aby emulační vlákno příkaz převzalo se zpožděním kolem 1 s. Na převzetí příkazu se nyní čeká až 10 s, převzatý příkaz se vždy dokončí a nová chyba "Emulator busy: ..." jasně říká, že se příkaz neprovedl a lze ho zopakovat.
+
 	- BUGFIX: Stisk RESET (F12 nebo menu) okamžitě po startu okna mohl shodit emulátor, pokud se ještě nestihlo spustit emulační vlákno.
 
 	- BUGFIX: Otevírání/zavírání okna debuggeru (Alt+D, menu) za běhu emulace a živé čtení paměti v Memory Browseru se mohly vzácně střetnout s emulačním vláknem (souběh). Obě operace nyní probíhají bezpečně.

@@ -535,7 +535,30 @@ typedef enum en_DBGAPI_CMDSTATE
     DBGAPI_CMDSTATE_NONE = 0,  /* Slot je volný */
     DBGAPI_CMDSTATE_PENDING,   /* Příkaz čeká na zpracování emulátorem */
     DBGAPI_CMDSTATE_PROCESSED, /* Příkaz byl zpracován — odpověď je připravena */
+    DBGAPI_CMDSTATE_CANCELLED, /* Odesílatel příkaz po timeoutu zrušil dřív, než ho
+                                  emu vyzvedlo; emu ho při vyzvednutí přeskočí
+                                  a NEprovede (viz dbgapi_emu_dequeue) */
 } en_DBGAPI_CMDSTATE;
+
+/* ============================================================================
+ * VÝSLEDEK SYNCHRONNÍHO SUBMITU
+ *
+ * Podrobný výsledek dbgapi_ui_submit_cmd_sync_ex(). Rozlišuje, zda se
+ * příkaz provedl, aby klient (např. MCP) mohl bezpečně rozhodnout
+ * o opakování: stavy TIMEOUT, QUEUE_FULL a ENDING zaručují, že emu příkaz
+ * NEprovedlo (a už neprovede).
+ * ============================================================================ */
+
+typedef enum en_DBGAPI_SUBMIT_STATUS
+{
+    DBGAPI_SUBMIT_OK = 0,       /* Emu příkaz provedlo, handler vrátil úspěch */
+    DBGAPI_SUBMIT_FAILED,       /* Emu příkaz provedlo, handler vrátil neúspěch
+                                   (např. neexistující ID, neplatná data) */
+    DBGAPI_SUBMIT_TIMEOUT,      /* Emu příkaz do timeoutu nevyzvedlo; příkaz byl
+                                   zrušen a NEprovede se */
+    DBGAPI_SUBMIT_QUEUE_FULL,   /* Fronta plná, příkaz nebyl zařazen */
+    DBGAPI_SUBMIT_ENDING,       /* Emulátor se ukončuje, příkaz nebyl zařazen */
+} en_DBGAPI_SUBMIT_STATUS;
 
 /* ============================================================================
  * STAV ODPOVĚDI — ochranný příznak
@@ -587,11 +610,27 @@ typedef enum en_DBGAPI_CMD_ORIGIN
  * příkaz).
  *
  * Životní cyklus:
- * 1. UI zamkne slot->mutex, nastaví cmd/data_ptr/result_ptr, cmd_state=PENDING
- * 2. UI čeká na slot->cond (blokuje se)
- * 3. EMU zpracuje příkaz, zapíše result_ptr/success, cmd_state=PROCESSED
+ * 1. UI zamkne queue_mutex i slot->mutex, nastaví cmd/data_ptr/result_ptr,
+ *    cmd_state=PENDING, dequeued=false
+ * 2. UI čeká na slot->cond ve smyčce, dokud cmd_state != PROCESSED
+ * 3. EMU slot vyzvedne (dequeued=true pod queue_mutex), zpracuje příkaz,
+ *    zapíše result_ptr/success, cmd_state=PROCESSED
  * 4. EMU signalizuje slot->cond → UI se probudí
  * 5. UI přečte výsledek, nastaví cmd_state=NONE → slot volný
+ *
+ * Timeout (UI): pod queue_mutex + slot->mutex rozhodne podle `dequeued`:
+ *  - dequeued == false → cmd_state=CANCELLED, EMU slot přeskočí a příkaz
+ *    NEprovede; data klienta už nikdo nečte,
+ *  - dequeued == true  → EMU příkaz právě zpracovává; UI čeká bez limitu
+ *    na PROCESSED (slot se nikdy neopouští rozpracovaný, jinak by EMU
+ *    pracovalo s daty klienta po jejich zániku).
+ *
+ * Invarianty:
+ *  - `dequeued` se čte i zapisuje jen pod queue_mutex.
+ *  - Přechod PENDING → CANCELLED nastává jen pod queue_mutex i slot->mutex
+ *    a jen pokud dequeued == false.
+ *  - data_ptr/result_ptr vlastní odesílatel; platné jsou od zařazení do
+ *    návratu submitu.
  * ============================================================================ */
 
 typedef struct st_DBGAPI_CMDRQ
@@ -602,6 +641,7 @@ typedef struct st_DBGAPI_CMDRQ
     void *data_ptr;                   /* Vstupní data od klienta (vlastní klient) */
     void *result_ptr;                 /* Buffer pro odpověď (vlastní klient) */
     bool success;                     /* Výsledek: true = úspěch, false = chyba */
+    bool dequeued;                    /* EMU slot vyzvedlo (chráněno queue_mutex) */
     app_mutex_t *mutex;               /* Per-slot mutex */
     app_cond_t *cond;                 /* Per-slot condition variable */
 } st_DBGAPI_CMDRQ;

@@ -119,6 +119,12 @@ mz_add_test(dbgapi_cmd_origin
     LABELS   "emu;debugger"
 )
 
+mz_add_test(dbgapi_submit_timeout
+    TYPE     EMU
+    SOURCES  test_dbgapi_submit_timeout.c
+    LABELS   "emu;debugger"
+)
+
 mz_add_test(tlog_common
     TYPE     EMU
     SOURCES  test_tlog_common.c

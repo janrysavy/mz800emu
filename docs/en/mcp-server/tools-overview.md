@@ -172,6 +172,27 @@ can reliably test for the presence of `error` in the response. On
 success the response carries the tool-specific data fields (see the
 descriptions below); a successful response has no `error` field.
 
+The `error` text also tells whether the emulator executed the command:
+
+- `Emulator busy: command not executed ...` / `Emulator busy: command
+  queue full ...` - the command was **not** executed (the emulator
+  thread did not pick it up within 10 s, or the queue was full); the
+  emulator state is unchanged and the call is safe to retry.
+- `Emulator busy: command only partially executed ...` - a multi-step
+  tool stopped after an earlier step ran; check the state before
+  retrying.
+- `Emulator is shutting down ...` - not executed, stop sending requests.
+- any other text (e.g. `bp_remove failed (unknown id?)`) - the command
+  was executed and failed (or the parameters were rejected); retrying
+  unchanged does not help.
+
+The `Emulator busy: ...` / `Emulator is shutting down ...` texts end
+with the tool's original message in square brackets (kept for
+compatibility), e.g. `... safe to retry [bp_remove failed (unknown id?)]`;
+match on the prefix. Once the emulator thread picks a command up, the
+call waits for it to finish and returns its real result. Details for AI
+clients: `emulator://docs/error_handling`.
+
 ## Per-tool description
 
 ### `emu_status`

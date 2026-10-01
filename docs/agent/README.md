@@ -20,6 +20,7 @@ paragraph is the description.
 | URI | File |
 |-----|------|
 | `emulator://docs/index` | `index.md` |
+| `emulator://docs/error_handling` | `error_handling.md` |
 | `emulator://docs/memory_layout` | `memory_layout.md` |
 | `emulator://docs/bp_dsl` | `bp_dsl.md` |
 | `emulator://docs/smart_vars` | `smart_vars.md` |

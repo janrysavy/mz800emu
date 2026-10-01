@@ -7,6 +7,7 @@ Read individual topics on demand via `resources/read`.
 
 | URI | What to look up here |
 |-----|----------------------|
+| `emulator://docs/error_handling` | How to read a failed tool response: which errors mean "not executed, safe to retry" (`Emulator busy: ...`), "partially executed" or a real failure; request timing and the 10 s queue timeout. |
 | `emulator://docs/memory_layout` | Z80 64 KB address space layout per platform (MZ-700 / MZ-800 native / MZ-800 700-compat / MZ-1500). Banking ports `0xE0..0xE6`. Key ROM entry points, IRQ vectors, text/color VRAM regions. |
 | `emulator://docs/bp_dsl` | Breakpoint condition expression language: registers, memory deref `[addr]`, port read `port[N]`, operators, built-in functions, `$user_vars`, examples. Same language is used by Watch expressions and Action DSL arguments. |
 | `emulator://docs/smart_vars` | `$name` user variables: how to create / read / write from BP action DSL, persistence rules (`.bpt` + `.vars`), lifecycle, reading via `emulator://vars`. |
@@ -19,6 +20,8 @@ Read individual topics on demand via `resources/read`.
 
 ## When to read what
 
+- A tool returned an `error` and you are deciding whether to retry ->
+  `error_handling`.
 - Setting up a breakpoint with a non-trivial condition -> `bp_dsl`.
 - Writing the action that runs when a BP fires (log, poke, set,
   conditional) -> `action_dsl`.

@@ -36,6 +36,13 @@ bool dbgapi_ui_submit_cmd_sync(st_DBGAPI_CMDRQ_QUEUE *queue,
                                 void *result_ptr,
                                 int timeout_ms);
 
+en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_ex(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                                     en_DBGAPI_CMD cmd,
+                                                     en_DBGAPI_CMD_ORIGIN origin,
+                                                     void *data_ptr,
+                                                     void *result_ptr,
+                                                     int timeout_ms);
+
 extern st_DBGAPI_CMDRQ_QUEUE g_dbgapi_cmdrq_queue;
 
 
@@ -53,6 +60,16 @@ typedef struct st_DISPATCH_STUB_STATE {
     void                *last_result;  /**< result_ptr poslední call. */
     int                  call_count;   /**< Počet volání mocku. */
     bool                 fail_next;    /**< Pokud true, příští call vrátí false. */
+    /** Stav, který při neúspěchu vrátí `dbgapi_ui_submit_cmd_sync_ex`.
+     *  0 (= DBGAPI_SUBMIT_OK po resetu) znamená výchozí DBGAPI_SUBMIT_FAILED
+     *  (= handler neuspěl). TIMEOUT / QUEUE_FULL / ENDING simulují příkaz,
+     *  který emu neprovedlo. Platí pro každý neúspěšný call, dokud ho test
+     *  nezmění. */
+    en_DBGAPI_SUBMIT_STATUS fail_status;
+    /** Pokud > 0, call s pořadovým číslem `fail_on_call` (1 = první call
+     *  po resetu) vrátí false - pro scénáře, kde handler selže až na
+     *  pozdějším submitu. */
+    int                  fail_on_call;
     bool                 is_running;   /**< Pro IS_RUNNING - jaké running vrátit. */
     bool                 fill_regs;    /**< Pro GET_ALL_REGS - naplnit deterministický pattern. */
     int                  fill_bp_id;   /**< Pro BP_ADD - jaké id přidělit. */

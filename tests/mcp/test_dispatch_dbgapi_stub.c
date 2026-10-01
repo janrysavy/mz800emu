@@ -337,6 +337,10 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
         g_stub_state.fail_next = false;
         return false;
     }
+    if (g_stub_state.fail_on_call > 0 &&
+        g_stub_state.call_count == g_stub_state.fail_on_call) {
+        return false;
+    }
 
     /* V0.B.6 - step_n fail-after-N scénář: pokud test nastavil
      * step_into_fail_after_n a aktuální cmd je STEP_INTO, počítáme
@@ -2031,6 +2035,29 @@ bool dbgapi_ui_submit_cmd_sync(st_DBGAPI_CMDRQ_QUEUE *queue,
                                                   DBGAPI_CMD_ORIGIN_USER,
                                                   data_ptr, result_ptr,
                                                   timeout_ms);
+}
+
+
+/**
+ * @brief Mock `dbgapi_ui_submit_cmd_sync_ex` - stavová varianta submitu.
+ *
+ * Deleguje na mock `dbgapi_ui_submit_cmd_sync_with_origin` (zachová
+ * zaznamenávání parametrů i všechny scénáře). Při neúspěchu vrátí
+ * `g_stub_state.fail_status`, pokud ho test nastavil, jinak
+ * DBGAPI_SUBMIT_FAILED.
+ */
+en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_ex(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                                     en_DBGAPI_CMD cmd,
+                                                     en_DBGAPI_CMD_ORIGIN origin,
+                                                     void *data_ptr,
+                                                     void *result_ptr,
+                                                     int timeout_ms) {
+    if (dbgapi_ui_submit_cmd_sync_with_origin(queue, cmd, origin, data_ptr,
+                                              result_ptr, timeout_ms)) {
+        return DBGAPI_SUBMIT_OK;
+    }
+    return (g_stub_state.fail_status != DBGAPI_SUBMIT_OK)
+           ? g_stub_state.fail_status : DBGAPI_SUBMIT_FAILED;
 }
 
 

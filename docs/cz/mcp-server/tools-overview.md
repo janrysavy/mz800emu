@@ -171,6 +171,28 @@ přítomnost `error` v odpovědi. Na úspěch nese odpověď datová pole
 konkrétního toolu (viz popisy níže), pole `error` v úspěšné odpovědi
 není.
 
+Text v `error` zároveň říká, zda emulátor příkaz provedl:
+
+- `Emulator busy: command not executed ...` / `Emulator busy: command
+  queue full ...` - příkaz se **neprovedl** (emulační vlákno ho do 10 s
+  nevyzvedlo, nebo byla fronta plná); stav emulátoru je beze změny
+  a volání je bezpečné zopakovat.
+- `Emulator busy: command only partially executed ...` - vícekrokový
+  tool skončil po provedení dřívějšího kroku; před opakováním
+  zkontrolujte stav.
+- `Emulator is shutting down ...` - neprovedeno, další požadavky už
+  neposílejte.
+- jakýkoliv jiný text (např. `bp_remove failed (unknown id?)`) - příkaz
+  se provedl a selhal (nebo byly odmítnuty parametry); opakování beze
+  změny nepomůže.
+
+Texty `Emulator busy: ...` / `Emulator is shutting down ...` končí
+původní zprávou toolu v hranatých závorkách (kvůli kompatibilitě), např.
+`... safe to retry [bp_remove failed (unknown id?)]`; testujte prefix.
+Jakmile emulační vlákno příkaz vyzvedne, volání počká na jeho dokončení
+a vrátí skutečný výsledek. Podrobnosti pro AI klienty:
+`emulator://docs/error_handling`.
+
 ## Popis jednotlivých tools
 
 ### `emu_status`
