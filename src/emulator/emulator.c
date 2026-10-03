@@ -33,6 +33,7 @@
 
 #include "version_check/version_check.h"
 #include "snapshot/snapshot.h"
+#include "videorec/videorec.h"
 
 st_EMULATOR g_emulator;
 
@@ -48,6 +49,8 @@ void emulator_quit(int exit_value)
         fprintf(stderr, "Application is normaly exiting...\n");
 
         version_check_exit();
+        /* Video záznam: synchronní stop (flush, sidecar, finalizace AVI, join writeru). */
+        videorec_exit();
         snapshot_exit();
         cfgmain_exit();
 
@@ -190,6 +193,7 @@ gpointer emulator_thread(gpointer ptr)
 
         mzarch_platform_fn_init();
         snapshot_init();
+        videorec_init();
         emulator_print_hint();
         if (g_iface_video_callbacks->set_window_focus)
         {

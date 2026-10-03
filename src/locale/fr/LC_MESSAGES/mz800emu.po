@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-11 12:48+0200\n"
+"POT-Creation-Date: 2026-10-02 22:33+0200\n"
 "PO-Revision-Date: 2026-03-11 22:00+0100\n"
 "Last-Translator: Claude Code\n"
 "Language-Team: Français\n"
@@ -37,7 +37,7 @@ msgstr "Ouvrir un répertoire"
 msgid "Untitled File Chooser"
 msgstr "Sélecteur de fichiers"
 
-#: src/emulator/audio.c:131
+#: src/emulator/audio.c:132
 msgid "Audio volume settings:"
 msgstr "Paramètres de volume :"
 
@@ -62,20 +62,21 @@ msgstr ""
 "Adresse = 0x%04x\n"
 "Instruction = '%s'\n"
 
-#: src/emulator/emulator.c:320
+#: src/emulator/emulator.c:324
 #: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:421
+#: src/ui-imgui/videorec/videorec_menu.cpp:140
 msgid "PAUSED"
 msgstr "EN PAUSE"
 
-#: src/emulator/emulator.c:323
+#: src/emulator/emulator.c:327
 msgid "Max speed"
 msgstr "Vitesse maximale"
 
-#: src/emulator/emulator.c:326
+#: src/emulator/emulator.c:330
 msgid "Custom speed"
 msgstr "Vitesse personnalisée"
 
-#: src/emulator/emulator.c:328
+#: src/emulator/emulator.c:332
 msgid "Normal speed"
 msgstr "Vitesse normale"
 
@@ -1071,7 +1072,8 @@ msgid ""
 "PEHU memext only."
 msgstr ""
 "Vue CPU = l'adresse est une adresse Z80 (0000-FFFF).\n"
-"Offset de banque = l'adresse est un offset dans la banque PEHU (0000-1FFF), reconnu partout où la banque est mappée.\n"
+"Offset de banque = l'adresse est un offset dans la banque PEHU (0000-1FFF), "
+"reconnu partout où la banque est mappée.\n"
 "PEHU memext uniquement."
 
 #: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1537
@@ -4504,6 +4506,7 @@ msgstr "Supprimer"
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:174
 #: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:93
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:341
 msgid "Cancel"
 msgstr "Annuler"
 
@@ -6083,6 +6086,7 @@ msgstr "Sélectionner le répertoire de sortie du trace"
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:343
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:386
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:482
+#: src/ui-imgui/videorec/videorec_menu.cpp:96
 msgid "Off"
 msgstr "Off"
 
@@ -7392,6 +7396,8 @@ msgstr ""
 #: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:109
 #: src/ui-imgui/joy/joy_setup_window.cpp:564
 #: src/ui-imgui/message/message_window.cpp:90
+#: src/ui-imgui/snapshot/snapshot_notification.cpp:95
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:336
 msgid "OK"
 msgstr "OK"
 
@@ -9574,6 +9580,10 @@ msgstr "Rescanner les périphériques"
 msgid "Joystick"
 msgstr "Joystick"
 
+#: src/ui-imgui/main_window.cpp:102
+msgid "No audio device - running without sound"
+msgstr "Aucun périphérique audio - fonctionnement sans son"
+
 #: src/ui-imgui/maxspeed_bench_window.cpp:56
 msgid "MAX SPEED Benchmark"
 msgstr "MAX SPEED Benchmark"
@@ -10005,6 +10015,7 @@ msgid "Select file"
 msgstr "Sélectionner un fichier"
 
 #: src/ui-imgui/memext/memext_load_dialog.cpp:123
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:193
 msgid "File size"
 msgstr "Taille du fichier"
 
@@ -10380,8 +10391,7 @@ msgstr "Instantané chargé"
 msgid "Load failed"
 msgstr "Échec du chargement"
 
-#: src/ui-imgui/snapshot/snapshot_notification.cpp:47
-#: src/ui-imgui/snapshot/snapshot_notification.cpp:49
+#: src/ui-imgui/snapshot/snapshot_notification.cpp:87
 msgid "Snapshot Error"
 msgstr "Erreur d'instantané"
 
@@ -10434,6 +10444,7 @@ msgid "Default Directory"
 msgstr "Répertoire par défaut"
 
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:78
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:271
 msgid "Select Directory"
 msgstr "Sélectionner le répertoire"
 
@@ -10702,7 +10713,7 @@ msgid "Unicard alternate FDC ports 0x58 - 0x5F"
 msgstr "Ports FDC alternatifs Unicard 0x58 - 0x5F"
 
 #: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:440
-#: src/ui-imgui/topmenu/menu_tools.cpp:29
+#: src/ui-imgui/topmenu/menu_tools.cpp:30
 msgid "Tools"
 msgstr "Outils"
 
@@ -11710,23 +11721,23 @@ msgstr "Diminuer - pas de 100 %"
 msgid "Custom Speed Options"
 msgstr "Options de vitesse personnalisée"
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:31
+#: src/ui-imgui/topmenu/menu_tools.cpp:32
 msgid "DSK Images..."
 msgstr "Images DSK..."
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:36
+#: src/ui-imgui/topmenu/menu_tools.cpp:37
 msgid "Version Check"
 msgstr "Vérification de version"
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:38
+#: src/ui-imgui/topmenu/menu_tools.cpp:39
 msgid "Make Online Version Check"
 msgstr "Vérifier la version en ligne"
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:43
+#: src/ui-imgui/topmenu/menu_tools.cpp:44
 msgid "Version Check Setup"
 msgstr "Configuration de la vérification de version"
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:60
+#: src/ui-imgui/topmenu/menu_tools.cpp:64
 msgid "MCP Activity##menu_mcp_activity"
 msgstr "MCP Activity##menu_mcp_activity"
 
@@ -11835,6 +11846,453 @@ msgstr "Date de compilation"
 msgid "Setup"
 msgstr "Configuration"
 
+#: src/ui-imgui/videorec/videorec_menu.cpp:41
+msgid "Video recording is not initialized"
+msgstr "L'enregistrement vidéo n'est pas initialisé"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:42
+msgid "Video recording is already running"
+msgstr "L'enregistrement vidéo est déjà en cours"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:43
+msgid "Video encoder error"
+msgstr "Erreur de l'encodeur vidéo"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:44
+msgid "Cannot create video encoder"
+msgstr "Impossible de créer l'encodeur vidéo"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:45
+msgid "Video file write error"
+msgstr "Erreur d'écriture du fichier vidéo"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:46
+msgid "Video file write error (disk full?)"
+msgstr "Erreur d'écriture du fichier vidéo (disque plein ?)"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:47
+msgid "Video file truncate error"
+msgstr "Erreur de troncature du fichier vidéo"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:48
+msgid "Cannot finalize the video file"
+msgstr "Impossible de finaliser le fichier vidéo"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:49
+msgid "Cannot write the cuts file (.cuts.json)"
+msgstr "Impossible d'écrire le fichier de montage (.cuts.json)"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:97
+msgid "Discard frames (seamless)"
+msgstr "Supprimer les images (sans raccord)"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:98
+msgid "Keep as cut with transition"
+msgstr "Conserver comme coupe avec transition"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:113
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:229
+msgid "Stop Recording"
+msgstr "Arrêter l'enregistrement"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:113
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:229
+msgid "Start Recording"
+msgstr "Démarrer l'enregistrement"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:133
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:230
+msgid "Resume Recording"
+msgstr "Reprendre l'enregistrement"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:133
+#: src/ui-imgui/videorec/videorec_menu.cpp:440
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:230
+msgid "Pause Recording"
+msgstr "Mettre l'enregistrement en pause"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:136
+#: src/ui-imgui/videorec/videorec_menu.cpp:203
+msgid "REC"
+msgstr "REC"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:144
+msgid "STARTING"
+msgstr "DÉMARRAGE"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:144
+msgid "IDLE"
+msgstr "INACTIF"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:172
+#: src/ui-imgui/videorec/videorec_menu.cpp:189
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:162
+msgid "Real time"
+msgstr "Temps réel"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:172
+#: src/ui-imgui/videorec/videorec_menu.cpp:194
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:157
+msgid "Emulated time"
+msgstr "Temps émulé"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:181
+msgid "Real time (live)"
+msgstr "Temps réel (en direct)"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:183
+msgid "Real time (frozen picture)"
+msgstr "Temps réel (image figée)"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:185
+msgid "Real time (not writing)"
+msgstr "Temps réel (pas d'écriture)"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:193
+msgid "Emulated time (real time requested)"
+msgstr "Temps émulé (temps réel demandé)"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:201
+msgid "real-time"
+msgstr "temps réel"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:201
+msgid "emulated"
+msgstr "temps émulé"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:203
+msgid "PAUSE"
+msgstr "PAUSE"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:208
+msgid "Gameplay showcase"
+msgstr "Démonstration de jeu"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:209
+msgid "Live / tutorial"
+msgstr "Direct / tutoriel"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:289
+#, c-format
+msgid "Recording failed: %s"
+msgstr "Échec de l'enregistrement : %s"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:290
+#: src/ui-imgui/videorec/videorec_menu.cpp:423
+msgid "Video Recording Error"
+msgstr "Erreur d'enregistrement vidéo"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:318
+msgid "Recording will start when emulation resumes"
+msgstr "L'enregistrement démarrera à la reprise de l'émulation"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:354
+#, c-format
+msgid "Recording time base: %s"
+msgstr "Base de temps de l'enregistrement : %s"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:422
+#, c-format
+msgid "Cannot open folder: %s"
+msgstr "Impossible d'ouvrir le dossier : %s"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:432
+msgid "Video Recording"
+msgstr "Enregistrement vidéo"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:444
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:230
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:260
+msgid "Add Marker"
+msgstr "Ajouter un repère"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:451
+msgid "Record in Real Time"
+msgstr "Enregistrer en temps réel"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:456
+msgid ""
+"Checked: the recording follows real time (what was on the screen and in the "
+"speakers). Unchecked: emulated time (one emulated frame = one video frame)."
+msgstr ""
+"Coché : l'enregistrement suit le temps réel (ce qui était à l'écran et dans "
+"les haut-parleurs). Décoché : temps émulé (une image émulée = une image "
+"vidéo)."
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:462
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:317
+msgid "Settings..."
+msgstr "Paramètres..."
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:466
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:315
+msgid "Open Output Folder"
+msgstr "Ouvrir le dossier de sortie"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:470
+msgid "Remote Control..."
+msgstr "Télécommande..."
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:541
+msgid "Recording started"
+msgstr "Enregistrement démarré"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:544
+#, c-format
+msgid "Recording saved: %s"
+msgstr "Enregistrement sauvegardé : %s"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:553
+#, c-format
+msgid "Retake: rewound to %s"
+msgstr "Nouvelle prise : rembobiné à %s"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:556
+msgid "Recording seam (snapshot loaded)"
+msgstr "Raccord dans l'enregistrement (instantané chargé)"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:152
+msgid "Recording Remote Control"
+msgstr "Télécommande d'enregistrement"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:171
+msgid "State"
+msgstr "État"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:177
+msgid "Time"
+msgstr "Temps"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:180
+msgid "Video frames"
+msgstr "Images vidéo"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:185
+#, c-format
+msgid "%s (%u files)"
+msgstr "%s (%u fichiers)"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:199
+#, c-format
+msgid "%u (paused)"
+msgstr "%u (en pause)"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:204
+msgid "Segment"
+msgstr "Segment"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:206
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:281
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:155
+msgid "Time base"
+msgstr "Base de temps"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:212
+msgid "Last event"
+msgstr "Dernier événement"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:227
+msgid "Controls"
+msgstr "Commandes"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:268
+msgid "Marker label (empty = Marker N)"
+msgstr "Libellé du repère (vide = Marker N)"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:292
+msgid "Switches immediately, also while recording (starts a new segment)."
+msgstr ""
+"Bascule immédiatement, même pendant l'enregistrement (commence un nouveau "
+"segment)."
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:296
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:294
+msgid "Retake mode"
+msgstr "Mode nouvelle prise"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:309
+msgid "Applies from the next recording."
+msgstr "S'applique à partir du prochain enregistrement."
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:311
+#, c-format
+msgid "Current recording: %s"
+msgstr "Enregistrement en cours : %s"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:320
+#, c-format
+msgid "Show or hide this window: %s"
+msgstr "Afficher/masquer cette fenêtre : %s"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:57
+msgid "Cut"
+msgstr "Coupe franche"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:58
+msgid "Fade through black"
+msgstr "Fondu au noir"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:59
+msgid "Crossfade"
+msgstr "Fondu enchaîné"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:60
+msgid "Title card"
+msgstr "Carton de titre"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:72
+msgid "Skip (do not record the pause)"
+msgstr "Ignorer (ne pas enregistrer la pause)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:73
+msgid "Frozen picture and silence"
+msgstr "Image figée et silence"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:74
+msgid "Frozen picture, at most the limit below"
+msgstr "Image figée, au plus jusqu'à la limite ci-dessous"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:79
+msgid "Record as seen (faster or slower)"
+msgstr "Enregistrer tel qu'affiché (accéléré ou ralenti)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:80
+msgid "Switch to emulated time"
+msgstr "Passer en temps émulé"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:85
+msgid "As heard"
+msgstr "Tel qu'entendu"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:86
+msgid "Silence"
+msgstr "Silence"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:87
+msgid "Attenuated (-12 dB)"
+msgstr "Atténué (-12 dB)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:127
+msgid "Time base and real-time mode"
+msgstr "Base de temps et mode temps réel"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:130
+msgid "Preset"
+msgstr "Préréglage"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:145
+#, c-format
+msgid "Current settings: %s"
+msgstr "Réglages actuels : %s"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:147
+msgid "Current settings: custom"
+msgstr "Réglages actuels : personnalisés"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:150
+msgid ""
+"Export with --state-overlay icons to show pause, speed and real time in the "
+"video."
+msgstr ""
+"Exportez avec --state-overlay icons pour afficher la pause, la vitesse et le "
+"temps réel dans la vidéo."
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:168
+msgid "Time base switches on OK, also while recording."
+msgstr "La base de temps bascule avec OK, même pendant l'enregistrement."
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:172
+msgid "Emulation paused (real time)"
+msgstr "Émulation en pause (temps réel)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:177
+msgid "Frozen pause limit [s]"
+msgstr "Limite de la pause figée [s]"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:186
+msgid "Speed other than normal (real time)"
+msgstr "Vitesse différente de la normale (temps réel)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:191
+msgid "Sound when faster than normal (real time)"
+msgstr "Son au-dessus de la vitesse normale (temps réel)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:199
+msgid "Record debugger steps (real time)"
+msgstr "Enregistrer les pas du débogueur (temps réel)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:201
+msgid ""
+"Checked: stepping in the debugger is recorded as a frozen picture. "
+"Unchecked: stepping is left out of the recording."
+msgstr ""
+"Coché : le pas à pas dans le débogueur est enregistré comme une image figée. "
+"Décoché : le pas à pas n'est pas enregistré."
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:208
+msgid "Save state marks for export"
+msgstr "Enregistrer les marques d'état pour l'export"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:212
+msgid ""
+"Writes pause, speed and time base changes into the cuts file; the export can "
+"show them as icons in the video."
+msgstr ""
+"Écrit les changements de pause, de vitesse et de base de temps dans le "
+"fichier de coupes ; l'export peut les afficher comme icônes dans la vidéo."
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:215
+msgid "Automatic markers"
+msgstr "Marqueurs automatiques"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:219
+msgid ""
+"Adds a marker (chapter) on reset; in real time also on a speed change, a "
+"snapshot load and a pause made by the user."
+msgstr ""
+"Ajoute un marqueur (chapitre) lors d'un reset ; en temps réel aussi lors "
+"d'un changement de vitesse, du chargement d'un snapshot et d'une pause faite "
+"par l'utilisateur."
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:254
+msgid "Video Recording Settings"
+msgstr "Paramètres d'enregistrement vidéo"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:259
+msgid "Output folder"
+msgstr "Dossier de sortie"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:262
+msgid "(default: videos folder next to the emulator)"
+msgstr "(par défaut : dossier videos à côté de l'émulateur)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:277
+msgid "Audio sample rate"
+msgstr "Fréquence d'échantillonnage audio"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:293
+msgid "Snapshot loaded while recording"
+msgstr "Instantané chargé pendant l'enregistrement"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:308
+msgid "Transitions"
+msgstr "Transitions"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:309
+msgid "Default transition"
+msgstr "Transition par défaut"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:319
+msgid "Transition length [ms]"
+msgstr "Durée de la transition [ms]"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:327
+msgid ""
+"Changes apply to the next recording (the time base switches immediately)."
+msgstr ""
+"Les modifications s'appliquent au prochain enregistrement (la base de temps "
+"bascule immédiatement)."
+
 #: src/ui-imgui/vkbd_window.cpp:224
 msgid "MZ-700 Virtual Keyboard"
 msgstr "Clavier virtuel MZ-700"
@@ -11846,6 +12304,16 @@ msgstr "Clavier virtuel MZ-1500"
 #: src/ui-imgui/vkbd_window.cpp:228
 msgid "MZ-800 Virtual Keyboard"
 msgstr "Clavier virtuel MZ-800"
+
+#~ msgid ""
+#~ "Adds a marker (chapter) on speed change, snapshot load, reset and pause "
+#~ "in real time."
+#~ msgstr ""
+#~ "Ajoute un marqueur (chapitre) lors d'un changement de vitesse, du "
+#~ "chargement d'un snapshot, d'un reset et d'une pause en temps réel."
+
+#~ msgid "Changes apply to the next recording."
+#~ msgstr "Les modifications s'appliquent au prochain enregistrement."
 
 #~ msgid "Centronics Printer"
 #~ msgstr "Imprimante Centronics"

@@ -205,16 +205,24 @@ void snapshot_config_init(void)
     elm = cfgmodule_register_new_element(cmod, "quickload_resume_mode", CFGENTYPE_UNSIGNED, SNAPSHOT_RESUME_ALWAYS_PAUSE, 0, 2);
     cfgelement_set_propagate_cb(elm, propagatecfg_quickload_resume_mode, NULL);
     cfgelement_set_save_cb(elm, savecfg_quickload_resume_mode, NULL);
+
+    /* Načíst sekci z INI a propagovat (vzor mcp_config_init, audio.c):
+     * globální cfgroot_propagate se v emulátoru nevolá, takže bez tohoto by
+     * se uložené hodnoty nikdy nenačetly a po každém startu platily výchozí.
+     * Chybí-li sekce, propagují se výchozí hodnoty elementů. */
+    cfgmodule_parse(cmod);
+    cfgmodule_propagate(cmod);
 }
 
 
 void snapshot_config_load(void)
 {
-    /* Konfigurace se načítá automaticky přes cfgroot_propagate */
+    /* Konfigurace se načítá v snapshot_config_init() (cfgmodule_parse +
+     * cfgmodule_propagate); zde není co dělat. */
 }
 
 
 void snapshot_config_save(void)
 {
-    /* Konfigurace se ukládá automaticky přes cfgroot_save */
+    /* Konfigurace se ukládá přes cfgroot_save (save callbacky elementů). */
 }

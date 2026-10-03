@@ -71,6 +71,10 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
 #endif
     { "--run-mzf",          SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<filepath>",
       "Automatically load and run the given MZF file after the emulator boots." },
+    { "--record",           SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<file.avi>",
+      "Start video recording (lossless AVI + .cuts.json sidecar) right after boot." },
+    { "--record-frames",    SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_UINT,        NULL,        "<count>",
+      "Stop video recording after <count> frames; in --headless mode then quit the emulator." },
     { "--cdl-mode",         SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        MODE_VALUES, "<off|window|always>",
       "Set the CDL (Memory Heatmap) recording mode." },
     { "--cdl-dir",          SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<dirpath>",

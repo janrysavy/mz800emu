@@ -1,4 +1,12 @@
 
+	- New feature: video recording (Tools -> Video Recording) on all platforms: MZ-800, MZ-700 PAL and NTSC, MZ-1500 (60 frames/s on NTSC, stereo on the MZ-1500 and on the MZ-800 with the second PSG). Lossless recording of picture and sound into AVI in emulation time (emulation pause pauses the video, speed-up does not show in the video), recording pause (Alt+Shift+O), markers (Alt+L), start/stop (Alt+O), a remote control window with the recording status and visible shortcuts next to its buttons (Alt+Shift+L), retake via snapshot (loading a snapshot rewinds the recording to the point of saving with no visible seam), real-time mode (records what was on the screen and in the speakers, switchable at any time even while recording with Alt+U, settings for pause, speed and debugger stepping, presets Gameplay showcase and Live / tutorial, automatic markers, mode shown in the REC indicator) and an export script to MP4 for YouTube (crop and frame rate following the platform of the recording, integer scaling, transitions, chapters, optional burned-in state icons - pause, speed, real time). See video-recording.md.
+
+	- MCP keyboard - the key names from the documentation (CURSOR_UP/DOWN/LEFT/RIGHT, INST, UP_ARROW, DOWN_ARROW) are now also accepted by press_key and release_key (the old names keep working). The "Unknown key" error now suggests the closest valid names. CHANGE: send_keys (key_names) and send_keys_with_delays with an unknown key name now fail as a whole (nothing is typed) instead of silently skipping the name.
+
+	- BUGFIX: When the windowed emulator could not initialize audio or open an audio device (computer without a sound card, disconnected or unavailable device), it exited with "Failed to initialize interface" and emulation never started. It now runs without sound at 100 % real time (paced by the system clock), logs a warning and shows a one-time notice "No audio device - running without sound" in the window. Behaviour with a working audio device is unchanged.
+
+	- BUGFIX: Headless mode (--headless, MCP pipe) - at normal speed (100 %) emulation ran only about 1 frame per second (e.g. after --run-mzf or after starting emulation via MCP) and the log kept repeating "timeout! Is Audio module running?"; at other times it instead ran unthrottled at MAX SPEED. Without an audio device the pace is now driven by the system clock, so 100 % matches real time (50 frames per second on MZ-800) and custom speed and MAX SPEED work as in the windowed mode. Behaviour with an audio device is unchanged.
+
 	- BUGFIX: MCP server - commands (e.g. bp_remove, bp_list, run) occasionally failed with an error such as "bp_remove failed (unknown id?)" although they were valid; it was enough for the emulation thread to pick the command up about 1 s late. The server now waits up to 10 s for the pick-up, a picked-up command always completes, and the new "Emulator busy: ..." error clearly states that the command was not executed and can be retried.
 
 	- BUGFIX: Pressing RESET (F12 or menu) immediately after the window opened could crash the emulator if the emulation thread had not started yet.
@@ -6,6 +14,8 @@
 	- BUGFIX: Opening/closing the debugger window (Alt+D, menu) while emulation was running, and live memory reads in the Memory Browser, could rarely race with the emulation thread. Both operations are now performed safely.
 
 	- BUGFIX: The accelerated RAM access path is now always recomputed after loading a snapshot. Previously the emulator could keep using the memory mapping from before the snapshot was loaded, until the next banking change.
+
+	- BUGFIX: Snapshots - the settings in the Snapshot Setup dialog (include RAM disk and MemExt, compression, directory, quicksave, behaviour after load) were saved to the configuration file but not read back after restarting the emulator, so the defaults applied. The settings are now restored at startup.
 
 	- DOCS FIX: MCP - the platform field of platform/info is mz700 / mz800 / mz1500; PAL and NTSC are distinguished by the tv_system field. The documentation previously claimed mz700-pal / mz700-ntsc.
 

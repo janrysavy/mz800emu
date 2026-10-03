@@ -759,6 +759,28 @@ typedef struct st_DISPATCH_STUB_STATE {
     int64_t              watch_snapshot_fake_min_int;
     int64_t              watch_snapshot_fake_max_int;
     uint64_t             watch_snapshot_fake_change_count;
+
+    /* video-capture Task 15: DBGAPI_CMD_VIDEOREC (videorec_* MCP příkazy).
+     *
+     *   videorec_calls       - kolikrát stub viděl DBGAPI_CMD_VIDEOREC.
+     *   videorec_last_op     - en_DBGAPI_VIDEOREC_OP posledního volání.
+     *   videorec_last_path   - heap g_strdup vstupní cesty (NULL = nezadaná);
+     *                          uvolňuje dispatch_stub_reset.
+     *   videorec_last_frames - vstupní frames (START).
+     *   videorec_last_paused - vstupní paused (-1/0/1, PAUSE).
+     *   videorec_last_label  - heap g_strdup vstupního popisku (NULL = nezadaný).
+     *   videorec_last_timebase - vstupní timebase (0/1, TIMEBASE; Task 18).
+     *   videorec_fake        - výstupní pole (out_*) zkopírovaná do parametru;
+     *                          out_result != 0 => submit vrátí false (chyba).
+     */
+    int                      videorec_calls;
+    int                      videorec_last_op;
+    char                    *videorec_last_path;
+    uint64_t                 videorec_last_frames;
+    int                      videorec_last_paused;
+    char                    *videorec_last_label;
+    int                      videorec_last_timebase;
+    st_DBGAPI_VIDEOREC_PARAM videorec_fake;
 } st_DISPATCH_STUB_STATE;
 
 

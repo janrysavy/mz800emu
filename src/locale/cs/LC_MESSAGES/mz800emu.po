@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-11 12:48+0200\n"
+"POT-Creation-Date: 2026-10-02 22:33+0200\n"
 "PO-Revision-Date: 2026-03-11 21:00+0100\n"
 "Last-Translator: Michal Hucik <hucik@ordoz.com>\n"
 "Language-Team: Czech\n"
@@ -37,7 +37,7 @@ msgstr "Otevřít adresář"
 msgid "Untitled File Chooser"
 msgstr "Výběr souboru"
 
-#: src/emulator/audio.c:131
+#: src/emulator/audio.c:132
 msgid "Audio volume settings:"
 msgstr "Nastavení hlasitosti:"
 
@@ -62,20 +62,21 @@ msgstr ""
 "Adresa = 0x%04x\n"
 "Instrukce = '%s'\n"
 
-#: src/emulator/emulator.c:320
+#: src/emulator/emulator.c:324
 #: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:421
+#: src/ui-imgui/videorec/videorec_menu.cpp:140
 msgid "PAUSED"
 msgstr "POZASTAVENO"
 
-#: src/emulator/emulator.c:323
+#: src/emulator/emulator.c:327
 msgid "Max speed"
 msgstr "Maximální rychlost"
 
-#: src/emulator/emulator.c:326
+#: src/emulator/emulator.c:330
 msgid "Custom speed"
 msgstr "Vlastní rychlost"
 
-#: src/emulator/emulator.c:328
+#: src/emulator/emulator.c:332
 msgid "Normal speed"
 msgstr "Normální rychlost"
 
@@ -1060,7 +1061,8 @@ msgid ""
 "PEHU memext only."
 msgstr ""
 "Pohled CPU = Address je Z80 adresa (0000-FFFF).\n"
-"Offset v bance = Address je offset v rámci PEHU banky (0000-1FFF), matchuje se ať je banka namapovaná kdekoliv.\n"
+"Offset v bance = Address je offset v rámci PEHU banky (0000-1FFF), matchuje "
+"se ať je banka namapovaná kdekoliv.\n"
 "Jen PEHU memext."
 
 #: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1537
@@ -4439,6 +4441,7 @@ msgstr "Smazat"
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:174
 #: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:93
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:341
 msgid "Cancel"
 msgstr "Zrušit"
 
@@ -6004,6 +6007,7 @@ msgstr "Vyberte výstupní adresář trace-suite"
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:343
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:386
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:482
+#: src/ui-imgui/videorec/videorec_menu.cpp:96
 msgid "Off"
 msgstr "Vypnuto"
 
@@ -7294,6 +7298,8 @@ msgstr "Změňte mapování banky nebo upravte VEC tak, aby ukazoval do RAM."
 #: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:109
 #: src/ui-imgui/joy/joy_setup_window.cpp:564
 #: src/ui-imgui/message/message_window.cpp:90
+#: src/ui-imgui/snapshot/snapshot_notification.cpp:95
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:336
 msgid "OK"
 msgstr "OK"
 
@@ -9455,6 +9461,10 @@ msgstr "Znovu prohledat zařízení"
 msgid "Joystick"
 msgstr "Joystick"
 
+#: src/ui-imgui/main_window.cpp:102
+msgid "No audio device - running without sound"
+msgstr "Žádné zvukové zařízení - běží bez zvuku"
+
 #: src/ui-imgui/maxspeed_bench_window.cpp:56
 msgid "MAX SPEED Benchmark"
 msgstr "MAX SPEED Benchmark"
@@ -9883,6 +9893,7 @@ msgid "Select file"
 msgstr "Vyberte soubor"
 
 #: src/ui-imgui/memext/memext_load_dialog.cpp:123
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:193
 msgid "File size"
 msgstr "Velikost souboru"
 
@@ -10253,8 +10264,7 @@ msgstr "Snímek načten"
 msgid "Load failed"
 msgstr "Načtení selhalo"
 
-#: src/ui-imgui/snapshot/snapshot_notification.cpp:47
-#: src/ui-imgui/snapshot/snapshot_notification.cpp:49
+#: src/ui-imgui/snapshot/snapshot_notification.cpp:87
 msgid "Snapshot Error"
 msgstr "Chyba snímku"
 
@@ -10307,6 +10317,7 @@ msgid "Default Directory"
 msgstr "Výchozí adresář"
 
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:78
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:271
 msgid "Select Directory"
 msgstr "Vybrat adresář"
 
@@ -10573,7 +10584,7 @@ msgid "Unicard alternate FDC ports 0x58 - 0x5F"
 msgstr "Alternativní porty 0x58 - 0x5F pro Unicard FDC"
 
 #: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:440
-#: src/ui-imgui/topmenu/menu_tools.cpp:29
+#: src/ui-imgui/topmenu/menu_tools.cpp:30
 msgid "Tools"
 msgstr "Nástroje"
 
@@ -11572,23 +11583,23 @@ msgstr "Snížit - krok 100 %"
 msgid "Custom Speed Options"
 msgstr "Nastavení vlastní rychlosti"
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:31
+#: src/ui-imgui/topmenu/menu_tools.cpp:32
 msgid "DSK Images..."
 msgstr "DSK obrazy..."
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:36
+#: src/ui-imgui/topmenu/menu_tools.cpp:37
 msgid "Version Check"
 msgstr "Kontrola verze"
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:38
+#: src/ui-imgui/topmenu/menu_tools.cpp:39
 msgid "Make Online Version Check"
 msgstr "Provést online kontrolu verze"
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:43
+#: src/ui-imgui/topmenu/menu_tools.cpp:44
 msgid "Version Check Setup"
 msgstr "Nastavení kontroly verze"
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:60
+#: src/ui-imgui/topmenu/menu_tools.cpp:64
 msgid "MCP Activity##menu_mcp_activity"
 msgstr "MCP Activity##menu_mcp_activity"
 
@@ -11695,6 +11706,448 @@ msgstr "Datum sestavení"
 msgid "Setup"
 msgstr "Nastavení"
 
+#: src/ui-imgui/videorec/videorec_menu.cpp:41
+msgid "Video recording is not initialized"
+msgstr "Nahrávání videa není inicializováno"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:42
+msgid "Video recording is already running"
+msgstr "Nahrávání videa už běží"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:43
+msgid "Video encoder error"
+msgstr "Chyba video enkodéru"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:44
+msgid "Cannot create video encoder"
+msgstr "Nelze vytvořit video enkodér"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:45
+msgid "Video file write error"
+msgstr "Chyba zápisu video souboru"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:46
+msgid "Video file write error (disk full?)"
+msgstr "Chyba zápisu video souboru (plný disk?)"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:47
+msgid "Video file truncate error"
+msgstr "Chyba zkrácení video souboru"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:48
+msgid "Cannot finalize the video file"
+msgstr "Nelze dokončit video soubor"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:49
+msgid "Cannot write the cuts file (.cuts.json)"
+msgstr "Nelze zapsat soubor střihů (.cuts.json)"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:97
+msgid "Discard frames (seamless)"
+msgstr "Zahodit snímky (plynule)"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:98
+msgid "Keep as cut with transition"
+msgstr "Ponechat jako střih s přechodem"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:113
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:229
+msgid "Stop Recording"
+msgstr "Zastavit nahrávání"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:113
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:229
+msgid "Start Recording"
+msgstr "Spustit nahrávání"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:133
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:230
+msgid "Resume Recording"
+msgstr "Pokračovat v nahrávání"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:133
+#: src/ui-imgui/videorec/videorec_menu.cpp:440
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:230
+msgid "Pause Recording"
+msgstr "Pozastavit nahrávání"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:136
+#: src/ui-imgui/videorec/videorec_menu.cpp:203
+msgid "REC"
+msgstr "REC"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:144
+msgid "STARTING"
+msgstr "SPOUŠTÍ SE"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:144
+msgid "IDLE"
+msgstr "NENAHRÁVÁ SE"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:172
+#: src/ui-imgui/videorec/videorec_menu.cpp:189
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:162
+msgid "Real time"
+msgstr "Podle reality"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:172
+#: src/ui-imgui/videorec/videorec_menu.cpp:194
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:157
+msgid "Emulated time"
+msgstr "Emulační čas"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:181
+msgid "Real time (live)"
+msgstr "Podle reality (živě)"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:183
+msgid "Real time (frozen picture)"
+msgstr "Podle reality (zamrzlý obraz)"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:185
+msgid "Real time (not writing)"
+msgstr "Podle reality (nezapisuje se)"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:193
+msgid "Emulated time (real time requested)"
+msgstr "Emulační čas (požadováno podle reality)"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:201
+msgid "real-time"
+msgstr "podle reality"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:201
+msgid "emulated"
+msgstr "emulační čas"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:203
+msgid "PAUSE"
+msgstr "PAUZA"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:208
+msgid "Gameplay showcase"
+msgstr "Ukázka hry"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:209
+msgid "Live / tutorial"
+msgstr "Živě / návod"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:289
+#, c-format
+msgid "Recording failed: %s"
+msgstr "Nahrávání selhalo: %s"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:290
+#: src/ui-imgui/videorec/videorec_menu.cpp:423
+msgid "Video Recording Error"
+msgstr "Chyba nahrávání videa"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:318
+msgid "Recording will start when emulation resumes"
+msgstr "Nahrávání začne po obnovení emulace"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:354
+#, c-format
+msgid "Recording time base: %s"
+msgstr "Časová základna nahrávání: %s"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:422
+#, c-format
+msgid "Cannot open folder: %s"
+msgstr "Nelze otevřít adresář: %s"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:432
+msgid "Video Recording"
+msgstr "Nahrávání videa"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:444
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:230
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:260
+msgid "Add Marker"
+msgstr "Přidat značku"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:451
+msgid "Record in Real Time"
+msgstr "Nahrávat podle reality"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:456
+msgid ""
+"Checked: the recording follows real time (what was on the screen and in the "
+"speakers). Unchecked: emulated time (one emulated frame = one video frame)."
+msgstr ""
+"Zaškrtnuto: nahrávka sleduje skutečný čas (co bylo na obrazovce a v "
+"reproduktorech). Nezaškrtnuto: emulační čas (jeden emulovaný snímek obrazu = "
+"jeden snímek videa)."
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:462
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:317
+msgid "Settings..."
+msgstr "Nastavení..."
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:466
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:315
+msgid "Open Output Folder"
+msgstr "Otevřít výstupní adresář"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:470
+msgid "Remote Control..."
+msgstr "Dálkové ovládání..."
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:541
+msgid "Recording started"
+msgstr "Nahrávání spuštěno"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:544
+#, c-format
+msgid "Recording saved: %s"
+msgstr "Nahrávka uložena: %s"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:553
+#, c-format
+msgid "Retake: rewound to %s"
+msgstr "Opakování záběru: přetočeno na %s"
+
+#: src/ui-imgui/videorec/videorec_menu.cpp:556
+msgid "Recording seam (snapshot loaded)"
+msgstr "Šev v nahrávce (načten snímek)"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:152
+msgid "Recording Remote Control"
+msgstr "Dálkové ovládání nahrávání"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:171
+msgid "State"
+msgstr "Stav"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:177
+msgid "Time"
+msgstr "Čas"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:180
+msgid "Video frames"
+msgstr "Snímky videa"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:185
+#, c-format
+msgid "%s (%u files)"
+msgstr "%s (souborů: %u)"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:199
+#, c-format
+msgid "%u (paused)"
+msgstr "%u (pozastaveno)"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:204
+msgid "Segment"
+msgstr "Segment"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:206
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:281
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:155
+msgid "Time base"
+msgstr "Časová základna"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:212
+msgid "Last event"
+msgstr "Poslední událost"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:227
+msgid "Controls"
+msgstr "Ovládání"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:268
+msgid "Marker label (empty = Marker N)"
+msgstr "Popisek značky (prázdný = Marker N)"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:292
+msgid "Switches immediately, also while recording (starts a new segment)."
+msgstr "Přepne se hned, i během nahrávání (začne nový segment)."
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:296
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:294
+msgid "Retake mode"
+msgstr "Režim opakování záběru"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:309
+msgid "Applies from the next recording."
+msgstr "Platí od dalšího nahrávání."
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:311
+#, c-format
+msgid "Current recording: %s"
+msgstr "Aktuální nahrávka: %s"
+
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:320
+#, c-format
+msgid "Show or hide this window: %s"
+msgstr "Zobrazit/skrýt toto okno: %s"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:57
+msgid "Cut"
+msgstr "Střih"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:58
+msgid "Fade through black"
+msgstr "Prolnutí přes černou"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:59
+msgid "Crossfade"
+msgstr "Křížové prolnutí"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:60
+msgid "Title card"
+msgstr "Titulková karta"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:72
+msgid "Skip (do not record the pause)"
+msgstr "Přeskočit (pauzu nenahrávat)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:73
+msgid "Frozen picture and silence"
+msgstr "Zamrzlý obraz a ticho"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:74
+msgid "Frozen picture, at most the limit below"
+msgstr "Zamrzlý obraz, nejvýš po limit níže"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:79
+msgid "Record as seen (faster or slower)"
+msgstr "Nahrávat, jak je vidět (zrychleně nebo zpomaleně)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:80
+msgid "Switch to emulated time"
+msgstr "Přepnout na emulační čas"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:85
+msgid "As heard"
+msgstr "Jak zní"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:86
+msgid "Silence"
+msgstr "Ticho"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:87
+msgid "Attenuated (-12 dB)"
+msgstr "Zeslabený (-12 dB)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:127
+msgid "Time base and real-time mode"
+msgstr "Časová základna a režim podle reality"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:130
+msgid "Preset"
+msgstr "Předvolba"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:145
+#, c-format
+msgid "Current settings: %s"
+msgstr "Aktuální nastavení: %s"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:147
+msgid "Current settings: custom"
+msgstr "Aktuální nastavení: vlastní"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:150
+msgid ""
+"Export with --state-overlay icons to show pause, speed and real time in the "
+"video."
+msgstr ""
+"Exportujte s --state-overlay icons, aby video ukazovalo pauzu, rychlost a "
+"režim podle reality."
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:168
+msgid "Time base switches on OK, also while recording."
+msgstr "Časová základna se přepne po OK, i během nahrávání."
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:172
+msgid "Emulation paused (real time)"
+msgstr "Pozastavená emulace (podle reality)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:177
+msgid "Frozen pause limit [s]"
+msgstr "Limit zamrzlé pauzy [s]"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:186
+msgid "Speed other than normal (real time)"
+msgstr "Rychlost jiná než normální (podle reality)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:191
+msgid "Sound when faster than normal (real time)"
+msgstr "Zvuk při rychlosti vyšší než normální (podle reality)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:199
+msgid "Record debugger steps (real time)"
+msgstr "Nahrávat krokování v debuggeru (podle reality)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:201
+msgid ""
+"Checked: stepping in the debugger is recorded as a frozen picture. "
+"Unchecked: stepping is left out of the recording."
+msgstr ""
+"Zaškrtnuto: krokování v debuggeru se nahraje jako zamrzlý obraz. "
+"Nezaškrtnuto: krokování se do nahrávky nedostane."
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:208
+msgid "Save state marks for export"
+msgstr "Ukládat značky stavu pro export"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:212
+msgid ""
+"Writes pause, speed and time base changes into the cuts file; the export can "
+"show them as icons in the video."
+msgstr ""
+"Zapisuje změny pauzy, rychlosti a časové základny do souboru střihů; export "
+"je může ve videu ukázat jako ikony."
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:215
+msgid "Automatic markers"
+msgstr "Automatické markery"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:219
+msgid ""
+"Adds a marker (chapter) on reset; in real time also on a speed change, a "
+"snapshot load and a pause made by the user."
+msgstr ""
+"Přidá marker (kapitolu) při resetu; v režimu podle reality také při změně "
+"rychlosti, načtení snímku (snapshotu) a pauze, kterou udělá uživatel."
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:254
+msgid "Video Recording Settings"
+msgstr "Nastavení nahrávání videa"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:259
+msgid "Output folder"
+msgstr "Výstupní adresář"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:262
+msgid "(default: videos folder next to the emulator)"
+msgstr "(výchozí: adresář videos vedle emulátoru)"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:277
+msgid "Audio sample rate"
+msgstr "Vzorkovací frekvence zvuku"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:293
+msgid "Snapshot loaded while recording"
+msgstr "Snímek načtený během nahrávání"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:308
+msgid "Transitions"
+msgstr "Přechody"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:309
+msgid "Default transition"
+msgstr "Výchozí přechod"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:319
+msgid "Transition length [ms]"
+msgstr "Délka přechodu [ms]"
+
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:327
+msgid ""
+"Changes apply to the next recording (the time base switches immediately)."
+msgstr "Změny platí od dalšího nahrávání (časová základna se přepne hned)."
+
 #: src/ui-imgui/vkbd_window.cpp:224
 msgid "MZ-700 Virtual Keyboard"
 msgstr "MZ-700 Virtuální klávesnice"
@@ -11706,6 +12159,16 @@ msgstr "MZ-1500 Virtuální klávesnice"
 #: src/ui-imgui/vkbd_window.cpp:228
 msgid "MZ-800 Virtual Keyboard"
 msgstr "MZ-800 Virtuální klávesnice"
+
+#~ msgid ""
+#~ "Adds a marker (chapter) on speed change, snapshot load, reset and pause "
+#~ "in real time."
+#~ msgstr ""
+#~ "Přidá marker (kapitolu) při změně rychlosti, načtení snímku (snapshotu), "
+#~ "resetu a pauze v režimu podle reality."
+
+#~ msgid "Changes apply to the next recording."
+#~ msgstr "Změny platí od dalšího nahrávání."
 
 #~ msgid "Centronics Printer"
 #~ msgstr "Tiskárna Centronics"

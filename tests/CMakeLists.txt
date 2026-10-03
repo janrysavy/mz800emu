@@ -39,7 +39,12 @@ add_subdirectory(libs/mzf)
 add_subdirectory(libs/mztape)
 add_subdirectory(libs/vram_sim)
 add_subdirectory(libs/wav)
+add_subdirectory(libs/avirec)
 add_subdirectory(libs/zxtape)
+add_subdirectory(videorec)
+
+# Python testy pomocných skriptů z docs/tools/ (bez Pythonu se neregistrují)
+add_subdirectory(tools)
 
 # Emu core
 add_subdirectory(sanity)

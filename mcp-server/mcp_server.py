@@ -3030,6 +3030,242 @@ async def emu_trace_save(channel: str, path: str = "") -> str:
     return json.dumps(_data_or_error(resp))
 
 
+# === video-capture Task 15 - Video recording Tools (5 + 1) ===========
+#
+# Lossless gameplay video recording (all builds: MZ-800, MZ-700 PAL/NTSC,
+# MZ-1500): ZMBV AVI + 48 kHz PCM
+# plus a ``<name>.cuts.json`` sidecar (segments, markers, state events).
+# Task 18 added ``emu_videorec_timebase`` (emulated / real-time timebase).
+# All six tools map 1:1 to the C dispatch commands ``videorec_*`` (dispatch.c), which run
+# on the emulator thread via ``DBGAPI_CMD_VIDEOREC``. Every success reply
+# carries the full recording status (see ``emu_videorec_status``).
+#
+# The complete agent workflow (start, play via send_keys, markers,
+# snapshot retake, stop, export to MP4) is documented in ONE place:
+# ``emulator://docs/videorec_workflow`` (docs/agent/videorec_workflow.md).
+
+#: Poll interval (seconds) of ``emu_videorec_stop(wait=True)``.
+_VIDEOREC_POLL_S = 0.1
+
+
+@mcp.tool()
+async def emu_videorec_start(path: str = "", frames: int = 0) -> str:
+    """Start lossless video recording of the emulated screen + sound (any build).
+
+    The target file is created immediately (errors such as a missing
+    directory are reported right away); the recording itself begins at the
+    end of the next emulated frame - while the emulation is paused it stays
+    ``start_pending`` until you run it (e.g. ``emu_run(frames=N)``). The
+    frame on which the start is processed is not recorded. Recording counts
+    EMULATED frames (50 per second; 60 on MZ-700 NTSC and MZ-1500 - see
+    ``fps`` in the status), so the emulation speed (MAX SPEED,
+    pauses between tool calls) does not affect the video.
+
+    Args:
+        path: Target ``.avi`` on the emulator host (absolute path
+            recommended; an existing file is overwritten). Empty = generated
+            name ``<platform>_YYYYMMDD_HHMMSS.avi`` (``mz800_...``,
+            ``mz700_...``, ``mz1500_...``) in the configured output
+            directory (never overwrites an existing recording).
+        frames: Auto-stop after this many recorded frames (0 = no limit).
+            The emulator keeps running after the auto-stop.
+
+    Returns:
+        JSON status (see ``emu_videorec_status``) plus ``start_requested``
+        and ``stop_after_frames``, or ``{"error": "..."}`` (e.g. recording
+        already running, cannot create the file).
+
+    See ``emulator://docs/videorec_workflow`` for the full workflow.
+    """
+    # bool je v Pythonu podtřída int - True by se tiše stalo frames=1.
+    if isinstance(frames, bool) or not isinstance(frames, int) or frames < 0:
+        return json.dumps({"error": "frames must be an integer >= 0"})
+    data: dict[str, Any] = {"frames": frames}
+    if isinstance(path, str) and path:
+        data["path"] = path
+    resp = await _send_request("videorec_start", data)
+    if not resp.get("success", False):
+        return json.dumps({"error": resp.get("error", "videorec_start failed")})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_videorec_stop(wait: bool = True, timeout_s: float = 30.0) -> str:
+    """Stop video recording and (by default) wait until the files are complete.
+
+    The stop is executed at the end of the next emulated frame, or at once
+    while the emulation is paused. A pending (not yet started) recording is
+    cancelled and its file deleted (``start_cancelled``). Finalizing the AVI
+    index and writing the ``.cuts.json`` sidecar runs on a background writer
+    thread; with ``wait=True`` this tool polls ``videorec_status`` until the
+    ``saved`` (or ``failed``) event arrives.
+
+    Args:
+        wait: Wait for the ``saved`` / ``failed`` event (default True).
+        timeout_s: Maximum wait in seconds (default 30).
+
+    Returns:
+        JSON status plus ``stop_requested``; with ``wait`` also ``saved``
+        (bool) - ``true`` when the recording was written successfully, then
+        ``path`` / ``sidecar`` point to the finished files and
+        ``recorded_frames`` is the number of frames in the recording (the
+        status itself is already ``idle`` with ``frames`` = 0). On timeout
+        ``saved`` is ``false`` and ``warning`` explains it. ``{"error": ...}``
+        when no recording is running.
+    """
+    resp = await _send_request("videorec_stop")
+    if not resp.get("success", False):
+        return json.dumps({"error": resp.get("error", "videorec_stop failed")})
+    data = _data_or_error(resp)
+    if not wait or "error" in data or data.get("start_cancelled"):
+        return json.dumps(data)
+    seq0 = (data.get("last_event") or {}).get("seq", 0)
+    deadline = asyncio.get_running_loop().time() + max(0.0, float(timeout_s))
+    while True:
+        st_resp = await _send_request("videorec_status")
+        st = _data_or_error(st_resp)
+        if "error" in st:
+            return json.dumps(st)
+        ev = st.get("last_event") or {}
+        if (st.get("state") == "idle" and ev.get("seq", 0) > seq0
+                and ev.get("kind") in ("saved", "failed")):
+            st["stop_requested"] = True
+            st["saved"] = ev.get("kind") == "saved"
+            # Po uložení je stav IDLE (frames = 0); počet snímků nese událost.
+            st["recorded_frames"] = ev.get("frame", 0)
+            return json.dumps(st)
+        if asyncio.get_running_loop().time() >= deadline:
+            st["stop_requested"] = True
+            st["saved"] = False
+            st["warning"] = ("timed out waiting for the recording to be "
+                             "saved; poll emu_videorec_status")
+            return json.dumps(st)
+        await asyncio.sleep(_VIDEOREC_POLL_S)
+
+
+@mcp.tool()
+async def emu_videorec_pause(paused: Optional[bool] = None) -> str:
+    """Record-pause: keep emulating but stop writing frames (or resume).
+
+    Takes effect at the end of the next emulated frame. Pausing closes the
+    current segment of the recording, resuming opens a new one (the export
+    joins segments with the configured transition, e.g. a fade).
+
+    Args:
+        paused: ``true`` = pause recording, ``false`` = resume, omitted /
+            ``null`` = toggle. Explicit values are idempotent.
+
+    Returns:
+        JSON status plus ``pause_requested`` and ``paused_target``, or
+        ``{"error": ...}`` when no recording is running.
+    """
+    data: dict[str, Any] = {}
+    if paused is not None:
+        if not isinstance(paused, bool):
+            return json.dumps({"error": "paused must be a boolean or null"})
+        data["paused"] = paused
+    resp = await _send_request("videorec_pause", data)
+    if not resp.get("success", False):
+        return json.dumps({"error": resp.get("error", "videorec_pause failed")})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_videorec_marker(label: str = "") -> str:
+    """Add a marker (chapter) at the current position of the recording.
+
+    The marker gets the index of the next recorded frame and is stored in
+    the ``.cuts.json`` sidecar; the export turns markers into YouTube
+    chapters. A retake (loading a snapshot taken during this recording)
+    discards markers at or after the snapshot point.
+
+    Args:
+        label: Marker text; empty = ``"Marker at frame N"``.
+
+    Returns:
+        JSON status plus ``marker_requested`` and ``label`` (the label
+        actually used), or ``{"error": ...}`` when no recording is running
+        (also right after ``emu_videorec_start`` before any frame ran).
+    """
+    data: dict[str, Any] = {}
+    if isinstance(label, str) and label:
+        data["label"] = label
+    resp = await _send_request("videorec_marker", data)
+    if not resp.get("success", False):
+        return json.dumps({"error": resp.get("error", "videorec_marker failed")})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_videorec_timebase(timebase: str) -> str:
+    """Switch the recording timebase: emulated time or real time.
+
+    ``emulated`` (default): every emulated frame is one video frame (turbo
+    and pauses do not change the video). ``realtime``: 50 (60 on MZ-700
+    NTSC and MZ-1500) frames per second of wall-clock time with whatever was on the screen and the sound that
+    went to the speaker - turbo plays fast, pauses follow the INI option
+    ``realtime_pause``. Applies to the running recording (switching to real
+    time within one frame period, back to emulated time at the end of the next emulated
+    frame; each switch starts a new segment) and to the next start.
+    It changes the persistent user setting (saved to the INI on exit, the
+    same as the GUI switch) - on a shared instance switch back to
+    ``emulated`` when done.
+    Without an audio device (``--headless``, ``--mcp-pipe``) the real-time
+    sound is rendered by the same SDL path without playing it.
+
+    Args:
+        timebase: ``"emulated"`` or ``"realtime"``.
+
+    Returns:
+        JSON status (see ``emu_videorec_status``) plus
+        ``timebase_requested``, or ``{"error": ...}`` for an invalid value.
+    """
+    if timebase not in ("emulated", "realtime"):
+        return json.dumps({"error": 'timebase must be "emulated" or "realtime"'})
+    resp = await _send_request("videorec_timebase", {"timebase": timebase})
+    if not resp.get("success", False):
+        return json.dumps({"error": resp.get("error", "videorec_timebase failed")})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_videorec_status() -> str:
+    """Return the video recording status.
+
+    Returns:
+        JSON ``{"supported": bool, "state": "idle"|"recording"|"paused",
+        "start_pending": bool, "frames": int, "fps": int,
+        "duration_s": float, "segment": int, "segment_open": bool,
+        "bytes": int, "parts": int,
+        "retake_mode": "off"|"discard"|"seam", "path": str|null,
+        "sidecar": str|null, "last_error": str|null,
+        "timebase": "emulated"|"realtime",
+        "timebase_effective": "emulated"|"realtime",
+        "rt_activity": "off"|"live"|"frozen"|"skipping",
+        "last_event": null | {"seq": int, "kind": "started"|"saved"|
+        "failed"|"retake"|"seam", "frame": int, "path": str|null,
+        "text": str}}``.
+
+        ``frames`` counts recorded frames (after a retake it drops back to
+        the snapshot point). ``path`` / ``bytes`` / ``parts`` describe the
+        running or the last recording; ``path`` is the first AVI part
+        (long recordings continue in ``<name>_002.avi``, ...).
+        ``retake_mode`` is the mode of the running recording (without a
+        recording: the setting the next start will use); ``discard``
+        rewinds the recording when a snapshot taken during it is loaded.
+        ``timebase`` is the requested timebase (see ``emu_videorec_timebase``),
+        ``timebase_effective`` the one in use right now (``realtime`` with
+        ``realtime_speed = emulated_when_fast`` falls back to ``emulated``
+        while the speed is not 100 %); ``rt_activity`` tells whether real-time
+        recording writes live frames, frozen frames (paused emulation) or
+        skips.
+    """
+    resp = await _send_request("videorec_status")
+    if not resp.get("success", False):
+        return json.dumps({"error": resp.get("error", "videorec_status failed")})
+    return json.dumps(_data_or_error(resp))
+
+
 # === V1.A.7 - Profiler Tools (5) =====================================
 #
 # Profiler V1 (per-function CPU profiler) je v master mz800new mergnut
@@ -3804,12 +4040,20 @@ async def emu_input_send_key(key: str, frames: int = 3) -> str:
     state). Use with explicit user consent.
 
     Args:
-        key: Key identifier. Supported names (case-insensitive):
-            RETURN, ENTER, SPACE, BACKSPACE, INSERT, DELETE, ESC,
-            BREAK, TAB, SHIFT, CONTROL, GRAPH, ALPHA, BLANK,
-            ARROW_UP/DOWN/LEFT/RIGHT, F1..F9.
+        key: Key identifier. ONE name table is shared by
+            emu_input_send_key, emu_input_send_keys (key_names),
+            emu_input_press_key, emu_input_release_key and
+            emu_input_send_keys_with_delays. Supported names
+            (case-insensitive): RETURN/ENTER/CR, SPACE, BACKSPACE/DELETE/DEL,
+            INSERT/INS/INST, ESC/ESCAPE/BREAK, TAB, SHIFT, CONTROL/CTRL,
+            GRAPH, ALPHA, BLANK, LIBRA, F1..F9, cursor keys
+            ARROW_UP/DOWN/LEFT/RIGHT = UP/DOWN/LEFT/RIGHT =
+            CURSOR_UP/DOWN/LEFT/RIGHT, and the arrow-glyph character keys
+            UP_ARROW / DOWN_ARROW (not cursor movement). See
+            emulator://docs/mz800_keyboard.
             ASCII fallback: single-char string ("A", "1", "?") or
-            explicit "ASCII:<char>" prefix.
+            explicit "ASCII:<char>" prefix. An unknown name returns
+            "Unknown key '<name>'. Closest valid names: ...".
         frames: Number of frames to hold the key (default 3, ~60 ms
             at 50 fps PAL). Maximum 600 frames (~12 sec).
 
@@ -3853,7 +4097,9 @@ async def emu_input_send_keys(
         text: Text to type. Format depends on encoding.
         encoding: ``"ascii"`` (default, plain text e.g. ``"RUN\\r"``)
             or ``"key_names"`` (JSON array string of key names
-            e.g. ``'["RUN","RETURN"]'``).
+            e.g. ``'["SHIFT","CURSOR_RIGHT","RETURN"]'``; same names
+            as emu_input_send_key / emu_input_press_key, an unknown name
+            fails the whole call before any key is sent).
         frame_per_key: Frames to hold each key (default 3).
 
     Returns:

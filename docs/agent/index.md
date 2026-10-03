@@ -17,6 +17,7 @@ Read individual topics on demand via `resources/read`.
 | `emulator://docs/sharp_display_code` | Sharp MZ ASCII vs display code vs standard ASCII. Mapping tables, inverse video, decoding `emulator://video/text_dump`. |
 | `emulator://docs/mz800_keyboard` | Sharp MZ-800 keyboard: physical layout, per-key matrix position + emitted characters, modifiers (SHIFT / CTRL / GRAPH / ALPHA), the four character layers, canonical key names for the `emu_input_send_keys` injection tool, recipes for typing graphics / semigraphics. MZ-700 / MZ-1500 as a diff (no TAB, longer ALPHA). |
 | `emulator://docs/cmt_workflow` | CMT cassette workflow: real tape (`emu_cmt_*`) vs cmthack instant load, transport flow, WAV recording, speed ratios / polarity / cpu boost / mzfsize check, SIMPLE_TAPE multi-block seek + per-block speed. Cross-refs `emulator://periph/cmt` and `emulator://periph/cmt/tape`. |
+| `emulator://docs/videorec_workflow` | Recording a gameplay video (all builds): `emu_videorec_*` tools, recipe start -> play with keystrokes -> markers -> snapshot retake -> stop, error messages, export of the recording to MP4. |
 
 ## When to read what
 
@@ -37,6 +38,8 @@ Read individual topics on demand via `resources/read`.
   a multi-block tape -> `cmt_workflow`.
 - Injecting keystrokes via `emu_input_send_keys` and need the exact key names,
   or want to type Sharp graphics / special characters -> `mz800_keyboard`.
+- Recording a video of a game (with chapters and retakes) and exporting it
+  for YouTube -> `videorec_workflow`.
 
 ## Live state resources (not docs)
 

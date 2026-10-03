@@ -414,6 +414,20 @@ static en_MCP_DISPATCH_RESULT _handle_trace_reset(const st_JSONL_MESSAGE *req,
 static en_MCP_DISPATCH_RESULT _handle_trace_save(const st_JSONL_MESSAGE *req,
                                                  char **out_response);
 
+/* video-capture Task 15 - video záznam fwd decls */
+static en_MCP_DISPATCH_RESULT _handle_videorec_start(const st_JSONL_MESSAGE *req,
+                                                     char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_videorec_stop(const st_JSONL_MESSAGE *req,
+                                                    char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_videorec_pause(const st_JSONL_MESSAGE *req,
+                                                     char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_videorec_marker(const st_JSONL_MESSAGE *req,
+                                                      char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_videorec_status(const st_JSONL_MESSAGE *req,
+                                                      char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_videorec_timebase(const st_JSONL_MESSAGE *req,
+                                                        char **out_response);
+
 /* V1.A.7 - Profiler Tools fwd decls */
 static en_MCP_DISPATCH_RESULT _handle_profiler_start(const st_JSONL_MESSAGE *req,
                                                       char **out_response);
@@ -784,8 +798,12 @@ static en_MCP_DISPATCH_TRANSPORT g_transport_kind =
  * stack_history_reset, stack_regions_add, stack_regions_edit,
  * stack_regions_remove, stack_regions_reset_watermark) - celkem
  * 135 entries + sentinel.
+ * video-capture Task 15 přidal 5 Tools video záznamu (= videorec_start,
+ * videorec_stop, videorec_pause, videorec_marker, videorec_status) na
+ * KONEC tabulky.
  * 0017 FÁZE 1 přidal 4 Tracking lifecycle Tools (= trace_start,
- * trace_stop, trace_reset, trace_save) na KONEC tabulky - viz
+ * trace_stop, trace_reset, trace_save) na KONEC tabulky.
+ * video-capture Task 18 přidal videorec_timebase na KONEC tabulky - viz
  * MCP_EXPECTED_CMD_COUNT v tests/mcp/test_dispatch.c pro aktuální total.
  * Tabulka je NULL-terminated (= `name == NULL` u sentinel
  * záznamu). Pořadí v poli definuje i pořadí v hello payload `commands`
@@ -1006,6 +1024,16 @@ static const st_MCP_CMD_MAP_ENTRY g_cmd_map[] = {
     { "trace_stop",              DBGAPI_CMD_TRACE_STOP,               _handle_trace_stop              },
     { "trace_reset",             DBGAPI_CMD_TRACE_RESET,              _handle_trace_reset             },
     { "trace_save",              DBGAPI_CMD_TRACE_SAVE,               _handle_trace_save              },
+    /* video-capture Task 15 - video záznam (všechny platformy). Přidáno na KONEC
+     * tabulky kvůli stabilitě pozičního indexu v hello supported_commands. */
+    { "videorec_start",          DBGAPI_CMD_VIDEOREC,                 _handle_videorec_start          },
+    { "videorec_stop",           DBGAPI_CMD_VIDEOREC,                 _handle_videorec_stop           },
+    { "videorec_pause",          DBGAPI_CMD_VIDEOREC,                 _handle_videorec_pause          },
+    { "videorec_marker",         DBGAPI_CMD_VIDEOREC,                 _handle_videorec_marker         },
+    { "videorec_status",         DBGAPI_CMD_VIDEOREC,                 _handle_videorec_status         },
+    /* video-capture Task 18 - časová základna nahrávání. Přidáno na KONEC
+     * tabulky kvůli stabilitě pozičního indexu v hello supported_commands. */
+    { "videorec_timebase",       DBGAPI_CMD_VIDEOREC,                 _handle_videorec_timebase       },
     /* sentinel */
     { NULL,              DBGAPI_CMD_NONE,              NULL                  },
 };
@@ -6804,6 +6832,401 @@ static en_MCP_DISPATCH_RESULT _handle_trace_save(const st_JSONL_MESSAGE *req,
 }
 
 
+/* ---------------- Video záznam (video-capture Task 15) ---------------- */
+
+/**
+ * @brief Převede en_VIDEOREC_STATE (číselně v st_DBGAPI_VIDEOREC_PARAM) na řetězec.
+ * @param state Hodnota out_state.
+ * @return "idle", "recording", "paused" nebo "unknown".
+ */
+static const char *_videorec_state_str(int state) {
+    switch (state) {
+        case 0: return "idle";
+        case 1: return "recording";
+        case 2: return "paused";
+    }
+    return "unknown";
+}
+
+/**
+ * @brief Převede en_VIDEOREC_EVENT (číselně v st_DBGAPI_VIDEOREC_PARAM) na řetězec.
+ * @param kind Hodnota out_event_kind.
+ * @return "started", "saved", "failed", "retake", "seam" nebo "none".
+ */
+static const char *_videorec_event_str(int kind) {
+    switch (kind) {
+        case 1: return "started";
+        case 2: return "saved";
+        case 3: return "failed";
+        case 4: return "retake";
+        case 5: return "seam";
+    }
+    return "none";
+}
+
+/**
+ * @brief Převede en_VIDEOREC_RETAKE (číselně v st_DBGAPI_VIDEOREC_PARAM) na řetězec.
+ * @param mode Hodnota out_retake_mode.
+ * @return "off", "discard", "seam" nebo "unknown".
+ */
+static const char *_videorec_retake_str(int mode) {
+    switch (mode) {
+        case 0: return "off";
+        case 1: return "discard";
+        case 2: return "seam";
+    }
+    return "unknown";
+}
+
+/**
+ * @brief Převede en_VIDEOREC_TIMEBASE (číselně) na řetězec.
+ * @param tb Hodnota out_timebase / out_timebase_effective.
+ * @return "emulated" nebo "realtime".
+ */
+static const char *_videorec_timebase_str(int tb) {
+    return (tb == 1) ? "realtime" : "emulated";
+}
+
+/**
+ * @brief Převede en_VIDEOREC_RT_ACTIVITY (číselně) na řetězec.
+ * @param a Hodnota out_rt_activity.
+ * @return "off", "live", "frozen", "skipping" nebo "unknown".
+ */
+static const char *_videorec_rt_activity_str(int a) {
+    switch (a) {
+        case 0: return "off";
+        case 1: return "live";
+        case 2: return "frozen";
+        case 3: return "skipping";
+    }
+    return "unknown";
+}
+
+/**
+ * @brief Nastaví řetězcový člen, prázdný řetězec jako JSON null.
+ * @param obj Cílový objekt.
+ * @param key Klíč.
+ * @param val Hodnota (NULL nebo "" => null).
+ */
+static void _videorec_set_str_or_null(JsonObject *obj, const char *key,
+                                      const char *val) {
+    if (val && val[0] != '\0') {
+        json_object_set_string_member(obj, key, val);
+    } else {
+        json_object_set_null_member(obj, key);
+    }
+}
+
+/**
+ * @brief Sestaví JSON objekt souhrnného stavu nahrávání z výstupu DBGAPI_CMD_VIDEOREC.
+ *
+ * Klíče: `supported`, `state` ("idle"/"recording"/"paused"), `start_pending`,
+ * `frames`, `fps`, `duration_s` (frames / fps), `segment`, `segment_open`,
+ * `bytes`, `parts`, `retake_mode` ("off"/"discard"/"seam"; běžící session,
+ * bez nahrávání nastavení pro příští start), `path` (první AVI part nebo null), `sidecar`
+ * (`<path bez .avi>.cuts.json` stejně jako jádro, nebo null), `last_error`
+ * (text nebo null), `last_event` (null nebo objekt `seq`, `kind`, `frame`,
+ * `path`, `text`), `timebase` a `timebase_effective` ("emulated"/"realtime";
+ * požadovaná a skutečná časová základna, Task 18) a `rt_activity`
+ * ("off"/"live"/"frozen"/"skipping").
+ *
+ * @param p Vyplněný parametr (výstupní pole).
+ * @return Nový JsonObject (vlastnictví přechází na volajícího).
+ */
+static JsonObject *_videorec_status_json(const st_DBGAPI_VIDEOREC_PARAM *p) {
+    JsonObject *o = json_object_new();
+    json_object_set_boolean_member(o, "supported", p->out_supported != 0);
+    json_object_set_string_member(o, "state", _videorec_state_str(p->out_state));
+    json_object_set_boolean_member(o, "start_pending", p->out_start_pending != 0);
+    json_object_set_int_member(o, "frames", (gint64) p->out_frames);
+    json_object_set_int_member(o, "fps", (gint64) p->out_fps);
+    json_object_set_double_member(o, "duration_s",
+        p->out_fps ? (double) p->out_frames / (double) p->out_fps : 0.0);
+    json_object_set_int_member(o, "segment", (gint64) p->out_segment);
+    json_object_set_boolean_member(o, "segment_open", p->out_segment_open != 0);
+    json_object_set_int_member(o, "bytes", (gint64) p->out_bytes);
+    json_object_set_int_member(o, "parts", (gint64) p->out_parts);
+    json_object_set_string_member(o, "retake_mode", _videorec_retake_str(p->out_retake_mode));
+    _videorec_set_str_or_null(o, "path", p->out_path);
+    if (p->out_path[0] != '\0') {
+        /* Stejné odvození jako jádro (videorec.c vr_do_start). */
+        size_t len = strlen(p->out_path);
+        char *cuts = (len > 4 && g_ascii_strcasecmp(p->out_path + len - 4, ".avi") == 0)
+            ? g_strdup_printf("%.*s.cuts.json", (int) (len - 4), p->out_path)
+            : g_strdup_printf("%s.cuts.json", p->out_path);
+        json_object_set_string_member(o, "sidecar", cuts);
+        g_free(cuts);
+    } else {
+        json_object_set_null_member(o, "sidecar");
+    }
+    _videorec_set_str_or_null(o, "last_error", p->out_last_error);
+    json_object_set_string_member(o, "timebase", _videorec_timebase_str(p->out_timebase));
+    json_object_set_string_member(o, "timebase_effective", _videorec_timebase_str(p->out_timebase_effective));
+    json_object_set_string_member(o, "rt_activity", _videorec_rt_activity_str(p->out_rt_activity));
+    if (p->out_event_seq != 0) {
+        JsonObject *ev = json_object_new();
+        json_object_set_int_member(ev, "seq", (gint64) p->out_event_seq);
+        json_object_set_string_member(ev, "kind", _videorec_event_str(p->out_event_kind));
+        json_object_set_int_member(ev, "frame", (gint64) p->out_event_frame);
+        _videorec_set_str_or_null(ev, "path", p->out_event_path);
+        json_object_set_string_member(ev, "text", p->out_event_text);
+        json_object_set_object_member(o, "last_event", ev);
+    } else {
+        json_object_set_null_member(o, "last_event");
+    }
+    return o;
+}
+
+/**
+ * @brief Vrátí datový objekt requestu, nebo NULL (chybí / není objekt).
+ * @param req Request.
+ * @return JsonObject vlastněný requestem (neuvolňovat), nebo NULL.
+ */
+static JsonObject *_videorec_data_obj(const st_JSONL_MESSAGE *req) {
+    JsonNode *n = (JsonNode *) jsonl_msg_get_data_node(req);
+    if (!n || json_node_get_node_type(n) != JSON_NODE_OBJECT) return NULL;
+    return json_node_get_object(n);
+}
+
+/**
+ * @brief Zjistí typ volitelného členu: chybí/null, nebo hodnota daného GType.
+ * @param obj  Datový objekt (smí být NULL).
+ * @param key  Klíč.
+ * @param type Očekávaný GType hodnoty (G_TYPE_INT64, G_TYPE_STRING, G_TYPE_BOOLEAN).
+ * @return 0 = chybí nebo null, 1 = přítomen se správným typem, -1 = špatný typ.
+ */
+static int _videorec_member(JsonObject *obj, const char *key, GType type) {
+    if (!obj || !json_object_has_member(obj, key)) return 0;
+    JsonNode *n = json_object_get_member(obj, key);
+    if (!n || json_node_is_null(n)) return 0;
+    if (json_node_get_node_type(n) != JSON_NODE_VALUE) return -1;
+    return (json_node_get_value_type(n) == type) ? 1 : -1;
+}
+
+/**
+ * @brief Společné provedení DBGAPI_CMD_VIDEOREC a sestavení odpovědi.
+ *
+ * Při chybě operace (out_result != OK) vrátí error response s anglickým
+ * textem z jádra (out_error), jinak success se stavem z _videorec_status_json()
+ * doplněným o `extra_key` = true (např. "stop_requested") a o specifické klíče
+ * podle operace (start: `stop_after_frames`; stop: `start_cancelled`;
+ * marker: `label`; pause: `paused_target`).
+ *
+ * @param req_id       ID requestu.
+ * @param p            Vyplněné vstupy (op, path, frames, paused, label).
+ * @param extra_key    Klíč potvrzení operace (NULL = žádný, u status).
+ * @param out_response Výstup.
+ * @return Výsledek dispatch.
+ */
+static en_MCP_DISPATCH_RESULT _videorec_submit(int64_t req_id,
+                                               st_DBGAPI_VIDEOREC_PARAM *p,
+                                               const char *extra_key,
+                                               char **out_response) {
+    p->out_result = DBGAPI_VIDEOREC_RESULT_FAILED;
+    p->out_error[0] = '\0';
+    bool ok = _submit_dbgapi(DBGAPI_CMD_VIDEOREC, p, NULL);
+    if (!ok) {
+        const char *msg = (p->out_error[0] != '\0') ? p->out_error
+                                                     : "videorec command failed";
+        return _err_response(req_id, msg, MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    JsonObject *resp = _videorec_status_json(p);
+    if (extra_key) json_object_set_boolean_member(resp, extra_key, TRUE);
+    switch (p->op) {
+        case DBGAPI_VIDEOREC_OP_START:
+            json_object_set_int_member(resp, "stop_after_frames", (gint64) p->frames);
+            break;
+        case DBGAPI_VIDEOREC_OP_STOP:
+            json_object_set_boolean_member(resp, "start_cancelled",
+                                           p->out_start_cancelled != 0);
+            break;
+        case DBGAPI_VIDEOREC_OP_MARKER:
+            json_object_set_string_member(resp, "label", p->out_label);
+            break;
+        case DBGAPI_VIDEOREC_OP_PAUSE:
+            if (p->paused < 0) {
+                json_object_set_null_member(resp, "paused_target");
+            } else {
+                json_object_set_boolean_member(resp, "paused_target", p->paused != 0);
+            }
+            break;
+        default:
+            break;
+    }
+    return _ok_response(req_id, resp, out_response);
+}
+
+/**
+ * @brief `videorec_start` handler - zahájí video záznam (všechny platformy).
+ *
+ * Parametry (vše volitelné):
+ *   - `path` (string) - cílový .avi; existující soubor se přepíše. Bez path
+ *     (nebo "") vygenerované jméno `<platforma>_YYYYMMDD_HHMMSS.avi` ve výchozím
+ *     adresáři nahrávek (nikdy nepřepíše existující nahrávku).
+ *   - `frames` (int >= 0) - auto-stop po tolika zapsaných snímcích
+ *     (mechanismus stop_after_frames jako CLI `--record-frames`, ale bez
+ *     ukončení emulátoru); 0 = bez limitu.
+ *
+ * Soubor se vytvoří synchronně (chyba např. neexistujícího adresáře se vrátí
+ * hned); vlastní nahrávání začne na nejbližším konci emulovaného snímku -
+ * v pauze emulace tedy až po jejím rozběhnutí (`start_pending` = true).
+ *
+ * Response: stav (viz _videorec_status_json()) + `start_requested`,
+ * `stop_after_frames`. Chyby (anglicky): parametry platformy nedávají celý
+ * počet vzorků na snímek, nahrávání už běží, soubor nelze vytvořit; neplatné
+ * typy parametrů => INVALID_PARAMS.
+ */
+static en_MCP_DISPATCH_RESULT _handle_videorec_start(const st_JSONL_MESSAGE *req,
+                                                     char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    int has_path = _videorec_member(obj, "path", G_TYPE_STRING);
+    int has_frames = _videorec_member(obj, "frames", G_TYPE_INT64);
+    if (has_path < 0 || has_frames < 0) {
+        return _err_response(req_id,
+                             "Invalid parameters: path must be a string, frames an integer",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    gint64 frames = has_frames ? json_object_get_int_member(obj, "frames") : 0;
+    if (frames < 0) {
+        return _err_response(req_id, "Invalid parameters: frames must be >= 0",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    st_DBGAPI_VIDEOREC_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_VIDEOREC_OP_START;
+    p.path = has_path ? json_object_get_string_member(obj, "path") : NULL;
+    if (p.path && p.path[0] == '\0') p.path = NULL;
+    p.frames = (uint64_t) frames;
+    p.paused = -1;
+    return _videorec_submit(req_id, &p, "start_requested", out_response);
+}
+
+/**
+ * @brief `videorec_stop` handler - ukončí video záznam.
+ *
+ * Bez parametrů. Stop se provede na nejbližším konci snímku, v pauze emulace
+ * hned v paused smyčce; čeká-li nezpracovaný start, zruší ho (soubor se
+ * smaže, `start_cancelled` = true). Dokončení zápisu (AVI index, sidecar)
+ * běží asynchronně ve writer vlákně - hotovou nahrávku ohlásí událost
+ * `saved` (nebo `failed`) v `last_event` (viz `videorec_status`).
+ *
+ * Response: stav + `stop_requested`, `start_cancelled`. Bez nahrávání chyba
+ * "Video recording is not running".
+ */
+static en_MCP_DISPATCH_RESULT _handle_videorec_stop(const st_JSONL_MESSAGE *req,
+                                                    char **out_response) {
+    st_DBGAPI_VIDEOREC_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_VIDEOREC_OP_STOP;
+    p.paused = -1;
+    return _videorec_submit(jsonl_msg_get_req_id(req), &p, "stop_requested",
+                            out_response);
+}
+
+/**
+ * @brief `videorec_pause` handler - record-pause (emulace běží dál, snímky se nezapisují).
+ *
+ * Parametr `paused` (bool, volitelný): true = pauza, false = pokračovat,
+ * chybí/null = přepnout. Explicitní hodnota je idempotentní
+ * (videorec_request_pause_set()). Provede se na nejbližším konci snímku;
+ * pauza uzavře segment, pokračování otevře nový.
+ *
+ * Response: stav + `pause_requested`, `paused_target` (bool nebo null u
+ * přepnutí). Bez nahrávání chyba "Video recording is not running".
+ */
+static en_MCP_DISPATCH_RESULT _handle_videorec_pause(const st_JSONL_MESSAGE *req,
+                                                     char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    int has_paused = _videorec_member(obj, "paused", G_TYPE_BOOLEAN);
+    if (has_paused < 0) {
+        return _err_response(req_id, "Invalid parameters: paused must be a boolean",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    st_DBGAPI_VIDEOREC_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_VIDEOREC_OP_PAUSE;
+    p.paused = has_paused ? (json_object_get_boolean_member(obj, "paused") ? 1 : 0) : -1;
+    return _videorec_submit(req_id, &p, "pause_requested", out_response);
+}
+
+/**
+ * @brief `videorec_marker` handler - vloží marker (kapitolu) do nahrávky.
+ *
+ * Parametr `label` (string, volitelný): popisek; bez něj "Marker at frame N".
+ * Marker dostane index snímku, který se zapíše jako další (zpracuje se na
+ * nejbližším konci snímku) a zapíše se do sidecaru (`markers`).
+ *
+ * Response: stav + `marker_requested`, `label`. Bez nahrávání (i při ještě
+ * nezpracovaném startu) chyba z jádra.
+ */
+static en_MCP_DISPATCH_RESULT _handle_videorec_marker(const st_JSONL_MESSAGE *req,
+                                                      char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    int has_label = _videorec_member(obj, "label", G_TYPE_STRING);
+    if (has_label < 0) {
+        return _err_response(req_id, "Invalid parameters: label must be a string",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    st_DBGAPI_VIDEOREC_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_VIDEOREC_OP_MARKER;
+    p.paused = -1;
+    p.label = has_label ? json_object_get_string_member(obj, "label") : NULL;
+    return _videorec_submit(req_id, &p, "marker_requested", out_response);
+}
+
+/**
+ * @brief `videorec_status` handler - souhrnný stav video záznamu.
+ *
+ * Bez parametrů. Response viz _videorec_status_json(). Volá se i bez
+ * nahrávání a na nepodporované platformě (`supported` = false).
+ */
+static en_MCP_DISPATCH_RESULT _handle_videorec_status(const st_JSONL_MESSAGE *req,
+                                                      char **out_response) {
+    st_DBGAPI_VIDEOREC_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_VIDEOREC_OP_STATUS;
+    p.paused = -1;
+    return _videorec_submit(jsonl_msg_get_req_id(req), &p, NULL, out_response);
+}
+
+
+/**
+ * @brief `videorec_timebase` handler - časová základna nahrávání (Task 18).
+ *
+ * Parametr `timebase` (string, povinný): "emulated" (jeden emulovaný snímek
+ * = jeden video snímek) nebo "realtime" (podle reality: 50 snímků za sekundu
+ * reálného času, co šlo na obrazovku, zvuk z výstupu SDL cesty). Platí pro
+ * běžící nahrávku (přepnutí do realtime na nejbližším ticku vzorkovače,
+ * zpět na nejbližším konci emulovaného snímku; hranice segmentu) i pro
+ * příští start (nastavení INI `timebase`). Bez nahrávání není chyba.
+ *
+ * Response: stav + `timebase_requested`. Neplatná nebo chybějící hodnota
+ * => INVALID_PARAMS.
+ */
+static en_MCP_DISPATCH_RESULT _handle_videorec_timebase(const st_JSONL_MESSAGE *req,
+                                                        char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    int has_tb = _videorec_member(obj, "timebase", G_TYPE_STRING);
+    const char *tb = (has_tb > 0) ? json_object_get_string_member(obj, "timebase") : NULL;
+    if (!tb || (strcmp(tb, "emulated") != 0 && strcmp(tb, "realtime") != 0)) {
+        return _err_response(req_id,
+                             "Invalid parameters: timebase must be \"emulated\" or \"realtime\"",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    st_DBGAPI_VIDEOREC_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_VIDEOREC_OP_TIMEBASE;
+    p.paused = -1;
+    p.timebase = (strcmp(tb, "realtime") == 0) ? 1 : 0;
+    return _videorec_submit(req_id, &p, "timebase_requested", out_response);
+}
+
+
 /* ---------------- Profiler Tools (5, V1.A.7) ---------------- */
 
 /**
@@ -8034,6 +8457,40 @@ typedef struct st_HID_KEYMAP_RESOLVED {
 } st_HID_KEYMAP_RESOLVED;
 extern bool hid_keymap_resolve(const char *name, st_HID_KEYMAP_RESOLVED *out);
 extern bool hid_keymap_resolve_ascii(char c, st_HID_KEYMAP_RESOLVED *out);
+extern void hid_keymap_suggest(const char *name, char *out, size_t out_size);
+
+
+/**
+ * @brief Sestaví chybovou odpověď "Unknown key" s nápovědou.
+ *
+ * Zpráva má tvar `Unknown key 'name'. Closest valid names: A, B, C`
+ * (pokud nic podobného není, místo návrhů odkaz na
+ * emulator://docs/mz800_keyboard). Prefix "Unknown key" zůstává kvůli
+ * zpětné kompatibilitě klientů testujících podřetězec.
+ *
+ * @param[in]  req_id        id requestu
+ * @param[in]  key           neznámé jméno klávesy (nesmí být NULL)
+ * @param[out] out_response  vlastněná odpověď (caller free)
+ * @return výsledek _err_response (MCP_DISPATCH_INVALID_PARAMS)
+ */
+static en_MCP_DISPATCH_RESULT _unknown_key_response(int64_t req_id,
+                                                    const char *key,
+                                                    char **out_response) {
+    char sugg[160];
+    hid_keymap_suggest(key, sugg, sizeof(sugg));
+    char *msg;
+    if (sugg[0] != '\0') {
+        msg = g_strdup_printf("Unknown key '%s'. Closest valid names: %s",
+                              key, sugg);
+    } else {
+        msg = g_strdup_printf("Unknown key '%s'. See emulator://docs/"
+                              "mz800_keyboard for valid key names", key);
+    }
+    en_MCP_DISPATCH_RESULT rc = _err_response(
+        req_id, msg, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    g_free(msg);
+    return rc;
+}
 
 
 /**
@@ -8397,8 +8854,7 @@ static en_MCP_DISPATCH_RESULT _handle_input_send_key(
 
     st_HID_KEYMAP_RESOLVED res;
     if (!hid_keymap_resolve(key, &res)) {
-        return _err_response(req_id, "Unknown key",
-                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+        return _unknown_key_response(req_id, key, out_response);
     }
     bool landed = false;
     if (!_hid_press_hold_release(&res, (int)frames, true, &landed)) {
@@ -8430,6 +8886,8 @@ static en_MCP_DISPATCH_RESULT _handle_input_send_key(
  *                            encoding=key_names JSON array string
  *                            (např. "[\"RUN\",\"RETURN\"]") - kde
  *                            položky jsou jména kláves.
+ *                            Neznámé jméno = chyba 422 "Unknown key" s návrhy
+ *                            PŘED odesláním jakékoli klávesy.
  *   encoding      (string) - "ascii" (default) nebo "key_names"
  *   frame_per_key (int)    - počet framů na klávesu (default 3)
  *
@@ -8515,6 +8973,22 @@ static en_MCP_DISPATCH_RESULT _handle_input_send_keys(
         JsonArray *arr = json_node_get_array(root);
         guint len = json_array_get_length(arr);
         if (len > HID_TEXT_MAX_LEN) len = HID_TEXT_MAX_LEN;
+        /* Předvalidace: neznámé jméno = chyba s nápovědou PŘED odesláním
+         * jakékoli klávesy (dřív se tiše přeskočilo). */
+        for (guint i = 0; i < len; i++) {
+            JsonNode *el = json_array_get_element(arr, i);
+            if (!el || json_node_get_node_type(el) != JSON_NODE_VALUE) {
+                continue;
+            }
+            const char *kname = json_node_get_string(el);
+            st_HID_KEYMAP_RESOLVED chk;
+            if (kname && kname[0] != '\0' && !hid_keymap_resolve(kname, &chk)) {
+                en_MCP_DISPATCH_RESULT erc =
+                    _unknown_key_response(req_id, kname, out_response);
+                g_object_unref(parser);
+                return erc;
+            }
+        }
         for (guint i = 0; i < len; i++) {
             JsonNode *el = json_array_get_element(arr, i);
             if (!el || json_node_get_node_type(el) != JSON_NODE_VALUE) {
@@ -8587,8 +9061,7 @@ static en_MCP_DISPATCH_RESULT _handle_input_press_key(
     }
     st_HID_KEYMAP_RESOLVED res;
     if (!hid_keymap_resolve(key, &res)) {
-        return _err_response(req_id, "Unknown key",
-                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+        return _unknown_key_response(req_id, key, out_response);
     }
     if (!_hid_submit_key(DBGAPI_CMD_INPUT_PRESS_KEY, &res)) {
         return _err_response(req_id, "input_press_key failed",
@@ -8637,8 +9110,7 @@ static en_MCP_DISPATCH_RESULT _handle_input_release_key(
     }
     st_HID_KEYMAP_RESOLVED res;
     if (!hid_keymap_resolve(key, &res)) {
-        return _err_response(req_id, "Unknown key",
-                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+        return _unknown_key_response(req_id, key, out_response);
     }
     if (!_hid_submit_key(DBGAPI_CMD_INPUT_RELEASE_KEY, &res)) {
         return _err_response(req_id, "input_release_key failed",
@@ -8742,6 +9214,21 @@ static en_MCP_DISPATCH_RESULT _handle_input_send_keys_with_delays(
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
     if (len > HID_EVENTS_MAX) len = HID_EVENTS_MAX;
+
+    /* Předvalidace jmen kláves (chyba s nápovědou před odesláním čehokoli). */
+    for (guint i = 0; i < len; i++) {
+        JsonNode *el = json_array_get_element(arr, i);
+        if (!el || json_node_get_node_type(el) != JSON_NODE_OBJECT) {
+            continue;
+        }
+        JsonObject *eobj = json_node_get_object(el);
+        const char *key = json_object_has_member(eobj, "key")
+            ? json_object_get_string_member(eobj, "key") : NULL;
+        st_HID_KEYMAP_RESOLVED chk;
+        if (key && key[0] != '\0' && !hid_keymap_resolve(key, &chk)) {
+            return _unknown_key_response(req_id, key, out_response);
+        }
+    }
 
     int events_processed = 0;
     gint64 total_frames = 0;

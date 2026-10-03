@@ -11,8 +11,15 @@ extern "C" {
 #endif
 
 /**
- * Registrace konfiguračních elementů do cfgmain systému
- * Volat z cfgmain_init() nebo z snapshot_init()
+ * @brief Zaregistruje sekci [SNAPSHOT], načte ji z INI a propaguje do g_snapshot_settings.
+ *
+ * Globální cfgroot_propagate se v emulátoru nevolá, proto modul sám volá
+ * cfgmodule_parse + cfgmodule_propagate. Chybí-li sekce nebo soubor, platí
+ * výchozí hodnoty elementů.
+ *
+ * @pre g_cfgmain existuje (volá cfgmain_init()).
+ * @post g_snapshot_settings odpovídá INI (resp. výchozím hodnotám).
+ * @note Volat jednou; vlákno: hlavní, před startem emulace.
  */
 void snapshot_config_init(void);
 

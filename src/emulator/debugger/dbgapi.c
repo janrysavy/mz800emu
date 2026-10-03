@@ -61,6 +61,8 @@
 #include "trace/intlog.h"
 #include "trace/hwlog.h"
 #include "snapshot/snapshot.h"
+#include "videorec/videorec.h"
+#include "iface/iface_audio.h"
 #include "symbols/sym_db.h"
 #include "mzarch/mzarch.h"
 #include "mzarch/mzarch_platform.h"
@@ -802,6 +804,8 @@ const char *dbgapi_cmd_to_str(en_DBGAPI_CMD cmd)
         case DBGAPI_CMD_TRACE_RESET:               return "trace_reset";
         case DBGAPI_CMD_TRACE_SAVE:                return "trace_save";
         case DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE:  return "debugger_state_recompute";
+        /* video-capture Task 15 - video záznam */
+        case DBGAPI_CMD_VIDEOREC:                  return "videorec";
         /* V1.B.1 - Media Tools */
         case DBGAPI_CMD_MEDIA_LOAD_MZF:            return "media_load_mzf";
         case DBGAPI_CMD_MEDIA_LOAD_BINARY:         return "media_load_binary";
@@ -1094,6 +1098,186 @@ static void dbgapi_bp_recompute_cb_gating ( void )
      * cesty nesyncují, proto flag přepočítáme tady, před swapem callbacků. */
     breakpoints_recompute_has_enabled ( );
     mzarch_platform_fn_debugger_state_changed ( TEST_DEBUGGER_ACTIVE );
+}
+
+
+/* Struktura st_DBGAPI_VIDEOREC_PARAM nese stav a druh události číselně (bez
+ * závislosti na videorec.h); hlídáme, že čísla odpovídají enumům jádra. */
+G_STATIC_ASSERT ( VIDEOREC_STATE_IDLE == 0 && VIDEOREC_STATE_RECORDING == 1 && VIDEOREC_STATE_PAUSED == 2 );
+G_STATIC_ASSERT ( VIDEOREC_EVENT_STARTED == 1 && VIDEOREC_EVENT_SAVED == 2 && VIDEOREC_EVENT_FAILED == 3
+                  && VIDEOREC_EVENT_RETAKE == 4 && VIDEOREC_EVENT_SEAM == 5 );
+G_STATIC_ASSERT ( VIDEOREC_RETAKE_OFF == 0 && VIDEOREC_RETAKE_DISCARD == 1 && VIDEOREC_RETAKE_SEAM == 2 );
+G_STATIC_ASSERT ( sizeof ( ( (st_VIDEOREC_EVENT *) 0 )->path ) == DBGAPI_VIDEOREC_PATH_MAX );
+G_STATIC_ASSERT ( sizeof ( ( (st_VIDEOREC_STATUS *) 0 )->path ) == DBGAPI_VIDEOREC_PATH_MAX );
+G_STATIC_ASSERT ( sizeof ( ( (st_VIDEOREC_EVENT *) 0 )->text ) == DBGAPI_VIDEOREC_TEXT_MAX );
+
+
+/**
+ * @brief Provede operaci DBGAPI_CMD_VIDEOREC a vyplní souhrnný stav (emu vlákno).
+ *
+ * Běží na emu vlákně z dbgapi_emu_dispatch(), tj. mimo hooky modulu videorec
+ * (mezi zpracováním konců snímků). Kontrola "nahrává se?" a následný požadavek
+ * proto nejsou v souběhu se zpracováním požadavků na konci snímku (to dělá
+ * totéž vlákno); souběh je možný jen s UI vláknem (tlačítka nahrávání), který
+ * řeší zámek modulu - nejhůř dojde k chybě "already running" nebo no-op.
+ *
+ * Operace:
+ * - START: st_VIDEOREC_START s cestou, úrovněmi kanálů
+ *   (iface_audio_build_videorec_levels(), stejně jako UI a CLI) a
+ *   `stop_after_frames` = `frames`; `quit_after_stop` = false. Chyba z
+ *   videorec_request_start() (videorec_get_last_error()) jde do out_error.
+ *   videorec_request_start() vytváří cílový AVI soubor **synchronně na emu
+ *   vlákně** (a u prázdné cesty ještě zkouší existenci vygenerovaných jmen
+ *   `_2`, `_3`, ... a případně zakládá výstupní adresář) - emulace tedy po
+ *   dobu těchto souborových operací stojí (jednorázově při startu).
+ * - STOP: bez nahrávání a bez čekajícího startu => NOT_RUNNING; jinak
+ *   videorec_request_stop() (čekající start zruší - out_start_cancelled).
+ * - PAUSE / MARKER: vyžadují stav RECORDING nebo PAUSED, jinak NOT_RUNNING
+ *   (s rozlišením čekajícího startu v textu chyby).
+ * - STATUS: jen stav.
+ * - TIMEBASE: videorec_request_timebase() (0 = emulated, 1 = realtime); funguje
+ *   i bez nahrávání (změní nastavení pro příští start) - vždy OK.
+ *
+ * @param p Parametr (vstupy podle op); výstupy se vždy vyplní.
+ * @return true pokud operace uspěla (out_result == DBGAPI_VIDEOREC_RESULT_OK).
+ *
+ * @par Side effects START vytvoří cílový soubor; marker/pauza/stop zařadí
+ *      požadavek na nejbližší konec snímku (stop v pauze emulace zpracuje
+ *      paused smyčka).
+ */
+static bool dbgapi_videorec_execute ( st_DBGAPI_VIDEOREC_PARAM *p )
+{
+    st_VIDEOREC_STATUS st;
+    videorec_get_status ( &st );
+    bool running = ( st.state != VIDEOREC_STATE_IDLE );
+
+    p->out_result = DBGAPI_VIDEOREC_RESULT_OK;
+    p->out_error[0] = '\0';
+    p->out_label[0] = '\0';
+    p->out_start_cancelled = 0;
+
+    switch ( p->op )
+    {
+        case DBGAPI_VIDEOREC_OP_START:
+        {
+            st_VIDEOREC_START rec;
+            memset ( &rec, 0, sizeof ( rec ) );
+            g_strlcpy ( rec.path, p->path ? p->path : "", sizeof ( rec.path ) );
+            iface_audio_build_videorec_levels ( rec.level, VIDEOREC_AUDIO_MAX_CHANNELS );
+            rec.stop_after_frames = p->frames;
+            rec.quit_after_stop = false;
+            if ( !videorec_request_start ( &rec ) )
+            {
+                p->out_result = DBGAPI_VIDEOREC_RESULT_FAILED;
+                g_strlcpy ( p->out_error, videorec_get_last_error ( ), sizeof ( p->out_error ) );
+            };
+            break;
+        }
+
+        case DBGAPI_VIDEOREC_OP_STOP:
+            if ( !running && !st.start_pending )
+            {
+                p->out_result = DBGAPI_VIDEOREC_RESULT_NOT_RUNNING;
+                g_strlcpy ( p->out_error, "Video recording is not running", sizeof ( p->out_error ) );
+                break;
+            };
+            p->out_start_cancelled = ( !running && st.start_pending ) ? 1 : 0;
+            videorec_request_stop ( );
+            break;
+
+        case DBGAPI_VIDEOREC_OP_PAUSE:
+        case DBGAPI_VIDEOREC_OP_MARKER:
+            if ( !running )
+            {
+                p->out_result = DBGAPI_VIDEOREC_RESULT_NOT_RUNNING;
+                g_strlcpy ( p->out_error,
+                            st.start_pending
+                                ? "Video recording has not started yet: it starts at the end of the next emulated frame (run the emulation first)"
+                                : "Video recording is not running",
+                            sizeof ( p->out_error ) );
+                break;
+            };
+            if ( p->op == DBGAPI_VIDEOREC_OP_PAUSE )
+            {
+                if ( p->paused < 0 )
+                {
+                    videorec_request_pause_toggle ( );
+                }
+                else
+                {
+                    (void) videorec_request_pause_set ( p->paused != 0 );
+                };
+            }
+            else
+            {
+                if ( p->label && p->label[0] != '\0' )
+                {
+                    g_strlcpy ( p->out_label, p->label, sizeof ( p->out_label ) );
+                }
+                else
+                {
+                    /* Výchozí popisek jde do sidecaru (strojově čtený) - anglicky. */
+                    g_snprintf ( p->out_label, sizeof ( p->out_label ), "Marker at frame %" G_GUINT64_FORMAT,
+                                 (guint64) st.frames );
+                };
+                videorec_request_marker ( p->out_label );
+            };
+            break;
+
+        case DBGAPI_VIDEOREC_OP_STATUS:
+            break;
+
+        case DBGAPI_VIDEOREC_OP_TIMEBASE:
+            (void) videorec_request_timebase ( p->timebase ? VIDEOREC_TIMEBASE_REALTIME : VIDEOREC_TIMEBASE_EMULATED );
+            break;
+
+        default:
+            p->out_result = DBGAPI_VIDEOREC_RESULT_FAILED;
+            g_strlcpy ( p->out_error, "Unknown videorec operation", sizeof ( p->out_error ) );
+            break;
+    };
+
+    /* Souhrnný stav po operaci. */
+    videorec_get_status ( &st );
+    p->out_supported = videorec_is_supported ( ) ? 1 : 0;
+    p->out_state = (int) st.state;
+    p->out_start_pending = st.start_pending ? 1 : 0;
+    p->out_frames = st.frames;
+    p->out_fps = videorec_get_fps ( );
+    p->out_segment = st.segment;
+    p->out_segment_open = st.segment_open ? 1 : 0;
+    p->out_bytes = st.bytes;
+    p->out_parts = st.parts;
+    /* Režim retake: běžící (i čekající) session má kopii ze startu, jinak platí nastavení pro příští start. */
+    p->out_retake_mode = ( st.state != VIDEOREC_STATE_IDLE || st.start_pending )
+                             ? (int) st.retake_mode
+                             : (int) g_videorec_settings.retake_mode;
+    g_strlcpy ( p->out_path, st.path, sizeof ( p->out_path ) );
+    g_strlcpy ( p->out_last_error, videorec_get_last_error ( ), sizeof ( p->out_last_error ) );
+    p->out_timebase = (int) st.timebase;
+    p->out_timebase_effective = (int) st.timebase_effective;
+    p->out_rt_activity = (int) st.rt_activity;
+
+    st_VIDEOREC_EVENT ev;
+    uint32_t seq = videorec_get_event_seq ( );
+    if ( seq != 0 && videorec_get_event ( seq, &ev ) )
+    {
+        p->out_event_seq = ev.seq;
+        p->out_event_kind = (int) ev.kind;
+        p->out_event_frame = ev.frame;
+        g_strlcpy ( p->out_event_path, ev.path, sizeof ( p->out_event_path ) );
+        g_strlcpy ( p->out_event_text, ev.text, sizeof ( p->out_event_text ) );
+    }
+    else
+    {
+        p->out_event_seq = 0;
+        p->out_event_kind = 0;
+        p->out_event_frame = 0;
+        p->out_event_path[0] = '\0';
+        p->out_event_text[0] = '\0';
+    };
+
+    return ( p->out_result == DBGAPI_VIDEOREC_RESULT_OK );
 }
 
 
@@ -3793,6 +3977,20 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             int rc = dbgapi_trace_lifecycle ( p->channel, op, path );
             p->out_result = rc;
             rq->success = ( rc == 0 );
+            break;
+        }
+
+        /* --- Video záznam (video-capture Task 15) ---
+         * Logika v dbgapi_videorec_execute(); handler jen validuje param. */
+        case DBGAPI_CMD_VIDEOREC:
+        {
+            st_DBGAPI_VIDEOREC_PARAM *p = (st_DBGAPI_VIDEOREC_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            rq->success = dbgapi_videorec_execute ( p );
             break;
         }
 

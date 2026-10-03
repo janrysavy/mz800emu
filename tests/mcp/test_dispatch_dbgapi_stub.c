@@ -165,6 +165,9 @@ void dispatch_stub_reset(void) {
     if (g_stub_state.trace_save_last_path) {
         g_free(g_stub_state.trace_save_last_path);
     }
+    /* video-capture Task 15 - uvolnit videorec heap stringy. */
+    g_free(g_stub_state.videorec_last_path);
+    g_free(g_stub_state.videorec_last_label);
     /* V1.A.7 - uvolnit profiler export heap string. */
     if (g_stub_state.profiler_export_last_path) {
         g_free(g_stub_state.profiler_export_last_path);
@@ -905,6 +908,37 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                 }
                 p->out_result = g_stub_state.trace_fake_result;
                 if (p->out_result != 0) {
+                    return false;
+                }
+            }
+            break;
+
+        /* video-capture Task 15 - videorec_* (jeden cmd s operací) */
+        case DBGAPI_CMD_VIDEOREC:
+            if (data_ptr) {
+                st_DBGAPI_VIDEOREC_PARAM *p =
+                    (st_DBGAPI_VIDEOREC_PARAM *)data_ptr;
+                g_stub_state.videorec_calls++;
+                g_stub_state.videorec_last_op = (int)p->op;
+                g_free(g_stub_state.videorec_last_path);
+                g_stub_state.videorec_last_path =
+                    p->path ? g_strdup(p->path) : NULL;
+                g_stub_state.videorec_last_frames = p->frames;
+                g_stub_state.videorec_last_paused = p->paused;
+                g_free(g_stub_state.videorec_last_label);
+                g_stub_state.videorec_last_label =
+                    p->label ? g_strdup(p->label) : NULL;
+                g_stub_state.videorec_last_timebase = p->timebase;
+                /* Výstupy z fake struktury, vstupy zachovat. */
+                st_DBGAPI_VIDEOREC_PARAM in = *p;
+                *p = g_stub_state.videorec_fake;
+                p->op = in.op;
+                p->path = in.path;
+                p->frames = in.frames;
+                p->paused = in.paused;
+                p->label = in.label;
+                p->timebase = in.timebase;
+                if (p->out_result != DBGAPI_VIDEOREC_RESULT_OK) {
                     return false;
                 }
             }

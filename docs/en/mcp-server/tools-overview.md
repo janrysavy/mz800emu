@@ -67,6 +67,12 @@ documented separately in [Resources overview](resources-overview.md).
 | `emu_trace_stop` | no | Stop trace recording of a channel (segment closed) |
 | `emu_trace_reset` | no | Clear the current trace channel segment |
 | `emu_trace_save` | no | Save/redirect a trace channel segment (optional path) |
+| `emu_videorec_start` | yes (creates / overwrites a file) | Start lossless video recording (optional path, auto-stop after N frames) |
+| `emu_videorec_stop` | no | Stop video recording, by default wait until the files are saved |
+| `emu_videorec_pause` | no | Recording pause (emulation keeps running): pause / resume / toggle |
+| `emu_videorec_marker` | no | Marker (chapter) at the current recording position |
+| `emu_videorec_status` | no | Video recording status (state, frames, segment, size, path, last event) |
+| `emu_videorec_timebase` | no | Recording timebase: emulated time or real time |
 | `emu_profiler_start` | no | Start CPU profiler (hot-path overhead) |
 | `emu_profiler_stop` | no | Stop profiler (data preserved) |
 | `emu_profiler_reset` | no | Clear profiler aggregator |
@@ -859,6 +865,100 @@ Saves / redirects the channel segment. Argument:
 
 Returns `{"saved": true, "path": <str|null>}`.
 
+## Video recording tools
+
+Lossless recording of the picture and sound of the emulated computer (see
+[Video recording](../video-recording.md)), controlled by an AI client:
+start, play the game, markers, retake via snapshot, stop. The complete
+workflow including the export to MP4 is in the MCP document
+`emulator://docs/videorec_workflow`.
+
+By default the recording uses emulation time (one emulated frame = one
+video frame, 50 frames/s, 60 on MZ-700 NTSC and MZ-1500), so pauses between tool calls and MAX SPEED do
+not show in the video. The real-time mode (`emu_videorec_timebase`)
+records what was seen and heard in real time instead. Requests (start, pause, marker, stop) take effect at the end of
+the next emulated frame; a stop while emulation is paused is executed
+immediately. Available in every build (MZ-800, MZ-700 PAL/NTSC,
+MZ-1500).
+
+Every successful reply contains the recording status:
+
+| Field | Meaning |
+|-------|---------|
+| `supported` | Recording is available (always `true`). |
+| `state` | `idle`, `recording` or `paused` (recording pause). |
+| `start_pending` | Start accepted, recording begins at the end of the next frame. |
+| `frames`, `fps`, `duration_s` | Number of recorded frames, frame rate, length in seconds. |
+| `segment`, `segment_open` | Current segment number (from 1) and whether it is open. |
+| `bytes`, `parts` | Size and number of AVI files of the running or last recording. |
+| `retake_mode` | `discard`, `seam` or `off` - what loading a snapshot does. |
+| `path`, `sidecar` | First AVI file and the `.cuts.json` file. |
+| `last_error` | Last error or `null`. |
+| `last_event` | `null` or `{seq, kind, frame, path, text}`; `kind` = `started`, `saved`, `failed`, `retake`, `seam`. |
+| `timebase`, `timebase_effective` | Requested and actual timebase (`emulated` / `realtime`); the actual one is `emulated` even with `realtime` requested when `realtime_speed = emulated_when_fast` and the speed is not 100 %. |
+| `rt_activity` | Real-time mode: `off` (emulated time), `live` (live picture), `frozen` (emulation paused, frozen picture), `skipping` (nothing written). |
+
+### `emu_videorec_start` (sensitive - creates / overwrites a file)
+
+Arguments:
+
+- `path` (string, optional) - target `.avi`; an existing file is
+  overwritten. Without it the name `mz800_YYYYMMDD_HHMMSS.avi` is
+  generated in the recordings output folder.
+- `frames` (int, optional, default 0) - stop automatically after this
+  many recorded frames (the emulator keeps running); 0 = no limit.
+
+The file is created immediately, so an error (e.g. `Cannot create video
+file: <path>`) is returned at once. The frame on which the start is
+processed is not recorded. Returns the status plus `start_requested` and
+`stop_after_frames`. Error `Video recording is already running` if a
+recording is in progress.
+
+### `emu_videorec_stop`
+
+Arguments: `wait` (bool, default `true`), `timeout_s` (default 30). With
+`wait` the tool waits until the recording files are complete and returns
+`saved` (bool) and `recorded_frames`. Stopping a start that has not been
+processed yet cancels it and deletes the file (`start_cancelled: true`).
+Without a recording: `Video recording is not running`.
+
+### `emu_videorec_pause`
+
+Argument `paused` (bool, optional): `true` = pause recording, `false` =
+resume, omitted = toggle. Emulation keeps running; resuming starts a new
+segment (a cut with a transition in the export). Returns the status plus
+`pause_requested` and `paused_target`.
+
+### `emu_videorec_marker`
+
+Argument `label` (string, optional; default `Marker at frame N`). The
+marker gets the index of the next recorded frame and becomes a chapter on
+export. Markers at or after the point of a snapshot used for a retake are
+discarded together with the discarded part of the recording.
+
+### `emu_videorec_status`
+
+No arguments. Returns the status described above.
+
+### `emu_videorec_timebase`
+
+Argument `timebase` (string, required): `emulated` or `realtime`. Applies
+to the running recording and to the next start (INI `[VIDEOREC]
+timebase`). It therefore changes the persistent user setting - the same
+as switching in the GUI (`Alt + U`, the recording control window, the
+settings dialog): it is saved to the INI on exit (unless running with
+`--no-save-ini`) and applies to the GUI user after a restart as well. An
+agent that switched to `realtime` on a shared instance should switch
+back to `emulated` when done. The recording switches to real time within one frame period (20 ms, 16.7 ms at 60 frames/s) and back to
+emulated time at the end of the next emulated frame; every switch starts
+a new segment. In real time, 50 times (60 times on MZ-700 NTSC and MZ-1500) per second of wall-clock time the
+picture that was on the screen is written together with the sound that
+went to the speaker (turbo plays fast, pauses follow `realtime_pause`).
+Without an audio device (`--headless`, `--mcp-pipe`, or when the windowed
+emulator cannot open an audio device) the sound is rendered by the same
+path without being played. Returns the status plus
+`timebase_requested`; an invalid value is a parameter error.
+
 ## Profiler tools
 
 The CPU profiler aggregates per-function statistics (calls, exclusive
@@ -1282,8 +1382,29 @@ parallel to the physical scan matrix. The Z80 emulation ANDs the two
 matrices when reading PORT B, so a virtual press appears to the Z80
 as a real key held by the user.
 
-Key name vocabulary: RETURN, BREAK, SHIFT, CONTROL, GRAPH, ALPHA,
-ARROW_*, F1..F9, plus ASCII fallback (`"A"`, `"ASCII:A"`, ...).
+Key name vocabulary (ONE table shared by `emu_input_send_key`,
+`emu_input_send_keys` with `encoding=key_names`, `emu_input_press_key`,
+`emu_input_release_key` and `emu_input_send_keys_with_delays`; case-insensitive):
+
+| Name(s) | Key |
+|---------|-----|
+| `RETURN`, `ENTER`, `CR` | CR (Enter) |
+| `SPACE`, `TAB` (MZ-800 only), `BLANK`, `GRAPH`, `ALPHA` | the key of that name |
+| `LIBRA` | `£` (= SHIFT + DOWN_ARROW position), `F9` = same position without SHIFT |
+| `INSERT`, `INS`, `INST` | INST |
+| `DELETE`, `DEL`, `BACKSPACE` | DEL |
+| `ARROW_UP`, `UP`, `CURSOR_UP` (likewise `DOWN`, `LEFT`, `RIGHT`) | cursor movement keys |
+| `UP_ARROW`, `DOWN_ARROW` | arrow-glyph character keys (NOT cursor movement) |
+| `ESC`, `ESCAPE`, `BREAK`, `END` | ESC / BREAK |
+| `CTRL`, `CONTROL`, `SHIFT` | modifiers |
+| `F1`..`F9` | function keys (`F6`-`F8` map to `@`, `\`, `?`; `F9` = LIBRA position without SHIFT, i.e. DOWN_ARROW) |
+
+Plus ASCII fallback (`"A"`, `"ASCII:A"`, ...). The names printed in
+`emulator://docs/mz800_keyboard` (`CURSOR_*`, `INST`, ...) are accepted as
+aliases, and the older names keep working. An unknown name is rejected with
+`Unknown key '<name>'. Closest valid names: ...` (for `send_keys` with
+`key_names` and `send_keys_with_delays` the whole call fails before any key
+is sent).
 
 The joystick state byte uses the Sharp MZ standard:
 

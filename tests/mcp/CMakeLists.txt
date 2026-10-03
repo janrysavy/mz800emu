@@ -165,6 +165,72 @@ if(Python3_FOUND)
     )
     message(STATUS "  tests/mcp: registered mcp_tcp_region_wedge "
                    "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Test 6: video záznam přes MCP (video-capture Task 15)
+    # -----------------------------------------------------------
+    # Spawne mz800emu v pipe módu (izolovaný --cfg-dir + INI v dočasném
+    # adresáři) a projde postup agenta: videorec_start, emu run frames,
+    # marker, snapshot retake, record-pause, stop -> ověří AVI (počet snímků
+    # přes ffprobe, jinak hlavička AVI) a sidecar; plus auto-stop po N
+    # snímcích s vygenerovaným jménem. Video záznam je jen na MZ-800, test
+    # spouští binárku mz800emu z kořene repa (nebo MZ_EMU).
+    add_test(
+        NAME    mcp_videorec_e2e
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_videorec_e2e.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_videorec_e2e PROPERTIES
+        LABELS  "e2e;mcp;pipe;videorec"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_videorec_e2e "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Test 7: tempo emulace v headless režimu (video-capture Task 16)
+    # -----------------------------------------------------------
+    # Spawne mz800emu v pipe módu bez programu (headless = bez audio
+    # zařízení) a ověří, že při 100 % jde emulace reálným časem (cca 50
+    # snímků/s, ne cca 1 snímek/s ani MAX SPEED), 200 % je dvojnásobné,
+    # MAX SPEED není brzděný a návrat z MAX SPEED nedohání zameškaný čas.
+    # RUN_SERIAL: měří reálný čas, souběh s jinými testy by ho zkresloval.
+    add_test(
+        NAME    mcp_headless_pacing
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_headless_pacing.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_headless_pacing PROPERTIES
+        LABELS  "e2e;mcp;pipe"
+        TIMEOUT 120
+        RUN_SERIAL TRUE
+    )
+    message(STATUS "  tests/mcp: registered mcp_headless_pacing "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Test 8: GUI bez audio zařízení (video-capture Task 23)
+    # -----------------------------------------------------------
+    # Spustí GUI mz800emu (otevře okno) s neexistujícím SDL_AUDIO_DRIVER
+    # a MCP TCP portem 23877; ověří start, varování v logu, tempo cca 50
+    # snímků/s, MAX SPEED a zvuk video záznamu podle reality bez zařízení.
+    # Kvůli oknu jen na vyžádání: bez MZ_GUI_TESTS=1 vrací 77 (SKIP).
+    add_test(
+        NAME    mcp_gui_no_audio
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_gui_no_audio.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_gui_no_audio PROPERTIES
+        LABELS  "e2e;mcp;tcp;gui"
+        TIMEOUT 180
+        RUN_SERIAL TRUE
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_gui_no_audio "
+                   "(Python ${Python3_VERSION}, needs MZ_GUI_TESTS=1)")
 else()
     message(STATUS "  tests/mcp: mcp_pipe_e2e SKIPPED "
                    "(Python3 interpreter not found)")

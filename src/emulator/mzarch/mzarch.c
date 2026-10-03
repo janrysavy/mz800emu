@@ -27,6 +27,7 @@
 #include "hw-generic/mz1p16/mz1p16_emu.h"
 #include "hw-generic/joy/joymz-1x03.h"
 #include "audio.h"
+#include "videorec/videorec.h"
 
 #if CFG_HWEXT_HAVE_FDC
 #include "hw-generic/fdc/fdc.h"
@@ -155,6 +156,9 @@ static inline void mz800_main_event_callback_screen_done(void)
 #endif
     cmt_on_screen_done_event();
     customspeed_on_screen_done();
+
+    /* Video záznam: per-frame bod (1 atomické čtení, když se nenahrává). */
+    videorec_on_screen_done();
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
     /* dbgapi CMDRQ drain - per-frame point. UI submituje příkazy
@@ -790,6 +794,10 @@ static inline void mzarch_main_process_interrupt(void)
  *******************************************************************************/
 static inline void mzzarch_main_do_emulator_paused(void)
 {
+    /* Video záznam: emulace stojí - běh k dočasnému BP (step over / run to cursor)
+     * skončil. Musí být před prvním drainem dbgapi níže: pokračování zpracované
+     * v první iteraci smyčky by jinak příznak nechalo přežít do volného běhu. */
+    videorec_on_emulation_stopped();
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 
@@ -811,6 +819,10 @@ static inline void mzzarch_main_do_emulator_paused(void)
         event_bus_emit ( "step_done", payload );
     }
 #endif
+
+    /* Video záznam: návrat z kroku debuggeru (rozpoznání krokování od pauzy, record_debugger_steps). */
+    if (g_debugger.step_call)
+        videorec_on_debugger_step();
 
     debugger_step_call(0);
 
@@ -869,6 +881,10 @@ static inline void mzzarch_main_do_emulator_paused(void)
         if (do_reset)
             mzarch_main_reset();
 
+        /* Video záznam: stop požadovaný v pauze se provede hned (jinak až po
+         * odpauzování). Bez nahrávání 1 atomické čtení. */
+        videorec_on_emulation_paused();
+
         g_usleep(20 * 1000);
     };
 
@@ -910,6 +926,10 @@ static inline void mzzarch_main_do_emulator_paused(void)
         };
 
         mzarch_main_queue_next_event();
+
+        /* Video záznam: stop požadovaný v pauze se provede hned (jinak až po
+         * odpauzování). Bez nahrávání 1 atomické čtení. */
+        videorec_on_emulation_paused();
 
         /* Spánek v paused smyčce - bez něj by EMU vlákno v pauze busy-spinilo
          * na 100 % jádra. Parita s debugger větví (g_usleep výše). UI běží na
@@ -964,6 +984,7 @@ static void mzarch_main_reset(void)
     printf("\n");
 
     g_mzarch_main.reset_count++;
+    videorec_on_reset(); /* událost reset + auto marker (bez nahrávání no-op) */
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
     /* PC se změnilo na 0000 - zruš případný BP skip vázaný na předchozí PC,
      * aby se BP na nové adrese (typicky 0000) správně aktivoval. */
@@ -1048,6 +1069,42 @@ static uint8_t mzarch_debug_dasm_read(uint16_t addr, void *user_data)
     return memory_read_byte(addr);
 }
 
+/**
+ * @brief Hodnota CLI volby s cestou souboru převedená do UTF-8.
+ *
+ * Interní cesty emulátoru jsou v UTF-8 (GLib). Na Windows je ale `argv`
+ * v ANSI kódové stránce procesu, takže cesta s diakritikou z `argv` by
+ * v UTF-8 API (g_fopen, g_file_test, avi_writer_open) selhala. Na Windows se
+ * proto hodnota vezme z UTF-16 příkazové řádky (g_win32_get_command_line()),
+ * bezeztrátově i pro znaky mimo ANSI kódovou stránku. Hledá se stejně jako
+ * v sdlapp_options: token přesně `name` (hodnota v dalším tokenu), nebo
+ * `name=hodnota`. Jinde (a když se na Windows volba nenajde) vrátí kopii
+ * hodnoty z sdlapp_option_value().
+ *
+ * @param name Jméno volby včetně `--` (např. "--record").
+ * @return Nově alokovaná hodnota v UTF-8 (g_free), nebo NULL bez hodnoty.
+ */
+static gchar *mzarch_cli_option_value_utf8(const char *name)
+{
+    const char *raw = sdlapp_option_value(name);
+    if (!raw) return NULL;
+#ifdef G_OS_WIN32
+    gchar **wargv = g_win32_get_command_line();
+    gchar *res = NULL;
+    size_t nlen = strlen(name);
+    for (int i = 1; wargv && wargv[i] && !res; i++) {
+        if (strcmp(wargv[i], name) == 0 && wargv[i + 1]) {
+            res = g_strdup(wargv[i + 1]);
+        } else if (strncmp(wargv[i], name, nlen) == 0 && wargv[i][nlen] == '=') {
+            res = g_strdup(wargv[i] + nlen + 1);
+        }
+    }
+    g_strfreev(wargv);
+    if (res) return res;
+#endif
+    return g_strdup(raw);
+}
+
 void mzarch_main(void)
 {
     mzarch_main_reset();
@@ -1059,6 +1116,29 @@ void mzarch_main(void)
         {
             g_print("CLI --run-mzf: %s\n", mzf_path);
             mzarch_bootstrap_run_mzf(mzf_path);
+        };
+    }
+
+    /* CLI option --record: start video záznamu hned po bootu (a po --run-mzf).
+     * Vlastní začátek nahrávání nastane na konci prvního emulovaného snímku. */
+    if (sdlapp_option_present("--record"))
+    {
+        st_VIDEOREC_START rec;
+        memset(&rec, 0, sizeof(rec));
+        /* Cesta v UTF-8 i na Windows (argv je tam v ANSI kódové stránce). */
+        gchar *rec_path = mzarch_cli_option_value_utf8("--record");
+        g_strlcpy(rec.path, rec_path ? rec_path : "", sizeof(rec.path));
+        g_free(rec_path);
+        iface_audio_build_videorec_levels(rec.level, VIDEOREC_AUDIO_MAX_CHANNELS);
+        const char *rec_frames = sdlapp_option_value("--record-frames");
+        if (rec_frames)
+        {
+            rec.stop_after_frames = g_ascii_strtoull(rec_frames, NULL, 10);
+        };
+        rec.quit_after_stop = sdlapp_option_present("--headless");
+        if (!videorec_request_start(&rec))
+        {
+            fprintf(stderr, "CLI --record: %s\n", videorec_get_last_error());
         };
     }
 
@@ -1297,6 +1377,8 @@ void mzarch_rear_dip_switch_mz700_compat(unsigned value)
  */
 void mzarch_run_to_temporary_breakpoint(void)
 {
+    /* Video záznam: běh k dočasnému breakpointu (step over, run to cursor) je krokování. */
+    videorec_on_debugger_run();
     g_emulator.paused = false;
     iface_audio_pause_emulation(0);
 

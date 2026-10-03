@@ -507,6 +507,16 @@ typedef enum en_DBGAPI_CMD
      * mode/flagy (atomický int zápis) a pak submitne tento příkaz. Bez parametru. */
     DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE,
 
+    /* === video-capture Task 15: video záznam přes MCP ===================
+     *
+     * Jeden příkaz s operací (vzor CMT_TRANSPORT = méně cmd): start, stop,
+     * record-pause, marker a stav nahrávání (videorec.h). Běží na emu vlákně
+     * (mimo hooky modulu videorec), takže kontrola "nahrává se?" a vlastní
+     * požadavek nejsou v souběhu se zpracováním konce snímku. Každá operace
+     * vrací v parametru i aktuální souhrnný stav. Přidáno na KONEC enumu
+     * kvůli stabilitě číselných hodnot existujících příkazů. */
+    DBGAPI_CMD_VIDEOREC,                       /* Video záznam (start/stop/pauza/marker/stav) - data_ptr: st_DBGAPI_VIDEOREC_PARAM* */
+
 } en_DBGAPI_CMD;
 
 /* ============================================================================
@@ -2223,6 +2233,90 @@ typedef struct st_DBGAPI_TRACE_PARAM
     const char             *path;
     int                     out_result;
 } st_DBGAPI_TRACE_PARAM;
+
+
+/**
+ * @brief Operace příkazu DBGAPI_CMD_VIDEOREC (MCP `videorec_*`).
+ */
+typedef enum en_DBGAPI_VIDEOREC_OP
+{
+    DBGAPI_VIDEOREC_OP_START = 0, /**< videorec_request_start(): cesta + volitelný auto-stop po N snímcích. */
+    DBGAPI_VIDEOREC_OP_STOP,      /**< videorec_request_stop() (čekající start zruší). */
+    DBGAPI_VIDEOREC_OP_PAUSE,     /**< Record-pause: toggle nebo explicitní stav (videorec_request_pause_set()). */
+    DBGAPI_VIDEOREC_OP_MARKER,    /**< videorec_request_marker() s popiskem. */
+    DBGAPI_VIDEOREC_OP_STATUS,    /**< Jen souhrnný stav (bez požadavku). */
+    DBGAPI_VIDEOREC_OP_TIMEBASE,  /**< videorec_request_timebase(): časová základna emulated / realtime (Task 18). */
+} en_DBGAPI_VIDEOREC_OP;
+
+/** @brief Výsledek DBGAPI_CMD_VIDEOREC: operace provedena (požadavek přijat). */
+#define DBGAPI_VIDEOREC_RESULT_OK          0
+/** @brief Výsledek DBGAPI_CMD_VIDEOREC: chyba (text v out_error, např. platforma bez celého počtu vzorků na snímek, soubor nelze vytvořit). */
+#define DBGAPI_VIDEOREC_RESULT_FAILED      ( -1 )
+/** @brief Výsledek DBGAPI_CMD_VIDEOREC: operace vyžaduje běžící nahrávání (stop/pauza/marker bez nahrávání). */
+#define DBGAPI_VIDEOREC_RESULT_NOT_RUNNING ( -2 )
+
+/** @brief Velikost bufferů cest v st_DBGAPI_VIDEOREC_PARAM (vč. NUL; shodná s videorec.h). */
+#define DBGAPI_VIDEOREC_PATH_MAX 1024
+/** @brief Velikost textových bufferů v st_DBGAPI_VIDEOREC_PARAM (vč. NUL; shodná s st_VIDEOREC_EVENT::text). */
+#define DBGAPI_VIDEOREC_TEXT_MAX 256
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_VIDEOREC.
+ *
+ * Vstupní pole vyplní volající (MCP dispatch) podle `op`; ostatní vstupy se
+ * ignorují. Výstupní pole (`out_*`) vyplní handler na emu vlákně vždy - i při
+ * chybě operace - aktuálním souhrnným stavem (videorec_get_status(),
+ * poslední událost videorec_get_event(), videorec_get_last_error()).
+ * Struktura je záměrně bez závislosti na videorec.h (dispatch test build ji
+ * nevidí); enum hodnoty jsou kopie čísel en_VIDEOREC_STATE / en_VIDEOREC_EVENT.
+ *
+ * Ownership: řetězce `path` a `label` vlastní volající a musí platit po dobu
+ * synchronního submitu; handler si je zkopíruje. Výstupní buffery jsou
+ * součástí struktury.
+ *
+ * @invariant Výstupní řetězce jsou po návratu handleru ukončené nulou.
+ * @invariant `out_result != DBGAPI_VIDEOREC_RESULT_OK` <=> `rq->success == false`.
+ */
+typedef struct st_DBGAPI_VIDEOREC_PARAM
+{
+    /* --- vstup --- */
+    en_DBGAPI_VIDEOREC_OP op; /**< IN: operace. */
+    const char *path;         /**< IN (START): cílový .avi; NULL nebo "" = vygenerované jméno ve výchozím adresáři. */
+    uint64_t    frames;       /**< IN (START): auto-stop po tolika zapsaných snímcích (0 = bez limitu). */
+    int         paused;       /**< IN (PAUSE): -1 = toggle, 0 = nahrávat, 1 = record-pause. */
+    const char *label;        /**< IN (MARKER): popisek; NULL nebo "" = "Marker at frame N". */
+    int         timebase;     /**< IN (TIMEBASE): 0 = emulated, 1 = realtime (en_VIDEOREC_TIMEBASE). */
+
+    /* --- výstup: výsledek operace --- */
+    int     out_result;                              /**< OUT: DBGAPI_VIDEOREC_RESULT_*. */
+    char    out_error[ DBGAPI_VIDEOREC_TEXT_MAX ];   /**< OUT: anglický text chyby operace ("" při úspěchu). */
+    uint8_t out_start_cancelled;                     /**< OUT (STOP): 1 = stop zrušil čekající (nezpracovaný) start. */
+    char    out_label[ DBGAPI_VIDEOREC_TEXT_MAX ];   /**< OUT (MARKER): skutečně použitý popisek. */
+
+    /* --- výstup: souhrnný stav po operaci --- */
+    uint8_t  out_supported;                          /**< OUT: 1 = platforma podporuje záznam (všechny platformy). */
+    int      out_state;                              /**< OUT: en_VIDEOREC_STATE (0 = IDLE, 1 = RECORDING, 2 = PAUSED). */
+    uint8_t  out_start_pending;                      /**< OUT: 1 = start přijat, čeká na nejbližší konec snímku. */
+    uint64_t out_frames;                             /**< OUT: počet snímků nahrávky (0 bez nahrávání). */
+    unsigned out_fps;                                /**< OUT: snímková frekvence nahrávky (snímků za sekundu). */
+    unsigned out_segment;                            /**< OUT: pořadové číslo aktuálního segmentu od 1 (0 bez nahrávání). */
+    uint8_t  out_segment_open;                       /**< OUT: 1 = segment otevřený (0 během record-pause). */
+    uint64_t out_bytes;                              /**< OUT: bajty AVI partů běžící nebo poslední session. */
+    unsigned out_parts;                              /**< OUT: počet AVI partů běžící nebo poslední session. */
+    int      out_retake_mode;                        /**< OUT: en_VIDEOREC_RETAKE (0 = OFF, 1 = DISCARD, 2 = SEAM) - běžící session, bez nahrávání nastavení pro příští start. */
+    char     out_path[ DBGAPI_VIDEOREC_PATH_MAX ];   /**< OUT: cesta prvního AVI partu (běžící, čekající nebo poslední session; "" = žádná). */
+    char     out_last_error[ DBGAPI_VIDEOREC_TEXT_MAX ]; /**< OUT: poslední chyba modulu (videorec_get_last_error(); "" = žádná). */
+    int      out_timebase;                           /**< OUT: požadovaná časová základna (en_VIDEOREC_TIMEBASE: 0 = emulated, 1 = realtime) - běžící session, bez nahrávání nastavení pro příští start. */
+    int      out_timebase_effective;                 /**< OUT: skutečná časová základna (0 / 1; bez nahrávání 0). */
+    int      out_rt_activity;                        /**< OUT: en_VIDEOREC_RT_ACTIVITY (0 = off, 1 = live, 2 = frozen, 3 = skipping). */
+
+    /* --- výstup: poslední událost (videorec_get_event()) --- */
+    uint32_t out_event_seq;                          /**< OUT: pořadové číslo poslední události (0 = žádná). */
+    int      out_event_kind;                         /**< OUT: en_VIDEOREC_EVENT (1 = STARTED, 2 = SAVED, 3 = FAILED, 4 = RETAKE, 5 = SEAM). */
+    uint64_t out_event_frame;                        /**< OUT: index / počet snímků události (význam podle druhu). */
+    char     out_event_path[ DBGAPI_VIDEOREC_PATH_MAX ]; /**< OUT: cesta nahrávky u STARTED/SAVED/FAILED, jinak "". */
+    char     out_event_text[ DBGAPI_VIDEOREC_TEXT_MAX ]; /**< OUT: anglický text události. */
+} st_DBGAPI_VIDEOREC_PARAM;
 
 
 /**
