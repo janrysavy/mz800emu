@@ -1,23 +1,59 @@
 
-	- New feature: video recording (Tools -> Video Recording) on all platforms: MZ-800, MZ-700 PAL and NTSC, MZ-1500 (60 frames/s on NTSC, stereo on the MZ-1500 and on the MZ-800 with the second PSG). Lossless recording of picture and sound into AVI in emulation time (emulation pause pauses the video, speed-up does not show in the video), recording pause (Alt+Shift+O), markers (Alt+L), start/stop (Alt+O), a remote control window with the recording status and visible shortcuts next to its buttons (Alt+Shift+L), retake via snapshot (loading a snapshot rewinds the recording to the point of saving with no visible seam), real-time mode (records what was on the screen and in the speakers, switchable at any time even while recording with Alt+U, settings for pause, speed and debugger stepping, presets Gameplay showcase and Live / tutorial, automatic markers, mode shown in the REC indicator) and an export script to MP4 for YouTube (crop and frame rate following the platform of the recording, integer scaling, transitions, chapters, optional burned-in state icons - pause, speed, real time). See video-recording.md.
+	- New option --version: prints the version, revision, source origin and build details.
 
-	- MCP keyboard - the key names from the documentation (CURSOR_UP/DOWN/LEFT/RIGHT, INST, UP_ARROW, DOWN_ARROW) are now also accepted by press_key and release_key (the old names keep working). The "Unknown key" error now suggests the closest valid names. CHANGE: send_keys (key_names) and send_keys_with_delays with an unknown key name now fail as a whole (nothing is typed) instead of silently skipping the name.
+	- New option --speed <percent|max>: emulation speed at start (mainly for --headless).
 
-	- BUGFIX: When the windowed emulator could not initialize audio or open an audio device (computer without a sound card, disconnected or unavailable device), it exited with "Failed to initialize interface" and emulation never started. It now runs without sound at 100 % real time (paced by the system clock), logs a warning and shows a one-time notice "No audio device - running without sound" in the window. Behaviour with a working audio device is unchanged.
+	- BUGFIX: --run-mzf starts a program in the same state as after a ROM tape load (MZ-1500: missing palette and PCG graphics; MZ-800 and MZ-1500: muted timer sound; screen not cleared). CHANGE: on MZ-700 the real-time clock is no longer started (the ROM does not start it either).
 
-	- BUGFIX: Headless mode (--headless, MCP pipe) - at normal speed (100 %) emulation ran only about 1 frame per second (e.g. after --run-mzf or after starting emulation via MCP) and the log kept repeating "timeout! Is Audio module running?"; at other times it instead ran unthrottled at MAX SPEED. Without an audio device the pace is now driven by the system clock, so 100 % matches real time (50 frames per second on MZ-800) and custom speed and MAX SPEED work as in the windowed mode. Behaviour with an audio device is unchanged.
+	- BUGFIX: MCP - stopped answering entirely when the emulation thread got stuck; now returns "Emulator busy: command still running" (after about 20 s, 10 min for file operations).
 
-	- BUGFIX: MCP server - commands (e.g. bp_remove, bp_list, run) occasionally failed with an error such as "bp_remove failed (unknown id?)" although they were valid; it was enough for the emulation thread to pick the command up about 1 s late. The server now waits up to 10 s for the pick-up, a picked-up command always completes, and the new "Emulator busy: ..." error clearly states that the command was not executed and can be retried.
+	- BUGFIX: Memory Browser, Event Viewer and hiding the debugger wrote into the emulator concurrently with the running emulation; the emulation thread now performs the writes.
 
-	- BUGFIX: Pressing RESET (F12 or menu) immediately after the window opened could crash the emulator if the emulation thread had not started yet.
+	- Debugger and MCP - commands execute immediately while the emulation is paused (previously with up to 20 ms delay).
 
-	- BUGFIX: Opening/closing the debugger window (Alt+D, menu) while emulation was running, and live memory reads in the Memory Browser, could rarely race with the emulation thread. Both operations are now performed safely.
+	- BUGFIX: Crash after loading a snapshot saved during tape playback when no tape was inserted.
 
-	- BUGFIX: The accelerated RAM access path is now always recomputed after loading a snapshot. Previously the emulator could keep using the memory mapping from before the snapshot was loaded, until the next banking change.
+	- BUGFIX: After loading such a snapshot a newly inserted tape did not play from the start and the program waited forever for the tape signal.
 
-	- BUGFIX: Snapshots - the settings in the Snapshot Setup dialog (include RAM disk and MemExt, compression, directory, quicksave, behaviour after load) were saved to the configuration file but not read back after restarting the emulator, so the defaults applied. The settings are now restored at startup.
+	- BUGFIX: MCP - the tape listing reported playable/recordable inverted; cmt_transport stop without a tape did not stop the recorder.
 
-	- DOCS FIX: MCP - the platform field of platform/info is mz700 / mz800 / mz1500; PAL and NTSC are distinguished by the tv_system field. The documentation previously claimed mz700-pal / mz700-ntsc.
+	- BUGFIX: MCP Python wrapper - an emulator exit surfaced only as a 30 s timeout and the next call silently started a new emulator; now an immediate error, the reason in emu_status (last_exit) and restarted: true on the call that restarts the emulator.
+
+	- DOCS FIX: MCP - emu_cmt_tape_seek does not support single-file tapes (.mzf, .wav).
+
+	- BUGFIX: Cassette CPU Boost - after loading a snapshot the speed did not match the recorder state; tape stop and pause also turned off MAX SPEED chosen by the user; loading a snapshot overwrote the CPU Boost option (and it was saved to the configuration).
+
+	- BUGFIX: MCP - cmt_open reported playing from the request, not the real state (now also state, paused and warning).
+
+	- MCP - bp_list shows the address and bank range (addr_end, addr_match_mode, ...); bp_create_with_init warns about addr_end without RANGE.
+
+	- BUGFIX: PCG editor (MZ-1500) - only characters 0-255 of the 1024 in a bank could be edited.
+
+	- BUGFIX: MCP - io_write and io_read while the emulation was running (also emu_media_run_mzf) stopped the CPU for several minutes and blocked MCP.
+
+	- BUGFIX: CMT hack without GUI (--headless, MCP pipe) blocked the emulation forever (nobody can close the file dialog); now returns Break with a warning.
+
+	- MCP Python wrapper - the MZ800EMU_WORK_DIR environment variable sets the working directory of the started emulator (--work-dir).
+
+	- New feature: video recording (Tools -> Video Recording) on all platforms. Lossless AVI (picture and sound) in emulation time or real time, start/stop Alt+O, pause Alt+Shift+O, markers Alt+L, remote control window Alt+Shift+L, retake via snapshot with no visible seam, presets, export script to MP4 for YouTube. See video-recording.md.
+
+	- MCP - key names from the documentation (CURSOR_*, INST, UP_ARROW, DOWN_ARROW) also work in press_key and release_key; the "Unknown key" error suggests the closest names. CHANGE: send_keys with an unknown key name fails entirely (previously the key was silently skipped).
+
+	- BUGFIX: Without a working audio device the windowed emulation did not start; it now runs without sound in real time and shows a notice.
+
+	- BUGFIX: Headless (--headless, MCP pipe) - the emulation ran at about 1 frame/s, at other times unthrottled; it now runs in real time and the speed can be changed as in the window.
+
+	- BUGFIX: MCP - commands occasionally failed (e.g. "bp_remove failed (unknown id?)") when the emulation thread picked them up late; now waits up to 10 s and a command not executed reports "Emulator busy: ...".
+
+	- BUGFIX: RESET right after the window opened could crash the emulator.
+
+	- BUGFIX: Opening and closing the debugger while running and live memory reads in the Memory Browser could rarely collide with the emulation thread.
+
+	- BUGFIX: After loading a snapshot the emulator could use the RAM mapping from before the load until the next memory mapping change.
+
+	- BUGFIX: Snapshot Setup settings were not loaded after an emulator restart.
+
+	- DOCS FIX: MCP - platform/info returns platform mz700 / mz800 / mz1500; PAL and NTSC are distinguished by tv_system.
 
 2026-07-28 - Released version 2.0.5 - preview
 

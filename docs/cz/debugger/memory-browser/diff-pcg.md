@@ -110,7 +110,7 @@ Spodní řádek okna:
 
 Okno pro editaci 8x8 bitmapových znaků uložených v **PCG**
 (Programmable Character Generator) RAM. MZ-1500 specifický rys -
-3 banky x 256 znaků x 8 B na znak.
+3 banky x 1024 znaků x 8 B na znak.
 
 ### 2.1 Otevření
 
@@ -136,11 +136,12 @@ per byte, celkem 8 bytů na glyph).
 
 ### 2.4 Navigace po znacích
 
-- **Char: [0xNN]** - hex input pro přímé zadání indexu (0x00-0xFF).
-- **[<] [>]** - prev/next znak (jump po 8 B v PCG bank). Wraparound
-  po 0xFF zpět na 0x00.
-- Vedle indexu se zobrazí ASCII reprezentace, pokud index padne do
-  tisknutelného rozsahu.
+- **Char #** - číselný vstup pro přímé zadání indexu (0-1023).
+- **[<] [>]** - prev/next znak (jump po 8 B v PCG bank). Na znaku 0
+  a 1023 se zastaví (bez wraparoundu).
+- Pod gridem editor ukazuje řádek **Raw:** s 8 bajty aktuálního znaku
+  v hex a řádek **Bank addr range:** s rozsahem bajtů znaku v bance
+  (`char_idx * 8` .. `char_idx * 8 + 7`).
 
 ### 2.5 Kreslení
 

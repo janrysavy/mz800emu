@@ -106,6 +106,23 @@ extern "C"
     extern void mzarch_main_insideop_mreq_mz800_vramctrl_read(void);
     extern void mzarch_main_insideop_mreq_mz800_vramctrl_write(void);
     extern void mzarch_main_insideop_iorq_psg_write(void);
+
+    /**
+     * @brief Nahlásí podtečení tiků při uzavření snímku (pojistka).
+     *
+     * Volá ji jen makro gdg_on_screen_done_event(), když
+     * g_gdg.total_elapsed.ticks < VIDEO_SCREEN_TICKS. To za správného běhu
+     * nenastane: znamená to, že se konec snímku zpracoval dvakrát. Funkce
+     * vypíše varování na stderr (prvních 8 výskytů, u osmého navíc oznámí, že
+     * další potlačí); srovnání
+     * tiků na 0 dělá volající makro.
+     *
+     * @param ticks Hodnota g_gdg.total_elapsed.ticks před odečtem.
+     *
+     * @pre Volá se z EMU vlákna. Mimo hot path (nejvýš jednou za snímek).
+     * @par Side effects Výpis na stderr, interní čítač výskytů.
+     */
+    extern void mzarch_main_report_screen_done_underflow(unsigned ticks);
     extern void mzarch_rear_dip_switch_mz700_compat(unsigned value);
 
     /**

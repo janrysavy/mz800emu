@@ -410,6 +410,18 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                         r->bp[i].zone    = g_stub_state.bp_list_fake_zone;
                         r->bp[i].bank_id = g_stub_state.bp_list_fake_bank_id;
                         r->bp[i].hits    = g_stub_state.bp_list_fake_hits;
+                        r->bp[i].addr_end =
+                            g_stub_state.bp_list_fake_addr_end;
+                        r->bp[i].addr_match_mode =
+                            g_stub_state.bp_list_fake_addr_match_mode;
+                        r->bp[i].addr_mask =
+                            g_stub_state.bp_list_fake_addr_mask;
+                        r->bp[i].bank_id_end =
+                            g_stub_state.bp_list_fake_bank_id_end;
+                        r->bp[i].bank_match_mode =
+                            g_stub_state.bp_list_fake_bank_match_mode;
+                        r->bp[i].bank_id_mask =
+                            g_stub_state.bp_list_fake_bank_id_mask;
                         r->bp[i].condition =
                             g_stub_state.bp_list_fake_condition
                             ? g_strdup(g_stub_state.bp_list_fake_condition)
@@ -2095,6 +2107,34 @@ en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_ex(st_DBGAPI_CMDRQ_QUEUE *queu
 }
 
 
+/** @brief Typ callbacku zaseknutí (shodný s dbgapi_ui.h, který test
+ *         nevkládá kvůli main.h). */
+typedef void (*dbgapi_submit_stall_cb_t)(void *user_data);
+
+/**
+ * @brief Mock `dbgapi_ui_submit_cmd_sync_watched` - submit s hlášením
+ *        zaseknutí.
+ *
+ * Mock nemá emu vlákno, příkaz se nikdy nezasekne: deleguje na mock
+ * `dbgapi_ui_submit_cmd_sync_ex` a `stall_cb` nevolá.
+ */
+en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_watched(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                                          en_DBGAPI_CMD cmd,
+                                                          en_DBGAPI_CMD_ORIGIN origin,
+                                                          void *data_ptr,
+                                                          void *result_ptr,
+                                                          int timeout_ms,
+                                                          int stall_ms,
+                                                          dbgapi_submit_stall_cb_t stall_cb,
+                                                          void *stall_user_data) {
+    (void)stall_ms;
+    (void)stall_cb;
+    (void)stall_user_data;
+    return dbgapi_ui_submit_cmd_sync_ex(queue, cmd, origin, data_ptr,
+                                        result_ptr, timeout_ms);
+}
+
+
 /* V1.D.1 - last user action tracker shim pro test build.
  *
  * Reálná implementace v dbgapi.c drží statický buffer s mutex zámkem;
@@ -2192,6 +2232,18 @@ const char *bp_zone_to_string ( en_BP_ZONE zone )
         case BP_ZONE_PCG:        return "PCG";
         case BP_ZONE_MMEXT_BANK: return "MMEXT_BANK";
         default:                 return "CPU_VIEW";
+    };
+}
+
+/* bp_match_mode_to_string shim (bp_list serializuje addr_match_mode).
+ * Řetězce i fallback (SINGLE) shodné s breakpoints.c. */
+const char *bp_match_mode_to_string ( en_BP_MATCH_MODE mode )
+{
+    switch ( mode )
+    {
+        case BP_MATCH_RANGE: return "RANGE";
+        case BP_MATCH_MASK:  return "MASK";
+        default:             return "SINGLE";
     };
 }
 

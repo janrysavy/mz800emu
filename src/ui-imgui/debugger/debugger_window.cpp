@@ -287,16 +287,16 @@ void imgui_debugger_window(bool *p_open)
     {
         /*
          * Okno je zavřené — zajistíme korektní deaktivaci debuggeru.
-         * Sem se dostaneme buď po debugger_hide_main_window() (z ESC, Alt+D,
+         * Sem se dostaneme buď po debugger_hide_main_window_request() (z ESC, Alt+D,
          * File→Hide), nebo po kliknutí na X tlačítko v titulbaru (ImGui
          * nastaví *p_open = false interně).
          *
          * Kontrola g_debugger.active zabraňuje duplicitnímu volání
-         * v případě, že debugger_hide_main_window() již proběhl.
+         * v případě, že debugger_hide_main_window_request() již proběhl.
          */
         if (g_debugger.active)
         {
-            debugger_hide_main_window();
+            debugger_hide_main_window_request();
         };
         return;
     };
@@ -431,7 +431,7 @@ void imgui_debugger_window(bool *p_open)
         ImGui::End();
         /* X tlačítko mohlo nastavit *p_open = false i při kolapsnutém okně */
         if (!*p_open && g_debugger.active)
-            debugger_hide_main_window();
+            debugger_hide_main_window_request();
         return;
     };
 
@@ -557,7 +557,7 @@ void imgui_debugger_window(bool *p_open)
     {
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
         {
-            debugger_hide_main_window();
+            debugger_hide_main_window_request();
         };
 
         /* Ctrl+R: Forced Full Screen Refresh */
@@ -582,7 +582,7 @@ void imgui_debugger_window(bool *p_open)
 
     /* X tlačítko v titulbaru — ImGui nastavil *p_open = false v Begin() */
     if (!*p_open && g_debugger.active)
-        debugger_hide_main_window();
+        debugger_hide_main_window_request();
 }
 
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */

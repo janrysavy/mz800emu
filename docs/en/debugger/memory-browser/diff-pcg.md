@@ -119,7 +119,7 @@ Bottom row of the window:
 
 Window for editing 8x8 bitmap characters stored in **PCG**
 (Programmable Character Generator) RAM. MZ-1500 specific feature -
-3 banks x 256 characters x 8 B per character.
+3 banks x 1024 characters x 8 B per character.
 
 ### 2.1 Opening
 
@@ -146,11 +146,13 @@ character = one row of 8 bits per byte, 8 bytes total per glyph).
 
 ### 2.4 Character navigation
 
-- **Char: [0xNN]** - hex input for direct index entry (0x00-0xFF).
+- **Char #** - number input for direct index entry (0-1023).
 - **[<] [>]** - prev/next character (jump by 8 B within the PCG
-  bank). Wraparound from 0xFF back to 0x00.
-- Next to the index, an ASCII representation is shown if the index
-  falls into the printable range.
+  bank). Stops at characters 0 and 1023 (no wraparound).
+- Below the grid the editor shows the line **Raw:** with the 8 bytes
+  of the current character in hex and the line **Bank addr range:**
+  with the byte range of the character inside the bank
+  (`char_idx * 8` .. `char_idx * 8 + 7`).
 
 ### 2.5 Drawing
 

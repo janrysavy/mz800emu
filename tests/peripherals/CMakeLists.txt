@@ -45,3 +45,11 @@ mz_add_test(mz1p16_emu
     SOURCES  test_mz1p16_emu.c
     LABELS   "emu;peripherals;mz1p16"
 )
+
+# Stav transportu CMT: invariant "bez pásky STOP", snapshot bez pásky,
+# eject/stop bez pásky a přehrání nové pásky od začátku.
+mz_add_test(cmt_state
+    TYPE     EMU
+    SOURCES  test_cmt_state.c
+    LABELS   "emu;peripherals;cmt"
+)

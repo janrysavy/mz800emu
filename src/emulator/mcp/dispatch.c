@@ -153,6 +153,16 @@ en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_ex(st_DBGAPI_CMDRQ_QUEUE *queu
                                                      void *data_ptr,
                                                      void *result_ptr,
                                                      int timeout_ms);
+typedef void (*dbgapi_submit_stall_cb_t)(void *user_data);
+en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_watched(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                                          en_DBGAPI_CMD cmd,
+                                                          en_DBGAPI_CMD_ORIGIN origin,
+                                                          void *data_ptr,
+                                                          void *result_ptr,
+                                                          int timeout_ms,
+                                                          int stall_ms,
+                                                          dbgapi_submit_stall_cb_t stall_cb,
+                                                          void *stall_user_data);
 #else
 #include "../debugger/dbgapi_ui.h"
 /* V1.E.7 - blokující emu_run / HID frame wait potřebuje sledovat
@@ -181,6 +191,43 @@ en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_ex(st_DBGAPI_CMDRQ_QUEUE *queu
  * 10 s dává rezervu a zároveň nezablokuje klienta natrvalo.
  */
 #define MCP_DISPATCH_DBGAPI_TIMEOUT_MS 10000
+
+/**
+ * @brief Dodatečný limit (ms) pro dokončení příkazu, který emu vlákno už
+ *        vyzvedlo.
+ *
+ * Rozpracovaný příkaz nelze zrušit (emu pracuje s daty na zásobníku
+ * dispatchujícího vlákna), ale klient nesmí čekat bez konce. Když příkaz
+ * do MCP_DISPATCH_DBGAPI_TIMEOUT_MS + tohoto limitu neskončí, běhový obal
+ * (dispatch_runner.c) klientovi odpoví "Emulator busy: ... still running"
+ * a dispatchující vlákno nechá čekat dál. Součet 20 s je pod 30s
+ * timeoutem Python wrapperu (mcp_server.py, SEND_TIMEOUT_S), takže klient
+ * dostane srozumitelnou chybu místo vlastního timeoutu. Příkazy se
+ * souborovým I/O mají delší limit, viz MCP_DISPATCH_DBGAPI_STALL_LONG_MS.
+ */
+#define MCP_DISPATCH_DBGAPI_STALL_MS 10000
+
+/**
+ * @brief Dodatečný limit (ms) pro příkazy s legitimně dlouhým během
+ *        v emu vlákně (souborové I/O, viz mcp_dispatch_stall_limit_ms()).
+ *
+ * Např. trace_save zapisuje až 2 GB, snapshot/CDL/profiler export a start
+ * nebo stop video záznamu pracují se soubory. Tyto příkazy by se při
+ * běžném limitu hlásily jako "still running", ačkoliv uspějí. 10 minut
+ * dává rezervu; i zaseknutí takového příkazu se tak klientovi nakonec
+ * ohlásí. Hodnota zvolená úvahou, ne měřením [neověřeno].
+ */
+#define MCP_DISPATCH_DBGAPI_STALL_LONG_MS 600000
+
+/**
+ * @brief Chybová zpráva pro příkaz, který emu vlákno převzalo, ale
+ *        v limitu nedokončilo.
+ *
+ * Výsledek není znám (příkaz může doběhnout později), opakování proto
+ * NENÍ bezpečné bez kontroly stavu.
+ */
+#define MCP_DISPATCH_MSG_STALLED \
+    "Emulator busy: command still running in the emulator thread (no completion within the time limit); result unknown, check state before retrying"
 
 /**
  * @brief Chybová zpráva pro příkaz zrušený dřív, než ho emu provedlo.
@@ -227,6 +274,14 @@ typedef struct {
 } st_MCP_DISPATCH_SUBMIT_TRACK;
 
 static _Thread_local st_MCP_DISPATCH_SUBMIT_TRACK s_submit_track;
+
+/**
+ * @brief Hlídání zaseknutí registrované pro aktuální vlákno (NULL = žádné).
+ *
+ * Viz mcp_dispatch_set_thread_stall_watch(). Thread-local, protože každý
+ * požadavek běží na vlastním pracovním vlákně běhového obalu.
+ */
+static _Thread_local const st_MCP_DISPATCH_STALL_WATCH *s_stall_watch;
 
 /**
  * @brief Sanity horní mez per-BP fwd_min_interval_ms (0019 v2) v ms.
@@ -1168,8 +1223,13 @@ static en_MCP_DISPATCH_RESULT _ok_response(int64_t req_id,
 /**
  * @brief Volá dbgapi submit s origin=MCP a MCP timeoutem.
  *
- * Zkratka pro `dbgapi_ui_submit_cmd_sync_ex(&g_dbgapi_cmdrq_queue,
- *   cmd, DBGAPI_CMD_ORIGIN_MCP, data, result, MCP_DISPATCH_DBGAPI_TIMEOUT_MS)`.
+ * Zkratka pro `dbgapi_ui_submit_cmd_sync_watched(&g_dbgapi_cmdrq_queue,
+ *   cmd, DBGAPI_CMD_ORIGIN_MCP, data, result, MCP_DISPATCH_DBGAPI_TIMEOUT_MS,
+ *   mcp_dispatch_stall_limit_ms(cmd), ...)`. Je-li pro vlákno registrované
+ * hlídání zaseknutí (s_stall_watch), předá jeho `on_stall`; je-li
+ * požadavek už opuštěný, příkaz neodešle a vrátí ho jako neprovedený
+ * (DBGAPI_SUBMIT_TIMEOUT). Bez registrace se zaseknutí nehlásí a
+ * rozpracovaný příkaz se čeká bez limitu (chování přímého volání).
  *
  * Side effect: zaznamená výsledek do `s_submit_track` (per vlákno), podle
  * kterého `_err_response` u MCP_DISPATCH_EMU_ERROR zvolí pravdivou zprávu
@@ -1180,13 +1240,24 @@ static en_MCP_DISPATCH_RESULT _ok_response(int64_t req_id,
  *         success=false)
  */
 static bool _submit_dbgapi(en_DBGAPI_CMD cmd, void *data, void *result) {
-    en_DBGAPI_SUBMIT_STATUS st =
-        dbgapi_ui_submit_cmd_sync_ex(&g_dbgapi_cmdrq_queue,
-                                     cmd,
-                                     DBGAPI_CMD_ORIGIN_MCP,
-                                     data,
-                                     result,
-                                     MCP_DISPATCH_DBGAPI_TIMEOUT_MS);
+    const st_MCP_DISPATCH_STALL_WATCH *w = s_stall_watch;
+    en_DBGAPI_SUBMIT_STATUS st;
+    if (w && w->is_abandoned && w->is_abandoned(w->user_data)) {
+        /* Klient už dostal odpověď "busy" (předchozí krok se zasekl).
+         * Další kroky vícekrokového handleru neodesíláme, aby se po
+         * odpovědi neobjevily opožděné vedlejší efekty. */
+        st = DBGAPI_SUBMIT_TIMEOUT;
+    } else {
+        st = dbgapi_ui_submit_cmd_sync_watched(&g_dbgapi_cmdrq_queue,
+                                               cmd,
+                                               DBGAPI_CMD_ORIGIN_MCP,
+                                               data,
+                                               result,
+                                               MCP_DISPATCH_DBGAPI_TIMEOUT_MS,
+                                               mcp_dispatch_stall_limit_ms((int)cmd),
+                                               (w && w->on_stall) ? w->on_stall : NULL,
+                                               w ? w->user_data : NULL);
+    }
     s_submit_track.last_status = st;
     if (st == DBGAPI_SUBMIT_OK || st == DBGAPI_SUBMIT_FAILED)
         s_submit_track.executed = true;
@@ -1346,12 +1417,17 @@ static en_MCP_DISPATCH_RESULT _handle_run(const st_JSONL_MESSAGE *req,
      * dbgapi_ui_submit_cmd_sync_with_origin). RUN_FRAMES handler nastaví
      * cílový screens counter a unpausne; emu se sám deterministicky pausne. */
     int frames_int = (int)frames;
-    /* Změř výchozí screens counter PŘED spuštěním (emu je zde paused, takže
-     * g_gdg.total_elapsed.screens je stabilní). actual_frames měříme jako delta
-     * TÉHOŽ counteru, podle kterého se emu deterministicky zastaví
-     * (run_frames_target = screens + N) - NE podle fbsnapshot_screen_id, který
-     * počítá jen skutečně vykreslené framebuffery (řidší, závislé na video módu),
-     * takže by actual neodpovídal requested. */
+    /* Výchozí screens counter dodá RUN_FRAMES handler přes result_ptr: je to
+     * přesně hodnota, od které emu vlákno počítá cíl (run_frames_target =
+     * screens + N). actual_frames měříme jako delta TÉHOŽ counteru - NE podle
+     * fbsnapshot_screen_id, který počítá jen skutečně vykreslené framebuffery
+     * (řidší, závislé na video módu).
+     *
+     * Čtení zde na dispatch vlákně by nestačilo: za běhu emulace se drain
+     * dbgapi provádí až po uzavření snímku (za inkrementem screens), takže
+     * mezi čtením a zpracováním příkazu proběhne ještě jeden snímek a delta
+     * by vyšla N+1. Přímé čtení zůstává jen jako výchozí hodnota pro případ,
+     * že handler result_ptr nevyplní (testovací stub dbgapi). */
     uint32_t start_screens = (uint32_t)g_gdg.total_elapsed.screens;
 #ifndef MZ800EMU_MCP_TEST_BUILD
     /* Vynuluj důvod pauzy - po doběhnutí ho přečteme do stopped_by. Emu je
@@ -1359,7 +1435,7 @@ static en_MCP_DISPATCH_RESULT _handle_run(const st_JSONL_MESSAGE *req,
      * (V testovacím buildu g_emulator/emulator.h není dostupné.) */
     g_emulator.pause_reason = EMU_PAUSE_REASON_NONE;
 #endif
-    if (!_submit_dbgapi(DBGAPI_CMD_RUN_FRAMES, &frames_int, NULL)) {
+    if (!_submit_dbgapi(DBGAPI_CMD_RUN_FRAMES, &frames_int, &start_screens)) {
         return _err_response(req_id, "Run failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
@@ -1378,10 +1454,11 @@ static en_MCP_DISPATCH_RESULT _handle_run(const st_JSONL_MESSAGE *req,
         pause_ok = _submit_dbgapi(DBGAPI_CMD_PAUSE, NULL, NULL);
     }
 
-    /* actual_frames = delta screens counteru, čteno po pauze (emu stabilní →
-     * přesné). Při deterministickém doběhu je to přesně N (emu pausnul při
-     * screens == start_screens + N); při safety timeoutu skutečný počet
-     * proběhlých screens. */
+    /* actual_frames = delta screens counteru od výchozí hodnoty z handleru,
+     * čteno po pauze (emu stabilní -> přesné). Při deterministickém doběhu je
+     * to přesně N (emu pausnul při screens == start_screens + N) bez ohledu
+     * na to, zda run začal z pauzy nebo za běhu; při safety timeoutu skutečný
+     * počet proběhlých screens. */
     int actual = (int)((uint32_t)g_gdg.total_elapsed.screens - start_screens);
 
     /* stopped_by: proč se emulace zastavila. !done = safety timeout; jinak
@@ -3033,6 +3110,10 @@ static gboolean _bp_fill_param_from_json(JsonObject *obj,
  * Response payload:
  *  - `id` (int) - ID nově vytvořeného BP nebo -1 při selhání.
  *  - `created` (bool) - true při úspěchu.
+ *  - `warning` (string, jen někdy) - BP vznikl s `addr_end` různým od
+ *    `addr`, ale `addr_match_mode` zůstal SINGLE (nebyl v `fields`
+ *    nebo je SINGLE): BP hlídá jen `addr`, rozsah se neuplatní. Chování
+ *    se nemění, jde jen o upozornění klienta (dříve tichá past).
  *
  * Lifecycle: handler nastaví `p.id = -1`, zavolá CMD_BP_CREATE_WITH_INIT,
  * backend zavolá breakpoints_add_auto + aplikuje update_mask. Po návratu
@@ -3079,6 +3160,20 @@ static en_MCP_DISPATCH_RESULT _handle_bp_create_with_init(
         json_object_unref(resp);
         return _err_response(req_id, "BP_CREATE_WITH_INIT failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    /* Nový BP má výchozí addr_match_mode SINGLE (breakpoints_add_auto);
+     * addr_end se pak neuplatní. Upozorni, ale nic neměň. */
+    bool mode_single = !(mask & DBGAPI_BP_UM_ADDR_MATCH_MODE)
+                       || (p.addr_match_mode == (uint8_t)BP_MATCH_SINGLE);
+    if ((mask & DBGAPI_BP_UM_ADDR_END) && (p.addr_end != p.addr) && mode_single) {
+        char msg[200];
+        g_snprintf(msg, sizeof(msg),
+                   "addr_end (0x%04X) differs from addr (0x%04X), but "
+                   "addr_match_mode is SINGLE: the breakpoint matches only "
+                   "addr. Set addr_match_mode to RANGE to match the whole "
+                   "range.",
+                   (unsigned)p.addr_end, (unsigned)p.addr);
+        json_object_set_string_member(resp, "warning", msg);
     }
     return _ok_response(req_id, resp, out_response);
 }
@@ -3865,10 +3960,15 @@ static void _free_bp_list_result(st_DBGAPI_BP_LIST_RESULT *result) {
  * `MCP_DISPATCH_BP_LIST_MAX` (256). Response payload:
  *  - `count` (int) - počet vrácených BP
  *  - `breakpoints` (array) - každý prvek
- *    `{id, addr, enabled, type, zone, bank_id, hits, condition}`.
+ *    `{id, addr, addr_end, addr_match_mode, addr_mask, enabled, type,
+ *    zone, bank_id, bank_id_end, bank_match_mode, bank_id_mask, hits,
+ *    condition}`. Bankové `bank_id_end` / `bank_id_mask` platí jen pro
+ *    `bank_match_mode` RANGE / MASK (jména polí jako v .bpt exportu).
  *    `type` / `zone` jsou kanonické UPPER_SNAKE řetězce
- *    (bpt_type_to_string / bp_zone_to_string), `condition` je expr výraz
- *    nebo null pokud je BP bezpodmínečný.
+ *    (bpt_type_to_string / bp_zone_to_string), `addr_match_mode` je
+ *    "SINGLE" / "RANGE" / "MASK" (bp_match_mode_to_string); `addr_end`
+ *    platí jen pro RANGE, `addr_mask` jen pro MASK. `condition` je expr
+ *    výraz nebo null pokud je BP bezpodmínečný.
  *
  * Pozn.: `bp[i].condition` je heap g_strdup() z dbgapi handleru, handler
  * jej po serializaci uvolní g_free().
@@ -3892,6 +3992,11 @@ static en_MCP_DISPATCH_RESULT _handle_bp_list(const st_JSONL_MESSAGE *req,
         JsonObject *item = json_object_new();
         json_object_set_int_member(item, "id",      result->bp[i].id);
         json_object_set_int_member(item, "addr",    result->bp[i].addr);
+        json_object_set_int_member(item, "addr_end", result->bp[i].addr_end);
+        json_object_set_string_member(item, "addr_match_mode",
+            bp_match_mode_to_string(
+                (en_BP_MATCH_MODE)result->bp[i].addr_match_mode));
+        json_object_set_int_member(item, "addr_mask", result->bp[i].addr_mask);
         json_object_set_boolean_member(item, "enabled",
                                        result->bp[i].enabled);
         json_object_set_string_member(item, "type",
@@ -3899,6 +4004,13 @@ static en_MCP_DISPATCH_RESULT _handle_bp_list(const st_JSONL_MESSAGE *req,
         json_object_set_string_member(item, "zone",
             bp_zone_to_string((en_BP_ZONE)result->bp[i].zone));
         json_object_set_int_member(item, "bank_id", result->bp[i].bank_id);
+        json_object_set_int_member(item, "bank_id_end",
+                                   result->bp[i].bank_id_end);
+        json_object_set_string_member(item, "bank_match_mode",
+            bp_match_mode_to_string(
+                (en_BP_MATCH_MODE)result->bp[i].bank_match_mode));
+        json_object_set_int_member(item, "bank_id_mask",
+                                   result->bp[i].bank_id_mask);
         json_object_set_int_member(item, "hits",
                                    (gint64)result->bp[i].hits);
         if (result->bp[i].condition) {
@@ -10036,13 +10148,37 @@ static en_MCP_DISPATCH_RESULT _handle_cmt_set_property(
 }
 
 /**
+ * @brief Převede stav transportu CMT (en_CMT_STATE jako číslo) na řetězec.
+ *
+ * Sdílí ho `cmt_open` a `get_periph_cmt`, aby oba hlásily stav stejně.
+ *
+ * @param state 0 = STOP, 1 = PLAY, 2 = RECORD.
+ * @return "stop" / "play" / "record"; neznámá hodnota -> "stop".
+ *         Statický řetězec, neuvolňovat.
+ */
+static const char *_cmt_state_str(unsigned state) {
+    if (state == 1) return "play";
+    if (state == 2) return "record";
+    return "stop";
+}
+
+/**
  * @brief `cmt_open` handler - otevření CMT souboru s volitelným play.
  *
  * Forwarduje na DBGAPI_CMD_CMT_OPEN. Vstupní JSON pole:
  *   - `path` (string, povinné): cesta k CMT souboru.
  *   - `play_immediately` (bool, default false): po openu spustit play.
  *
- * Layout response: {"ok": true, "path": str, "playing": bool}
+ * Layout response: {"ok": true, "path": str, "playing": bool,
+ *                   "state": "stop"|"play"|"record", "paused": bool
+ *                   [, "warning": str]}
+ *
+ * `playing` hlásí skutečný stav transportu po operaci (PLAY bez pauzy),
+ * ne požadavek - dříve se vracelo echo `play_immediately`, takže
+ * play_immediately nad páskou, která se nerozehrála, hlásil playing: true.
+ * `state` / `paused` mají stejný význam jako v `get_periph_cmt`.
+ * `warning` je přítomen, jen když play_immediately byl požadován, ale
+ * páska po operaci nehraje. Chování openu se nemění.
  */
 static en_MCP_DISPATCH_RESULT _handle_cmt_open(
     const st_JSONL_MESSAGE *req, char **out_response) {
@@ -10072,11 +10208,22 @@ static en_MCP_DISPATCH_RESULT _handle_cmt_open(
                              "error)",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
+    /* Skutečný stav transportu po operaci (vyplní dbgapi handler). */
+    gboolean playing = (param.out_state == 1) && !param.out_paused;
+
     JsonObject *resp = json_object_new();
     json_object_set_boolean_member(resp, "ok", TRUE);
     json_object_set_string_member(resp, "path", path);
-    json_object_set_boolean_member(resp, "playing",
-                                   param.play_immediately ? TRUE : FALSE);
+    json_object_set_boolean_member(resp, "playing", playing);
+    json_object_set_string_member(resp, "state",
+                                  _cmt_state_str(param.out_state));
+    json_object_set_boolean_member(resp, "paused",
+                                   param.out_paused ? TRUE : FALSE);
+    if (param.play_immediately && !playing) {
+        json_object_set_string_member(resp, "warning",
+            "play_immediately requested, but the tape is not playing "
+            "after open (see state/paused)");
+    }
     g_free(path);
     return _ok_response(req_id, resp, out_response);
 }
@@ -10085,7 +10232,9 @@ static en_MCP_DISPATCH_RESULT _handle_cmt_open(
  * @brief `cmt_tape_seek` handler - seek na blok pásky.
  *
  * Forwarduje na DBGAPI_CMD_CMT_TAPE_SEEK. Vyžaduje int `block_id`.
- * Bez naložené pásky nebo neplatný blok -> success = false.
+ * Bez naložené pásky, u jednosouborového containeru (SINGLE: .mzf,
+ * .wav - nemá cb_open_block, seek nepodporuje ani na blok 0) nebo
+ * pro neplatný blok -> success = false.
  *
  * Layout response: {"ok": true, "block_id": int}
  */
@@ -10108,7 +10257,8 @@ static en_MCP_DISPATCH_RESULT _handle_cmt_tape_seek(
     param.block_id = (int)_obj_int_or(data_obj, "block_id", 0);
     if (!_submit_dbgapi(DBGAPI_CMD_CMT_TAPE_SEEK, &param, NULL)) {
         return _err_response(req_id,
-                             "cmt_tape_seek failed (no tape or bad block)",
+                             "cmt_tape_seek failed (no tape, single-file "
+                             "tape without seek support, or bad block)",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
     JsonObject *resp = json_object_new();
@@ -11827,11 +11977,8 @@ static en_MCP_DISPATCH_RESULT _handle_get_periph_cmt(
     }
     JsonObject *resp = json_object_new();
     json_object_set_boolean_member(resp, "available", param.available ? TRUE : FALSE);
-    /* state enum -> string. */
-    const char *state_s = "stop";
-    if (param.state == 1) state_s = "play";
-    else if (param.state == 2) state_s = "record";
-    json_object_set_string_member(resp, "state",   state_s);
+    json_object_set_string_member(resp, "state",
+                                  _cmt_state_str((unsigned)param.state));
     json_object_set_boolean_member(resp, "paused",            param.paused ? TRUE : FALSE);
     json_object_set_boolean_member(resp, "filled",            param.filled ? TRUE : FALSE);
     json_object_set_boolean_member(resp, "polarity_inverted", param.polarity_inverted ? TRUE : FALSE);
@@ -12436,6 +12583,85 @@ static en_MCP_DISPATCH_RESULT _handle_get_watch_snapshot(
 /* Public API                                                          */
 /* ------------------------------------------------------------------ */
 
+int mcp_dispatch_stall_limit_ms(int cmd) {
+    switch ((en_DBGAPI_CMD)(cmd & DBGAPI_CMD_MASK)) {
+        /* Souborové I/O nebo práce s velkými daty v emu vlákně. */
+        case DBGAPI_CMD_TRACE_SAVE:
+        case DBGAPI_CMD_TRACE_STOP:
+        case DBGAPI_CMD_SNAPSHOT_SAVE_FILE:
+        case DBGAPI_CMD_SNAPSHOT_LOAD_FILE:
+        case DBGAPI_CMD_SNAPSHOT_SAVE_BUFFER:
+        case DBGAPI_CMD_SNAPSHOT_LOAD_BUFFER:
+        case DBGAPI_CMD_PROFILER_EXPORT:
+        case DBGAPI_CMD_CDL_EXPORT:
+        case DBGAPI_CMD_VIDEOREC:
+        case DBGAPI_CMD_MEDIA_LOAD_MZF:
+        case DBGAPI_CMD_MEDIA_LOAD_BINARY:
+        case DBGAPI_CMD_MEDIA_INSERT:
+        case DBGAPI_CMD_MEDIA_EJECT:
+        case DBGAPI_CMD_CMT_OPEN:
+        case DBGAPI_CMD_CMT_RECORD:
+        case DBGAPI_CMD_GET_FRAME_SCREENSHOT_PNG:
+            return MCP_DISPATCH_DBGAPI_STALL_LONG_MS;
+        default:
+            return MCP_DISPATCH_DBGAPI_STALL_MS;
+    }
+}
+
+
+void mcp_dispatch_set_thread_stall_watch(const st_MCP_DISPATCH_STALL_WATCH *watch) {
+    s_stall_watch = watch;
+}
+
+
+en_MCP_DISPATCH_RESULT mcp_dispatch_build_stalled_response(int64_t req_id,
+                                                           char **out_response) {
+    if (!out_response) return MCP_DISPATCH_ALLOC_ERROR;
+    char *line = jsonl_build_response(req_id, false, NULL,
+                                      MCP_DISPATCH_MSG_STALLED);
+    *out_response = line;
+    return line ? MCP_DISPATCH_EMU_ERROR : MCP_DISPATCH_ALLOC_ERROR;
+}
+
+
+#ifndef MZ800EMU_MCP_TEST_BUILD
+/**
+ * @brief Testovací háček: jednou pozdrží zpracování vybraného příkazu.
+ *
+ * Proměnné prostředí (čtou se jednou, při prvním požadavku):
+ *  - MZ800EMU_TEST_STALL_MCP_CMD: wire jméno příkazu (např. "get_registers"),
+ *  - MZ800EMU_TEST_STALL_MS: doba zaseknutí emu vlákna v ms.
+ * Při prvním požadavku s tímto jménem armuje dbgapi háček
+ * (dbgapi_test_arm_dispatch_stall()) na příslušný dbgapi příkaz; emu
+ * vlákno pak uprostřed jeho dispatch spí. Jednorázové. Slouží jen
+ * regresnímu testu tests/mcp/test_mcp_busy_stall.py, v běžném provozu
+ * proměnné nejsou nastavené a háček nic nedělá.
+ *
+ * @param entry Záznam dispatch tabulky právě zpracovávaného příkazu.
+ */
+static void _test_hook_maybe_arm_stall(const st_MCP_CMD_MAP_ENTRY *entry) {
+    static gsize s_init = 0;
+    static char *s_cmd = NULL;
+    static int s_ms = 0;
+    static gint s_used = 0;
+
+    if (g_once_init_enter(&s_init)) {
+        const char *c = g_getenv("MZ800EMU_TEST_STALL_MCP_CMD");
+        const char *m = g_getenv("MZ800EMU_TEST_STALL_MS");
+        if (c && c[0] && m && m[0]) {
+            s_cmd = g_strdup(c);
+            s_ms = (int)g_ascii_strtoll(m, NULL, 10);
+        }
+        g_once_init_leave(&s_init, 1);
+    }
+    if (!s_cmd || s_ms <= 0 || entry->dbgapi_cmd == DBGAPI_CMD_NONE) return;
+    if (strcmp(entry->name, s_cmd) != 0) return;
+    if (!g_atomic_int_compare_and_exchange(&s_used, 0, 1)) return;
+    dbgapi_test_arm_dispatch_stall(entry->dbgapi_cmd, s_ms);
+}
+#endif
+
+
 en_MCP_DISPATCH_RESULT mcp_dispatch_request(const st_JSONL_MESSAGE *req,
                                             char **out_response) {
     if (!req || !out_response) {
@@ -12461,6 +12687,9 @@ en_MCP_DISPATCH_RESULT mcp_dispatch_request(const st_JSONL_MESSAGE *req,
 
     for (size_t i = 0; g_cmd_map[i].name != NULL; i++) {
         if (strcmp(g_cmd_map[i].name, cmd_name) == 0) {
+#ifndef MZ800EMU_MCP_TEST_BUILD
+            _test_hook_maybe_arm_stall(&g_cmd_map[i]);
+#endif
             return g_cmd_map[i].handler(req, out_response);
         }
     }

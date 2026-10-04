@@ -101,6 +101,15 @@ typedef struct st_DISPATCH_STUB_STATE {
     uint8_t              bp_list_fake_bank_id;
     uint64_t             bp_list_fake_hits;
     const char          *bp_list_fake_condition;
+    /* bp_list: addr_end / addr_match_mode (en_BP_MATCH_MODE) / addr_mask
+     * do bp[0] (default 0 = SINGLE). */
+    uint16_t             bp_list_fake_addr_end;
+    uint8_t              bp_list_fake_addr_match_mode;
+    uint16_t             bp_list_fake_addr_mask;
+    /* bp_list: bank_id_end / bank_match_mode / bank_id_mask do bp[0]. */
+    uint8_t              bp_list_fake_bank_id_end;
+    uint8_t              bp_list_fake_bank_match_mode;
+    uint8_t              bp_list_fake_bank_id_mask;
     int                  bp_create_calls;
     uint8_t              bp_create_last_type;
     uint16_t             bp_create_last_addr;

@@ -1626,7 +1626,7 @@ extern "C" void membrowser_hexview_render_ex ( st_MEMBROWSER_STATE *st,
             if ( ImGui::MenuItem ( _( "Open in PCG editor..." ) ) ) {
                 int char_idx = ( int ) ( target / 8 );
                 if ( char_idx < 0 ) char_idx = 0;
-                if ( char_idx > 255 ) char_idx = 255;
+                if ( char_idx > MEMBROWSER_PCG_CHAR_COUNT - 1 ) char_idx = MEMBROWSER_PCG_CHAR_COUNT - 1;
                 membrowser_pcg_window_focus_at ( extras->sub_id, char_idx );
                 if ( g_gui ) g_gui->showMembrowserPcgEditor = true;
             }

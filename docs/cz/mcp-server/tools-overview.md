@@ -22,7 +22,7 @@ dokumentu [Resources overview](resources-overview.md).
 | `emu_mem_read` | ne | Čte bajty z Z80 paměti (base64) |
 | `emu_mem_write` | **ANO** | Zápis bajtů do RAM - region check, **destruktivní** |
 | `emu_bp_add` | ne | Přidá breakpoint (exec, nebo typed memw/memr/ior/iow + condition) |
-| `emu_bp_list` | ne | Vypíše breakpointy (id/addr/enabled + type/zone/bank_id/hits/condition) |
+| `emu_bp_list` | ne | Vypíše breakpointy (id/addr/addr_end/addr_match_mode/addr_mask/enabled + type/zone/bank_id/bank_id_end/bank_match_mode/bank_id_mask/hits/condition) |
 | `emu_bp_remove` | ne | Odebere konkrétní BP podle ID |
 | `emu_bp_clear` | ne | Smaže všechny breakpointy najednou |
 | `emu_bp_enable` | ne | Toggle BP enabled flagu (bez mazání) |
@@ -186,6 +186,10 @@ Text v `error` zároveň říká, zda emulátor příkaz provedl:
 - `Emulator busy: command only partially executed ...` - vícekrokový
   tool skončil po provedení dřívějšího kroku; před opakováním
   zkontrolujte stav.
+- `Emulator busy: command still running ...` - emulační vlákno příkaz
+  převzalo, ale zhruba do 20 s (u nástrojů se souborovým I/O, např.
+  trace_save nebo snapshot_save, do 10 min) ho nedokončilo; výsledek není znám
+  (příkaz může doběhnout později). Před opakováním zkontrolujte stav.
 - `Emulator is shutting down ...` - neprovedeno, další požadavky už
   neposílejte.
 - jakýkoliv jiný text (např. `bp_remove failed (unknown id?)`) - příkaz
@@ -205,7 +209,10 @@ a vrátí skutečný výsledek. Podrobnosti pro AI klienty:
 
 Vrátí stav emulátoru: jestli běží nebo je zapauzovaný, kolik framů
 už proběhlo, jestli je transport connected. Nedestruktivní, vhodné
-jako první volání po připojení.
+jako první volání po připojení. Pokud emulátor nečekaně skončil,
+výsledek je `{"running": false, "connected": false, "last_exit":
+"..."}` (viz [Python wrapper](python-wrapper.md), sekce *Konec
+emulátoru a automatický restart*).
 
 ### `emu_ping`
 
@@ -330,11 +337,21 @@ Vrátí seznam aktuálních breakpointů. Návrat:
 
 - `id` (int) - handle breakpointu
 - `addr` (int) - adresa
+- `addr_end` (int) - horní mez rozsahu adres (včetně); platí jen pro
+  `addr_match_mode` `RANGE`
+- `addr_match_mode` (string) - `SINGLE` (jen `addr`), `RANGE`
+  (`addr`..`addr_end`) nebo `MASK` (`(x & addr_mask) == (addr & addr_mask)`);
+  týká se `PC_EXEC` / `MEM_R` / `MEM_W`
+- `addr_mask` (int) - AND maska; platí jen pro `addr_match_mode` `MASK`
 - `enabled` (bool)
 - `type` (string) - kanonický UPPER_SNAKE typ (`PC_EXEC` / `MEM_R` /
   `MEM_W` / `IORQ_R` / `IORQ_W` / ...)
 - `zone` (string) - paměťová zóna (`CPU_VIEW` / `RAM` / ...)
 - `bank_id` (int) - index banky (pro zónu `MMEXT_BANK`)
+- `bank_id_end` (int) - horní mez rozsahu bank (včetně); platí jen pro
+  `bank_match_mode` `RANGE`
+- `bank_match_mode` (string) - `SINGLE` / `RANGE` / `MASK` pro `bank_id`
+- `bank_id_mask` (int) - AND maska pro `bank_id`; platí jen v režimu `MASK`
 - `hits` (int) - počítadlo střelení BP
 - `condition` (string nebo null, pokud bezpodmínečný)
 
@@ -1540,7 +1557,11 @@ Args:
   `expr`, `action`, `event_name`) přijímají `None` jako clear.
 
 Returns: JSON `{"id": int, "created": bool}`. `id` = -1 při
-selhání.
+selhání. Pokud je `addr_end` nastaveno na jinou hodnotu než `addr`, ale
+`addr_match_mode` není nastaven na `RANGE` (nový breakpoint začíná
+v `SINGLE`), breakpoint se přesto vytvoří, hlídá jen `addr` a výsledek
+nese navíc `warning`. Pro hlídání rozsahu uveď ve `fields` obě pole,
+`"addr_end"` i `"addr_match_mode"` (hodnota `"RANGE"`).
 
 Pole `fwd_min_interval_ms` a `fwd_max_fires` jsou per-BP override
 rate-limitu forward akcí (snapshot / trace_save) - viz sekce
@@ -1869,6 +1890,7 @@ Returns: `{"ok": true, "action": "play_paused"}`.
 ### `emu_cmt_stop` (sensitive)
 
 Zastaví transport (PLAY nebo RECORD -> STOP). No-op pokud už zastaveno.
+Bez vložené pásky transport také uvede do STOP.
 
 Returns: `{"ok": true, "action": "stop"}`.
 
@@ -1948,6 +1970,8 @@ Args:
 
 Zapne/vypne CPU boost během transportu pásky (= běh na maximální
 rychlosti pro rychlé dlouhé loady). Odráží se v `cpu_boost`.
+Uživatelská preference: načtení snapshotu ji neobnovuje (snapshot ji
+kvůli starším verzím emulátoru dál obsahuje).
 
 Args:
 - `enabled` (required): true = boost, false = reálný čas.
@@ -1971,13 +1995,20 @@ Args:
 - `path` (required): cesta k CMT souboru (přípona vybírá backend).
 - `play_immediately` (default false): spustit přehrávání po openu.
 
-Returns: `{"ok": true, "path": <str>, "playing": <bool>}`.
+Returns: `{"ok": true, "path": <str>, "playing": <bool>, "state": <str>,
+"paused": <bool>}`. `playing`, `state` (`"stop"` / `"play"` / `"record"`)
+a `paused` hlásí skutečný stav transportu po operaci (stejný význam jako
+v `emulator://periph/cmt`); `playing` je true jen pro PLAY bez pauzy. Pokud
+byl požadován `play_immediately`, ale páska po operaci nehraje, výsledek
+obsahuje navíc `warning`.
 
 ### `emu_cmt_tape_seek` (sensitive)
 
-Seek na blok pásky (SIMPLE_TAPE multi-blok containery). Pro jednoblokový
-container (např. plain .mzf) je jen blok 0 a seek nemusí být podporován.
-Vyžaduje naloženou pásku. Seznam bloků viz `emulator://periph/cmt/tape`.
+Seek na blok pásky (SIMPLE_TAPE multi-blok containery: .mzt, .tap).
+Jednosouborový container (SINGLE: samostatné .mzf nebo .wav) seek
+nepodporuje - volání selže i pro blok 0; pro přehrání od začátku použij
+`emu_cmt_stop` + `emu_cmt_play`. Vyžaduje naloženou pásku. Seznam bloků
+viz `emulator://periph/cmt/tape`.
 
 Args:
 - `block_id` (required): index bloku (0-based).

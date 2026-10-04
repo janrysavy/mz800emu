@@ -11,6 +11,9 @@
  *  - předčasné probuzení podmínky (bez zpracování) ukončilo čekání
  *    neúspěchem.
  *
+ * Dále testy dbgapi_ui_submit_cmd_sync_watched(): zaseknutý rozpracovaný
+ * příkaz se ohlásí callbackem v limitu, slot se přesto neopustí.
+ *
  * Emu vlákno simulují pomocná GThread vlákna, která pracují přímo
  * s frontou přes `dbgapi_emu_dequeue` a `dbgapi_emu_complete` (bez
  * `dbgapi_emu_dispatch`, aby šlo řídit dobu "zpracování").
@@ -197,6 +200,106 @@ void test_spurious_wakeup_keeps_waiting(void) {
 }
 
 
+/**
+ * @brief Kontext callbacku zaseknutí pro testy _watched varianty.
+ *
+ * Vlastnictví: žije na zásobníku testu po celou dobu submitu.
+ */
+typedef struct {
+    int calls;                 /**< Kolikrát byl callback zavolán. */
+    gint64 at_us;              /**< Čas (monotonic) posledního volání. */
+} st_STALL_CTX;
+
+
+/**
+ * @brief Callback zaseknutí: zaznamená volání do st_STALL_CTX.
+ * @param user_data st_STALL_CTX*
+ */
+static void stall_cb(void *user_data)
+{
+    st_STALL_CTX *c = (st_STALL_CTX *)user_data;
+    c->calls++;
+    c->at_us = g_get_monotonic_time();
+}
+
+
+/**
+ * @brief Zaseknutý rozpracovaný příkaz: callback přijde v limitu, submit
+ *        ale dál čeká a vrátí skutečný výsledek (slot se neopustí).
+ */
+void test_watched_reports_stall_and_still_completes(void) {
+    st_DBGAPI_CMDRQ_QUEUE q;
+    dbgapi_init(&q);
+
+    st_FAKE_EMU fe = { .queue = &q, .delay_before_dequeue_us = 0,
+                       .processing_us = 400000, .handler_success = true };
+    st_STALL_CTX ctx = { 0 };
+    GThread *t = g_thread_new("fake-emu", fake_emu_thread, &fe);
+
+    gint64 t0 = g_get_monotonic_time();
+    en_DBGAPI_SUBMIT_STATUS st = dbgapi_ui_submit_cmd_sync_watched(
+        &q, DBGAPI_CMD_PAUSE, DBGAPI_CMD_ORIGIN_MCP, NULL, NULL,
+        30, 50, stall_cb, &ctx);
+    gint64 t_end = g_get_monotonic_time();
+    g_thread_join(t);
+
+    TEST_ASSERT_TRUE(fe.dequeued);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_SUBMIT_OK, st);
+    TEST_ASSERT_EQUAL_INT(1, ctx.calls);
+    /* Callback po timeout + stall (80 ms), ale dřív než dokončení (400 ms). */
+    TEST_ASSERT_TRUE(ctx.at_us - t0 >= 70000);
+    TEST_ASSERT_TRUE(ctx.at_us - t0 < 350000);
+    /* Submit vrátil až po dokončení handleru. */
+    TEST_ASSERT_TRUE(t_end - t0 >= 390000);
+
+    dbgapi_destroy(&q);
+}
+
+
+/**
+ * @brief Rozpracovaný příkaz dokončený v dodatečném limitu callback nevolá.
+ */
+void test_watched_no_stall_when_completed_in_time(void) {
+    st_DBGAPI_CMDRQ_QUEUE q;
+    dbgapi_init(&q);
+
+    st_FAKE_EMU fe = { .queue = &q, .delay_before_dequeue_us = 0,
+                       .processing_us = 60000, .handler_success = false };
+    st_STALL_CTX ctx = { 0 };
+    GThread *t = g_thread_new("fake-emu", fake_emu_thread, &fe);
+
+    en_DBGAPI_SUBMIT_STATUS st = dbgapi_ui_submit_cmd_sync_watched(
+        &q, DBGAPI_CMD_PAUSE, DBGAPI_CMD_ORIGIN_MCP, NULL, NULL,
+        20, 1000, stall_cb, &ctx);
+    g_thread_join(t);
+
+    TEST_ASSERT_EQUAL_INT(DBGAPI_SUBMIT_FAILED, st);
+    TEST_ASSERT_EQUAL_INT(0, ctx.calls);
+
+    dbgapi_destroy(&q);
+}
+
+
+/**
+ * @brief Nevyzvednutý příkaz se zruší (TIMEOUT) a callback se nevolá.
+ */
+void test_watched_not_dequeued_times_out_without_stall(void) {
+    st_DBGAPI_CMDRQ_QUEUE q;
+    dbgapi_init(&q);
+
+    st_STALL_CTX ctx = { 0 };
+    en_DBGAPI_SUBMIT_STATUS st = dbgapi_ui_submit_cmd_sync_watched(
+        &q, DBGAPI_CMD_PAUSE, DBGAPI_CMD_ORIGIN_MCP, NULL, NULL,
+        20, 20, stall_cb, &ctx);
+
+    TEST_ASSERT_EQUAL_INT(DBGAPI_SUBMIT_TIMEOUT, st);
+    TEST_ASSERT_EQUAL_INT(0, ctx.calls);
+    TEST_ASSERT_NULL(dbgapi_emu_dequeue(&q));
+
+    dbgapi_destroy(&q);
+}
+
+
 /* ========================================================================= */
 /*  MAIN                                                                     */
 /* ========================================================================= */
@@ -211,6 +314,9 @@ int main(int argc, char *argv[]) {
     RUN_TEST(test_timed_out_command_is_not_dequeued);
     RUN_TEST(test_command_after_cancelled_slot_is_processed);
     RUN_TEST(test_spurious_wakeup_keeps_waiting);
+    RUN_TEST(test_watched_reports_stall_and_still_completes);
+    RUN_TEST(test_watched_no_stall_when_completed_in_time);
+    RUN_TEST(test_watched_not_dequeued_times_out_without_stall);
 
     int result = UNITY_END();
 

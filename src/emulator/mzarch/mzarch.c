@@ -130,8 +130,45 @@ static inline void mzarch_main_event_callback_20ms(unsigned event_ticks)
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */
 }
 
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+/**
+ * @brief Příznak "skončil snímek, per-frame body debuggeru čekají".
+ *
+ * Nastavuje ho mz800_main_event_callback_screen_done(), maže
+ * mzarch_main_frame_done_debugger_hooks(). Drain fronty dbgapi a Freeze
+ * Bytes se tím přesouvají z callbacku konce snímku (uvnitř
+ * mzarch_main_process_events(), před gdg_on_screen_done_event(), často
+ * uvnitř insideop rozpracované instrukce) do hlavní smyčky za
+ * mzarch_main_process_events().
+ *
+ * Proč: dbgapi příkaz s I/O nebo paměťovou operací (IO_WRITE, IO_READ -
+ * ověřeno; MEM_WRITE, REGION_WRITE a Freeze Bytes do VRAM nebo E00x jdou
+ * podle kódu stejnou cestou, měřením neověřeno) volá přes callbacky sběrnice
+ * mzarch_main_insideop() a ta mzarch_main_process_events(). Uvnitř
+ * callbacku konce snímku událost konce snímku ještě visí, takže by se
+ * zpracovala podruhé a délka snímku by se od unsigned
+ * g_gdg.total_elapsed.ticks odečetla dvakrát. Čítač podtekl na ~2^32
+ * a emulace pak ~240 s zpracovávala události bez provádění instrukcí,
+ * další port I/O příkaz v tom okně zablokoval celé MCP.
+ *
+ * Pokud konec snímku zpracuje insideop příkazu vykonaného v paused smyčce
+ * (port I/O těsně před koncem snímku), příznak zůstane nastavený a Freeze
+ * Bytes tohoto snímku se uplatní až po rozběhu emulace (první průchod
+ * per-event blokem). Paused smyčka per-frame body záměrně nevolá.
+ *
+ * @invariant Čte a píše ho jen EMU vlákno, proto není atomický.
+ */
+static bool s_mzarch_frame_done_hooks_due = false;
+#endif
+
 /**
  * This event is called every time a video frame is to be completed (regardless of whether it will be rendered or not)
+ *
+ * Volá se z gdg_process_events() při zpracování události konce posledního
+ * řádku snímku, PŘED gdg_on_screen_done_event() (odečet délky snímku).
+ * Proto zde nesmí běžet nic, co volá mzarch_main_insideop() (port I/O,
+ * paměť VRAM a E00x) - to by událost konce snímku zpracovalo podruhé.
+ * Takové per-frame body jen ohlásí přes s_mzarch_frame_done_hooks_due.
  *
  * @param
  * @return
@@ -161,31 +198,114 @@ static inline void mz800_main_event_callback_screen_done(void)
     videorec_on_screen_done();
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-    /* dbgapi CMDRQ drain - per-frame point. UI submituje příkazy
-     * (Pause/Run/Step/atd.) přes dbgapi_ui_submit_cmd_sync; EMU vlákno
-     * je drainuje tady. V default OFF stavu (= prázdná fronta) je
-     * has_pending() jeden atomic read - branch predictor naučí "vždy
-     * false", ~zero impact na hot loop.
-     *
-     * Drain probíhá také v paused loop (= aby Step/Run/Reset reagovaly
-     * i když emu paused). Toto je per-frame point pro běžící emu. */
+    /* dbgapi CMDRQ drain a Freeze Bytes se tady jen OHLÁSÍ. Samotné
+     * provedení je až v mzarch_main_frame_done_debugger_hooks() v hlavní
+     * smyčce, v konzistentním bodě mezi instrukcemi. Tady jsme uprostřed
+     * zpracování události konce snímku (gdg_on_screen_done_event() ještě
+     * neodečetl délku snímku) a často i uprostřed instrukce (insideop),
+     * takže by I/O a paměťové operace příkazů událost konce snímku
+     * zpracovaly podruhé. Viz s_mzarch_frame_done_hooks_due. */
+    s_mzarch_frame_done_hooks_due = true;
+#endif
+}
+
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+/**
+ * @brief Vybere a vykoná všechny čekající dbgapi příkazy (CMDRQ drain).
+ *
+ * UI i MCP submitují příkazy přes dbgapi_ui_submit_cmd_sync*(); EMU vlákno
+ * je vykonává tady. V default stavu (prázdná fronta) je
+ * dbgapi_emu_has_pending() jedno atomické čtení.
+ *
+ * Příkazy jako IO_WRITE, IO_READ, MEM_WRITE nebo REGION_WRITE volají stejné
+ * callbacky sběrnice jako instrukce (port_write_cb, memory_write_byte) a ty
+ * volají mzarch_main_insideop() a mzarch_main_process_events(). Insideop
+ * synchronizuje čas jako I/O uvnitř instrukce: přičte k
+ * g_gdg.total_elapsed.ticks rozpracované T-stavy (cpu->op_tstate, mezi
+ * instrukcemi = délka předchozí instrukce, až 23 T), stejnou hodnotu zapíše
+ * do instruction_insideop_sync_ticks a u PSG a VRAM přidá čekací stavy
+ * (cpu->wait_cycles). Následující instrukce by sync_ticks odečetla od svých
+ * tiků. Pokud ale předstih mezitím překročil konec snímku (pauza těsně před
+ * koncem snímku, drain paused smyčky), délka snímku se už odečetla a ve
+ * čítači zbývá méně, než instrukce odečte: unsigned čítač podteče a emulace
+ * ~240 s zpracovává události bez instrukcí. Reprodukováno testem
+ * tests/mcp/test_dbgapi_io_running.py (fáze E) na všech platformách.
+ *
+ * Proto se po každém příkazu účty insideop vynulují stejně jako po
+ * bootstrapu (bootstrap.c, mzarch_bootstrap_init()): sync_ticks,
+ * instruction_wait_tstates a cpu->wait_cycles na 0, cpu->op_tstate na
+ * hodnotu před příkazem (mezi instrukcemi je jen informativní). Daň:
+ * příkaz s operací na sběrnici posune čas emulace natrvalo o předstih
+ * (nejvýš délka jedné instrukce, u PSG zápisu navíc jeho čekací stavy).
+ * Pro ladicí příkaz zvenčí je to přijatelné. Příkazy bez operace na
+ * sběrnici účty nemění, takže se jich úklid nijak nedotkne.
+ *
+ * @pre Volá se jen z EMU vlákna v konzistentním bodě mezi instrukcemi
+ *      (hlavní smyčka za mzarch_main_process_events() nebo paused smyčka):
+ *      nikdy z callbacku události ani z insideop. V obou bodech jsou účty
+ *      insideop nulové (hlavní smyčka je nuluje po každém z80_step(),
+ *      cpu->wait_cycles spotřebuje z80_step()).
+ * @post Fronta byla v okamžiku kontroly prázdná. Příkaz zařazený během
+ *       drainu se vykoná ještě v tomto volání. Každý vyzvednutý požadavek
+ *       je dokončen (dbgapi_emu_complete()) a jeho volající odblokován.
+ *       Účty insideop jsou nulové, cpu->op_tstate má hodnotu z doby před
+ *       příkazem.
+ */
+static void mzarch_main_dbgapi_drain(void)
+{
     while (dbgapi_emu_has_pending(&g_dbgapi_cmdrq_queue))
     {
         st_DBGAPI_CMDRQ *rq = dbgapi_emu_dequeue(&g_dbgapi_cmdrq_queue);
         if (rq)
         {
+            z80_t *cpu = g_mzarch_main.cpu;
+            const int saved_op_tstate = cpu->op_tstate;
+
             dbgapi_emu_dispatch(rq);
+
+            /* Úklid účtů insideop po operaci mimo instrukci (viz výše). */
+            g_mzarch_main.instruction_insideop_sync_ticks = 0;
+            g_mzarch_main.instruction_wait_tstates = 0;
+            cpu->wait_cycles = 0;
+            cpu->op_tstate = saved_op_tstate;
+
             dbgapi_emu_complete(rq);
         };
     };
+}
+
+/**
+ * @brief Per-frame body debuggeru odložené z konce snímku do hlavní smyčky.
+ *
+ * Volá se z hlavní smyčky po mzarch_main_process_events(), pokud od
+ * posledního volání skončil snímek (s_mzarch_frame_done_hooks_due). V tu
+ * chvíli je událost konce snímku kompletně zpracovaná
+ * (gdg_on_screen_done_event() odečetl délku snímku, čítač snímků je
+ * zvýšený, další událost je naplánovaná) a CPU stojí mezi instrukcemi.
+ *
+ * Pořadí: napřed drain fronty dbgapi, potom Freeze Bytes (stejně jako
+ * dřív v callbacku konce snímku), aby se bajt zafrozený příkazem uplatnil
+ * ve stejném snímku.
+ *
+ * @pre EMU vlákno, bod mezi instrukcemi, mzarch_main_process_events() už
+ *      proběhlo (g_gdg.total_elapsed.ticks < g_mzarch_main.event.ticks).
+ * @post s_mzarch_frame_done_hooks_due je false (pokud ho některý příkaz
+ *       znovu nenastavil vnořeným koncem snímku), fronta dbgapi je prázdná.
+ */
+static void mzarch_main_frame_done_debugger_hooks(void)
+{
+    s_mzarch_frame_done_hooks_due = false;
+
+    mzarch_main_dbgapi_drain();
 
     /* V1 Freeze Bytes - per-frame apply všech zafrozených bajtů (cheat
-     * engine semantika). Hot path discipline: pokud žádný entry, vrátí
-     * okamžitě (1 atomic byte load + branch). Default OFF stav = ~zero
-     * impact. Viz src/emulator/debugger/freeze/freeze.h. */
+     * engine semantika). Pokud žádný entry, vrátí okamžitě (1 atomic byte
+     * load + branch). Zápis může jít přes memory_write_byte (LOGICAL
+     * region) a tedy přes insideop - proto také mimo callback konce
+     * snímku. Viz src/emulator/debugger/freeze/freeze.h. */
     freeze_apply_all ( );
-#endif
 }
+#endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */
 
 /*******************************************************************************
  *
@@ -613,6 +733,24 @@ void mzarch_main_insideop_iorq_psg_write(void)
     mzarch_main_insideop(INSIDEOP_IORQ_PSG_WRITE);
 }
 
+void mzarch_main_report_screen_done_underflow(unsigned ticks)
+{
+    /* Jen EMU vlákno - čítač nemusí být atomický. Omezení výpisu chrání
+     * stderr před zahlcením, kdyby se chyba opakovala každý snímek. */
+    static unsigned s_reported = 0;
+    if (s_reported < 8)
+    {
+        s_reported++;
+        fprintf(stderr,
+                "WARNING: frame end processed twice (total_elapsed.ticks=%u < frame length %u), clamped to 0\n",
+                ticks, (unsigned)VIDEO_SCREEN_TICKS);
+        if (s_reported == 8)
+        {
+            fprintf(stderr, "WARNING: further occurrences suppressed\n");
+        };
+    };
+}
+
 /*******************************************************************************
  *
  *
@@ -851,18 +989,11 @@ static inline void mzzarch_main_do_emulator_paused(void)
 
         /* dbgapi CMDRQ drain v paused stavu. Bez tohoto by UI Step/Run/
          * Reset přes dbgapi_ui_submit_cmd_sync zatuhly (= EMU vlákno by
-         * frontu nikdy nedrainovalo). Blocking wait s timeout ne -
-         * paused loop už má vlastní g_usleep(20ms) cyklus + UI iter, takže
-         * stačí non-blocking has_pending check. */
-        while (dbgapi_emu_has_pending(&g_dbgapi_cmdrq_queue))
-        {
-            st_DBGAPI_CMDRQ *rq = dbgapi_emu_dequeue(&g_dbgapi_cmdrq_queue);
-            if (rq)
-            {
-                dbgapi_emu_dispatch(rq);
-                dbgapi_emu_complete(rq);
-            };
-        };
+         * frontu nikdy nedrainovalo). Tady jen non-blocking has_pending
+         * check; na nový příkaz smyčka čeká na konci iterace přes
+         * dbgapi_emu_wait_for_cmd() (nejvýš 20 ms). Stejný helper jako drain
+         * běžící emulace (per-frame bod v hlavní smyčce). */
+        mzarch_main_dbgapi_drain();
 
         if (iface_video_get_redraw_full_screen_request())
         {
@@ -885,7 +1016,13 @@ static inline void mzzarch_main_do_emulator_paused(void)
          * odpauzování). Bez nahrávání 1 atomické čtení. */
         videorec_on_emulation_paused();
 
-        g_usleep(20 * 1000);
+        /* Čekání na další iteraci: nejvýš 20 ms jako dřív (g_usleep), ale
+         * příkaz z dbgapi fronty smyčku probudí hned (queue_cond). Bez toho
+         * čekal každý synchronní příkaz UI v pauze až 20 ms - u editace
+         * v Memory Browseru (zápis přes frontu po každém bajtu) a u
+         * vícekrokových MCP handlerů se to sčítalo. Návratová hodnota je
+         * nepodstatná, drain proběhne na začátku další iterace. */
+        (void)dbgapi_emu_wait_for_cmd(&g_dbgapi_cmdrq_queue, 20);
     };
 
     /* Po opuštění pause smyčky (= unpause přes F5/F4/F7/F8 nebo Run To
@@ -1309,6 +1446,24 @@ void mzarch_main(void)
         {
 
             mzarch_main_process_events();
+
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+            /* Per-frame body debuggeru (drain fronty dbgapi, Freeze Bytes),
+             * ohlášené callbackem konce snímku. Tady je událost konce snímku
+             * kompletně zpracovaná a CPU stojí mezi instrukcemi, takže port
+             * I/O a zápisy do paměti z příkazů nemohou zpracovat konec snímku
+             * podruhé. Kontrola je v per-event bloku, ne v per-instruction
+             * hot path. Pokud konec snímku zpracovala insideop uvnitř
+             * instrukce, provede se drain v nejbližším dalším průchodu tímto
+             * blokem (nejpozději s další událostí). Před
+             * mzarch_main_process_interrupt(), aby IRQ/NMI inject a změny
+             * registrů z příkazů viděla obsluha přerušení ihned, stejně jako
+             * při drainu v callbacku. */
+            if (s_mzarch_frame_done_hooks_due)
+            {
+                mzarch_main_frame_done_debugger_hooks();
+            };
+#endif
 
             /* Ceka na nas nejaky interrupt? */
             mzarch_main_process_interrupt();

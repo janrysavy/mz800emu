@@ -4,7 +4,9 @@
  *
  * Samostatné ImGui okno editující jednu PCG banku (8 KB = 1024 chars,
  * každý char = 8 bajtů, 1 bajt = 1 řádek 8 pixelů). Banky 1..3 přepínané
- * comboboxem v okně.
+ * comboboxem v okně. Index znaku 0..1023 odpovídá HW: MZ-1500 adresuje
+ * PCG znak 10 bity (PCGLO + 2 horní bity PCGHI, viz mz1500_framebuffer.c),
+ * banka má MEMORY_SIZE_PCG_BANK = 8 KB (memory.h).
  *
  * Aktivace přes membrowser kontextové menu (RMB nad bytem v PCG_1500
  * regionu) nebo Debugger menu → PCG editor. Otevřeno = g_gui->showPcgEditor.
@@ -31,6 +33,13 @@
 
 #include <stdbool.h>
 
+/**
+ * @brief Počet znaků v jedné PCG bance MZ-1500 (8 KB / 8 B na znak).
+ *
+ * Platné indexy znaku jsou 0 .. MEMBROWSER_PCG_CHAR_COUNT - 1.
+ */
+#define MEMBROWSER_PCG_CHAR_COUNT 1024
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -55,7 +64,7 @@ void membrowser_pcg_window_render ( bool *p_open );
  * a přepne na zadaný char.
  *
  * @param bank_idx       0..2 (= banky 1..3).
- * @param char_idx       0..255.
+ * @param char_idx       0..MEMBROWSER_PCG_CHAR_COUNT - 1; mimo rozsah -> 0.
  */
 void membrowser_pcg_window_focus_at ( int bank_idx, int char_idx );
 

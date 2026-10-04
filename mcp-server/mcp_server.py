@@ -21,6 +21,7 @@ Výběr transportu je řízený env proměnnou ``MZ800EMU_TRANSPORT``:
     MZ800EMU_TCP_HOST=127.0.0.1 (pouze tcp)
     MZ800EMU_TCP_PORT=23800 (pouze tcp)
     MZ800EMU_EXE=./mz800emu.exe (pouze pipe)
+    MZ800EMU_WORK_DIR=<adresář> (pouze pipe, předá se jako --work-dir)
 
 Architektura:
 
@@ -71,6 +72,8 @@ Reference design:
 
 import asyncio
 import configparser
+import contextvars
+import functools
 import json
 import logging
 import logging.handlers
@@ -92,6 +95,12 @@ EMU_EXE: str = os.environ.get(
     "MZ800EMU_EXE",
     str(Path(__file__).resolve().parent.parent / "mz800emu.exe"),
 )
+
+# Pracovní adresář spawnutého emulátoru (--work-dir) - kam jdou relativní
+# výstupy (CDL export při ukončení, trace, ...). Prázdné = výchozí
+# work_dir emulátoru. Relevantní pouze pro pipe transport; používají ho
+# testy, aby výstupy nevznikaly v kořeni repa.
+EMU_WORK_DIR: str = os.environ.get("MZ800EMU_WORK_DIR", "").strip()
 
 # Výběr transportu: pipe (default) nebo tcp.
 TRANSPORT_KIND: str = os.environ.get("MZ800EMU_TRANSPORT", "pipe").lower()
@@ -312,6 +321,111 @@ def _wire_truncate(line: str) -> str:
 mcp = FastMCP("mz800emu")
 
 
+#: Úložiště oznámení o restartu pro právě běžící tool call. Obal toolu
+#: (``_tool_with_restart_notice``) do něj na začátku volání vloží prázdný
+#: dict; ``_send_request`` při automatickém restartu zapíše oznámení sem,
+#: takže ho dostane právě to volání, které restart vyvolalo (i při souběžně
+#: běžících voláních - každé běží ve vlastním asyncio kontextu). Mimo tool
+#: call (čtení resource) je hodnota None a oznámení jde do globálního
+#: ``_restart_notice`` pro nejbližší tool.
+_restart_holder: contextvars.ContextVar[Optional[dict]] = \
+    contextvars.ContextVar("mz800emu_restart_holder", default=None)
+
+
+def _take_restart_notice(holder: Optional[dict]) -> Optional[dict]:
+    """Vyzvedne oznámení o restartu pro dokončovaný tool call.
+
+    Přednost má oznámení zapsané do ``holder`` (restart vyvolal tento
+    call), jinak čekající globální ``_restart_notice`` (restart vyvolalo
+    čtení resource). Vyzvednuté oznámení se smaže.
+
+    Args:
+        holder: dict tohoto volání (z ``_restart_holder``), nebo None.
+
+    Returns:
+        Oznámení ``{"restarted": True, "restart_reason": str}``, nebo None.
+    """
+    global _restart_notice
+    if holder is not None and holder.get("notice") is not None:
+        return holder.pop("notice")
+    notice = _restart_notice
+    _restart_notice = None
+    return notice
+
+
+def _attach_restart_notice(result: str, notice: Optional[dict]) -> str:
+    """Přidá k výsledku toolu oznámení o automatickém restartu emulátoru.
+
+    Tvar výsledku se mění jen při restartu: JSON objekt dostane pole
+    ``restarted: true`` a ``restart_reason``; jiný výsledek se zabalí do
+    ``{"result": <původní>, "restarted": true, "restart_reason": ...}``.
+
+    Args:
+        result: výsledek toolu (JSON text).
+        notice: oznámení z ``_take_restart_notice``, nebo None.
+
+    Returns:
+        Původní výsledek, nebo výsledek doplněný o oznámení.
+    """
+    if notice is None:
+        return result
+    try:
+        obj = json.loads(result)
+    except (TypeError, ValueError):
+        obj = None
+    if isinstance(obj, dict):
+        obj.update(notice)
+        return json.dumps(obj)
+    return json.dumps({"result": obj if obj is not None else result,
+                       **notice})
+
+
+_fastmcp_tool_decorator = mcp.tool
+
+
+def _tool_with_restart_notice(*args: Any, **kwargs: Any):
+    """Náhrada ``mcp.tool()``: registruje tool obalený oznámením o restartu.
+
+    Signatura, jméno i docstring toolu zůstávají (``functools.wraps``,
+    FastMCP čte signaturu přes ``__wrapped__``), mění se jen výsledek -
+    viz ``_attach_restart_notice``. Všechny tooly jsou ``async`` a vracejí
+    ``str``. Modulový symbol toolu je obalená funkce (testy ho volají
+    přímo).
+
+    Když tool skončí výjimkou (např. požadavek po automatickém restartu
+    selže), oznámení se připojí k textu chyby
+    (``... [restarted: true; <důvod>]``), aby se neztratilo ani
+    nepřesunulo k jinému volání.
+    """
+    register = _fastmcp_tool_decorator(*args, **kwargs)
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        async def wrapper(*a: Any, **kw: Any) -> str:
+            holder: dict = {}
+            token = _restart_holder.set(holder)
+            try:
+                result = await fn(*a, **kw)
+            except Exception as e:
+                notice = _take_restart_notice(holder)
+                if notice is None:
+                    raise
+                raise RuntimeError(
+                    f"{e} [restarted: true; {notice['restart_reason']}]"
+                ) from e
+            finally:
+                _restart_holder.reset(token)
+            return _attach_restart_notice(result,
+                                          _take_restart_notice(holder))
+        register(wrapper)
+        return wrapper
+
+    return decorator
+
+
+mcp.tool = _tool_with_restart_notice
+
+
 # === Transport abstrakce =============================================
 # Polymorphic API nad spawned subprocess pipe vs TCP socket konexí.
 # Reader task volá ``read_line``, ``_send_request`` volá ``send_line``.
@@ -334,7 +448,13 @@ class _Transport:
       předchozího ``connect``).
     - ``is_alive()`` vrací False pokud transport ztratil konexi (EOF,
       reset, subprocess exit).
+    - ``expected_exit`` je True, jen když konec backendu vyvolal sám
+      wrapper (``emu_stop``, ``_shutdown_emu``); jinak je konec nečekaný
+      a další volání to klientovi oznámí (``restarted``).
     """
+
+    #: True = konec backendu vyžádal wrapper (emu_stop / shutdown).
+    expected_exit: bool = False
 
     async def connect(self) -> None:
         """Naváže konexi (spawn subprocess NEBO open socket)."""
@@ -364,6 +484,10 @@ class _Transport:
         """Vrátí True dokud je konexe živá."""
         raise NotImplementedError
 
+    async def exit_reason(self) -> str:
+        """Popis, proč backend skončil (pro chybové hlášky, anglicky)."""
+        return "connection closed"
+
 
 class _PipeTransport(_Transport):
     """Transport spawnující ``mz800emu.exe --mcp-pipe`` jako subprocess.
@@ -392,10 +516,12 @@ class _PipeTransport(_Transport):
                 f"mz800emu binary not found at {self.exe_path} "
                 f"(set MZ800EMU_EXE env var to override)"
             )
-        log.info("spawning emu: %s --mcp-pipe --headless --no-first-run-windows",
-                 self.exe_path)
+        args = [str(exe), "--mcp-pipe", "--headless", "--no-first-run-windows"]
+        if EMU_WORK_DIR:
+            args.append(f"--work-dir={EMU_WORK_DIR}")
+        log.info("spawning emu: %s", " ".join(args))
         self.process = subprocess.Popen(
-            [str(exe), "--mcp-pipe", "--headless", "--no-first-run-windows"],
+            args,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -444,6 +570,34 @@ class _PipeTransport(_Transport):
 
     def is_alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
+
+    async def exit_reason(self) -> str:
+        """Popis konce child procesu včetně exit kódu.
+
+        Po EOF na stdout proces obvykle už skončil, ale exit kód nemusí
+        být ještě k dispozici - čeká se na něj nejvýše 2 s (v thread
+        poolu, neblokuje event loop). Exit kód nad 0x7FFFFFFF (Windows
+        NTSTATUS, např. 0xC0000005 = access violation) nebo záporný (signál
+        na POSIX) se vypíše i hexa.
+
+        Returns:
+            Např. ``"exit code 3221225477 = 0xC0000005"``,
+            ``"exit code 0"`` nebo ``"process still running, stdout closed"``.
+        """
+        proc = self.process
+        if proc is None:
+            return "process not running"
+        rc = proc.poll()
+        if rc is None:
+            loop = asyncio.get_event_loop()
+            try:
+                rc = await loop.run_in_executor(
+                    None, functools.partial(proc.wait, timeout=2.0))
+            except subprocess.TimeoutExpired:
+                return "process still running, stdout closed"
+        if rc > 0x7FFFFFFF or rc < 0:
+            return f"exit code {rc} = 0x{rc & 0xFFFFFFFF:08X}"
+        return f"exit code {rc}"
 
 
 class _TcpTransport(_Transport):
@@ -535,6 +689,10 @@ class _TcpTransport(_Transport):
     def is_alive(self) -> bool:
         return self._alive
 
+    async def exit_reason(self) -> str:
+        """Popis konce TCP spojení (exit kód GUI emulátoru není znám)."""
+        return f"TCP connection to {self.host}:{self.port} closed"
+
 
 def _create_transport() -> _Transport:
     """Vytvoří správnou transport instanci podle ``MZ800EMU_TRANSPORT``.
@@ -569,6 +727,21 @@ _event_queue: Optional[asyncio.Queue] = None
 _next_req_id: int = 1
 _send_lock: Optional[asyncio.Lock] = None
 
+#: Popis posledního NEČEKANÉHO konce backendu (pád procesu, zavřené TCP),
+#: nebo None. Nastavuje reader task, maže ho automatický restart
+#: v ``_send_request`` a ``emu_start``. ``emu_status`` ho hlásí jako
+#: ``last_exit``.
+_last_exit: Optional[str] = None
+
+#: Oznámení, že ``_send_request`` po nečekaném konci backendu automaticky
+#: spustil nový emulátor (pipe) nebo znovu navázal TCP spojení, pokud restart
+#: vyvolalo volání mimo tool (čtení resource). Vyzvedne ho nejbližší
+#: dokončený tool. Restart vyvolaný toolem jde přes ``_restart_holder``.
+_restart_notice: Optional[dict[str, Any]] = None
+
+#: Klíč sentinelu, který reader task při konci transportu vloží do front.
+_TRANSPORT_CLOSED_KEY = "_transport_closed"
+
 
 # === Bridge core =====================================================
 
@@ -593,7 +766,11 @@ async def _stdout_reader_task() -> None:
     Side effects:
 
     - Modifikuje ``_response_queue`` / ``_event_queue``.
-    - Při EOF (= emu skončil / TCP konexe shozená) task spontánně končí.
+    - Při EOF (= emu skončil / TCP konexe shozená) task spontánně končí
+      a do obou front vloží sentinel s chybou (``_signal_transport_closed``),
+      takže čekající ``_send_request`` / čtení hello skončí hned chybou
+      "emulator process exited ..." místo timeoutu. Nečekaný konec se
+      zapíše do ``_last_exit``.
 
     Postconditions:
 
@@ -601,9 +778,18 @@ async def _stdout_reader_task() -> None:
     """
     global _transport
     log.info("stdout reader task started")
+    # Fronty a transport tohoto spojení - _ensure_connected je při
+    # reconnectu nahradí novými, sentinel ale patří do těchto.
+    transport = _transport
+    resp_queue = _response_queue
+    event_queue = _event_queue
     try:
-        while _transport is not None and _transport.is_alive():
-            line = await _transport.read_line()
+        # Čte se až do EOF (ne do is_alive()): proces může skončit dřív,
+        # než reader vybere poslední odpovědi z bufferu stdout (např.
+        # odpověď na shutdown / emu_stop). Čte se z transportu tohoto
+        # spojení, ne z globálního _transport (ten mohl reconnect nahradit).
+        while transport is not None:
+            line = await transport.read_line()
             if line is None:
                 # EOF na transportu - emu skončil nebo TCP konexe
                 # shozená.
@@ -635,6 +821,46 @@ async def _stdout_reader_task() -> None:
         raise
     except Exception as e:
         log.exception("stdout reader task selhal: %s", e)
+    await _signal_transport_closed(transport, resp_queue, event_queue)
+
+
+async def _signal_transport_closed(transport: Optional[_Transport],
+                                   resp_queue: Optional[asyncio.Queue],
+                                   event_queue: Optional[asyncio.Queue]) -> None:
+    """Oznámí konec transportu čekajícím požadavkům (sentinel do front).
+
+    Do response i event fronty spojení vloží zprávu
+    ``{"_transport_closed": True, "error": "emulator process exited
+    (...)"}``. ``_send_request`` i ``_read_hello_with_filter`` ji převedou
+    na ``RuntimeError``. Pokud konec nevyžádal wrapper
+    (``transport.expected_exit`` je False), zapíše popis do ``_last_exit``.
+
+    Args:
+        transport: transport, jehož reader právě skončil.
+        resp_queue: response fronta tohoto spojení.
+        event_queue: event fronta tohoto spojení.
+
+    Side effects:
+
+    - Plní fronty, může nastavit ``_last_exit``, loguje.
+    """
+    global _last_exit
+    if transport is None:
+        return
+    reason = await transport.exit_reason()
+    if isinstance(transport, _TcpTransport):
+        error = f"emulator connection closed ({reason})"
+    else:
+        error = f"emulator process exited ({reason})"
+    sentinel = {_TRANSPORT_CLOSED_KEY: True, "error": error}
+    for q in (resp_queue, event_queue):
+        if q is not None:
+            q.put_nowait(dict(sentinel))
+    if transport.expected_exit:
+        log.info("backend ended as requested: %s", error)
+    else:
+        _last_exit = error
+        log.warning("backend ended unexpectedly: %s", error)
 
 
 async def _ensure_connected() -> None:
@@ -710,15 +936,18 @@ async def _read_hello_with_filter(timeout_sec: float) -> dict[str, Any]:
 
     Raises:
         TimeoutError: pokud hello nedorazí do timeout.
+        RuntimeError: pokud backend skončil dřív, než hello poslal.
     """
     if _event_queue is None:
         raise RuntimeError("_event_queue not initialized")
     try:
         msg = await asyncio.wait_for(_event_queue.get(), timeout=timeout_sec)
-        return msg
     except asyncio.TimeoutError:
         raise TimeoutError(
             f"emu hello timeout after {timeout_sec}s")
+    if msg.get(_TRANSPORT_CLOSED_KEY):
+        raise RuntimeError(f"{msg['error']} before hello")
+    return msg
 
 
 async def _send_request(cmd: str,
@@ -739,19 +968,51 @@ async def _send_request(cmd: str,
         "data": {...}, "error": "..."?}``.
 
     Raises:
-        RuntimeError: timeout, out-of-order response, nebo connect
-            failure.
+        RuntimeError: timeout, konec backendu během čekání (hned, ne až
+            po timeoutu: "emulator process exited (exit code ...)"),
+            out-of-order response, nebo connect failure.
 
     Side effects:
 
     - Inkrementuje ``_next_req_id``.
     - Zapisuje na transport pod ``_send_lock`` (serializace souběžných
       tool callů).
+    - Pokud předchozí backend nečekaně skončil, spustí nový emulátor
+      (pipe) / znovu se připojí (tcp) a připraví oznámení o restartu:
+      do ``_restart_holder`` právě běžícího toolu (klient ho uvidí ve
+      výsledku nebo chybě tohoto volání jako ``restarted: true``), mimo
+      tool call do ``_restart_notice`` pro nejbližší tool.
     """
-    global _next_req_id
+    global _next_req_id, _last_exit, _restart_notice
 
     if _transport is None or not _transport.is_alive():
+        prev = _transport
+        lost: Optional[str] = None
+        if prev is not None and not prev.expected_exit:
+            # Reader task nemusel EOF ještě zpracovat - důvod případně
+            # zjistíme přímo z mrtvého transportu.
+            lost = _last_exit or (await prev.exit_reason())
         await _ensure_connected()
+        if lost is not None:
+            _last_exit = None
+            what = ("reconnected to the emulator (the GUI emulator keeps "
+                    "its own state)"
+                    if isinstance(_transport, _TcpTransport)
+                    else "started a fresh emulator process "
+                         "(RAM, registers, breakpoints and inserted media "
+                         "were reset)")
+            notice = {
+                "restarted": True,
+                "restart_reason": f"previous backend ended unexpectedly "
+                                  f"({lost}); {what}",
+            }
+            holder = _restart_holder.get()
+            if holder is not None:
+                holder["notice"] = notice
+            else:
+                _restart_notice = notice
+            log.warning("auto-restart after unexpected backend end: %s",
+                        lost)
 
     assert _send_lock is not None
     assert _response_queue is not None
@@ -790,6 +1051,18 @@ async def _send_request(cmd: str,
                 raise RuntimeError(
                     f"emu request timeout after {SEND_TIMEOUT_S}s (cmd={cmd})"
                 ) from e
+            if resp.get(_TRANSPORT_CLOSED_KEY):
+                # Backend skončil (pád procesu / zavřené TCP) - odpověď
+                # nepřijde, nečekáme do timeoutu.
+                if isinstance(_transport, _TcpTransport):
+                    hint = ("the GUI emulator may still be running with its "
+                            "state; the next call reconnects")
+                else:
+                    hint = ("emulator state is lost; the next call starts "
+                            "a fresh emulator")
+                raise RuntimeError(
+                    f"{resp['error']} while waiting for the response "
+                    f"(cmd={cmd}); {hint}")
             # Pozn.: RX wire trace se loguje v _stdout_reader_task (= jediný
             # čtecí bod), ne tady, aby se response neloggovala dvakrát a aby
             # se zachytily i async broadcasty bez req_id.
@@ -833,6 +1106,9 @@ async def _shutdown_emu() -> None:
 
     if _transport is None:
         return
+
+    # Konec backendu vyžádal wrapper - reader ho nesmí hlásit jako pád.
+    _transport.expected_exit = True
 
     # V pipe módu posíláme shutdown (= killne child). V TCP módu NE -
     # nechceme killnout live GUI session uživatele.
@@ -878,10 +1154,18 @@ async def emu_status() -> str:
     Returns JSON with fields ``running`` (bool), ``paused`` (bool) and
     optionally other state fields (frame counter, total cycles) when
     emulator is alive. If the transport has not been connected yet or
-    has been closed, returns ``{"running": false, "connected": false}``.
+    has been closed, returns ``{"running": false, "connected": false}``;
+    when the backend ended unexpectedly (emulator process crashed or
+    exited, TCP connection dropped), the field ``last_exit`` describes it
+    (e.g. ``"emulator process exited (exit code 3221225477 =
+    0xC0000005)"``). The next tool call that needs the emulator starts a
+    fresh one and its result carries ``restarted: true``.
     """
     if _transport is None or not _transport.is_alive():
-        return json.dumps({"running": False, "connected": False})
+        status: dict[str, Any] = {"running": False, "connected": False}
+        if _last_exit is not None:
+            status["last_exit"] = _last_exit
+        return json.dumps(status)
 
     resp = await _send_request("get_state")
     return json.dumps(_data_or_error(resp))
@@ -1183,11 +1467,19 @@ async def emu_bp_list() -> str:
 
     Returns a JSON object ``{"count": int, "breakpoints": [...]}`` where
     each breakpoint record carries the fields:
-    ``id`` (int), ``addr`` (int), ``enabled`` (bool),
+    ``id`` (int), ``addr`` (int),
+    ``addr_end`` (int, inclusive upper bound, used only in ``RANGE`` mode),
+    ``addr_match_mode`` (string: ``SINGLE`` = only ``addr``, ``RANGE`` =
+    ``addr``..``addr_end``, ``MASK`` = ``(x & addr_mask) == (addr &
+    addr_mask)``; applies to ``PC_EXEC`` / ``MEM_R`` / ``MEM_W``),
+    ``addr_mask`` (int, used only in ``MASK`` mode),
+    ``enabled`` (bool),
     ``type`` (string, canonical UPPER_SNAKE: ``PC_EXEC`` / ``MEM_R`` /
     ``MEM_W`` / ``IORQ_R`` / ``IORQ_W`` / ...),
     ``zone`` (string, memory zone: ``CPU_VIEW`` / ``RAM`` / ...),
     ``bank_id`` (int, bank index for ``MMEXT_BANK`` zone),
+    ``bank_id_end`` / ``bank_match_mode`` / ``bank_id_mask`` (bank range,
+    same meaning as the ``addr_*`` triple, applied to ``bank_id``),
     ``hits`` (int, trigger counter),
     ``condition`` (string or null if unconditional).
     """
@@ -1737,8 +2029,9 @@ async def emu_cmt_stop() -> str:
     """Stop the REAL cassette tape transport (PLAY or RECORD -> STOP).
 
     Stops playback or recording and rewinds the transport state machine.
-    No-op if the tape is already stopped or nothing is loaded. Sensitive:
-    changes emulator state (MCP action).
+    No-op if the tape is already stopped. Without a loaded tape it still
+    puts the transport into STOP (e.g. a playing state restored from a
+    snapshot). Sensitive: changes emulator state (MCP action).
 
     Returns:
         JSON ``{"ok": true, "action": "stop"}`` on success or
@@ -2021,9 +2314,14 @@ async def emu_cmt_open(path: str, play_immediately: bool = False) -> str:
         play_immediately: if True, start playback right after opening.
 
     Returns:
-        JSON ``{"ok": true, "path": str, "playing": bool}`` on success
-        or ``{"error": "..."}`` on failure (unknown extension / open
-        error).
+        JSON ``{"ok": true, "path": str, "playing": bool, "state": str,
+        "paused": bool}`` on success or ``{"error": "..."}`` on failure
+        (unknown extension / open error). ``playing``, ``state``
+        (``"stop"`` / ``"play"`` / ``"record"``) and ``paused`` report the
+        actual transport state after the operation (same meaning as in
+        ``emulator://periph/cmt``); ``playing`` is true only for PLAY
+        without pause. When ``play_immediately`` was requested but the tape
+        is not playing afterwards, the result also carries ``warning``.
     """
     if not path:
         return json.dumps({"error": "Missing required field: path"})
@@ -2039,18 +2337,23 @@ async def emu_cmt_open(path: str, play_immediately: bool = False) -> str:
 async def emu_cmt_tape_seek(block_id: int) -> str:
     """Seek the REAL tape to a specific block (SIMPLE_TAPE containers).
 
-    Multi-file tape containers (SIMPLE_TAPE) expose individual blocks;
-    this positions the tape at block ``block_id`` (0-based). For a
-    single-file container there is just block 0. Requires a loaded tape.
-    The list of blocks is in ``emulator://periph/cmt/tape``. Sensitive:
-    changes emulator state (MCP action).
+    Multi-file tape containers (SIMPLE_TAPE: .mzt, .tap) expose
+    individual blocks; this positions the tape at block ``block_id``
+    (0-based). Single-file containers (SINGLE: a plain .mzf or .wav,
+    ``container_type`` 0 in ``emulator://periph/cmt/tape``) do NOT support
+    seeking - the call fails even for block 0. To start such a tape from
+    the beginning again, use ``emu_cmt_stop`` + ``emu_cmt_play`` (play
+    from STOP always starts at the beginning of the tape). Requires a
+    loaded tape. The list of blocks is in ``emulator://periph/cmt/tape``.
+    Sensitive: changes emulator state (MCP action).
 
     Args:
         block_id: 0-based block index to seek to.
 
     Returns:
         JSON ``{"ok": true, "block_id": int}`` on success or
-        ``{"error": "..."}`` on failure (no tape / bad block).
+        ``{"error": "..."}`` on failure (no tape, SINGLE container or
+        block out of range).
     """
     resp = await _send_request("cmt_tape_seek", {"block_id": int(block_id)})
     if not resp.get("success", False):
@@ -4294,6 +4597,9 @@ async def emu_stop() -> str:
             {"error": "transport not connected (call any tool first "
                        "or invoke emu_start)"})
 
+    # Konec backendu vyžádal wrapper - reader ho nesmí hlásit jako pád.
+    _transport.expected_exit = True
+
     # Pošli emu_stop request. Backend response = success + trigger
     # shutdown callback. Po triggeru emu thread končí, child proces
     # se brzy ukončí.
@@ -4358,11 +4664,16 @@ async def emu_start(binary_path: str = "") -> str:
             {"error": "hot-swap requires pipe transport "
                        "(current: " + TRANSPORT_KIND + ")"})
 
-    global _transport, EMU_EXE
+    global _transport, EMU_EXE, _last_exit, _restart_notice
 
     if _transport is not None and _transport.is_alive():
         return json.dumps(
             {"error": "emulator already running (call emu_stop first)"})
+
+    # Explicitní start: případný předchozí pád se už klientovi neoznamuje
+    # (nový proces si vyžádal sám).
+    _last_exit = None
+    _restart_notice = None
 
     # Override binární cesty (= explicit argument vždy vítězí nad env).
     if binary_path:
@@ -4798,9 +5109,16 @@ async def emu_bp_create_with_init(addr: int,
     by the ``action`` field, and ``emulator://docs/smart_vars`` for
     the ``$name`` variables written by the action.
 
+    A range breakpoint needs both ``"addr_end"`` and
+    ``"addr_match_mode"`` (value ``"RANGE"``) in ``fields``; a new
+    breakpoint starts in ``SINGLE`` mode, where ``addr_end`` is ignored.
+
     Returns:
         JSON ``{"id": int, "created": bool}``. ``id`` is the newly
-        allocated breakpoint ID or ``-1`` on failure.
+        allocated breakpoint ID or ``-1`` on failure. When ``addr_end``
+        differs from ``addr`` but the match mode stays ``SINGLE``, the
+        breakpoint is created anyway (it matches only ``addr``) and the
+        result also carries ``warning``.
     """
     if not (0 <= addr <= 0xFFFF):
         return json.dumps({"error": "addr must be in range 0..65535"})

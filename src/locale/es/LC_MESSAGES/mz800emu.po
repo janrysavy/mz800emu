@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-02 22:33+0200\n"
+"POT-Creation-Date: 2026-10-04 09:11+0200\n"
 "PO-Revision-Date: 2026-03-11 22:00+0100\n"
 "Last-Translator: Claude Code\n"
 "Language-Team: Español\n"
@@ -16,23 +16,23 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-#: src/baseui/baseui_filechooser.c:80
+#: src/baseui/baseui_filechooser.c:81
 msgid "Open File"
 msgstr "Abrir archivo"
 
-#: src/baseui/baseui_filechooser.c:83
+#: src/baseui/baseui_filechooser.c:84
 msgid "Save File"
 msgstr "Guardar archivo"
 
-#: src/baseui/baseui_filechooser.c:86
+#: src/baseui/baseui_filechooser.c:87
 msgid "Open RW File"
 msgstr "Abrir archivo RW"
 
-#: src/baseui/baseui_filechooser.c:89
+#: src/baseui/baseui_filechooser.c:90
 msgid "Open Directory"
 msgstr "Abrir directorio"
 
-#: src/baseui/baseui_filechooser.c:92
+#: src/baseui/baseui_filechooser.c:93
 #: src/ui-imgui/filechooser/imgui_filechooser.cpp:371
 msgid "Untitled File Chooser"
 msgstr "Selector de archivos"
@@ -62,45 +62,45 @@ msgstr ""
 "Dirección = 0x%04x\n"
 "Instrucción = '%s'\n"
 
-#: src/emulator/emulator.c:324
+#: src/emulator/emulator.c:387
 #: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:421
 #: src/ui-imgui/videorec/videorec_menu.cpp:140
 msgid "PAUSED"
 msgstr "PAUSADO"
 
-#: src/emulator/emulator.c:327
+#: src/emulator/emulator.c:390
 msgid "Max speed"
 msgstr "Velocidad máxima"
 
-#: src/emulator/emulator.c:330
+#: src/emulator/emulator.c:393
 msgid "Custom speed"
 msgstr "Velocidad personalizada"
 
-#: src/emulator/emulator.c:332
+#: src/emulator/emulator.c:395
 msgid "Normal speed"
 msgstr "Velocidad normal"
 
-#: src/emulator/hw-generic/cmt/cmt.c:406
+#: src/emulator/hw-generic/cmt/cmt.c:582
 msgid "Create a new WAV file"
 msgstr "Crear un nuevo archivo WAV"
 
-#: src/emulator/hw-generic/cmt/cmt.c:406
+#: src/emulator/hw-generic/cmt/cmt.c:582
 msgid "newfile.wav"
 msgstr "newfile.wav"
 
-#: src/emulator/hw-generic/cmt/cmt.c:630
+#: src/emulator/hw-generic/cmt/cmt.c:806
 msgid "All Supported CMT Files"
 msgstr "Todos los archivos CMT compatibles"
 
-#: src/emulator/hw-generic/cmt/cmt.c:631
+#: src/emulator/hw-generic/cmt/cmt.c:807
 msgid "Tape Files"
 msgstr "Archivos de cinta"
 
-#: src/emulator/hw-generic/cmt/cmt.c:708
+#: src/emulator/hw-generic/cmt/cmt.c:884
 msgid "Select CMT file to open"
 msgstr "Seleccionar archivo CMT para abrir"
 
-#: src/emulator/hw-generic/cmt/cmthack.c:161
+#: src/emulator/hw-generic/cmt/cmthack.c:187
 msgid "Select a MZF File"
 msgstr "Seleccionar archivo MZF"
 
@@ -277,29 +277,38 @@ msgstr ", Rev.: "
 msgid ", Build: "
 msgstr ", Build: "
 
-#: src/ui-imgui/about_window.cpp:463
+#: src/ui-imgui/about_window.cpp:433
+msgid "detached"
+msgstr "HEAD desacoplado"
+
+#: src/ui-imgui/about_window.cpp:440
+#, c-format
+msgid "Source: NAS1 repository, branch %s, commit %s"
+msgstr "Origen: repositorio NAS1, rama %s, commit %s"
+
+#: src/ui-imgui/about_window.cpp:482
 msgid "Special thanks to"
 msgstr "Agradecimientos especiales a"
 
-#: src/ui-imgui/about_window.cpp:465
+#: src/ui-imgui/about_window.cpp:484
 msgid "and the many other \"Sharp's Men\" who explored and"
 msgstr "y los muchos otros \"Sharp's Men\" que exploraron y"
 
-#: src/ui-imgui/about_window.cpp:466
+#: src/ui-imgui/about_window.cpp:485
 msgid "documented the hidden secrets of the Sharp MZ-800 computer."
 msgstr "documentaron los secretos ocultos de la computadora Sharp MZ-800."
 
-#: src/ui-imgui/about_window.cpp:471
+#: src/ui-imgui/about_window.cpp:490
 msgid "This program comes with absolutely no warranty."
 msgstr "Este programa se distribuye sin ninguna garantía."
 
-#: src/ui-imgui/about_window.cpp:472
+#: src/ui-imgui/about_window.cpp:491
 msgid "See the GNU General Public License, version 3 or later for details."
 msgstr ""
 "Vea la Licencia Pública General de GNU, versión 3 o posterior para más "
 "detalles."
 
-#: src/ui-imgui/about_window.cpp:476
+#: src/ui-imgui/about_window.cpp:495
 msgid "Close this window"
 msgstr "Cerrar esta ventana"
 
@@ -1212,7 +1221,7 @@ msgstr "(seleccione evento)"
 
 #: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1696
 #: src/ui-imgui/debugger/ctc_window.cpp:356
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1947
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1969
 #: src/ui-imgui/debugger/pioz80_window.cpp:424
 #: src/ui-imgui/debugger/pioz80_window.cpp:471
 #: src/ui-imgui/debugger/ppi_window.cpp:406
@@ -2508,707 +2517,707 @@ msgstr "Info##dbg_pause"
 msgid "Emulation was paused. Now you can make any changes."
 msgstr "La emulación fue pausada. Ahora puede realizar cualquier cambio."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:942
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:951
 msgid "Pause on match##evw_pause_match_en"
 msgstr "Pausar al coincidir##evw_pause_match_en"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:952
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:961
 msgid "##evw_pause_match_expr"
 msgstr "##evw_pause_match_expr"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:953
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:962
 msgid "cat:gdg_colors sym:isr_*"
 msgstr "cat:gdg_colors sym:isr_*"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:974
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1284
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2094
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:983
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1293
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2116
 msgid "(empty)"
 msgstr "(vacío)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:978
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1288
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2513
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:987
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1297
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2535
 msgid "[Syntax error]"
 msgstr "[Error de sintaxis]"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:985
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1295
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:994
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1304
 msgid "[Armed]"
 msgstr "[Armado]"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:989
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1299
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:998
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1308
 msgid "[OK]"
 msgstr "[OK]"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1012
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1021
 msgid "Click to scroll Log tab to last matched event."
 msgstr "Clic para desplazar la pestaña Log al último evento coincidente."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1016
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1025
 msgid "Clear##evw_pause_clear"
 msgstr "Limpiar##evw_pause_clear"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1243
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1252
 msgid "Auto-mark on match##evw_automark_en"
 msgstr "Marcar automáticamente al coincidir##evw_automark_en"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1250
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1259
 msgid "name:"
 msgstr "nombre:"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1253
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1262
 msgid "##evw_automark_name"
 msgstr "##evw_automark_name"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1254
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1263
 msgid "psg_writes"
 msgstr "psg_writes"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1262
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1271
 msgid "expr:"
 msgstr "expr:"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1265
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1274
 msgid "##evw_automark_expr"
 msgstr "##evw_automark_expr"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1266
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1275
 msgid "cat:psg"
 msgstr "cat:psg"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1307
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1316
 msgid "Marker ID:"
 msgstr "ID de marcador:"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1314
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1323
 msgid "(not yet fired)"
 msgstr "(aún no disparado)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1320
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1329
 msgid "Clear##evw_automark_clear"
 msgstr "Limpiar##evw_automark_clear"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1357
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1366
 msgid "Only IRQ"
 msgstr "Solo IRQ"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1358
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1367
 msgid "Only banking"
 msgstr "Solo banking"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1359
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1368
 msgid "Only video"
 msgstr "Solo video"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1360
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1369
 msgid "Only PSG"
 msgstr "Solo PSG"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1361
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1370
 msgid "Only FDC"
 msgstr "Solo FDC"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1362
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1371
 msgid "Only memory"
 msgstr "Solo memoria"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1363
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1372
 msgid "Only SYS"
 msgstr "Solo SYS"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1365
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1374
 msgid "Only marks/BPs"
 msgstr "Solo marcas/BPs"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1366
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1375
 msgid "ISR scope (PC 0038-00FF)"
 msgstr "Ámbito ISR (PC 0038-00FF)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1368
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1377
 msgid "Hide noise"
 msgstr "Ocultar ruido"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1369
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1378
 #: src/ui-imgui/debugger/ioview/io_window.cpp:972
 #: src/ui-imgui/debugger/symbols/sym_window.cpp:618
 msgid "Clear filter"
 msgstr "Limpiar filtro"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1401
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1410
 msgid "Mode##evw_mode"
 msgstr "Modo##evw_mode"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1432
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1441
 msgid "Capacity##evw_cap"
 msgstr "Capacidad##evw_cap"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1440
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1449
 msgid "Apply##evw_cap_apply"
 msgstr "Aplicar##evw_cap_apply"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1448
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1467
 msgid "Clear##evw_clear"
 msgstr "Limpiar##evw_clear"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1551
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1573
 msgid "Export...##evw_export_btn"
 msgstr "Exportar...##evw_export_btn"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1557
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1579
 msgid "Import...##evw_import_btn"
 msgstr "Importar...##evw_import_btn"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1565
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1587
 msgid "Export the in-memory event ring to a binary file."
 msgstr "Exportar el ring de eventos en memoria a un archivo binario."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1569
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1591
 msgid "File path##evw_export_path"
 msgstr "Ruta de archivo##evw_export_path"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1573
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1595
 msgid "Events to write:"
 msgstr "Eventos a escribir:"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1577
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1599
 msgid "Save##evw_export_save"
 msgstr "Guardar##evw_export_save"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1591
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1613
 msgid "Cancel##evw_export_cancel"
 msgstr "Cancelar##evw_export_cancel"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1601
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1623
 msgid "Replace the in-memory event ring with a previously exported file."
 msgstr ""
 "Reemplazar el ring de eventos en memoria con un archivo exportado "
 "previamente."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1605
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1627
 msgid "File path##evw_import_path"
 msgstr "Ruta de archivo##evw_import_path"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1610
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1632
 msgid "Load##evw_import_load"
 msgstr "Cargar##evw_import_load"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1622
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1644
 msgid "Cancel##evw_import_cancel"
 msgstr "Cancelar##evw_import_cancel"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1632
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1654
 msgid "Replace the current ring with the file contents?"
 msgstr "¿Reemplazar el ring actual con el contenido del archivo?"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1633
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1655
 msgid "Current ring:"
 msgstr "Buffer actual:"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1634
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1656
 msgid "File records:"
 msgstr "Registros en archivo:"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1637
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1659
 msgid "Replace##evw_import_replace"
 msgstr "Reemplazar##evw_import_replace"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1651
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1673
 msgid "Cancel##evw_import_confirm_cancel"
 msgstr "Cancelar##evw_import_confirm_cancel"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1671
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1693
 msgid "Categories##evw_cats_hdr"
 msgstr "Categorías##evw_cats_hdr"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1713
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1735
 msgid "Quick filter##evw_qf_combo"
 msgstr "Filtro rápido##evw_qf_combo"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1714
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1736
 msgid "(choose preset)"
 msgstr "(elija preajuste)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1736
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1758
 msgid "Apply predefined filter expression.  Hover items for syntax preview."
 msgstr ""
 "Aplicar expresión de filtro predefinida. Pase el ratón sobre elementos para "
 "vista previa de sintaxis."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1953
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1975
 msgid "Saved filters##evw_saved_combo"
 msgstr "Filtros guardados##evw_saved_combo"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1958
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:1980
 msgid "(no presets - use 'Save as...' to create one)"
 msgstr "(sin preajustes - use 'Guardar como...' para crear uno)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2001
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2023
 msgid ""
 "Apply user-saved filter expression. Save current with 'Save as...' button."
 msgstr ""
 "Aplicar expresión de filtro guardada por el usuario. Guardar la actual con "
 "el botón 'Guardar como...'."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2008
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2030
 msgid "Save as...##evw_saved_save_btn"
 msgstr "Guardar como...##evw_saved_save_btn"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2017
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2039
 msgid "Maximum 32 presets - delete one to make space."
 msgstr "Máximo 32 preajustes - elimine uno para hacer espacio."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2020
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2042
 msgid "Save current filter expression as a named preset."
 msgstr "Guardar la expresión de filtro actual como preajuste nombrado."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2027
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2049
 msgid "Delete##evw_saved_del_btn"
 msgstr "Eliminar##evw_saved_del_btn"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2033
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2055
 msgid "Delete the currently selected preset."
 msgstr "Eliminar el preajuste seleccionado actualmente."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2067
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2089
 msgid "Save preset###evw_saved_save_popup"
 msgstr "Guardar preajuste###evw_saved_save_popup"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2070
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2092
 msgid "Preset name:"
 msgstr "Nombre de preajuste:"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2084
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2106
 msgid "Name cannot be empty."
 msgstr "El nombre no puede estar vacío."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2089
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2111
 msgid "Warning: saving an empty filter (matches all events)."
 msgstr ""
 "Advertencia: guardando un filtro vacío (coincide con todos los eventos)."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2092
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2114
 #: src/ui-imgui/debugger/watch/watch_window.cpp:475
 msgid "Expression:"
 msgstr "Expresión:"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2098
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2120
 msgid "Save##evw_saved_save_ok"
 msgstr "Guardar##evw_saved_save_ok"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2117
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2139
 msgid "Cancel##evw_saved_save_cancel"
 msgstr "Cancelar##evw_saved_save_cancel"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2129
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2151
 msgid "Replace preset###evw_saved_replace_popup"
 msgstr "Reemplazar preajuste###evw_saved_replace_popup"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2137
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2159
 #, c-format
 msgid "Preset '%s' already exists. Replace?"
 msgstr "El preajuste '%s' ya existe. ¿Reemplazar?"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2140
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2162
 msgid "Replace##evw_saved_repl_ok"
 msgstr "Reemplazar##evw_saved_repl_ok"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2151
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2173
 msgid "Cancel##evw_saved_repl_cancel"
 msgstr "Cancelar##evw_saved_repl_cancel"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2164
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2186
 msgid "Delete preset###evw_saved_delete_popup"
 msgstr "Eliminar preajuste###evw_saved_delete_popup"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2172
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2194
 #, c-format
 msgid "Delete preset '%s'?"
 msgstr "¿Eliminar preajuste '%s'?"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2174
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2196
 msgid "Delete##evw_saved_del_ok"
 msgstr "Eliminar##evw_saved_del_ok"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2180
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2202
 msgid "Cancel##evw_saved_del_cancel"
 msgstr "Cancelar##evw_saved_del_cancel"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2222
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2244
 msgid "Bookmarks count."
 msgstr "Recuento de marcadores."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2227
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2249
 msgid "< Prev##evw_bm_prev"
 msgstr "< Anterior##evw_bm_prev"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2239
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2261
 msgid "Jump to previous bookmark.  Hotkey: Ctrl+Shift+B"
 msgstr "Saltar al marcador anterior. Tecla rápida: Ctrl+Shift+B"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2244
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2266
 msgid "Next >##evw_bm_next"
 msgstr "Siguiente >##evw_bm_next"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2256
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2278
 msgid "Jump to next bookmark.  Hotkey: Ctrl+B"
 msgstr "Saltar al siguiente marcador. Tecla rápida: Ctrl+B"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2262
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2284
 msgid "Show only ★###evw_bm_show_only"
 msgstr "Solo ★###evw_bm_show_only"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2268
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2290
 msgid "Show only bookmarked events (overrides filter expression)."
 msgstr "Mostrar solo eventos marcados (anula la expresión de filtro)."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2274
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2296
 msgid "Clear all##evw_bm_clear"
 msgstr "Limpiar todo##evw_bm_clear"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2280
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2302
 msgid "Remove all bookmarks (confirmation required)."
 msgstr "Quitar todos los marcadores (se requiere confirmación)."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2292
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2314
 #, c-format
 msgid "Remove %zu bookmarks?"
 msgstr "¿Eliminar %zu marcadores?"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2294
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2316
 msgid "Yes##evw_bm_clear_yes"
 msgstr "Sí##evw_bm_clear_yes"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2300
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2322
 msgid "Cancel##evw_bm_clear_no"
 msgstr "Cancelar##evw_bm_clear_no"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2320
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2342
 msgid "Follow tail###evw_follow"
 msgstr "Seguir final###evw_follow"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2326
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2348
 msgid "Auto-scroll Log table to newest event.  Hotkey: F"
 msgstr "Auto-desplazar tabla Log al evento más reciente. Tecla rápida: F"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2333
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2355
 msgid "Color rows###evw_row_color"
 msgstr "Colorear filas###evw_row_color"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2339
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2361
 msgid "Tint Log table rows by event category color (shared with Strip tab)."
 msgstr ""
 "Tintar filas de la tabla Log por color de categoría de evento (compartido "
 "con la pestaña Strip)."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2346
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2368
 #: src/ui-imgui/joy/joy_setup_window.cpp:415
 #: src/ui-imgui/topmenu/devices/menu_unicard.cpp:284
 msgid "None"
 msgstr "Ninguno"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2347
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2873
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3036
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2369
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2895
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3058
 #: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3197
 msgid "Frame"
 msgstr "Frame"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2348
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2370
 msgid "Category"
 msgstr "Categoría"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2349
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2884
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2371
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2906
 msgid "PC"
 msgstr "PC"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2354
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2376
 msgid "Group by###evw_group_by"
 msgstr "Agrupar por###evw_group_by"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2379
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2401
 msgid ""
 "Group Log entries by Frame / Category / PC, or show chronologically (None)."
 msgstr ""
 "Agrupar entradas Log por Frame / Categoría / PC, o mostrar cronológicamente "
 "(Ninguno)."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2388
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2410
 msgid "Heatmap###evw_heatmap"
 msgstr "Heatmap###evw_heatmap"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2394
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2416
 msgid "Show per-frame event distribution histogram above Log table."
 msgstr ""
 "Mostrar histograma de distribución de eventos por frame encima de la tabla "
 "Log."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2407
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2429
 msgid "Filter##evw_filter"
 msgstr "Filtro##evw_filter"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2408
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2430
 msgid "cat:cpu_int pc:4000-40FF (! for negate)"
 msgstr "cat:cpu_int pc:4000-40FF (! para negar)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2416
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2438
 msgid "?##evw_filter_help"
 msgstr "?##evw_filter_help"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2420
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2442
 msgid "Filter syntax help"
 msgstr "Ayuda de sintaxis del filtro"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2423
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2445
 msgid "Filter syntax (Tier 1):"
 msgstr "Sintaxis del filtro (Tier 1):"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2426
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2448
 msgid "  cat:NAME[,NAME]   - per-category (cpu_int, gdg_mode, ...)"
 msgstr "  cat:NOMBRE[,NOMBRE] - por categoría (cpu_int, gdg_mode, ...)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2428
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2450
 msgid "  sub:N[,N]         - per-subtype (uint8)"
 msgstr "  sub:N[,N]         - por subtipo (uint8)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2430
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2452
 msgid "  pc:HEX            - PC exact match (e.g. pc:4042)"
 msgstr "  pc:HEX            - coincidencia exacta PC (p.ej. pc:4042)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2432
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2454
 msgid "  pc:HEX-HEX        - PC range (e.g. pc:4000-40FF)"
 msgstr "  pc:HEX-HEX        - rango PC (p.ej. pc:4000-40FF)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2434
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2456
 msgid "  frame:N / >N / <N - frame number"
 msgstr "  frame:N / >N / <N - número de frame"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2436
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2458
 msgid "  cycle:N[M|k] / >N - pxclk range, M/k suffix"
 msgstr "  cycle:N[M|k] / >N - rango pxclk, sufijo M/k"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2438
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2460
 msgid "  sline:N-N         - scanline range (0..311 PAL)"
 msgstr "  sline:N-N         - rango scanline (0..311 PAL)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2440
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2462
 msgid "  px:N-N            - pixel column range"
 msgstr "  px:N-N            - rango de columnas de píxel"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2442
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2464
 msgid "  payload:HEX       - payload uint32 match"
 msgstr "  payload:HEX       - coincidencia payload uint32"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2444
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2466
 msgid "  !TOKEN            - negation (e.g. !cat:gdg_video)"
 msgstr "  !TOKEN            - negación (p.ej. !cat:gdg_video)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2446
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2468
 msgid "  ( T1 or T2 )      - OR group (parens required)"
 msgstr "  ( T1 or T2 )      - grupo OR (paréntesis requeridos)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2448
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2470
 msgid "  TOKEN TOKEN       - AND (whitespace separator)"
 msgstr "  TOKEN TOKEN       - AND (separador espacio)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2450
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2472
 msgid "Tier 2 (symbol-aware):"
 msgstr "Tier 2 (con símbolos):"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2452
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2474
 msgid "  sym:NAME / sym:PREFIX_*       - PC == addr of symbol(s)"
 msgstr "  sym:NOMBRE / sym:PREFIJO_*    - PC == dirección de símbolo(s)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2454
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2476
 msgid "  from_sym:A to_sym:B           - PC in [A.addr, B.addr]"
 msgstr "  from_sym:A to_sym:B           - PC en [A.dir, B.dir]"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2456
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2478
 msgid "Tier 3 (Vlna 4) - state-aware:"
 msgstr "Tier 3 (Vlna 4) - por estado:"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2458
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2480
 msgid "  if iff1:0|1                   - CPU interrupt enable"
 msgstr "  if iff1:0|1                   - habilitación de interrupción CPU"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2460
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2482
 msgid "  if im:0|1|2                   - Z80 IM mode"
 msgstr "  if im:0|1|2                   - modo Z80 IM"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2462
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2484
 msgid "  if reason:NAME                - BP fire reason"
 msgstr "  if reason:NOMBRE              - razón de disparo BP"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2464
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2486
 msgid "    (reset/ei/di/int_ack/nmi_ack/reti/retn/none)"
 msgstr "    (reset/ei/di/int_ack/nmi_ack/reti/retn/none)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2466
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2488
 msgid "  if banking:NAME               - memory banking summary"
 msgstr "  if banking:NOMBRE             - resumen de banking de memoria"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2468
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2490
 msgid "    (default/all_ram/rom_low_off/rom_high_off/"
 msgstr "    (default/all_ram/rom_low_off/rom_high_off/"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2470
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2492
 msgid "     cgrom/vram_640/pcg_high/other)"
 msgstr "     cgrom/vram_640/pcg_high/other)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2472
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2494
 msgid "Tier 3 (Vlna 4) - temporal:"
 msgstr "Tier 3 (Vlna 4) - temporal:"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2474
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2496
 msgid "  before(N) <ref>               - events in last N pxclk before match"
 msgstr ""
 "  before(N) <ref>               - eventos en los últimos N pxclk antes de "
 "coincidir"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2476
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2498
 msgid "  after(M) <ref>                - events in M pxclk after match"
 msgstr ""
 "  after(M) <ref>                - eventos en M pxclk después de coincidir"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2478
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2500
 msgid "  near(K) <ref>                 - events in window +-K around match"
 msgstr ""
 "  near(K) <ref>                 - eventos en ventana +-K alrededor de "
 "coincidir"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2480
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2502
 msgid "    N/M/K: dec, 'k' (=1000) / 'M' (=10^6) suffix"
 msgstr "    N/M/K: dec, sufijo 'k' (=1000) / 'M' (=10^6)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2482
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2504
 msgid "    <ref>: any sub-expression (cat:/sym:/if/...)"
 msgstr "    <ref>: cualquier sub-expresión (cat:/sym:/if/...)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2484
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2506
 msgid "    Max nesting depth = 2 levels"
 msgstr "    Profundidad máxima de anidamiento = 2 niveles"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2487
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2509
 msgid "Example: cat:bp_fire,user_mark ( pc:4000-40FF or pc:5000 )"
 msgstr "Ejemplo: cat:bp_fire,user_mark ( pc:4000-40FF or pc:5000 )"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2489
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2511
 msgid "Example: cat:cpu_int if iff1:0  (= INT taken while IFF1=0)"
 msgstr "Ejemplo: cat:cpu_int if iff1:0  (= INT tomado mientras IFF1=0)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2491
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2513
 msgid "Example: before(1k) cat:irq_ack_im2  (= what preceded IRQ)"
 msgstr "Ejemplo: before(1k) cat:irq_ack_im2  (= qué precedió al IRQ)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2493
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2515
 msgid "UI: Group by (Log tab toolbar):"
 msgstr "UI: Agrupar por (barra de la pestaña Log):"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2495
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2517
 msgid "  None / Frame / Category / PC - aggregates filtered"
 msgstr "  None / Frame / Category / PC - agrega los filtrados"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2497
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2519
 msgid "  events into collapsible groups. Filter syntax above"
 msgstr "  eventos en grupos contraibles. La sintaxis de filtro arriba"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2499
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2521
 msgid "  applies first; grouping operates on filter result."
 msgstr ""
 "  se aplica primero; la agrupación opera sobre el resultado del filtro."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2546
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2568
 #, c-format
 msgid "Total: %zu  Filtered: %zu  Mask: 0x%016llX"
 msgstr "Total: %zu  Filtrado: %zu  Máscara: 0x%016llX"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2621
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2643
 msgid "Pause emu + show in disasm###evw_pause_disasm"
 msgstr "Pausar emu + mostrar en disasm###evw_pause_disasm"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2624
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2646
 msgid "Pause emu here###evw_pause_here"
 msgstr "Pausar emu aquí###evw_pause_here"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2630
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2652
 msgid "Show in disasm##evw_row_disasm"
 msgstr "Mostrar en disasm##evw_row_disasm"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2639
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2661
 msgid "Show port in Overview##evw_row_io"
 msgstr "Mostrar puerto en Overview##evw_row_io"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2652
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2674
 msgid "Copy to clipboard##evw_row_copy"
 msgstr "Copiar al portapapeles##evw_row_copy"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2760
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2782
 msgid "Double-click to pause emu + show in disasm"
 msgstr "Doble clic para pausar emu + mostrar en disasm"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2802
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2824
 msgid "Remove bookmark"
 msgstr "Quitar marcador"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2803
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2825
 msgid "Add bookmark"
 msgstr "Añadir marcador"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2869
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2891
 msgid "Pxclk"
 msgstr "Pxclk"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2877
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2899
 msgid "Sline"
 msgstr "Sline"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2880
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2902
 msgid "Px"
 msgstr "Px"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2893
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2915
 msgid "Cat"
 msgstr "Cat"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2897
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2919
 msgid "Sub"
 msgstr "Sub"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2900
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2922
 msgid "Detail"
 msgstr "Detalle"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3036
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3041
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3046
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3058
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3063
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3068
 msgid "events"
 msgstr "eventos"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3281
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3303
 msgid "(no events in heatmap range)"
 msgstr "(sin eventos en el rango de heatmap)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3333
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3355
 #, c-format
 msgid "Bin %d: pxclk %llu..%llu (sline %u..%u)"
 msgstr "Bin %d: pxclk %llu..%llu (sline %u..%u)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3338
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3360
 #, c-format
 msgid "Total: %u events"
 msgstr "Total: %u eventos"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3548
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3570
 msgid "Mode##evw_strip_mode"
 msgstr "Modo##evw_strip_mode"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3565
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3587
 msgid "Zoom##evw_strip_zoom"
 msgstr "Zoom##evw_strip_zoom"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3571
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3593
 msgid ""
 "Switch Mode to '1:1' to enable zoom.  In '1:1' you can also Ctrl+wheel over "
 "canvas."
@@ -3216,130 +3225,130 @@ msgstr ""
 "Cambie el Modo a '1:1' para habilitar zoom. En '1:1' también puede usar "
 "Ctrl+rueda sobre el canvas."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3574
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3596
 msgid "Zoom 0.5x..4x.  Ctrl+mouse wheel over canvas = zoom in/out."
 msgstr "Zoom 0.5x..4x. Ctrl+rueda del ratón sobre canvas = acercar/alejar."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3582
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3604
 msgid "Show previous frame##evw_strip_prev"
 msgstr "Mostrar frame anterior##evw_strip_prev"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3592
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3614
 msgid "Grid##evw_strip_grid"
 msgstr "Cuadrícula##evw_strip_grid"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3602
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3624
 msgid "Legend##evw_strip_legend"
 msgstr "Leyenda##evw_strip_legend"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3609
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3631
 #, c-format
 msgid "Frame: %u  Events drawn: %zu"
 msgstr "Frame: %u  Eventos dibujados: %zu"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3613
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3635
 msgid "Strip colors##evw_strip_colors_hdr"
 msgstr "Colores Strip##evw_strip_colors_hdr"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3619
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3641
 msgid "Reset to defaults##evw_strip_colors_reset"
 msgstr "Restablecer a predeterminados##evw_strip_colors_reset"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3626
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3648
 msgid "Restore all Strip colors to default Mesen-inspired scheme."
 msgstr ""
 "Restaurar todos los colores Strip al esquema predeterminado inspirado en "
 "Mesen."
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3751
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3773
 msgid "(previous frame)"
 msgstr "(frame anterior)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3792
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3814
 msgid "Pause emu + show in disasm###evw_strip_ctx_pause_disasm"
 msgstr "Pausar emu + mostrar en disasm###evw_strip_ctx_pause_disasm"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3795
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3817
 msgid "Pause emu here###evw_strip_ctx_pause_here"
 msgstr "Pausar emu aquí###evw_strip_ctx_pause_here"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3806
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3828
 msgid "Bookmark this event##evw_strip_ctx_bookmark"
 msgstr "Marcar este evento##evw_strip_ctx_bookmark"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3811
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3833
 msgid "Remove bookmark##evw_strip_ctx_unbookmark"
 msgstr "Quitar marcador##evw_strip_ctx_unbookmark"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3820
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3842
 msgid "Show in Log tab##evw_strip_ctx_log"
 msgstr "Mostrar en pestaña Log##evw_strip_ctx_log"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3828
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:3850
 msgid "Copy event##evw_strip_ctx_copy"
 msgstr "Copiar evento##evw_strip_ctx_copy"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4075
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4097
 msgid "Legend##evw_strip_legend_hdr"
 msgstr "Leyenda##evw_strip_legend_hdr"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4082
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4104
 msgid "Dot size = subtype priority:"
 msgstr "Tamaño del punto = prioridad de subtipo:"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4090
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4112
 msgid "large"
 msgstr "grande"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4090
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4112
 msgid "BP_FIRE, USER_MARK (debug markers)"
 msgstr "BP_FIRE, USER_MARK (marcadores debug)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4091
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4113
 msgid "medium"
 msgstr "mediano"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4091
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4113
 msgid "IRQ_ACK_IM2 (IM 2 dispatch)"
 msgstr "IRQ_ACK_IM2 (dispatch IM 2)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4092
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4114
 msgid "normal"
 msgstr "normal"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4092
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4114
 msgid "CPU_INT, CPU_CTRL (IM/IFF + HALT/RST)"
 msgstr "CPU_INT, CPU_CTRL (IM/IFF + HALT/RST)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4093
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4115
 msgid "small"
 msgstr "pequeño"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4093
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4115
 msgid "default (most HW events)"
 msgstr "predeterminado (la mayoría de eventos HW)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4094
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4116
 msgid "tiny"
 msgstr "diminuto"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4094
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4116
 msgid "GDG_VIDEO (HBLN/HS edges, dense)"
 msgstr "GDG_VIDEO (bordes HBLN/HS, densos)"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4111
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4133
 msgid "Color = category (visible only):"
 msgstr "Color = categoría (solo visibles):"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4639
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4661
 msgid "Events###event_viewer_window"
 msgstr "Eventos###event_viewer_window"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4713
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4735
 msgid "Log###evw_tab_log"
 msgstr "Log###evw_tab_log"
 
-#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4723
+#: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:4745
 msgid "Strip###evw_tab_strip"
 msgstr "Strip###evw_tab_strip"
 
@@ -4513,7 +4522,7 @@ msgid "Export diff as text"
 msgstr "Exportar diff como texto"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:529
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:277
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:278
 #: src/ui-imgui/memext/memext_save_dialog.cpp:252
 msgid "Cannot open file for writing"
 msgstr "No se puede abrir el archivo para escritura"
@@ -4632,155 +4641,155 @@ msgstr "SharpMZ-JP -> MZ-CG2"
 msgid "KOI8-CS"
 msgstr "KOI8-CS"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:222
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:223
 msgid "Load .bin into region"
 msgstr "Cargar .bin en la región"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:242
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:243
 msgid "Save region as .bin"
 msgstr "Guardar región como .bin"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:264
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:265
 msgid "From offset out of range"
 msgstr "Desplazamiento de origen fuera de rango"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:270
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:271
 msgid "Nothing to save (size is zero)"
 msgstr "Nada que guardar (tamaño es cero)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:298
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:299
 msgid "Save failed (I/O error)"
 msgstr "Error al guardar (error de E/S)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:323
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:328
 #: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:277
 msgid "Region is read-only"
 msgstr "La región es de sólo lectura"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:328
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:333
 msgid "To offset out of range"
 msgstr "Desplazamiento de destino fuera de rango"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:334
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:339
 msgid "Nothing to load (size is zero)"
 msgstr "Nada que cargar (tamaño es cero)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:341
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:346
 msgid "Cannot open file for reading"
 msgstr "No se puede abrir el archivo para lectura"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:354
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:361
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:359
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:366
 msgid "Cannot seek source file"
 msgstr "No se puede posicionar en el archivo origen"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:377
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:387
 msgid "Source file ended before requested size"
 msgstr "El archivo origen terminó antes del tamaño solicitado"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:389
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:399
 msgid "Load failed (write error)"
 msgstr "Error al cargar (error de escritura)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:412
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:422
 msgid "Save BIN range###mb_save_range"
 msgstr "Guardar rango BIN###mb_save_range"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:416
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:598
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:426
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:608
 msgid "Region range:"
 msgstr "Rango de región:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:420
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:430
 msgid "Whole region###mb_save_whole"
 msgstr "Región completa###mb_save_whole"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:435
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:445
 msgid "From (hex)###mb_save_from"
 msgstr "Desde (hex)###mb_save_from"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:443
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:453
 msgid "Size (hex)###mb_save_size"
 msgstr "Tamaño (hex)###mb_save_size"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:460
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:470
 #: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1872
 msgid "Range:"
 msgstr "Rango:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:467
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:477
 msgid "Invalid range"
 msgstr "Rango inválido"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:474
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:484
 msgid "Save###mb_save_range_ok"
 msgstr "Guardar###mb_save_range_ok"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:484
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:494
 msgid "Cancel###mb_save_range_cancel"
 msgstr "Cancelar###mb_save_range_cancel"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:523
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:533
 msgid "Save error###mb_save_err"
 msgstr "Error al guardar###mb_save_err"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:528
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:538
 msgid "OK###mb_save_err_ok"
 msgstr "OK###mb_save_err_ok"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:553
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:563
 msgid "Source file is empty or unreadable"
 msgstr "El archivo origen está vacío o no se puede leer"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:590
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:600
 msgid "Load BIN range###mb_load_range"
 msgstr "Cargar rango BIN###mb_load_range"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:594
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:604
 msgid "File:"
 msgstr "Archivo:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:595
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:605
 msgid "File size:"
 msgstr "Tamaño del archivo:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:602
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:612
 msgid "Whole file###mb_load_whole"
 msgstr "Archivo completo###mb_load_whole"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:617
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:627
 msgid "To (hex)###mb_load_to"
 msgstr "Hasta (hex)###mb_load_to"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:635
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:645
 msgid "Size (hex)###mb_load_size"
 msgstr "Tamaño (hex)###mb_load_size"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:643
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:653
 msgid "Source offset (hex)###mb_load_src"
 msgstr "Desplazamiento origen (hex)###mb_load_src"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:664
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:674
 msgid "Plan:"
 msgstr "Plan:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:673
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:683
 msgid "Invalid range (check region/file bounds)"
 msgstr "Rango inválido (verifique límites de región/archivo)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:680
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:690
 msgid "Load###mb_load_range_ok"
 msgstr "Cargar###mb_load_range_ok"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:690
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:700
 msgid "Cancel###mb_load_range_cancel"
 msgstr "Cancelar###mb_load_range_cancel"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:708
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:718
 msgid "Load result###mb_load_err"
 msgstr "Resultado de carga###mb_load_err"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:713
+#: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:723
 msgid "OK###mb_load_err_ok"
 msgstr "OK###mb_load_err_ok"
 
@@ -5165,7 +5174,7 @@ msgid "Snapshot Δ"
 msgstr "Δ de instantánea"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_layers.cpp:497
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:146
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:147
 #: src/ui-imgui/maxspeed_bench_window.cpp:156
 #: src/ui-imgui/plotter/plotter_window.cpp:414
 #: src/ui-imgui/topmenu/topmenu.cpp:41
@@ -6015,32 +6024,32 @@ msgstr "Archivo"
 msgid "Load MZF into RAM..."
 msgstr "Cargar MZF en RAM..."
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:123
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:124
 msgid "Hide"
 msgstr "Ocultar"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:144
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:145
 msgid "Emulation"
 msgstr "Emulación"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:153
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:154
 msgid "Max Speed"
 msgstr "Velocidad máxima"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:158
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:159
 #: src/ui-imgui/topmenu/topmenu.cpp:36
 msgid "Pause Emulation"
 msgstr "Pausar emulación"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:169
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:170
 msgid "Forced Full Screen Refresh"
 msgstr "Actualización forzada de pantalla completa"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:218
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:219
 msgid "Max size [MB]"
 msgstr "Tamaño máx. [MB]"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:222
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:223
 msgid ""
 "Maximum recording size per channel in MB. 0 = unlimited. Takes effect when "
 "recording (re)starts."
@@ -6048,11 +6057,11 @@ msgstr ""
 "Tamaño máximo de grabación por canal en MB. 0 = sin límite. Se aplica al "
 "(re)iniciar la grabación."
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:246
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:247
 msgid "Chunk [MB]"
 msgstr "Chunk [MB]"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:250
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:251
 msgid ""
 "RAM buffer size per chunk in MB before it is flushed to disk. Takes effect "
 "when recording (re)starts."
@@ -6060,120 +6069,120 @@ msgstr ""
 "Tamaño del búfer RAM por fragmento en MB antes de volcarse al disco. Se "
 "aplica al (re)iniciar la grabación."
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:281
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:282
 msgid "Select trace output directory"
 msgstr "Seleccionar directorio de salida de trace"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:301
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:343
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:386
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:482
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:302
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:344
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:387
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:483
 #: src/ui-imgui/videorec/videorec_menu.cpp:96
 msgid "Off"
 msgstr "Desactivado"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:303
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:349
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:391
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:486
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:304
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:350
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:392
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:487
 msgid "Only With Debug Window"
 msgstr "Solo con ventana de depuración"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:305
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:361
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:396
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:490
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:306
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:362
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:397
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:491
 msgid "Always"
 msgstr "Siempre"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:311
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:499
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:312
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:500
 msgid "Save on Exit"
 msgstr "Guardar al salir"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:315
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:422
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:514
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:316
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:423
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:515
 msgid "Set directory..."
 msgstr "Establecer directorio..."
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:324
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:325
 msgid "Settings"
 msgstr "Ajustes"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:336
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:337
 msgid "CPU Instruction History"
 msgstr "Historial de instrucciones de CPU"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:355
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:356
 msgid "With Debug Window or Breakpoints"
 msgstr "Con ventana de depuración o breakpoints"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:380
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:381
 msgid "CDL"
 msgstr "CDL"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:404
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:405
 msgid "Export on Exit"
 msgstr "Exportar al salir"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:414
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:415
 msgid "Show heatmap window"
 msgstr "Mostrar ventana de heatmap"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:433
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:434
 msgid "Select CDL export directory"
 msgstr "Seleccionar directorio de exportación CDL"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:453
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:454
 msgid "Trace Suite"
 msgstr "Trace Suite"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:460
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:461
 msgid "All channels"
 msgstr "Todos los canales"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:527
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:528
 msgid "CPU Track"
 msgstr "CPU Track"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:540
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:541
 msgid "PC range filter [lo,hi]:"
 msgstr "Filtro de rango PC [lo,hi]:"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:546
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:547
 msgid "lo (hex)"
 msgstr "lo (hex)"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:553
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:554
 msgid "hi (hex)"
 msgstr "hi (hex)"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:559
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:560
 msgid "Reset range (whole space)"
 msgstr "Restablecer rango (espacio completo)"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:565
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:566
 msgid "IORQ Log"
 msgstr "IORQ Log"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:574
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:575
 msgid "Interrupt Log"
 msgstr "Interrupt Log"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:583
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:584
 msgid "HW Log"
 msgstr "HW Log"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:595
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:596
 msgid "Marker Log"
 msgstr "Marker Log"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:604
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:605
 msgid "Print marks to stdout"
 msgstr "Imprimir marcas en stdout"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:608
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:609
 msgid ""
 "Print [BP-MARK] <name> to stdout when a mark fires; independent of the "
 "binary log."
@@ -6181,23 +6190,23 @@ msgstr ""
 "Imprime [BP-MARK] <name> en stdout cuando se dispara una marca; "
 "independiente del registro binario."
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:626
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:627
 msgid "Disassembled"
 msgstr "Desensamblado"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:637
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:638
 msgid "Show branch arrows"
 msgstr "Mostrar flechas de bifurcación"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:646
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:647
 msgid "Screen"
 msgstr "Pantalla"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:654
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:655
 msgid "Auto refresh on edit"
 msgstr "Actualización automática al editar"
 
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:665
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:666
 msgid "Auto refresh at every CPU step"
 msgstr "Actualización automática en cada paso de CPU"
 

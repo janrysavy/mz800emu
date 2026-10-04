@@ -580,6 +580,107 @@ void test_bp_list_serializes_typed_fields(void) {
 
 
 /*
+ * bp_list musí vracet addr_end, addr_match_mode (string) a addr_mask - bez
+ * nich nešlo poznat, že BP s addr_end v režimu SINGLE hlídá jen addr.
+ */
+void test_bp_list_serializes_addr_match_fields(void) {
+    g_stub_state.fill_bp_list_count = 2;
+    g_stub_state.bp_list_fake_type            = 2;   /* MEM_W */
+    g_stub_state.bp_list_fake_addr_end        = 0x10FF;
+    g_stub_state.bp_list_fake_addr_match_mode = 1;   /* RANGE */
+    g_stub_state.bp_list_fake_addr_mask       = 0xFFFF;
+    g_stub_state.bp_list_fake_bank_id_end     = 6;
+    g_stub_state.bp_list_fake_bank_match_mode = 2;   /* MASK */
+    g_stub_state.bp_list_fake_bank_id_mask    = 0xFE;
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"req_id\":23,\"cmd\":\"bp_list\"}");
+    char *resp = NULL;
+
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    JsonParser *parser = NULL;
+    JsonObject *obj = _parse_response_object(resp, &parser);
+    JsonObject *data = json_object_get_object_member(obj, "data");
+    JsonArray *arr = json_object_get_array_member(data, "breakpoints");
+    JsonObject *bp0 = json_array_get_object_element(arr, 0);
+    TEST_ASSERT_EQUAL_INT(0x10FF, json_object_get_int_member(bp0, "addr_end"));
+    TEST_ASSERT_EQUAL_STRING("RANGE",
+        json_object_get_string_member(bp0, "addr_match_mode"));
+    TEST_ASSERT_EQUAL_INT(0xFFFF, json_object_get_int_member(bp0, "addr_mask"));
+    TEST_ASSERT_EQUAL_INT(6, json_object_get_int_member(bp0, "bank_id_end"));
+    TEST_ASSERT_EQUAL_STRING("MASK",
+        json_object_get_string_member(bp0, "bank_match_mode"));
+    TEST_ASSERT_EQUAL_INT(0xFE, json_object_get_int_member(bp0, "bank_id_mask"));
+    /* Druhý BP bez nastavení -> výchozí SINGLE. */
+    JsonObject *bp1 = json_array_get_object_element(arr, 1);
+    TEST_ASSERT_EQUAL_STRING("SINGLE",
+        json_object_get_string_member(bp1, "addr_match_mode"));
+    TEST_ASSERT_TRUE(json_object_has_member(bp1, "addr_end"));
+    g_object_unref(parser);
+
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/**
+ * @brief Pošle bp_create_with_init a vrátí, zda odpověď nese "warning".
+ *
+ * @param json Celý JSONL request.
+ * @return true, pokud úspěšná odpověď obsahuje data.warning.
+ */
+static bool _bp_create_has_warning(const char *json) {
+    st_JSONL_MESSAGE *req = _make_request(json);
+    char *resp = NULL;
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    JsonParser *parser = NULL;
+    JsonObject *obj = _parse_response_object(resp, &parser);
+    JsonObject *data = json_object_get_object_member(obj, "data");
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(data, "created"));
+    bool has = json_object_has_member(data, "warning");
+    g_object_unref(parser);
+    free(resp);
+    jsonl_msg_free(req);
+    return has;
+}
+
+/*
+ * BP s addr_end != addr, ale bez addr_match_mode RANGE: vznikne (chování
+ * beze změny), odpověď ale nese warning. S RANGE, nebo s addr_end == addr,
+ * warning není.
+ */
+void test_bp_create_addr_end_without_range_warns(void) {
+    g_stub_state.bp_create_fake_id = 12;
+    TEST_ASSERT_TRUE(_bp_create_has_warning(
+        "{\"type\":\"request\",\"req_id\":34,\"cmd\":\"bp_create_with_init\","
+        "\"data\":{\"fields\":[\"type\",\"addr\",\"addr_end\"],"
+        "\"type\":\"MEM_W\",\"addr\":4096,\"addr_end\":4351}}"));
+    TEST_ASSERT_TRUE(_bp_create_has_warning(
+        "{\"type\":\"request\",\"req_id\":35,\"cmd\":\"bp_create_with_init\","
+        "\"data\":{\"fields\":[\"type\",\"addr\",\"addr_end\",\"addr_match_mode\"],"
+        "\"type\":\"MEM_W\",\"addr\":4096,\"addr_end\":4351,"
+        "\"addr_match_mode\":\"SINGLE\"}}"));
+    TEST_ASSERT_FALSE(_bp_create_has_warning(
+        "{\"type\":\"request\",\"req_id\":36,\"cmd\":\"bp_create_with_init\","
+        "\"data\":{\"fields\":[\"type\",\"addr\",\"addr_end\",\"addr_match_mode\"],"
+        "\"type\":\"MEM_W\",\"addr\":4096,\"addr_end\":4351,"
+        "\"addr_match_mode\":\"RANGE\"}}"));
+    TEST_ASSERT_FALSE(_bp_create_has_warning(
+        "{\"type\":\"request\",\"req_id\":37,\"cmd\":\"bp_create_with_init\","
+        "\"data\":{\"fields\":[\"type\",\"addr\",\"addr_end\"],"
+        "\"type\":\"MEM_W\",\"addr\":4096,\"addr_end\":4096}}"));
+    TEST_ASSERT_FALSE(_bp_create_has_warning(
+        "{\"type\":\"request\",\"req_id\":38,\"cmd\":\"bp_create_with_init\","
+        "\"data\":{\"fields\":[\"type\",\"addr\"],"
+        "\"type\":\"MEM_W\",\"addr\":4096}}"));
+    /* Chování beze změny: backend dostal create pětkrát. */
+    TEST_ASSERT_EQUAL_INT(5, g_stub_state.bp_create_calls);
+}
+
+
+/*
  * Neznámé jméno v poli fields[] = invalid_params (= "neznámý type" cesta z
  * akceptačního kritéria; remap by takový vstup neměl propustit do backendu).
  */
@@ -1104,6 +1205,38 @@ void test_build_hello_contains_19_commands(void) {
 
     g_object_unref(parser);
     free(line);
+}
+
+
+/**
+ * @brief Tabulka dodatečného limitu převzatého příkazu
+ *        (mcp_dispatch_stall_limit_ms): souborové I/O má dlouhý limit,
+ *        ostatní běžný; BLOCKING flag se ignoruje.
+ */
+void test_stall_limit_table(void) {
+    const int normal = mcp_dispatch_stall_limit_ms(DBGAPI_CMD_GET_ALL_REGS);
+    TEST_ASSERT_EQUAL_INT(10000, normal);
+    TEST_ASSERT_EQUAL_INT(10000, mcp_dispatch_stall_limit_ms(DBGAPI_CMD_PAUSE));
+    TEST_ASSERT_EQUAL_INT(10000, mcp_dispatch_stall_limit_ms(DBGAPI_CMD_REGIONS_WRITE));
+
+    const int long_cmds[] = {
+        DBGAPI_CMD_TRACE_SAVE, DBGAPI_CMD_TRACE_STOP,
+        DBGAPI_CMD_SNAPSHOT_SAVE_FILE, DBGAPI_CMD_SNAPSHOT_LOAD_FILE,
+        DBGAPI_CMD_SNAPSHOT_SAVE_BUFFER, DBGAPI_CMD_SNAPSHOT_LOAD_BUFFER,
+        DBGAPI_CMD_PROFILER_EXPORT, DBGAPI_CMD_CDL_EXPORT,
+        DBGAPI_CMD_VIDEOREC, DBGAPI_CMD_MEDIA_LOAD_MZF,
+        DBGAPI_CMD_MEDIA_LOAD_BINARY, DBGAPI_CMD_MEDIA_INSERT,
+        DBGAPI_CMD_MEDIA_EJECT, DBGAPI_CMD_CMT_OPEN, DBGAPI_CMD_CMT_RECORD,
+        DBGAPI_CMD_GET_FRAME_SCREENSHOT_PNG,
+    };
+    for (size_t i = 0; i < sizeof(long_cmds) / sizeof(long_cmds[0]); i++) {
+        TEST_ASSERT_EQUAL_INT(600000, mcp_dispatch_stall_limit_ms(long_cmds[i]));
+    }
+    /* BLOCKING flag (horní bit) nesmí výběr změnit. */
+    TEST_ASSERT_EQUAL_INT(600000, mcp_dispatch_stall_limit_ms(
+        (int)(DBGAPI_CMD_TRACE_SAVE | DBGAPI_CMDFLAG_BLOCKING)));
+    TEST_ASSERT_EQUAL_INT(10000, mcp_dispatch_stall_limit_ms(
+        (int)(DBGAPI_CMD_PAUSE | DBGAPI_CMDFLAG_BLOCKING)));
 }
 
 
@@ -6348,6 +6481,8 @@ int main(void) {
     RUN_TEST(test_mem_write_writes_bytes_and_returns_length);
     RUN_TEST(test_bp_add_returns_assigned_id);
     RUN_TEST(test_bp_list_returns_array);
+    RUN_TEST(test_bp_list_serializes_addr_match_fields);
+    RUN_TEST(test_bp_create_addr_end_without_range_warns);
 
     /* F015b - typed BP create + bp_list serializace + leak smoke */
     RUN_TEST(test_bp_create_typed_passes_type_to_dbgapi);
@@ -6374,6 +6509,7 @@ int main(void) {
     /* Hello + commands */
     RUN_TEST(test_build_hello_contains_19_commands);
     RUN_TEST(test_supported_commands_list);
+    RUN_TEST(test_stall_limit_table);
     RUN_TEST(test_supported_cmd_names_generated_from_cmd_map);
     RUN_TEST(test_transport_kind_default_and_setter);
 

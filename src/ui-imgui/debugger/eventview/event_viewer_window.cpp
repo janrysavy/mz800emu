@@ -90,6 +90,15 @@
 #include "emulator/cfgmain.h"
 
 #include "event_viewer_window.h"
+#include "emulator/debugger/dbgapi_ui.h"
+
+/**
+ * @brief Limit (ms) čekání příkazů Event Vieweru na vyzvednutí emu vláknem.
+ *
+ * Resize a vyprázdnění ringu jdou přes CMDRQ frontu; v pauze se vykonají
+ * hned, za běhu na konci snímku. Při překročení se příkaz neprovede.
+ */
+#define EVW_CMD_TIMEOUT_MS 1000
 
 #include <cstdio>
 #include <cstring>
@@ -1439,14 +1448,27 @@ static void evw_render_capacity_controls ( void )
     ImGui::SameLine ( );
     if ( ImGui::Button ( _L("Apply##evw_cap_apply") ) ) {
         if ( (unsigned) s_pending_cap != g_eventlog_config.capacity ) {
-            eventlog_set_capacity ( (size_t) s_pending_cap );
-            g_eventlog_config.capacity = (unsigned) s_pending_cap;
+            /* Resize ringu (free + calloc) přes CMDRQ frontu: emu vlákno do
+             * ringu zapisuje, přímé volání z UI vlákna by mohlo zapisovat
+             * do uvolněné paměti. Viz DBGAPI_CMD_EVENTLOG_SET_CAPACITY. */
+            st_DBGAPI_EVENTLOG_CAPACITY_PARAM cp;
+            cp.capacity = (uint32_t) s_pending_cap;
+            cp.capacity_after = 0;
+            if ( dbgapi_ui_submit_cmd_sync ( &g_dbgapi_cmdrq_queue,
+                                             DBGAPI_CMD_EVENTLOG_SET_CAPACITY,
+                                             &cp, NULL, EVW_CMD_TIMEOUT_MS ) ) {
+                g_eventlog_config.capacity = cp.capacity_after;
+                s_pending_cap = (int) cp.capacity_after;
+            }
         }
     }
 
     ImGui::SameLine ( );
     if ( ImGui::Button ( _L("Clear##evw_clear") ) ) {
-        eventlog_clear ( );
+        /* Vyprázdnění ringu vykoná emu vlákno (souběh s jeho zápisy). */
+        (void) dbgapi_ui_submit_cmd_sync ( &g_dbgapi_cmdrq_queue,
+                                           DBGAPI_CMD_EVENTLOG_CLEAR,
+                                           NULL, NULL, EVW_CMD_TIMEOUT_MS );
     }
 }
 

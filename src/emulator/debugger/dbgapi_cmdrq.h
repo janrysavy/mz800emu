@@ -495,9 +495,11 @@ typedef enum en_DBGAPI_CMD
      * g_debugger.step_call (deterministický stop po N instrukcích).
      *
      * Handler nastaví g_debugger.run_frames_target = screens + N a
-     * run_frames_active = 1, pak unpausne emulaci. Přidáno na KONEC enumu kvůli
+     * run_frames_active = 1, pak unpausne emulaci. Volitelný result_ptr
+     * (uint32_t*) dostane výchozí hodnotu screens, od které se cíl počítá
+     * (= základ pro actual_frames u volajícího). Přidáno na KONEC enumu kvůli
      * stabilitě číselných hodnot existujících příkazů. */
-    DBGAPI_CMD_RUN_FRAMES,                     /* Frame-bounded run (deterministický stop po N framech) - data_ptr: int* (N >= 1) */
+    DBGAPI_CMD_RUN_FRAMES,                     /* Frame-bounded run (deterministický stop po N framech) - data_ptr: int* (N >= 1), result_ptr: uint32_t* výchozí screens nebo NULL */
 
     /* Přepočet debugger callbacků + active flagů (= mzarch_platform_fn_debugger_state_changed)
      * na EMU vlákně (per-frame safe-point), aby ho UI vlákno nevolalo přímo.
@@ -633,7 +635,10 @@ typedef enum en_DBGAPI_CMD_ORIGIN
  *    NEprovede; data klienta už nikdo nečte,
  *  - dequeued == true  → EMU příkaz právě zpracovává; UI čeká bez limitu
  *    na PROCESSED (slot se nikdy neopouští rozpracovaný, jinak by EMU
- *    pracovalo s daty klienta po jejich zániku).
+ *    pracovalo s daty klienta po jejich zániku). Varianta
+ *    dbgapi_ui_submit_cmd_sync_watched() po dalším limitu jen ohlásí
+ *    zaseknutí callbackem (MCP pak odpoví z jiného vlákna), čekání na
+ *    slot ale pokračuje stejně.
  *
  * Invarianty:
  *  - `dequeued` se čte i zapisuje jen pod queue_mutex.
@@ -2604,11 +2609,17 @@ typedef struct st_DBGAPI_BP_LIST_RESULT
     struct
     {
         uint16_t addr;      /* Primární adresa (PC / MEM / IRQ vector) */
+        uint16_t addr_end;  /* Horní mez rozsahu (platí jen při addr_match_mode RANGE) */
+        uint8_t addr_match_mode; /* en_BP_MATCH_MODE pro addr (SINGLE/RANGE/MASK) */
+        uint16_t addr_mask; /* AND maska pro addr (platí jen při MASK) */
         int id;             /* ID */
         bool enabled;       /* Aktivní? */
         uint8_t type;       /* en_BPT_TYPE jako int (PC_EXEC/MEM_R/...) */
         uint8_t zone;       /* en_BP_ZONE jako int (CPU_VIEW/RAM/...) */
         uint8_t bank_id;    /* Bank index pro BP_ZONE_MMEXT_BANK */
+        uint8_t bank_id_end;     /* Horní mez banky (platí jen při bank_match_mode RANGE) */
+        uint8_t bank_match_mode; /* en_BP_MATCH_MODE pro bank_id (SINGLE/RANGE/MASK) */
+        uint8_t bank_id_mask;    /* AND maska pro bank_id (platí jen při MASK) */
         uint64_t hits;      /* Počítadlo aktivací (display only) */
         char *condition;    /* Heap g_strdup() expr (NULL = unconditional) */
     } bp[];                 /* Flexibilní pole */
@@ -3929,25 +3940,33 @@ typedef struct st_DBGAPI_CMT_SET_PROPERTY_PARAM
  * `play_immediately` handler navíc po úspěšném openu zavolá cmt_play()
  * (= přesně jako cmt_ui_open_cb). Nerozpoznaná přípona nebo selhání
  * cb_open -> out_result != 0, success = false.
+ *
+ * Po operaci (i při selhání openu) handler vyplní skutečný stav
+ * transportu out_state / out_paused - klient z nich pozná, zda páska
+ * opravdu hraje (cmt_play může být no-op, např. nepřehratelná páska).
  */
 typedef struct st_DBGAPI_CMT_OPEN_PARAM
 {
     const char *filepath;         /**< IN: cesta k CMT souboru (.mzf/.mzt/.wav/...). */
     uint8_t     play_immediately; /**< IN: 1 = po openu spustit přehrávání. */
     int         out_result;       /**< OUT: 0 = OK, -1 = neplatný param, -2 = open selhal. */
+    uint8_t     out_state;        /**< OUT: en_CMT_STATE po operaci (0 STOP, 1 PLAY, 2 RECORD). */
+    uint8_t     out_paused;       /**< OUT: 1 = transport v pauze (g_cmt.paused) po operaci. */
 } st_DBGAPI_CMT_OPEN_PARAM;
 
 /**
  * @brief Parametr pro DBGAPI_CMD_CMT_TAPE_SEEK.
  *
  * Seek na blok `block_id` přes container->cb_open_block. Vyžaduje
- * naloženou pásku (g_cmt.ext != NULL) s containerem. Mimo rozsah nebo
+ * naloženou pásku (g_cmt.ext != NULL) s containerem, který seek
+ * podporuje (SIMPLE_TAPE). SINGLE container (.mzf, .wav) nemá
+ * cb_open_block -> out_result = -1 i pro blok 0. Mimo rozsah nebo
  * bez pásky -> out_result != 0, success = false.
  */
 typedef struct st_DBGAPI_CMT_TAPE_SEEK_PARAM
 {
     int block_id;   /**< IN: cílový blok (0-based). */
-    int out_result; /**< OUT: 0 = OK, -1 = bez pásky, -2 = seek selhal. */
+    int out_result; /**< OUT: 0 = OK, -1 = bez pásky / container bez seeku, -2 = seek selhal. */
 } st_DBGAPI_CMT_TAPE_SEEK_PARAM;
 
 /**

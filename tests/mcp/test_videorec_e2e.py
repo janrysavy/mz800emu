@@ -59,6 +59,8 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import emu_test_proc  # noqa: E402 - úklid spuštěných procesů
 
 _TESTS_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _TESTS_DIR.parent.parent
@@ -110,6 +112,7 @@ def _avi_frames(path, ffprobe):
 class PipeEmu:
     """Emulátor v pipe módu: JSONL request/response přes stdin/stdout."""
 
+    @emu_test_proc.kill_on_init_failure
     def __init__(self, exe, cfg_dir, ini):
         args = [str(exe), "--mcp-pipe", "--no-save-ini", "--no-first-run-windows",
                 f"--cfg-dir={cfg_dir}", f"--work-dir={cfg_dir}", f"--config={ini}"]
@@ -524,6 +527,9 @@ def run_realtime_bloxorz(exe, tmp, ffprobe, ffmpeg, dsk):
 
 
 def main():
+    # Úklid spuštěných procesů i při selhání, přerušení nebo zabití
+    # ctestem; vnitřní limit je kratší než TIMEOUT testu v ctestu.
+    emu_test_proc.install(deadline_s=105)
     exe = _find_exe()
     ffprobe = _find_ffprobe()
     ffmpeg = _find_ffmpeg()

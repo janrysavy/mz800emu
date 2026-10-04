@@ -17,6 +17,8 @@ dočasný ``--cfg-dir``, INI s vypnutým auto load/save breakpointů,
      25..75 snímků/s - široký kvůli sdíleným CI strojům, ale pořád odliší
      obě dřívější vady: cca 1 snímek/s i neomezený běh MAX SPEED, který dává
      stovky snímků/s);
+  1b. ``run frames=N`` spuštěný za běhu emulace hlásí ``actual_frames`` == N
+     (a ze zastaveného stavu navíc posune čítač snímků přesně o N);
   2. ``run frames=250`` při 100 % doběhne celý (``stopped_by: frames``)
      za 4..10 s (reálný čas 250 / 50 = 5 s);
   3. ``set_speed custom 200 %`` + ``run frames=200`` trvá cca 2 s (1,5..4 s);
@@ -42,6 +44,8 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import emu_test_proc  # noqa: E402 - úklid spuštěných procesů
 
 _TESTS_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _TESTS_DIR.parent.parent
@@ -67,6 +71,7 @@ def _find_exe():
 class PipeEmu:
     """Emulátor v pipe módu: JSONL request/response přes stdin/stdout."""
 
+    @emu_test_proc.kill_on_init_failure
     def __init__(self, exe, cfg_dir, ini):
         args = [str(exe), "--mcp-pipe", "--no-save-ini", "--no-first-run-windows",
                 f"--cfg-dir={cfg_dir}", f"--work-dir={cfg_dir}", f"--config={ini}"]
@@ -171,7 +176,26 @@ def run(emu):
     check(25.0 <= fps <= 75.0, f"free run at 100 % paces at real time ({fps:.1f} fps, expected ~50, "
           f"accepted 25..75)")
 
+    # 1b. run frames=N spuštěný ZA BĚHU emulace: actual_frames musí být
+    #     přesně N. Regrese: po přesunu drainu dbgapi za uzavření snímku
+    #     (09103e29) se výchozí čítač snímků četl na dispatch vlákně před
+    #     zpracováním příkazu, takže zahrnul i snímek ukončený mezi čtením
+    #     a drainem a hlásil N+1. Run sám emulaci po doběhu pozastaví.
+    for n in (50, 1):
+        d = emu.call("run", {"frames": n}, timeout=120.0)
+        check(d.get("stopped_by") == "frames" and d.get("actual_frames") == n,
+              f"run {n} frames started while running reports {n} frames "
+              f"({d.get('stopped_by')}, {d.get('actual_frames')} frames)")
+        emu.call("run")  # znovu volný běh pro další průchod
+
     emu.call("pause")
+    # 1c. Ze zastaveného stavu: actual_frames i skutečný posun čítače = N.
+    a = emu.screens()
+    d = emu.call("run", {"frames": 7}, timeout=120.0)
+    b = emu.screens()
+    check(d.get("actual_frames") == 7 and b - a == 7,
+          f"run 7 frames from pause reports 7 and advances 7 frames "
+          f"(reported {d.get('actual_frames')}, advanced {b - a})")
     # 2. Frame-bounded běh při 100 %.
     check_run(emu, 250, 4.0, 10.0, "100 %")
     # 3. Vlastní rychlost 200 %: dvojnásobek snímků za reálný čas.
@@ -186,6 +210,9 @@ def run(emu):
 
 
 def main():
+    # Úklid spuštěných procesů i při selhání, přerušení nebo zabití
+    # ctestem; vnitřní limit je kratší než TIMEOUT testu v ctestu.
+    emu_test_proc.install(deadline_s=105)
     exe = _find_exe()
     tmp = Path(tempfile.mkdtemp(prefix="mz_headless_pacing_"))
     ini = tmp / "mz800emu.ini"

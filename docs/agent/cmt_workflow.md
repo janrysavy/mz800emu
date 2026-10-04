@@ -23,12 +23,22 @@ the program does not load through standard ROM.
 The cmthack patch state is readable as `cmthack_enabled` in
 `emulator://periph/cmt`; toggle it with `emu_cmt_hack_set`.
 
+A tape load started by the ROM itself (MZ-800 boot menu key C, BASIC
+`LOAD`, monitor load) goes through the cmthack file dialog when the
+patch is installed. Headless / pipe mode has no dialog: the load is
+cancelled at once (the ROM reports Break) and a warning goes to stderr.
+To load from the virtual tape there, turn the patch off first
+(`emu_cmt_hack_set(false)`), then `emu_cmt_open` + `emu_cmt_play`.
+
 ## Real-tape transport flow
 
 1. Load an image:
    - `emu_cmt_open(path, play_immediately=false)` - CMT-specific open by
      file extension (.mzf / .mzt / .wav / ...). With
-     `play_immediately=true` it starts playback in one step.
+     `play_immediately=true` it starts playback in one step. The result
+     reports the actual transport state after the call (`playing`,
+     `state`, `paused`), not the request; if playback was requested but
+     did not start, it also carries `warning`.
    - or the generic `emu_media_insert(slot="cmt", path=...)`.
 2. Start the tape: `emu_cmt_play` (or `emu_cmt_play_paused` to arm it
    suspended).
@@ -58,7 +68,7 @@ Set via `emu_cmt_set_*`, all reflected in `emulator://periph/cmt`:
 |--|--|--|
 | `emu_cmt_set_speed(speed)` | `cmtspeed` | Default speed ratio. See speed table below. |
 | `emu_cmt_set_polarity(inverted)` | `polarity_inverted` | Rear DIP switch signal polarity. |
-| `emu_cmt_set_cpu_boost(enabled)` | `cpu_boost` | Run at max speed during transport. |
+| `emu_cmt_set_cpu_boost(enabled)` | `cpu_boost` | Run at max speed while the tape runs (PLAY or RECORD, not paused). A user preference, not machine state: snapshots store it (for older emulator versions) but `emu_snapshot_load` does not restore it - the current value stays, and MAX SPEED is re-applied against the restored deck state. Turns off only the MAX SPEED it turned on - MAX SPEED set via `emu_set_speed(mode="max")` stays. If the user turns MAX SPEED off during a boost, the boost turns it on again at the next pause/resume or option change. While recording, the boost switches MAX SPEED off after 5 s without tape writes and back on when writing resumes. |
 | `emu_cmt_set_mzfsize_check(enabled)` | `mzfsize_check` | Reject MZF where body size != header size. |
 
 ### Speed ratios (en_CMTSPEED)
@@ -88,6 +98,10 @@ SINGLE containers (a plain .mzf) hold one block.
   `blocks` array (block_id, name, cmt_speed, type, is_current, playable,
   recordable). `type` is 0=WAV, 1=MZF, 2=TAPHEADER, 3=TAPDATA.
 - Seek: `emu_cmt_tape_seek(block_id)` positions at a block (0-based).
+  Only SIMPLE_TAPE containers support it; on a SINGLE container (plain
+  .mzf or .wav) it fails even for block 0. To replay a SINGLE tape from
+  the beginning, use `emu_cmt_stop` + `emu_cmt_play` (play from STOP
+  always starts at the beginning).
 - Per-block speed: `emu_cmt_tape_set_block_speed(block_id, speed)`. Only
   the cmt speed ratio is adjustable per block; there are no other
   per-block parameters.

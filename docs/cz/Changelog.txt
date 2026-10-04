@@ -1,23 +1,59 @@
 
-	- Nová funkce: nahrávání videa (Tools -> Video Recording) na všech platformách: MZ-800, MZ-700 PAL a NTSC, MZ-1500 (60 snímků/s u NTSC, stereo u MZ-1500 a MZ-800 s druhým PSG). Bezztrátový záznam obrazu a zvuku do AVI v emulačním čase (pauza emulace pozastaví video, zrychlení se ve videu neprojeví), pozastavení nahrávání (Alt+Shift+O), markery (Alt+L), start/stop (Alt+O), okno dálkového ovládání se stavem nahrávání a viditelnými zkratkami u tlačítek (Alt+Shift+L), retake přes snapshot (po načtení snapshotu se nahrávka vrátí do bodu uložení bez viditelného švu), režim podle reality (nahrává se, co bylo na obrazovce a v reproduktorech, přepínání kdykoli i během nahrávání Alt+U, nastavení pauzy, rychlosti a krokování v debuggeru, předvolby Ukázka hry a Živě / návod, automatické markery, režim v REC indikátoru) a export skriptem do MP4 pro YouTube (výřez a snímková frekvence podle platformy nahrávky, celočíselné zvětšení, přechody, kapitoly, volitelně vypálené ikony stavu - pauza, rychlost, podle reality). Viz video-recording.md.
+	- Nová volba --version: vypíše verzi, revizi, původ zdrojů a parametry buildu.
 
-	- MCP klávesnice - názvy kláves z dokumentace (CURSOR_UP/DOWN/LEFT/RIGHT, INST, UP_ARROW, DOWN_ARROW) lze nově použít i v press_key a release_key (staré názvy dál fungují). Chyba "Unknown key" nyní nabídne nejbližší platné názvy. ZMĚNA: send_keys (key_names) a send_keys_with_delays s neznámým názvem klávesy nyní selžou celé (nic se nenapíše), místo aby se neznámý název tiše přeskočil.
+	- Nová volba --speed <procenta|max>: rychlost emulace při startu (hlavně pro --headless).
 
-	- BUGFIX: Když se v okně nepodařilo inicializovat zvuk nebo otevřít zvukové zařízení (počítač bez zvukové karty, odpojené nebo nedostupné zařízení), emulátor skončil chybou "Failed to initialize interface" a emulace se vůbec nespustila. Nyní běží bez zvuku 100 % reálným časem (tempo podle systémových hodin), v logu je varování a v okně se jednou zobrazí upozornění, že emulátor běží bez zvukového zařízení. Chování s funkčním zvukovým zařízením se nemění.
+	- BUGFIX: --run-mzf spouští program ve stavu jako po nahrání z kazety přes ROM (MZ-1500: chyběla paleta a PCG grafika; MZ-800 a MZ-1500: ztlumený zvuk časovače; neprázdná obrazovka). ZMĚNA: na MZ-700 se už nespouštějí hodiny reálného času (ROM je také nespouští).
 
-	- BUGFIX: Headless režim (--headless, MCP pipe) - při normální rychlosti (100 %) emulace běžela jen asi 1 snímek za sekundu (např. po --run-mzf nebo po spuštění emulace přes MCP) a v logu se opakovalo "timeout! Is Audio module running?"; jindy naopak běžela bez brzdy rychlostí MAX SPEED. Bez audio zařízení se nyní tempo řídí systémovými hodinami, takže 100 % odpovídá reálnému času (u MZ-800 50 snímků za sekundu) a vlastní rychlost i MAX SPEED fungují jako v okně. Chování s audio zařízením se nemění.
+	- BUGFIX: MCP - při zaseknutém emulačním vláknu přestalo odpovídat úplně; nyní vrátí "Emulator busy: command still running" (po asi 20 s, u souborových operací po 10 min).
 
-	- BUGFIX: MCP server - příkazy (např. bp_remove, bp_list, run) občas selhaly s chybou typu "bp_remove failed (unknown id?)", ačkoliv byly v pořádku; stačilo, aby emulační vlákno příkaz převzalo se zpožděním kolem 1 s. Na převzetí příkazu se nyní čeká až 10 s, převzatý příkaz se vždy dokončí a nová chyba "Emulator busy: ..." jasně říká, že se příkaz neprovedl a lze ho zopakovat.
+	- BUGFIX: Memory Browser, Event Viewer a skrytí debuggeru zapisovaly do emulátoru souběžně s běžící emulací; zápis nyní provádí emulační vlákno.
 
-	- BUGFIX: Stisk RESET (F12 nebo menu) okamžitě po startu okna mohl shodit emulátor, pokud se ještě nestihlo spustit emulační vlákno.
+	- Debugger a MCP - příkazy se v pauze emulace vykonají okamžitě (dříve s prodlevou až 20 ms).
 
-	- BUGFIX: Otevírání/zavírání okna debuggeru (Alt+D, menu) za běhu emulace a živé čtení paměti v Memory Browseru se mohly vzácně střetnout s emulačním vláknem (souběh). Obě operace nyní probíhají bezpečně.
+	- BUGFIX: Pád po načtení snapshotu uloženého během přehrávání kazety, pokud nebyla vložená páska.
 
-	- BUGFIX: Po načtení snapshotu se nyní vždy přepočítá zrychlená cesta přístupu do RAM. Dříve mohl emulátor až do nejbližší změny mapování paměti používat mapování z doby před načtením snapshotu.
+	- BUGFIX: Po načtení takového snapshotu nově vložená páska nehrála od začátku a program donekonečna čekal na signál z pásky.
 
-	- BUGFIX: Snapshoty - nastavení v dialogu Snapshot Setup (zahrnout RAM disk a MemExt, komprese, adresář, quicksave, chování po načtení) se ukládala do konfiguračního souboru, ale po restartu emulátoru se nenačetla a platily výchozí hodnoty. Nastavení se nyní po startu obnoví.
+	- BUGFIX: MCP - výpis pásky hlásil playable/recordable obráceně; cmt_transport stop bez vložené pásky magnetofon nezastavil.
 
-	- OPRAVA DOKUMENTACE: MCP - pole platform v platform/info nabývá hodnot mz700 / mz800 / mz1500; PAL a NTSC rozlišuje pole tv_system. Dokumentace dříve chybně uváděla mz700-pal / mz700-ntsc.
+	- BUGFIX: MCP Python wrapper - skončení emulátoru se projevilo až 30s timeoutem a další volání tiše spustilo nový emulátor; nyní okamžitá chyba, důvod v emu_status (last_exit) a restarted: true u volání, které emulátor znovu spustí.
+
+	- OPRAVA DOKUMENTACE: MCP - emu_cmt_tape_seek nepodporuje jednosouborové pásky (.mzf, .wav).
+
+	- BUGFIX: CPU Boost kazety - po načtení snapshotu neodpovídala rychlost stavu magnetofonu; stop a pauza pásky vypínaly i MAX SPEED zvolenou uživatelem; načtení snapshotu přepisovalo volbu CPU Boost (a ta se uložila i do konfigurace).
+
+	- BUGFIX: MCP - cmt_open hlásil playing podle požadavku, ne podle skutečného stavu (nově navíc state, paused a warning).
+
+	- MCP - bp_list ukazuje rozsah adres a bank (addr_end, addr_match_mode, ...); bp_create_with_init varuje u addr_end bez RANGE.
+
+	- BUGFIX: PCG editor (MZ-1500) - šlo editovat jen znaky 0-255 z 1024 v bance.
+
+	- BUGFIX: MCP - io_write a io_read za běhu emulace (i emu_media_run_mzf) zastavily procesor na několik minut a zablokovaly MCP.
+
+	- BUGFIX: CMT hack bez GUI (--headless, MCP pipe) zablokoval emulaci navždy (dialog výběru souboru nemá kdo zavřít); nyní vrátí Break s varováním.
+
+	- MCP Python wrapper - proměnná prostředí MZ800EMU_WORK_DIR nastaví pracovní adresář spuštěného emulátoru (--work-dir).
+
+	- Nová funkce: nahrávání videa (Tools -> Video Recording) na všech platformách. Bezztrátové AVI (obraz i zvuk) v emulačním čase nebo podle reality, start/stop Alt+O, pauza Alt+Shift+O, markery Alt+L, okno dálkového ovládání Alt+Shift+L, retake přes snapshot bez viditelného švu, předvolby, export skriptem do MP4 pro YouTube. Viz video-recording.md.
+
+	- MCP - názvy kláves z dokumentace (CURSOR_*, INST, UP_ARROW, DOWN_ARROW) fungují i v press_key a release_key; chyba "Unknown key" nabídne nejbližší názvy. ZMĚNA: send_keys s neznámým názvem klávesy selže celé (dříve se klávesa tiše přeskočila).
+
+	- BUGFIX: Bez funkčního zvukového zařízení se emulace v okně nespustila; nyní běží bez zvuku reálným časem s upozorněním.
+
+	- BUGFIX: Headless (--headless, MCP pipe) - emulace běžela jen asi 1 snímek/s, jindy naopak bez brzdy; nyní běží reálným časem a rychlost lze měnit jako v okně.
+
+	- BUGFIX: MCP - příkazy občas selhaly (např. "bp_remove failed (unknown id?)"), když je emulační vlákno převzalo se zpožděním; nyní se čeká až 10 s a neprovedený příkaz hlásí "Emulator busy: ...".
+
+	- BUGFIX: RESET hned po startu okna mohl shodit emulátor.
+
+	- BUGFIX: Otevírání a zavírání debuggeru za běhu a živé čtení paměti v Memory Browseru se mohly vzácně střetnout s emulačním vláknem.
+
+	- BUGFIX: Po načtení snapshotu mohl emulátor do nejbližší změny mapování paměti používat mapování RAM z doby před načtením.
+
+	- BUGFIX: Nastavení ze Snapshot Setup se po restartu emulátoru nenačetla.
+
+	- OPRAVA DOKUMENTACE: MCP - platform/info vrací platform mz700 / mz800 / mz1500, PAL a NTSC rozlišuje tv_system.
 
 2026-07-28 - Released version 2.0.5 - preview
 

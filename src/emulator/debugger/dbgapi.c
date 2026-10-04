@@ -1281,6 +1281,52 @@ static bool dbgapi_videorec_execute ( st_DBGAPI_VIDEOREC_PARAM *p )
 }
 
 
+/**
+ * @brief Testovací háček: doba spánku v ms před dispatchem armovaného
+ *        příkazu (0 = vypnuto). Viz dbgapi_test_arm_dispatch_stall().
+ */
+static gint s_test_stall_ms = 0;
+
+/** @brief Testovací háček: příkaz (en_DBGAPI_CMD), na který háček čeká. */
+static gint s_test_stall_cmd = (gint)DBGAPI_CMD_NONE;
+
+
+void dbgapi_test_arm_dispatch_stall(en_DBGAPI_CMD cmd, int ms)
+{
+    /* Napřed příkaz, potom doba: dispatch háček uplatní až po přečtení
+     * nenulové doby, takže vždy vidí odpovídající příkaz. */
+    g_atomic_int_set(&s_test_stall_cmd, (gint)cmd);
+    g_atomic_int_set(&s_test_stall_ms, ms > 0 ? (gint)ms : 0);
+}
+
+
+/**
+ * @brief Uplatní testovací háček zaseknutí, pokud je armovaný pro @p rq.
+ *
+ * Jednorázový: při shodě příkazu (a originu MCP) háček atomicky vypne
+ * a emu vlákno uspí. V produkci háček nikdo nearmuje, cena je jedno
+ * atomické čtení na příkaz dbgapi (ne na instrukci).
+ *
+ * @param rq  Právě dispatchovaný slot.
+ * @param cmd Příkaz slotu bez BLOCKING flagu.
+ */
+static void dbgapi_test_apply_dispatch_stall(const st_DBGAPI_CMDRQ *rq,
+                                             en_DBGAPI_CMD cmd)
+{
+    gint ms = g_atomic_int_get(&s_test_stall_ms);
+    if (G_LIKELY(ms <= 0))
+        return;
+    if (rq->cmd_origin != DBGAPI_CMD_ORIGIN_MCP
+        || g_atomic_int_get(&s_test_stall_cmd) != (gint)cmd)
+        return;
+    if (!g_atomic_int_compare_and_exchange(&s_test_stall_ms, ms, 0))
+        return;
+    fprintf(stderr, "[dbgapi] test hook: stalling emulator thread for %d ms\n",
+            (int)ms);
+    g_usleep((gulong)ms * 1000);
+}
+
+
 void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
 {
     if (!rq)
@@ -1288,6 +1334,9 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
 
     /* Extrahovat příkaz bez BLOCKING flagu */
     en_DBGAPI_CMD cmd = (en_DBGAPI_CMD)(rq->cmd & DBGAPI_CMD_MASK);
+
+    /* Testovací háček (regresní test omezené odpovědi MCP). */
+    dbgapi_test_apply_dispatch_stall(rq, cmd);
 
     /*
      * Dispatch příkazů — zatím základní implementace.
@@ -1412,7 +1461,15 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
              * porovnání >= v hot loopu; přetečení screens (po cca 2.7 roku
              * běhu při 50 Hz) by teoreticky zkreslilo cíl, ale frame-bounded
              * run je krátkodobá operace (N <= 1000), takže to není praktický
-             * problém. */
+             * problém.
+             *
+             * result_ptr (volitelný, uint32_t*): handler do něj zapíše
+             * výchozí hodnotu screens, od které se cíl počítá. Volající
+             * (MCP run) z ní počítá actual_frames. Výchozí hodnotu nesmí
+             * číst sám na svém vlákně před submitem: za běhu emulace se
+             * mezi jeho čtením a tímto drainem (až po uzavření snímku
+             * a inkrementu screens) dokončí ještě jeden snímek a delta by
+             * vyšla N+1. */
             if ( !rq->data_ptr )
             {
                 rq->success = false;
@@ -1425,9 +1482,13 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                     rq->success = false;
                     break;
                 };
-                g_debugger.run_frames_target =
-                    g_gdg.total_elapsed.screens + (uint32_t) frames;
+                uint32_t start_screens = (uint32_t) g_gdg.total_elapsed.screens;
+                g_debugger.run_frames_target = start_screens + (uint32_t) frames;
                 g_debugger.run_frames_active = 1;
+                if ( rq->result_ptr )
+                {
+                    *((uint32_t *)rq->result_ptr) = start_screens;
+                };
             }
             emulator_pause ( false );
             rq->success = true;
@@ -1770,11 +1831,20 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                     st_BPT *b = &g_array_index ( g_breakpoints.breakpoints,
                                                  st_BPT, i );
                     r->bp[i].addr = b->addr;
+                    /* Match mode + rozsah/maska: bez nich nebylo z bp_list
+                     * poznat, že BP s addr_end, ale v režimu SINGLE hlídá
+                     * jen addr. */
+                    r->bp[i].addr_end = b->addr_end;
+                    r->bp[i].addr_match_mode = (uint8_t)b->addr_match_mode;
+                    r->bp[i].addr_mask = b->addr_mask;
                     r->bp[i].id = b->id;
                     r->bp[i].enabled = b->enabled;
                     r->bp[i].type = (uint8_t)b->type;
                     r->bp[i].zone = (uint8_t)b->zone;
                     r->bp[i].bank_id = b->bank_id;
+                    r->bp[i].bank_id_end = b->bank_id_end;
+                    r->bp[i].bank_match_mode = (uint8_t)b->bank_match_mode;
+                    r->bp[i].bank_id_mask = b->bank_id_mask;
                     r->bp[i].hits = b->hits;
                     /* expr = condition výraz (NULL = unconditional). g_strdup
                      * - dispatch handler je povinen uvolnit g_free(). */
@@ -6599,7 +6669,9 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             /* CMT-A: ovládání transportu reálné páskové emulace.
              * Transport funkce (cmt_play/stop/pause/eject) běží na emu
              * vlákně a samy validují stav (= no-op pokud nelze provést).
-             * Proto out_result = 0 a success = true i pro no-op. */
+             * Proto out_result = 0 a success = true i pro no-op.
+             * stop/eject bez vložené pásky nejsou no-op: uvedou transport
+             * do STOP (invariant st_CMT), takže success odpovídá stavu. */
             st_DBGAPI_CMT_TRANSPORT_PARAM *p =
                 (st_DBGAPI_CMT_TRANSPORT_PARAM *) rq->data_ptr;
             if ( !p )
@@ -6736,7 +6808,8 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             /* CMT-B: otevření CMT souboru (non-UI). cmt_open_file_by_
              * extension udělá eject + open; při play_immediately handler
              * navíc zavolá cmt_play (= jako cmt_ui_open_cb). Selhání
-             * openu -> out_result = -2, success = false. */
+             * openu -> out_result = -2, success = false. Vždy vyplní
+             * out_state / out_paused podle skutečného stavu. */
             st_DBGAPI_CMT_OPEN_PARAM *p =
                 (st_DBGAPI_CMT_OPEN_PARAM *) rq->data_ptr;
             if ( !p || !p->filepath || p->filepath[ 0 ] == '\0' )
@@ -6759,6 +6832,10 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 p->out_result = -2;
                 rq->success = false;
             };
+            /* Skutečný stav transportu po operaci - dispatch z něj hlásí
+             * "playing" (dříve jen echo play_immediately). */
+            p->out_state = (uint8_t) g_cmt.state;
+            p->out_paused = (uint8_t) ( g_cmt.paused ? 1 : 0 );
             break;
         }
 
@@ -6881,8 +6958,11 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             p->container_type = (uint8_t) ctype;
             if ( g_cmt.ext->block )
                 p->current_block = cmtext_block_get_block_id ( g_cmt.ext->block );
-            int playable   = cmtext_is_playable ( g_cmt.ext );
-            int recordable = cmtext_is_recordable ( g_cmt.ext );
+            /* cmtext_is_playable/recordable vracejí EXIT_SUCCESS (0)
+             * pro "ano" - převod na bool (dříve obráceně: MZF hlásilo
+             * playable = false, recordable = true). */
+            bool playable   = ( EXIT_SUCCESS == cmtext_is_playable ( g_cmt.ext ) );
+            bool recordable = ( EXIT_SUCCESS == cmtext_is_recordable ( g_cmt.ext ) );
 
             if ( ctype != CMTEXT_CONTAINER_TYPE_SIMPLE_TAPE )
             {
@@ -7028,12 +7108,32 @@ void dbgapi_emu_send_msg(en_DBGAPI_MSG msg, st_DBGAPI_MSG_DATA *data)
  * UI STRANA — ODESÍLÁNÍ CMDRQ (UI → EMU)
  * ============================================================================ */
 
-en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_ex(st_DBGAPI_CMDRQ_QUEUE *queue,
+/**
+ * @brief Společná implementace synchronního submitu (viz
+ *        dbgapi_ui_submit_cmd_sync_watched() a dbgapi_ui_submit_cmd_sync_ex()).
+ *
+ * @param queue           CMDRQ fronta.
+ * @param cmd             Příkaz (volitelně s DBGAPI_CMDFLAG_BLOCKING).
+ * @param origin          Zdroj příkazu.
+ * @param data_ptr        Vstupní data (vlastní volající, platná do návratu).
+ * @param result_ptr      Buffer odpovědi (vlastní volající, platný do návratu).
+ * @param timeout_ms      Limit čekání na vyzvednutí emu vláknem (0 = bez limitu).
+ * @param stall_ms        Dodatečná doba čekání na dokončení vyzvednutého
+ *                        příkazu, po které se zavolá @p stall_cb.
+ * @param stall_cb        Hlášení zaseknutého rozpracovaného příkazu (NULL =
+ *                        nehlásit, čistá sémantika _ex).
+ * @param stall_user_data Kontext pro @p stall_cb.
+ * @return Viz en_DBGAPI_SUBMIT_STATUS.
+ */
+static en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_impl(st_DBGAPI_CMDRQ_QUEUE *queue,
                                                      en_DBGAPI_CMD cmd,
                                                      en_DBGAPI_CMD_ORIGIN origin,
                                                      void *data_ptr,
                                                      void *result_ptr,
-                                                     int timeout_ms)
+                                                     int timeout_ms,
+                                                     int stall_ms,
+                                                     dbgapi_submit_stall_cb_t stall_cb,
+                                                     void *stall_user_data)
 {
     /* Kontrola: emulátor se neukončuje? */
     APP_MUTEX_LOCK(queue->queue_mutex);
@@ -7144,8 +7244,36 @@ en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_ex(st_DBGAPI_CMDRQ_QUEUE *queu
         APP_MUTEX_UNLOCK(queue->queue_mutex);
 
         /* Emu příkaz právě zpracovává (nebo ho mezitím dokončilo). Slot
-         * nesmíme opustit - emu pracuje s data_ptr/result_ptr klienta.
-         * Čekáme bez limitu; handlery dispatch na odesílatele nečekají. */
+         * nesmíme opustit - emu pracuje s data_ptr/result_ptr klienta,
+         * která typicky leží na zásobníku odesílatele. Proto se tu čeká
+         * vždy až do dokončení; handlery dispatch na odesílatele nečekají.
+         *
+         * Volající, který potřebuje omezenou dobu odpovědi (MCP), si nechá
+         * po dalších stall_ms ohlásit zaseknutí přes stall_cb. Odpověď
+         * klientovi pak pošle jiné vlákno, toto vlákno (a s ním i data
+         * na jeho zásobníku) dál čeká na dokončení slotu. */
+        if (stall_cb && slot->cmd_state != DBGAPI_CMDSTATE_PROCESSED)
+        {
+            gint64 stall_deadline_us = g_get_monotonic_time()
+                                       + (gint64)(stall_ms > 0 ? stall_ms : 0) * 1000;
+            while (slot->cmd_state != DBGAPI_CMDSTATE_PROCESSED)
+            {
+                gint64 left_us = stall_deadline_us - g_get_monotonic_time();
+                if (left_us <= 0)
+                    break;
+                gint32 left_ms = (gint32)((left_us + 999) / 1000);
+                APP_COND_WAIT_TIMEOUT_MS(slot->cond, slot->mutex, left_ms);
+            };
+            if (slot->cmd_state != DBGAPI_CMDSTATE_PROCESSED)
+            {
+                /* Slot zůstává náš (cmd_state != NONE), nikdo jiný ho
+                 * nepřevezme; zámek pouštíme jen kvůli callbacku, aby
+                 * nemohl vzniknout lock-order problém se zámky volajícího. */
+                APP_MUTEX_UNLOCK(slot->mutex);
+                stall_cb(stall_user_data);
+                APP_MUTEX_LOCK(slot->mutex);
+            };
+        };
         while (slot->cmd_state != DBGAPI_CMDSTATE_PROCESSED)
             APP_COND_WAIT(slot->cond, slot->mutex);
     };
@@ -7164,6 +7292,34 @@ en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_ex(st_DBGAPI_CMDRQ_QUEUE *queu
     APP_MUTEX_UNLOCK(slot->mutex);
 
     return status;
+}
+
+
+en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_ex(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                                     en_DBGAPI_CMD cmd,
+                                                     en_DBGAPI_CMD_ORIGIN origin,
+                                                     void *data_ptr,
+                                                     void *result_ptr,
+                                                     int timeout_ms)
+{
+    return dbgapi_ui_submit_impl(queue, cmd, origin, data_ptr, result_ptr,
+                                 timeout_ms, 0, NULL, NULL);
+}
+
+
+en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_watched(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                                          en_DBGAPI_CMD cmd,
+                                                          en_DBGAPI_CMD_ORIGIN origin,
+                                                          void *data_ptr,
+                                                          void *result_ptr,
+                                                          int timeout_ms,
+                                                          int stall_ms,
+                                                          dbgapi_submit_stall_cb_t stall_cb,
+                                                          void *stall_user_data)
+{
+    return dbgapi_ui_submit_impl(queue, cmd, origin, data_ptr, result_ptr,
+                                 timeout_ms, stall_ms, stall_cb,
+                                 stall_user_data);
 }
 
 

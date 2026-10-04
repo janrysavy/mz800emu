@@ -46,6 +46,9 @@ add_subdirectory(videorec)
 # Python testy pomocných skriptů z docs/tools/ (bez Pythonu se neregistrují)
 add_subdirectory(tools)
 
+# Informace o buildu: generátor build_revision.c a volba --version
+add_subdirectory(buildinfo)
+
 # Emu core
 add_subdirectory(sanity)
 add_subdirectory(debugger)

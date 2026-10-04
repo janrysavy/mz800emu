@@ -125,6 +125,15 @@ mz_add_test(dbgapi_submit_timeout
     LABELS   "emu;debugger"
 )
 
+# Zápis Memory Browseru přes CMDRQ frontu (ne přímo z UI vlákna).
+# Linkuje skutečný backend membrowser_io.cpp (bez ImGui závislostí).
+mz_add_test(membrowser_io_queue
+    TYPE     EMU
+    SOURCES  test_membrowser_io_queue.c
+             ${CMAKE_SOURCE_DIR}/src/ui-imgui/debugger/membrowser/membrowser_io.cpp
+    LABELS   "emu;debugger;ui-membrowser"
+)
+
 mz_add_test(tlog_common
     TYPE     EMU
     SOURCES  test_tlog_common.c

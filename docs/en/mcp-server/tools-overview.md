@@ -22,7 +22,7 @@ documented separately in [Resources overview](resources-overview.md).
 | `emu_mem_read` | no | Reads bytes from Z80 memory (base64) |
 | `emu_mem_write` | **YES** | Writes bytes into RAM - region checked, **destructive** |
 | `emu_bp_add` | no | Adds a breakpoint (exec, or typed memw/memr/ior/iow + condition) |
-| `emu_bp_list` | no | Lists breakpoints (id/addr/enabled + type/zone/bank_id/hits/condition) |
+| `emu_bp_list` | no | Lists breakpoints (id/addr/addr_end/addr_match_mode/addr_mask/enabled + type/zone/bank_id/bank_id_end/bank_match_mode/bank_id_mask/hits/condition) |
 | `emu_bp_remove` | no | Removes a specific BP by ID |
 | `emu_bp_clear` | no | Removes all breakpoints at once |
 | `emu_bp_enable` | no | Toggles BP enabled flag (no removal) |
@@ -187,6 +187,11 @@ The `error` text also tells whether the emulator executed the command:
 - `Emulator busy: command only partially executed ...` - a multi-step
   tool stopped after an earlier step ran; check the state before
   retrying.
+- `Emulator busy: command still running ...` - the emulator thread
+  picked the command up but did not finish it within about 20 s (10 min
+  for file I/O tools such as trace_save or snapshot_save); the
+  result is unknown (it may still complete later). Check the state
+  before retrying.
 - `Emulator is shutting down ...` - not executed, stop sending requests.
 - any other text (e.g. `bp_remove failed (unknown id?)`) - the command
   was executed and failed (or the parameters were rejected); retrying
@@ -196,7 +201,8 @@ The `Emulator busy: ...` / `Emulator is shutting down ...` texts end
 with the tool's original message in square brackets (kept for
 compatibility), e.g. `... safe to retry [bp_remove failed (unknown id?)]`;
 match on the prefix. Once the emulator thread picks a command up, the
-call waits for it to finish and returns its real result. Details for AI
+call waits for it to finish and returns its real result (at most about
+20 s, or 10 min for file I/O tools, then `command still running`). Details for AI
 clients: `emulator://docs/error_handling`.
 
 ## Per-tool description
@@ -205,7 +211,11 @@ clients: `emulator://docs/error_handling`.
 
 Returns emulator state: whether it is running or paused, how many
 frames have elapsed, whether the transport is connected.
-Non-destructive, suitable as the first call after connecting.
+Non-destructive, suitable as the first call after connecting. When
+the emulator ended unexpectedly, the result is
+`{"running": false, "connected": false, "last_exit": "..."}` (see
+[Python wrapper](python-wrapper.md), section *Emulator exit and
+automatic restart*).
 
 ### `emu_ping`
 
@@ -331,11 +341,21 @@ Returns the list of current breakpoints. Return:
 
 - `id` (int) - breakpoint handle
 - `addr` (int) - address
+- `addr_end` (int) - upper bound of the address range (inclusive);
+  used only when `addr_match_mode` is `RANGE`
+- `addr_match_mode` (string) - `SINGLE` (only `addr`), `RANGE`
+  (`addr`..`addr_end`) or `MASK` (`(x & addr_mask) == (addr & addr_mask)`);
+  applies to `PC_EXEC` / `MEM_R` / `MEM_W`
+- `addr_mask` (int) - AND mask; used only when `addr_match_mode` is `MASK`
 - `enabled` (bool)
 - `type` (string) - canonical UPPER_SNAKE type (`PC_EXEC` / `MEM_R` /
   `MEM_W` / `IORQ_R` / `IORQ_W` / ...)
 - `zone` (string) - memory zone (`CPU_VIEW` / `RAM` / ...)
 - `bank_id` (int) - bank index (for the `MMEXT_BANK` zone)
+- `bank_id_end` (int) - upper bound of the bank range (inclusive); used
+  only when `bank_match_mode` is `RANGE`
+- `bank_match_mode` (string) - `SINGLE` / `RANGE` / `MASK` for `bank_id`
+- `bank_id_mask` (int) - AND mask for `bank_id`; used only in `MASK` mode
 - `hits` (int) - BP trigger counter
 - `condition` (string or null if unconditional)
 
@@ -1573,7 +1593,11 @@ Args:
   `event_name`) accept `None` to clear.
 
 Returns: JSON `{"id": int, "created": bool}`. `id` is `-1` on
-failure.
+failure. If `addr_end` is set to a value different from `addr` but
+`addr_match_mode` is not set to `RANGE` (a new breakpoint starts in
+`SINGLE`), the breakpoint is still created, matches only `addr`, and the
+result also carries `warning`. To watch a range, pass both
+`"addr_end"` and `"addr_match_mode"` (value `"RANGE"`) in `fields`.
 
 The `fwd_min_interval_ms` and `fwd_max_fires` fields are a per-BP
 override of the forward-action (snapshot / trace_save) rate limit -
@@ -1907,6 +1931,7 @@ Returns: `{"ok": true, "action": "play_paused"}`.
 ### `emu_cmt_stop` (sensitive)
 
 Stop the transport (PLAY or RECORD -> STOP). No-op if already stopped.
+Without a loaded tape it still puts the transport into STOP.
 
 Returns: `{"ok": true, "action": "stop"}`.
 
@@ -1987,6 +2012,8 @@ Args:
 
 Enables/disables CPU boost during tape transport (run at max speed for
 fast long loads). Reflected as `cpu_boost`.
+User preference: snapshot load does not restore it (snapshots still
+store it for older emulator versions).
 
 Args:
 - `enabled` (required): true = boost, false = real time.
@@ -2010,14 +2037,20 @@ Args:
 - `path` (required): tape file path (extension selects the backend).
 - `play_immediately` (default false): start playback after opening.
 
-Returns: `{"ok": true, "path": <str>, "playing": <bool>}`.
+Returns: `{"ok": true, "path": <str>, "playing": <bool>, "state": <str>,
+"paused": <bool>}`. `playing`, `state` (`"stop"` / `"play"` / `"record"`)
+and `paused` report the actual transport state after the operation (same
+meaning as in `emulator://periph/cmt`); `playing` is true only for PLAY
+without pause. If `play_immediately` was requested but the tape is not
+playing afterwards, the result also contains `warning`.
 
 ### `emu_cmt_tape_seek` (sensitive)
 
-Seeks to a tape block (SIMPLE_TAPE multi-block containers). A
-single-block container (e.g. a plain .mzf) has only block 0 and may not
-support seeking. Requires a loaded tape. Block listing is in
-`emulator://periph/cmt/tape`.
+Seeks to a tape block (SIMPLE_TAPE multi-block containers: .mzt,
+.tap). A single-file container (SINGLE: a plain .mzf or .wav) does not
+support seeking - the call fails even for block 0; to start it from
+the beginning again, use `emu_cmt_stop` + `emu_cmt_play`. Requires a
+loaded tape. Block listing is in `emulator://periph/cmt/tape`.
 
 Args:
 - `block_id` (required): 0-based block index.

@@ -117,12 +117,13 @@ static void dbg_menu_file(bool *p_open)
         ImGui::Separator();
 
         /*
-         * Hide — skryje okno debuggeru přes debugger_hide_main_window().
+         * Hide - skryje okno debuggeru přes debugger_hide_main_window_request()
+         * (swap CPU callbacků provede emu vlákno přes CMDRQ frontu).
          * Stejný efekt jako Alt+D nebo ESC.
          */
         if (ImGui::MenuItem(_L("Hide"), "Alt+D"))
         {
-            debugger_hide_main_window();
+            debugger_hide_main_window_request();
         };
 
         ImGui::EndMenu();

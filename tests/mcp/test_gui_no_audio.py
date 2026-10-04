@@ -30,8 +30,8 @@ a ověří:
 Protože otevírá okno, běží jen na vyžádání: proměnná ``MZ_GUI_TESTS=1``,
 jinak skončí kódem 77 (ctest SKIP). Spouštění: ``MZ_GUI_TESTS=1 ctest -R
 mcp_gui_no_audio`` nebo ručně ``MZ_GUI_TESTS=1 python
-tests/mcp/test_gui_no_audio.py``. Port ``MZ_GUI_TEST_PORT`` (výchozí 23877,
-nikdy 23800), binárka ``MZ_EMU``, DSK ``MZ_BLOXORZ_DSK``. Výstup anglicky.
+tests/mcp/test_gui_no_audio.py``. Port ``MZ_GUI_TEST_PORT`` (bez ní volný
+port od systému, nikdy 23800), binárka ``MZ_EMU``, DSK ``MZ_BLOXORZ_DSK``. Výstup anglicky.
 
 Exit code: 0 = PASS, 1 = FAIL, 77 = SKIP.
 """
@@ -46,6 +46,8 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import emu_test_proc  # noqa: E402 - úklid procesů, volné TCP porty
 
 _TESTS_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _TESTS_DIR.parent.parent
@@ -54,8 +56,6 @@ _EXE_CANDIDATES = [_REPO_ROOT / "mz800emu.exe", _REPO_ROOT / "mz800emu"]
 _BLOXORZ_DSK = Path("C:/msys64/home/Michal/projects/bloxorz-mz800/build/bloxorz.dsk")
 #: Neexistující SDL audio driver -> selhání SDL audio subsystému.
 _BAD_AUDIO_DRIVER = "mz_no_such_audio_driver"
-#: Výchozí MCP TCP port testu (23800 je vyhrazený pro běžné instance).
-_DEFAULT_PORT = 23877
 
 
 class TestFailure(Exception):
@@ -86,7 +86,10 @@ def _find_ffmpeg():
 class TcpGuiEmu:
     """GUI emulátor s MCP TCP serverem: JSONL request/response přes socket."""
 
+    @emu_test_proc.kill_on_init_failure
     def __init__(self, exe, cfg_dir, ini, port, log_path):
+        # port None = volný port přidělený systémem (souběžné běhy testů).
+        port = port or emu_test_proc.free_tcp_port()
         args = [str(exe), "--no-save-ini", "--no-first-run-windows",
                 f"--cfg-dir={cfg_dir}", f"--work-dir={cfg_dir}", f"--config={ini}",
                 f"--mcp-tcp-port={port}"]
@@ -252,14 +255,16 @@ def run_realtime_audio(emu, avi, ffmpeg):
 
 
 def main():
+    # Úklid spuštěných procesů i při selhání, přerušení nebo zabití
+    # ctestem; vnitřní limit je kratší než TIMEOUT testu v ctestu.
+    emu_test_proc.install(deadline_s=165)
     if os.environ.get("MZ_GUI_TESTS") != "1":
         print("SKIP: GUI test (opens a window); set MZ_GUI_TESTS=1 to run")
         return 77
     exe = _find_exe()
-    port = int(os.environ.get("MZ_GUI_TEST_PORT", _DEFAULT_PORT))
-    if port == 23800:
-        print("ERROR: port 23800 is reserved for regular instances", file=sys.stderr)
-        return 1
+    # Pevný port jen z proměnné prostředí; jinak si každý spuštěný emulátor
+    # vezme volný port (souběžné běhy testů se nesrazí).
+    port = emu_test_proc.mcp_test_port("MZ_GUI_TEST_PORT")
     dsk = Path(os.environ.get("MZ_BLOXORZ_DSK", str(_BLOXORZ_DSK)))
     ffmpeg = _find_ffmpeg()
     tmp = Path(tempfile.mkdtemp(prefix="mz_gui_no_audio_"))
@@ -273,7 +278,7 @@ def main():
                      f"wd279x_fdd0_dskpath = {copy}\nwd279x_fdd0_readonly = 1\n")
     ini.write_text(ini_text, encoding="utf-8")
     log_path = tmp / "emu.log"
-    print(f"GUI without audio device test ({exe}, SDL_AUDIO_DRIVER={_BAD_AUDIO_DRIVER}, port {port})")
+    print(f"GUI without audio device test ({exe}, SDL_AUDIO_DRIVER={_BAD_AUDIO_DRIVER}, port {port or 'auto'})")
     emu = None
     rc = 0
     try:
