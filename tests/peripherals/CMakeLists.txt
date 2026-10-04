@@ -34,6 +34,14 @@ mz_add_test(gdg_mirror
     LABELS   "emu;peripherals"
 )
 
+# Bootstrap --run-mzf (MZ-800 mód) nastavuje DMD cestou OUT CEh
+# (GATE0 CTC0, latch MZ-700), ne přímým zápisem g_gdg.regDMD.
+mz_add_test(mz800_bootstrap_dmd
+    TYPE     EMU
+    SOURCES  test_mz800_bootstrap_dmd.c
+    LABELS   "emu;peripherals"
+)
+
 mz_add_test(printer
     TYPE     EMU
     SOURCES  test_printer.c

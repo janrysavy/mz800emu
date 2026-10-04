@@ -175,6 +175,55 @@ static inline void gdg_set_regDMD(uint8_t value, unsigned event_ticks)
 #endif
 }
 
+/**
+ * @brief Zápis DMD s vedlejšími efekty GDG (společné jádro OUT CEh
+ *        a gdg_debug_set_regDMD()).
+ *
+ * Maskuje na bity 0-3; beze změny hodnoty nic nedělá. Jinak podle
+ * PŮVODNÍHO režimu aktualizuje framebuffer (z 800 módu dokreslí řádek
+ * do aktuální pozice paprsku, ze 700 módu jen označí změnu obrazu)
+ * a zavolá gdg_set_regDMD() s časem gdg_get_insigeop_ticks().
+ *
+ * Bez záznamu hwlog a bez HW event breakpointu - ty řeší volající
+ * gdg_write_byte().
+ *
+ * @param value Zapisovaná hodnota (bity 4-7 se ignorují).
+ *
+ * @pre Emu vlákno (nebo neběžící emu vlákno).
+ */
+static void gdg_write_regDMD(uint8_t value)
+{
+    value = value & 0x0f;
+
+    if (g_gdg.regDMD == value)
+        return;
+
+    if (!GDG_MZ800_DMD_TEST_MZ700)
+    {
+        /*
+         * TODO: pri zmenach rezimu 700 / 800 a naopak je potreba osetrit framebuffer.
+         * MZ700 -> MZ800 - do mista zmeny ponechat MZ700 obsah, zbytek updatovat standardne v MZ800
+         * MZ800 -> MZ700 - udelat update jen do zmeny rezimu, zbytek vygenerovat v 700
+         *
+         */
+        framebuffer_MZ800_screen_changed();
+    }
+    else
+    {
+        g_framebuffer.screen_changes = SCRSTS_THIS_IS_CHANGED;
+    };
+    gdg_set_regDMD(value, gdg_get_insigeop_ticks());
+
+    /*
+                DEBUGGER_MMAP_FULL_UPDATE ( );
+     */
+}
+
+void gdg_debug_set_regDMD(uint8_t value)
+{
+    gdg_write_regDMD(value);
+}
+
 void gdg_reset(void)
 {
     g_gdg.regct53g7 = 0; // musi byt pri resetu nastaveno drive, nez regDMD!
@@ -318,32 +367,7 @@ void gdg_write_byte(unsigned addr, uint8_t value)
 
         /* regDMD */
     case 0xce:
-
-        value = value & 0x0f;
-
-        if (g_gdg.regDMD != value)
-        {
-
-            if (!GDG_MZ800_DMD_TEST_MZ700)
-            {
-                /*
-                 * TODO: pri zmenach rezimu 700 / 800 a naopak je potreba osetrit framebuffer.
-                 * MZ700 -> MZ800 - do mista zmeny ponechat MZ700 obsah, zbytek updatovat standardne v MZ800
-                 * MZ800 -> MZ700 - udelat update jen do zmeny rezimu, zbytek vygenerovat v 700
-                 *
-                 */
-                framebuffer_MZ800_screen_changed();
-            }
-            else
-            {
-                g_framebuffer.screen_changes = SCRSTS_THIS_IS_CHANGED;
-            };
-            gdg_set_regDMD(value, gdg_get_insigeop_ticks());
-
-            /*
-                        DEBUGGER_MMAP_FULL_UPDATE ( );
-             */
-        };
+        gdg_write_regDMD(value);
         break;
 
     case 0xcf:

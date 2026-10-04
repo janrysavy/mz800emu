@@ -54,8 +54,12 @@
 #include "bookmarks/bookmarks.h"
 #include "bp_expr.h"
 #include "mhmap.h"
+#include "freeze/freeze.h"
 #include "png_encode.h"
 #include "trace/eventlog.h"
+#include "trace/eventlog_trigger.h"
+#include "io_history.h"
+#include "io_activity.h"
 #include "trace/cputrack.h"
 #include "trace/iorqlog.h"
 #include "trace/intlog.h"
@@ -806,6 +810,36 @@ const char *dbgapi_cmd_to_str(en_DBGAPI_CMD cmd)
         case DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE:  return "debugger_state_recompute";
         /* video-capture Task 15 - video záznam */
         case DBGAPI_CMD_VIDEOREC:                  return "videorec";
+        /* ui-thread-writes T1 - historie a aktivita I/O */
+        case DBGAPI_CMD_IO_HISTORY_SET_CAPACITY:   return "io_history_set_capacity";
+        case DBGAPI_CMD_IO_HISTORY_CLEAR:          return "io_history_clear";
+        case DBGAPI_CMD_IO_ACTIVITY_RESET:         return "io_activity_reset";
+        /* ui-thread-writes T2 - hromadné operace s breakpointy */
+        case DBGAPI_CMD_BP_CLEAR_ALL:              return "bp_clear_all";
+        case DBGAPI_CMD_BP_LOAD_FILE:              return "bp_load_file";
+        /* ui-thread-writes T3 - Memory Heatmap */
+        case DBGAPI_CMD_MHMAP_RESET_REGION:        return "mhmap_reset_region";
+        case DBGAPI_CMD_MHMAP_MERGE:               return "mhmap_merge";
+        /* ui-thread-writes T4 - Memory Map */
+        case DBGAPI_CMD_MEMMAP_SET:                return "memmap_set";
+        /* ui-thread-writes T5a - Event Viewer */
+        case DBGAPI_CMD_EVENTLOG_SET_MODE:         return "eventlog_set_mode";
+        case DBGAPI_CMD_EVENTLOG_IMPORT_FILE:      return "eventlog_import_file";
+        /* ui-thread-writes T6a - Freeze Bytes */
+        case DBGAPI_CMD_FREEZE_ADD:                return "freeze_add";
+        case DBGAPI_CMD_FREEZE_REMOVE:             return "freeze_remove";
+        /* ui-thread-writes T6b - reset počítadla zásahů BP */
+        case DBGAPI_CMD_BP_RESET_HITS:             return "bp_reset_hits";
+        /* ui-thread-writes T6c - Callstack */
+        case DBGAPI_CMD_CALLSTACK_SET_ACTIVE:      return "callstack_set_active";
+        case DBGAPI_CMD_CALLSTACK_RESET:           return "callstack_reset";
+        /* ui-thread-writes T6d - vynucený refresh obrazovky */
+        case DBGAPI_CMD_SCREEN_REFRESH:            return "screen_refresh";
+        /* ui-thread-writes T1b - reset aktivity jednoho portu */
+        case DBGAPI_CMD_IO_ACTIVITY_RESET_PORT:    return "io_activity_reset_port";
+        /* ui-thread-writes T5c - triggery okna Events */
+        case DBGAPI_CMD_EVENTLOG_TRIGGER_SET:      return "eventlog_trigger_set";
+        case DBGAPI_CMD_EVENTLOG_TRIGGER_CLEAR_MATCHES: return "eventlog_trigger_clear_matches";
         /* V1.B.1 - Media Tools */
         case DBGAPI_CMD_MEDIA_LOAD_MZF:            return "media_load_mzf";
         case DBGAPI_CMD_MEDIA_LOAD_BINARY:         return "media_load_binary";
@@ -1367,21 +1401,26 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             break;
 
         case DBGAPI_CMD_DEBUGGER_ACTIVATE:
-            /* Aktivuje debugger (= nastaví g_debugger.active = 1).
+            /* Aktivuje debugger (= nastaví g_debugger.active = 1) a na emu
+             * vlákně přepočítá CPU callbacky a active flagy trace-suite
+             * (stejně jako DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE).
              * Side effect: TEST_DEBUGGER_CPUHIST_ACTIVE / MHMAP_ACTIVE
-             * v default WITH_WINDOW režimu se zapne, takže CPU instrukční
-             * historie a memory heatmap začnou zaznamenávat.
-             * Forward na přímou manipulaci globálu (ekvivalent dnešního UI
-             * volání debugger_show_main_window()). */
+             * v režimu WITH_WINDOW se zapne, takže CPU instrukční historie
+             * a memory heatmap začnou zaznamenávat. Bez přepočtu by CPU
+             * zůstalo na rychlých callbackách a záznam by neběžel. Okno
+             * debuggeru se tím neotevírá. */
             g_debugger.active = 1;
+            mzarch_platform_fn_debugger_state_changed ( TEST_DEBUGGER_ACTIVE );
             rq->success = true;
             break;
 
         case DBGAPI_CMD_DEBUGGER_DEACTIVATE:
-            /* Deaktivuje debugger (= g_debugger.active = 0).
+            /* Deaktivuje debugger (= g_debugger.active = 0) a přepočítá
+             * CPU callbacky (jinak by zůstaly pomalé logging callbacky).
              * Side effect: cpuhist a mhmap recording v WITH_WINDOW režimu
-             * se vypne. */
+             * se vypne. Otevřené okno debuggeru se nezavírá. */
             g_debugger.active = 0;
+            mzarch_platform_fn_debugger_state_changed ( TEST_DEBUGGER_ACTIVE );
             rq->success = true;
             break;
 
@@ -4063,6 +4102,333 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             rq->success = dbgapi_videorec_execute ( p );
             break;
         }
+
+        /* --- Historie a aktivita I/O (ui-thread-writes T1) ---
+         * Ring io_history a tabulku g_io_activity plní emu vlákno
+         * v port_* / memory_*_with_logging_cb. Mutace z okna I/O Ports
+         * proto běží tady (drain fronty = mezi instrukcemi), ne na UI
+         * vlákně. UI vlákno během příkazu synchronně čeká, takže ring
+         * souběžně nečte. */
+        case DBGAPI_CMD_IO_HISTORY_SET_CAPACITY:
+        {
+            st_DBGAPI_IO_HISTORY_CAPACITY_PARAM *p =
+                (st_DBGAPI_IO_HISTORY_CAPACITY_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            /* Clamp do [MIN..MAX] dělá io_history_set_capacity; ring
+             * realokuje a zahodí dosavadní události. */
+            io_history_set_capacity ( (size_t) p->capacity );
+            if ( g_io_history.events != NULL )
+            {
+                p->capacity_after = (uint32_t) g_io_history.capacity;
+                rq->success = true;
+            }
+            else
+            {
+                /* calloc selhal - ring je bez bufferu; io_history_record
+                 * se ho při dalším záznamu pokusí alokovat s výchozí
+                 * kapacitou (auto-init). */
+                p->capacity_after = 0;
+                rq->success = false;
+            };
+            break;
+        }
+
+        case DBGAPI_CMD_IO_HISTORY_CLEAR:
+            io_history_clear ( );
+            rq->success = true;
+            break;
+
+        case DBGAPI_CMD_IO_ACTIVITY_RESET:
+            io_activity_reset_all ( );
+            rq->success = true;
+            break;
+
+        /* ui-thread-writes T1b - reset aktivity jednoho portu z kontextového
+         * menu okna I/O Ports (8-bit = 256 high-byte slotů, jinak 1 slot). */
+        case DBGAPI_CMD_IO_ACTIVITY_RESET_PORT:
+        {
+            const st_DBGAPI_IO_ACTIVITY_RESET_PORT_PARAM *p =
+                (const st_DBGAPI_IO_ACTIVITY_RESET_PORT_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            if ( p->is_8bit )
+            {
+                io_activity_reset_port_8bit ( (uint8_t) ( p->port & 0xFFu ) );
+            }
+            else
+            {
+                io_activity_reset_port ( p->port );
+            };
+            rq->success = true;
+            break;
+        }
+
+        /* --- Hromadné operace s breakpointy (ui-thread-writes T2) ---
+         * breakpoints_clear_all a breakpoints_load_from_filepath uvolní
+         * stringy a AST BP, zkrátí pole g_breakpoints a vyčistí bptmap;
+         * emu vlákno tato data čte při vyhodnocení BP. Běží proto tady
+         * (drain fronty = mezi instrukcemi), ne na UI vlákně. Po operaci
+         * přepočet gatingu logging callbacků jako u ostatních BP mutací
+         * (přímé volání z UI ho dřív vynechávalo). */
+        case DBGAPI_CMD_BP_CLEAR_ALL:
+            breakpoints_clear_all ( );
+            dbgapi_bp_recompute_cb_gating ( );
+            rq->success = true;
+            break;
+
+        case DBGAPI_CMD_BP_LOAD_FILE:
+        {
+            const st_DBGAPI_BP_LOAD_FILE_PARAM *p =
+                (const st_DBGAPI_BP_LOAD_FILE_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            /* Načtení vždy nejdřív smaže stávající data; neexistující nebo
+             * nečitelný soubor = prázdný stav (sémantika loaderu). */
+            if ( p->filepath && p->filepath[0] )
+            {
+                breakpoints_load_from_filepath ( p->filepath );
+            }
+            else
+            {
+                breakpoints_load_from_file ( );
+            };
+            dbgapi_bp_recompute_cb_gating ( );
+            rq->success = true;
+            break;
+        }
+
+        /* --- Memory Heatmap (ui-thread-writes T3) ---
+         * Countery g_mhmap inkrementuje emu vlákno v logging callbaccích;
+         * reset regionu a Add / Sub importovaných dat proto běží tady
+         * (drain fronty = mezi instrukcemi), ne na UI vlákně. Režim se
+         * nemění, callbacky se nepřepínají. */
+        case DBGAPI_CMD_MHMAP_RESET_REGION:
+        {
+            const st_DBGAPI_MHMAP_RESET_REGION_PARAM *p =
+                (const st_DBGAPI_MHMAP_RESET_REGION_PARAM *) rq->data_ptr;
+            rq->success = ( p != NULL ) && mhmap_reset_region ( p->region_index );
+            break;
+        }
+
+        case DBGAPI_CMD_MHMAP_MERGE:
+        {
+            const st_DBGAPI_MHMAP_MERGE_PARAM *p =
+                (const st_DBGAPI_MHMAP_MERGE_PARAM *) rq->data_ptr;
+            if ( !p || p->src_size != sizeof ( st_MHMAP ) )
+            {
+                rq->success = false;
+                break;
+            };
+            rq->success = mhmap_merge ( (const st_MHMAP *) p->src,
+                                        (en_MHMAP_MERGE_OP) p->op );
+            break;
+        }
+
+        /* --- Memory Map: banking a DMD (ui-thread-writes T4) ---
+         * Okno Memory Map dřív zapisovalo g_memory.map / g_gdg.regDMD
+         * a volalo memory_reconnect_ram() přímo z UI vlákna souběžně
+         * s přístupy CPU do paměti. Pořadí a sémantika viz
+         * st_DBGAPI_MEMMAP_SET_PARAM. */
+        case DBGAPI_CMD_MEMMAP_SET:
+        {
+            st_DBGAPI_MEMMAP_SET_PARAM *p =
+                (st_DBGAPI_MEMMAP_SET_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+#if MZARCH != 800
+            /* DMD registr má jen GDG MZ-800. */
+            if ( p->dmd_write )
+            {
+                rq->success = false;
+                break;
+            };
+#endif
+            g_memory.map = (uint8_t) ( ( g_memory.map
+                                         & (uint8_t) ~p->map_clear_mask )
+                                       | p->map_set_mask );
+#if MZARCH == 800
+            if ( p->dmd_write )
+            {
+                /* Stejná cesta jako OUT (CEh) vč. CTC0 GATE0, latche
+                 * MZ-700 a fast-path, ale bez hwlog / HWE BP - viz
+                 * dokumentace parametru. Až po zápisu mapy: fast-path
+                 * rebuild uvnitř čte už novou g_memory.map. */
+                gdg_debug_set_regDMD ( p->dmd_value );
+            };
+#endif
+            /* Přepojení RAM ukazatelů + (MZ-800) přepočet fast-path CPU. */
+            memory_reconnect_ram ( );
+            debugger_screen_refresh_if_enabled ( );
+
+            p->map_after = g_memory.map;
+#if MZARCH == 800
+            p->dmd_after = (uint8_t) g_gdg.regDMD;
+#else
+            p->dmd_after = 0;
+#endif
+            rq->success = true;
+            break;
+        }
+
+        /* --- Event Viewer: režim a import (ui-thread-writes T5a) ---
+         * Okno Events dřív obojí volalo přímo z UI vlákna souběžně
+         * s eventlog_record() (import = free + calloc a fread do ringu,
+         * do kterého emu vlákno zapisuje). Tady běží v drainu fronty,
+         * tedy mezi instrukcemi; UI vlákno během příkazu synchronně čeká. */
+        case DBGAPI_CMD_EVENTLOG_SET_MODE:
+        {
+            st_DBGAPI_EVENTLOG_MODE_PARAM *p =
+                (st_DBGAPI_EVENTLOG_MODE_PARAM *) rq->data_ptr;
+            if ( !p || p->mode > (uint32_t) EVENTLOG_MODE_ALWAYS )
+            {
+                rq->success = false;
+                break;
+            };
+            g_eventlog_config.mode = (en_EVENTLOG_MODE) p->mode;
+            /* Parametr debugger_active eventlog nepoužívá (parita API s tlog). */
+            eventlog_recompute_active ( 0 );
+            p->active_after = g_eventlog_active ? 1u : 0u;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_EVENTLOG_IMPORT_FILE:
+        {
+            st_DBGAPI_EVENTLOG_IMPORT_PARAM *p =
+                (st_DBGAPI_EVENTLOG_IMPORT_PARAM *) rq->data_ptr;
+            if ( !p || !p->path || !p->path[0] )
+            {
+                rq->success = false;
+                break;
+            };
+            p->rc = (int32_t) eventlog_import_from_file ( p->path );
+            p->count_after = (uint32_t) g_eventlog.count;
+            p->capacity_after = (uint32_t) g_eventlog.capacity;
+            rq->success = ( p->rc == 0 );
+            break;
+        }
+
+        /* --- Triggery okna Events (ui-thread-writes T5c) ---
+         * Filtr triggeru vyhodnocuje callback v eventlog_record() na emu
+         * vlákně. Výměna filtru, jména a gate tady v drainu fronty proto
+         * nikdy nepotká rozběhnuté vyhodnocení; starý filtr dostane zpět
+         * odesílatel a uvolní ho po návratu synchronního submitu. */
+        case DBGAPI_CMD_EVENTLOG_TRIGGER_SET:
+        {
+            st_DBGAPI_EVENTLOG_TRIGGER_PARAM *p =
+                (st_DBGAPI_EVENTLOG_TRIGGER_PARAM *) rq->data_ptr;
+            if ( !p || p->kind >= (uint32_t) EVENTLOG_TRIGGER_COUNT )
+            {
+                rq->success = false;
+                break;
+            };
+            st_EVENTLOG_FILTER *old = NULL;
+            /* Při neúspěchu set nic nezmění a filter zůstává odesílateli. */
+            rq->success = eventlog_trigger_set ( (en_EVENTLOG_TRIGGER_KIND) p->kind,
+                                                 (st_EVENTLOG_FILTER *) p->filter,
+                                                 p->name, &old );
+            if ( rq->success ) p->old_filter = old;
+            break;
+        }
+
+        case DBGAPI_CMD_EVENTLOG_TRIGGER_CLEAR_MATCHES:
+        {
+            const uint32_t *kind = (const uint32_t *) rq->data_ptr;
+            rq->success = ( kind != NULL )
+                          && *kind < (uint32_t) EVENTLOG_TRIGGER_COUNT
+                          && eventlog_trigger_clear_matches ( (en_EVENTLOG_TRIGGER_KIND) *kind );
+            break;
+        }
+
+        /* --- Freeze Bytes (ui-thread-writes T6a) ---
+         * Tabulku čte freeze_apply_all() na emu vlákně jednou za snímek.
+         * Memory Browser ji dřív měnil přímo z UI vlákna (bez synchronizace
+         * zápisu polí slotu a in_use); tady běží v drainu fronty. */
+        case DBGAPI_CMD_FREEZE_ADD:
+        case DBGAPI_CMD_FREEZE_REMOVE:
+        {
+            st_DBGAPI_FREEZE_PARAM *p = (st_DBGAPI_FREEZE_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            if ( ( rq->cmd & DBGAPI_CMD_MASK ) == DBGAPI_CMD_FREEZE_ADD )
+            {
+                p->result = freeze_add ( p->region_kind, p->sub_id,
+                                         p->offset, p->value );
+            }
+            else
+            {
+                p->result = freeze_remove ( p->region_kind, p->sub_id,
+                                            p->offset );
+            };
+            rq->success = p->result;
+            break;
+        }
+
+        /* --- Reset počítadla zásahů BP (ui-thread-writes T6b) ---
+         * hits++ a test hit_count dělá emu vlákno při vyhodnocení BP;
+         * reset z editačního panelu proto běží tady (drain fronty = mezi
+         * instrukcemi). Neexistující ID = neúspěch. */
+        case DBGAPI_CMD_BP_RESET_HITS:
+        {
+            const int *p_id = (const int *) rq->data_ptr;
+            if ( !p_id || !breakpoints_find_by_id ( *p_id ) )
+            {
+                rq->success = false;
+                break;
+            };
+            breakpoints_reset_hits ( *p_id );
+            rq->success = true;
+            break;
+        }
+
+        /* --- Callstack (ui-thread-writes T6c) ---
+         * Shadow stack mění emu vlákno v CALL/RET hoocích; zapnutí /
+         * vypnutí (registrace Z80 hooků) i vyprázdnění proto běží tady
+         * (drain fronty = mezi instrukcemi), ne na UI vlákně. */
+        case DBGAPI_CMD_CALLSTACK_SET_ACTIVE:
+        {
+            st_DBGAPI_CALLSTACK_SET_ACTIVE_PARAM *p =
+                (st_DBGAPI_CALLSTACK_SET_ACTIVE_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            callstack_set_active ( p->active != 0 );
+            p->active_after = g_callstack_active ? 1u : 0u;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_CALLSTACK_RESET:
+            callstack_reset ( );
+            rq->success = true;
+            break;
+
+        /* --- Vynucený refresh obrazovky (ui-thread-writes T6d) ---
+         * Framebuffer plní a snímky dokončuje emu vlákno; Ctrl+R / menu
+         * debuggeru proto refresh posílají sem (drain fronty = mezi
+         * instrukcemi, v pauze hned). */
+        case DBGAPI_CMD_SCREEN_REFRESH:
+            mzarch_forced_full_screen_refresh ( );
+            rq->success = true;
+            break;
 
         /* --- Media Tools (mutant mcp-server V1.B.1) --- */
         case DBGAPI_CMD_MEDIA_LOAD_MZF:

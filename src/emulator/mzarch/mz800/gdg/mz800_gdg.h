@@ -163,6 +163,35 @@ extern "C"
     extern uint8_t gdg_read_dmd_status_ioop(void);
     extern void gdg_write_byte(unsigned addr, uint8_t value);
 
+    /**
+     * @brief Nastaví registr DMD stejnou cestou jako OUT (CEh), pro
+     *        debugger.
+     *
+     * Provede totéž co větev CEh v gdg_write_byte() - maskování na dolní
+     * 4 bity, nic při beze změny, aktualizace framebufferu do aktuální
+     * pozice paprsku a gdg_set_regDMD(): ctc82530_on_regDMD_changed()
+     * (GATE0 CTC0 = 1 v 800 módu, = regct53g7 v 700 módu), vynulování
+     * g_vramctrl.mz700_wr_latch_is_used při přechodu do 800 módu
+     * a přepočet RAM fast-path tabulky (MZ800EMU_CFG_RAM_FASTPATH).
+     *
+     * Na rozdíl od gdg_write_byte(0x00CE, value) NEzapíše záznam hwlog
+     * (GDG_MODE) a NEspustí HW event breakpoint BP_EVENT_GDG_MODE_CHANGE -
+     * zásah z debuggeru není OUT programu a nemá se v trace ani
+     * v breakpointech tvářit jako OUT.
+     *
+     * Čas změny (event_ticks pro CTC0) = gdg_get_insigeop_ticks(); mezi
+     * instrukcemi je instruction_insideop_sync_ticks = 0 (nuluje ho
+     * hlavní smyčka mzarch po každé instrukci), takže jde o aktuální
+     * g_gdg.total_elapsed.ticks.
+     *
+     * @param value Nová hodnota DMD (použijí se bity 0-3).
+     *
+     * @pre Volat jen z emu vlákna mezi instrukcemi (drain fronty dbgapi)
+     *      nebo když emu vlákno neběží.
+     * @post g_gdg.regDMD == (value & 0x0F).
+     */
+    extern void gdg_debug_set_regDMD(uint8_t value);
+
 #define gdg_compute_total_ticks(now_ticks) (now_ticks + ((uint64_t)g_gdg.total_elapsed.screens * VIDEO_SCREEN_TICKS))
 #define gdg_get_total_ticks() gdg_compute_total_ticks(g_gdg.total_elapsed.ticks)
 #define gdg_get_insigeop_ticks() (g_gdg.total_elapsed.ticks + g_mzarch_main.instruction_insideop_sync_ticks)

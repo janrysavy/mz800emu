@@ -4970,12 +4970,13 @@ async def emu_get_cpu_panel_batch(want_im2: bool = False,
 async def emu_debugger_activate() -> str:
     """Activate the internal debugger programmatically.
 
-    Equivalent to opening the debug window from the GUI: sets
-    ``g_debugger.active = 1`` in the backend. As a side effect, the
-    default WITH_WINDOW preset enables CPU instruction history
-    recording (``cpuhist``) and the memory heatmap (``mhmap``), so
-    ``emu_get_last_instr`` and ``emu_history_get`` start returning
-    real data.
+    Sets ``g_debugger.active = 1`` in the backend and recomputes the
+    CPU callbacks, as opening the debug window does (the GUI window
+    itself is not opened). CPU instruction history (``cpuhist``) and
+    the memory heatmap (``mhmap``) then record if their mode is tied
+    to the debugger window (WITH_WINDOW, or WITH_WINDOW_OR_BP for
+    ``cpuhist``), so ``emu_get_last_instr`` and ``emu_history_get``
+    start returning real data.
 
     Idempotent: calling on an already active debugger is a no-op
     beyond the response.
@@ -4992,8 +4993,11 @@ async def emu_debugger_activate() -> str:
 async def emu_debugger_deactivate() -> str:
     """Deactivate the internal debugger programmatically.
 
-    Clears ``g_debugger.active`` in the backend. CPU history and
-    memory heatmap recording stop in the WITH_WINDOW preset.
+    Clears ``g_debugger.active`` in the backend and recomputes the
+    CPU callbacks. CPU history and memory heatmap recording tied to
+    the debugger window stop (in WITH_WINDOW_OR_BP ``cpuhist`` keeps
+    recording while an enabled breakpoint exists). If the GUI debug
+    window is open, it re-activates the debugger immediately.
 
     Idempotent. Use ``emu_is_debugger_active`` if the current state
     matters before deciding to call this.
@@ -5015,8 +5019,10 @@ async def emu_is_debugger_active() -> str:
     not influence emulator state.
 
     Returns:
-        JSON ``{"active": bool}``. ``true`` indicates that history
-        and heatmap recording are running in the WITH_WINDOW preset.
+        JSON ``{"active": bool}``. ``true`` means that CPU history
+        and heatmap recording tied to the debugger window
+        (WITH_WINDOW, or the default WITH_WINDOW_OR_BP for CPU
+        history) is running.
     """
     resp = await _send_request("is_debugger_active")
     return json.dumps(_data_or_error(resp))

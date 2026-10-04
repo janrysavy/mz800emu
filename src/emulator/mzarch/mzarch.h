@@ -135,8 +135,13 @@ extern "C"
      * původní debugger-only @c debugger_forced_screen_update() - dostupná i
      * v buildu bez debuggeru (volá ji snapshot load po obnově stavu).
      *
-     * @pre Volá se v safe-pointu (emulace v pauze nebo z emu vlákna mezi
-     *      instrukcemi) - stejný kontrakt jako debugger_forced_screen_update.
+     * @pre Volá se v safe-pointu: z emu vlákna mezi instrukcemi (dbgapi
+     *      handlery vč. DBGAPI_CMD_SCREEN_REFRESH z Ctrl+R / menu debuggeru,
+     *      krok debuggeru), nebo před startem emu vlákna.
+     * @note Snapshot load z UI dialogu (snapshot_load_dialog.cpp, quickload)
+     *      ji volá z UI vlákna v pauze; souběh s příkazy fronty, které
+     *      framebuffer plní také, není vyloučen [neověřeno] - mimo rozsah
+     *      ui-thread-writes T6 (okna mimo debugger).
      */
     extern void mzarch_forced_full_screen_refresh(void);
 

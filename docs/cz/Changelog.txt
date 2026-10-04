@@ -1,4 +1,16 @@
 
+	- BUGFIX: I/O Ports - uložený výběr zaznamenávaných portů (sloupec Rec) se po startu a po každé změně kapacity historie zahodil (zaznamenávaly se všechny porty).
+
+	- BUGFIX: MCP - emu_debugger_activate nezapnulo záznam historie CPU ani heatmapy vázaný na okno debuggeru a emu_debugger_deactivate nevrátilo emulaci na rychlou cestu bez ladicích háčků.
+
+	- BUGFIX: Okna debuggeru měnila stav emulátoru souběžně s běžící emulací (hrozil pád nebo poškozená data); změny nyní provádí emulační vlákno. Týká se: Memory Browser (zápis, Freeze Bytes), Event Viewer (kapacita, Clear, režim, kategorie, import, Pause/Auto-mark on match), I/O Ports (historie, Reset Activity), Breakpoints (Delete All, načtení ze souboru, reset počítadla zásahů), Memory Heatmap (režim, Reset, Add/Sub), Memory Map (banking, DMD), MemExt Map, Callstack (Active, Reset), Ctrl+R a skrytí debuggeru.
+
+	- BUGFIX: MemExt Map Settings (PEHU) - okno ukazovalo místo čísla 8 kB banky dvojnásobek a Apply bez úprav mapu změnilo.
+
+	- BUGFIX: I/O Ports - uložená kapacita historie se po startu nepoužila (historie měla vždy 10000 událostí, volba ukazovala uloženou hodnotu).
+
+	- BUGFIX: --run-mzf v režimu MZ-800 a volba DMD v okně Memory Map přepínaly režim GDG bez vedlejších účinků OUT (CEh); po --run-mzf tak zůstal časovač CTC0 zablokovaný (GATE0 = 0), na rozdíl od zavedení přes ROM.
+
 	- Nová volba --version: vypíše verzi, revizi, původ zdrojů a parametry buildu.
 
 	- Nová volba --speed <procenta|max>: rychlost emulace při startu (hlavně pro --headless).
@@ -6,8 +18,6 @@
 	- BUGFIX: --run-mzf spouští program ve stavu jako po nahrání z kazety přes ROM (MZ-1500: chyběla paleta a PCG grafika; MZ-800 a MZ-1500: ztlumený zvuk časovače; neprázdná obrazovka). ZMĚNA: na MZ-700 se už nespouštějí hodiny reálného času (ROM je také nespouští).
 
 	- BUGFIX: MCP - při zaseknutém emulačním vláknu přestalo odpovídat úplně; nyní vrátí "Emulator busy: command still running" (po asi 20 s, u souborových operací po 10 min).
-
-	- BUGFIX: Memory Browser, Event Viewer a skrytí debuggeru zapisovaly do emulátoru souběžně s běžící emulací; zápis nyní provádí emulační vlákno.
 
 	- Debugger a MCP - příkazy se v pauze emulace vykonají okamžitě (dříve s prodlevou až 20 ms).
 

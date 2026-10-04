@@ -2420,9 +2420,11 @@ static en_MCP_DISPATCH_RESULT _handle_get_cpu_panel_batch(
  *  okna), tj. headless / MCP klient neměl jak debug funkce (history ring,
  *  memory heatmap) zapnout programaticky. Tato 3 Tools tu cestu otevírají.
  *
- *  Aktivace má vedlejší efekt: v default WITH_WINDOW režimu se zapne
- *  cpuhist + mhmap recording, takže emu_get_last_instr / history_get
- *  začnou vracet smysluplná data. Deaktivace recording opět vypne.
+ *  Aktivace má vedlejší efekt: cpuhist a mhmap v režimu vázaném na okno
+ *  (WITH_WINDOW, u cpuhist i výchozí WITH_WINDOW_OR_BP) začnou zaznamenávat,
+ *  takže emu_get_last_instr / history_get začnou vracet smysluplná data.
+ *  Deaktivace tento záznam vypne (WITH_WINDOW_OR_BP zaznamenává dál, dokud
+ *  existuje povolený breakpoint).
  * ============================================================================ */
 
 
@@ -2430,8 +2432,10 @@ static en_MCP_DISPATCH_RESULT _handle_get_cpu_panel_batch(
  * @brief `debugger_activate` handler - programatické zapnutí debuggeru.
  *
  * Bez parametrů. Proxy na `DBGAPI_CMD_DEBUGGER_ACTIVATE`. Backend
- * nastaví `g_debugger.active = 1` a v default WITH_WINDOW režimu
- * implicitně zapne cpuhist + mhmap recording.
+ * nastaví `g_debugger.active = 1` a na emu vlákně přepočítá CPU callbacky
+ * (`mzarch_platform_fn_debugger_state_changed`), takže v WITH_WINDOW
+ * režimu implicitně zapne cpuhist + mhmap recording. Okno debuggeru
+ * v GUI se neotevírá.
  *
  * Response payload:
  *  - `active` (bool) - vždy true při úspěchu (= debugger je nyní aktivní).
@@ -2457,8 +2461,9 @@ static en_MCP_DISPATCH_RESULT _handle_debugger_activate(
  * @brief `debugger_deactivate` handler - programatické vypnutí debuggeru.
  *
  * Bez parametrů. Proxy na `DBGAPI_CMD_DEBUGGER_DEACTIVATE`. Backend
- * nastaví `g_debugger.active = 0`. Side effect: cpuhist + mhmap
- * recording v WITH_WINDOW režimu se vypne.
+ * nastaví `g_debugger.active = 0` a přepočítá CPU callbacky. Side effect:
+ * cpuhist + mhmap recording v WITH_WINDOW režimu se vypne. Otevřené okno
+ * debuggeru v GUI se nezavírá.
  *
  * Response payload:
  *  - `active` (bool) - vždy false při úspěchu.

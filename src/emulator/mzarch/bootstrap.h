@@ -159,7 +159,8 @@ extern void mzarch_platform_load_prepare_body_map(uint16_t fstrt);
  *
  * Platform-specific (MZ-800):
  *   - Pokud je nastavený MZ-800 mode (= backside switch S1=OFF), replikovat
- *     ]GOPGM (ECFCh): GDG DMD = 0 (320x200@4A) a @BLACK (E8E1h: paleta
+ *     ]GOPGM (ECFCh): GDG DMD = 0 (320x200@4A, přes gdg_write_byte
+ *     jako OUT CEh vč. GATE0 CTC0) a @BLACK (E8E1h: paleta
  *     PAL0-3 = 0, PALGRP = 0, border = 0), a odmapovat CG-RAM/VRAM
  *     v rozsahu 0x1000-0x1FFF + 0xC000-0xCFFF (= reset CGRAM_VRAM flag).
  *     V pozici MZ-700 switche ]GOPGM mód nemění (zůstává MZ-700).

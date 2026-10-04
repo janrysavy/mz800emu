@@ -15,6 +15,7 @@
 #include "mzarch_platform.h"
 #include "libs/dasm-z80/z80_dasm.h"
 #include "hw-generic/memory/memory.h"
+#include "hw-generic/memory/memext.h"
 #include "hw-generic/gdg/gdgclk.h"
 #include "hw-generic/gdg/gdg.h"
 #include "hw-generic/gdg/framebuffer.h"
@@ -995,6 +996,9 @@ static inline void mzzarch_main_do_emulator_paused(void)
          * běžící emulace (per-frame bod v hlavní smyčce). */
         mzarch_main_dbgapi_drain();
 
+        /* Přemapování MemExt vyžádané z UI i během pauzy (do ~20 ms). */
+        memext_map_request_poll();
+
         if (iface_video_get_redraw_full_screen_request())
         {
             framebuffer_screen_done();
@@ -1061,6 +1065,9 @@ static inline void mzzarch_main_do_emulator_paused(void)
         {
             framebuffer_screen_done();
         };
+
+        /* Přemapování MemExt vyžádané z UI i během pauzy (do ~20 ms). */
+        memext_map_request_poll();
 
         mzarch_main_queue_next_event();
 
@@ -1446,6 +1453,13 @@ void mzarch_main(void)
         {
 
             mzarch_main_process_events();
+
+            /* Přemapování MemExt vyžádané z UI (okno MemExt Map Settings,
+             * memext_map_request). Tady CPU stojí mezi instrukcemi, stejně
+             * jako u drainu dbgapi níže; funguje i bez debuggeru. Bez
+             * požadavku 1 atomické čtení v per-event bloku, ne v
+             * per-instruction hot path. */
+            memext_map_request_poll();
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
             /* Per-frame body debuggeru (drain fronty dbgapi, Freeze Bytes),

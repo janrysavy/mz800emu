@@ -115,8 +115,11 @@ void mzarch_platform_bootstrap_post_header(uint16_t fstrt)
     {
         printf ( "Bootstrap: SWITCH700_ON = MZ-700 mode\n" );
         /* SWITCH700_ON = MZ-700 mode: ]GOPGM (ECFCh) při DMD status
-         * bit 1 = 0 mód nemění; DMD zůstává 08h z IPL (E816h). */
-        g_gdg.regDMD = 0x08;
+         * bit 1 = 0 mód nemění; DMD zůstává 08h z IPL (E816h). Po
+         * resetu (gdg_reset) už DMD = 08h, zápis přes gdg_write_byte()
+         * (cesta OUT CEh) je pak bez účinku; jinak proběhne se všemi
+         * vedlejšími efekty GDG (CTC0 GATE0, framebuffer). */
+        gdg_write_byte ( 0x00ce, 0x08 );
     }
     else
     {
@@ -126,10 +129,13 @@ void mzarch_platform_bootstrap_post_header(uint16_t fstrt)
          *   ED05h: CALL @BLACK      - E8E1h: OUT (0F0h) 00h, 10h, 20h, 30h, 40h
          *                             (PAL0-3 = 0, PALGRP = 0) a E8EEh
          *                             OUT (06CFh),0 (border = 0).
-         * DMD se zapisuje přímo (jako dosud), paleta a border přes
-         * gdg_write_byte() stejně jako OUT instrukce.
+         * DMD, paleta i border jdou přes gdg_write_byte() stejně jako
+         * OUT instrukce. U DMD to znamená i vedlejší efekty GDG, které
+         * přímý zápis g_gdg.regDMD vynechával: GATE0 CTC0 = 1 (800 mód,
+         * ctc82530_on_regDMD_changed), vynulování latche zápisu MZ-700
+         * (g_vramctrl.mz700_wr_latch_is_used) a aktualizace framebufferu.
          * VRAM/CG-RAM odpojené (clear CGRAM_VRAM + ROM_1000 flagy). */
-        g_gdg.regDMD = 0x00;
+        gdg_write_byte ( 0x00ce, 0x00 );
         static const uint8_t c_black[] = { 0x00, 0x10, 0x20, 0x30, 0x40 };
         for ( unsigned i = 0; i < sizeof ( c_black ); i++ )
         {
@@ -140,7 +146,9 @@ void mzarch_platform_bootstrap_post_header(uint16_t fstrt)
                            MEMORY_MZ800_MAP_FLAG_ROM_1000 );
     }
 #ifdef MZ800EMU_CFG_RAM_FASTPATH
-    /* Bootstrap menil g_memory.map a regDMD primo -> prepocti fast-path. */
+    /* Bootstrap měnil g_memory.map přímo (CGRAM_VRAM / ROM_1000 až po
+     * zápisu DMD, který fast-path přepočítal ještě se starou mapou)
+     * -> přepočti fast-path. */
     mz800_ram_fastpath_rebuild ();
 #endif
     /* SWITCH700_ON = MZ-700 mode: ponechat default z _init.

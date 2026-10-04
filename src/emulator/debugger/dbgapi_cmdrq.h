@@ -49,8 +49,8 @@ typedef enum en_DBGAPI_CMD
     /* --- Řízení emulace --- */
     DBGAPI_CMD_NONE = 0,            /* Bez efektu — ping */
     DBGAPI_CMD_IS_DEBUGGER_ACTIVE,  /* Dotaz na stav debuggeru — result_ptr: bool* */
-    DBGAPI_CMD_DEBUGGER_ACTIVATE,   /* Aktivovat debugger (začne se zaznamenávat historie) */
-    DBGAPI_CMD_DEBUGGER_DEACTIVATE, /* Deaktivovat debugger */
+    DBGAPI_CMD_DEBUGGER_ACTIVATE,   /* Aktivovat debugger + přepočet CPU callbacků (WITH_WINDOW záznam začne) */
+    DBGAPI_CMD_DEBUGGER_DEACTIVATE, /* Deaktivovat debugger + přepočet CPU callbacků */
     DBGAPI_CMD_PAUSE,               /* Pozastavit emulaci */
     DBGAPI_CMD_FORCE_PAUSE,         /* Vynuceně pozastavit (nepřeskočitelné) */
     DBGAPI_CMD_RUN,                 /* Spustit emulaci */
@@ -518,6 +518,148 @@ typedef enum en_DBGAPI_CMD
      * vrací v parametru i aktuální souhrnný stav. Přidáno na KONEC enumu
      * kvůli stabilitě číselných hodnot existujících příkazů. */
     DBGAPI_CMD_VIDEOREC,                       /* Video záznam (start/stop/pauza/marker/stav) - data_ptr: st_DBGAPI_VIDEOREC_PARAM* */
+
+    /* === ui-thread-writes T1: historie a aktivita I/O (okno I/O Ports) ===
+     *
+     * Mutace ringu io_history a tabulky g_io_activity, do kterých emu vlákno
+     * zapisuje v port_*_with_logging_cb / memory_*_with_logging_cb. Okno
+     * I/O Ports je dřív volalo přímo z UI vlákna (změna kapacity = free +
+     * calloc ringu souběžně s io_history_record -> zápis do uvolněné paměti;
+     * clear a reset souběžně s inkrementací čítačů). Nově je vykoná emu
+     * vlákno v drainu fronty, tedy mezi instrukcemi. Přidáno na KONEC enumu
+     * kvůli stabilitě číselných hodnot existujících příkazů. */
+    DBGAPI_CMD_IO_HISTORY_SET_CAPACITY,        /* Změnit kapacitu ringu historie I/O (zahodí data) - data_ptr: st_DBGAPI_IO_HISTORY_CAPACITY_PARAM* */
+    DBGAPI_CMD_IO_HISTORY_CLEAR,               /* Vyprázdnit ring historie I/O - bez paramu */
+    DBGAPI_CMD_IO_ACTIVITY_RESET,              /* Vynulovat čítače aktivity všech portů (io_activity_reset_all) - bez paramu */
+
+    /* === ui-thread-writes T2: hromadné operace s breakpointy (okno Breakpoints) ===
+     *
+     * Smazání všech BP a načtení BP ze souboru přestaví pole
+     * g_breakpoints.breakpoints / .groups (uvolní stringy a AST podmínek
+     * a akcí), uložiště $vars a bptmap (bpmap[], per-typ listy). To vše
+     * emu vlákno čte při vyhodnocení BP v CPU smyčce a v logging
+     * callbaccích paměti / portů. Okno Breakpoints je dřív volalo přímo
+     * z UI vlákna; nově je vykoná emu vlákno v drainu fronty, tedy mezi
+     * instrukcemi. Handler po operaci přepočítá gating logging callbacků
+     * (jako ostatní BP mutace). Přidáno na KONEC enumu kvůli stabilitě
+     * číselných hodnot existujících příkazů. */
+    DBGAPI_CMD_BP_CLEAR_ALL,                   /* Smazat všechny BP, skupiny a $vars (breakpoints_clear_all) - bez paramu */
+    DBGAPI_CMD_BP_LOAD_FILE,                   /* Nahradit BP obsahem souboru (breakpoints_load_from_filepath) - data_ptr: st_DBGAPI_BP_LOAD_FILE_PARAM* */
+
+    /* === ui-thread-writes T3: Memory Heatmap (okno Memory Heatmap) ===
+     *
+     * Countery g_mhmap inkrementuje emu vlákno v logging callbaccích
+     * paměti / portů. Okno Memory Heatmap je dřív mazalo (Reset region
+     * only) a sčítalo / odčítalo s importovanými daty (Add / Sub) přímo
+     * z UI vlákna; nově to vykoná emu vlákno v drainu fronty. Reset všech
+     * counterů používá existující DBGAPI_CMD_CDL_RESET, přepnutí režimu
+     * zápis g_debugger.mhmap_mode + DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE.
+     * Přidáno na KONEC enumu kvůli stabilitě číselných hodnot. */
+    DBGAPI_CMD_MHMAP_RESET_REGION,             /* Vynulovat countery jednoho regionu (mhmap_reset_region) - data_ptr: st_DBGAPI_MHMAP_RESET_REGION_PARAM* */
+    DBGAPI_CMD_MHMAP_MERGE,                    /* Přičíst / odečíst mapu k živým counterům (mhmap_merge) - data_ptr: st_DBGAPI_MHMAP_MERGE_PARAM* */
+
+    /* === ui-thread-writes T4: Memory Map (banking a DMD) ===
+     *
+     * g_memory.map (banking flagy) a g_gdg.regDMD (MZ-800) čte emu vlákno
+     * při každém přístupu do paměti a mění je samo (OUT / IN E0-E6,
+     * OUT CEh). Okno Memory Map je dřív přepisovalo přímo z UI vlákna
+     * a z UI volalo memory_reconnect_ram() (přepojení memram_read/write
+     * a na MZ-800 přepočet RAM fast-path tabulky CPU) i vynucený refresh
+     * framebufferu. Nově to vše vykoná emu vlákno v drainu fronty, tedy
+     * mezi instrukcemi. Přidáno na KONEC enumu kvůli stabilitě číselných
+     * hodnot. */
+    DBGAPI_CMD_MEMMAP_SET,                     /* Upravit banking bity (clear/set maska) a volitelně nastavit DMD (jako OUT CEh) - data_ptr: st_DBGAPI_MEMMAP_SET_PARAM* */
+
+    /* === ui-thread-writes T5a: Event Viewer (režim záznamu a import) ===
+     *
+     * Ring g_eventlog plní emu vlákno v eventlog_record() a příznak
+     * g_eventlog_active čte v gate každého zápisu. Okno Events dřív z UI
+     * vlákna přepisovalo g_eventlog_config.mode + volalo
+     * eventlog_recompute_active() a hlavně eventlog_import_from_file()
+     * (eventlog_set_capacity = free + calloc ringu, fread přímo do ringu
+     * souběžně s eventlog_record -> zápis do uvolněné paměti / promíchaná
+     * data). Nově obojí vykoná emu vlákno v drainu fronty, tedy mezi
+     * instrukcemi. Kategorie používají existující EVENTLOG_SET_MASK.
+     * Přidáno na KONEC enumu kvůli stabilitě číselných hodnot. */
+    DBGAPI_CMD_EVENTLOG_SET_MODE,              /* Nastavit režim záznamu + eventlog_recompute_active - data_ptr: st_DBGAPI_EVENTLOG_MODE_PARAM* */
+    DBGAPI_CMD_EVENTLOG_IMPORT_FILE,           /* Nahradit ring obsahem souboru (eventlog_import_from_file) - data_ptr: st_DBGAPI_EVENTLOG_IMPORT_PARAM* */
+
+    /* === ui-thread-writes T6a: Freeze Bytes (Memory Browser) ===
+     *
+     * Tabulku zafrozených bajtů (freeze.c) čte emu vlákno jednou za snímek
+     * ve freeze_apply_all() a podle ní zapisuje do paměti. Kontextové menu
+     * Memory Browseru dřív volalo freeze_add() / freeze_remove() přímo
+     * z UI vlákna - zápis polí slotu a příznaku in_use bez jakékoli
+     * synchronizace, takže apply mohl vidět napůl vyplněný (recyklovaný)
+     * slot a zapsat hodnotu na starou adresu. Nově tabulku mění jen emu
+     * vlákno v drainu fronty. Přidáno na KONEC enumu kvůli stabilitě
+     * číselných hodnot. */
+    DBGAPI_CMD_FREEZE_ADD,                     /* Zafrozit / aktualizovat bajt (freeze_add) - data_ptr: st_DBGAPI_FREEZE_PARAM* */
+    DBGAPI_CMD_FREEZE_REMOVE,                  /* Uvolnit zafrozený bajt (freeze_remove) - data_ptr: st_DBGAPI_FREEZE_PARAM* (value se ignoruje) */
+
+    /* === ui-thread-writes T6b: reset počítadla zásahů BP (editační panel BP) ===
+     *
+     * bpt->hits inkrementuje emu vlákno při každém zásahu BP
+     * (breakpoints.c, krok 4 vyhodnocení) a hned ho porovnává s hit_count
+     * ("spustit až na N. zásah"). Tlačítko Reset v editačním panelu dřív
+     * volalo breakpoints_reset_hits() přímo z UI vlákna - souběžný hits++
+     * mohl reset ztratit (read-modify-write hits i g_breakpoints.version
+     * na dvou vláknech). Nově reset vykoná emu vlákno v drainu fronty.
+     * Přidáno na KONEC enumu kvůli stabilitě číselných hodnot. */
+    DBGAPI_CMD_BP_RESET_HITS,                  /* Vynulovat počítadlo zásahů BP (breakpoints_reset_hits) - data_ptr: const int* (ID BP) */
+
+    /* === ui-thread-writes T6c: Callstack (panel Callstack debuggeru) ===
+     *
+     * Shadow stack (g_shadow, g_depth) a statistiky mění emu vlákno
+     * v Z80 CALL/RET hoocích a v IRQ/RETI fan-outu. Panel Callstack dřív
+     * volal callstack_set_active() a callstack_reset() přímo z UI vlákna:
+     * reset nuluje g_depth souběžně s push/pop (pop po souběžném nulování
+     * může g_depth snížit pod nulu a další push pak píše mimo pole),
+     * set_active přepisuje Z80 call/ret callbacky běžícího CPU. Nově obojí
+     * vykoná emu vlákno v drainu fronty. Přidáno na KONEC enumu kvůli
+     * stabilitě číselných hodnot. */
+    DBGAPI_CMD_CALLSTACK_SET_ACTIVE,           /* Zapnout / vypnout callstack (callstack_set_active) - data_ptr: st_DBGAPI_CALLSTACK_SET_ACTIVE_PARAM* */
+    DBGAPI_CMD_CALLSTACK_RESET,                /* Vyprázdnit shadow stack + statistiky (callstack_reset) - bez paramu */
+
+    /* === ui-thread-writes T6d: vynucený refresh obrazovky (Ctrl+R, menu) ===
+     *
+     * mzarch_forced_full_screen_refresh() přegeneruje celý framebuffer
+     * z VRAM a dokončí snímek (framebuffer_screen_done = výměna
+     * g_framebuffer.pixels / pixels_id). Framebuffer jinak plní a snímky
+     * dokončuje emu vlákno. Ctrl+R v okně debuggeru a položka menu
+     * "Forced Full Screen Refresh" to dřív volaly přímo z UI vlákna bez
+     * kontroly pauzy - za běhu souběžně s vykreslováním řádků a výměnou
+     * bufferů na emu vlákně, v pauze souběžně s příkazy MCP, které refresh
+     * také volají (snapshot load, zápis do VRAM). Nově refresh vykoná emu
+     * vlákno v drainu fronty (paused smyčka frontu obsluhuje, takže
+     * v pauze proběhne hned). Přidáno na KONEC enumu kvůli stabilitě
+     * číselných hodnot. */
+    DBGAPI_CMD_SCREEN_REFRESH,                 /* Vynucený plný refresh obrazovky (mzarch_forced_full_screen_refresh) - bez paramu */
+
+    /* === ui-thread-writes T1b: reset aktivity jednoho portu (okno I/O Ports) ===
+     *
+     * Kontextové menu portu "Reset activity counter" dřív volalo
+     * io_activity_reset_port() / io_activity_reset_port_8bit() přímo z UI
+     * vlákna - memset slotů g_io_activity souběžně s io_activity_record_hit()
+     * a io_activity_advance_frame() na emu vlákně (roztržené čítače). Nově
+     * reset vykoná emu vlákno v drainu fronty, stejně jako
+     * DBGAPI_CMD_IO_ACTIVITY_RESET. Přidáno na KONEC enumu kvůli stabilitě
+     * číselných hodnot. */
+    DBGAPI_CMD_IO_ACTIVITY_RESET_PORT,         /* Vynulovat čítače aktivity jednoho portu (io_activity_reset_port / _8bit) - data_ptr: st_DBGAPI_IO_ACTIVITY_RESET_PORT_PARAM* */
+
+    /* === ui-thread-writes T5c: triggery okna Events (Pause / Auto-mark on match) ===
+     *
+     * Filtr triggeru vyhodnocuje callback v eventlog_record() na emu vlákně.
+     * Okno Events dřív z UI vlákna uvolňovalo filtr a parsovalo nový
+     * (use-after-free, pokud callback zrovna vyhodnocoval), přepínalo gate
+     * a ImGui editovalo jméno markeru v bufferu, který callback četl. Nově
+     * stav triggerů vlastní eventlog_trigger.c: UI naparsuje nový filtr do
+     * nového objektu a předá ho příkazem, emu vlákno vymění filtr, jméno
+     * a gate (eventlog_trigger_set) a vrátí starý filtr, který UI uvolní po
+     * návratu synchronního submitu. Přidáno na KONEC enumu kvůli stabilitě
+     * číselných hodnot. */
+    DBGAPI_CMD_EVENTLOG_TRIGGER_SET,           /* Nastavit / vypnout trigger (eventlog_trigger_set) - data_ptr: st_DBGAPI_EVENTLOG_TRIGGER_PARAM* */
+    DBGAPI_CMD_EVENTLOG_TRIGGER_CLEAR_MATCHES, /* Vymazat počítadla shod triggeru (eventlog_trigger_clear_matches) - data_ptr: const uint32_t* (en_EVENTLOG_TRIGGER_KIND) */
 
 } en_DBGAPI_CMD;
 
@@ -1651,6 +1793,153 @@ typedef struct st_DBGAPI_EVENTLOG_CAPACITY_PARAM
 } st_DBGAPI_EVENTLOG_CAPACITY_PARAM;
 
 /**
+ * @brief Parametr pro DBGAPI_CMD_IO_HISTORY_SET_CAPACITY.
+ *
+ * Caller předává požadovanou velikost ringu historie I/O. Handler ji
+ * clampuje do @c [IO_HISTORY_MIN_CAPACITY..IO_HISTORY_MAX_CAPACITY]
+ * (io_history.h), ring realokuje (předchozí události zahodí) a skutečnou
+ * velikost vrátí v @c capacity_after. Pokud se ring nepodařilo alokovat,
+ * je @c capacity_after = 0 a příkaz vrátí neúspěch.
+ *
+ * Struktura žije na zásobníku odesílatele; synchronní submit zaručuje,
+ * že ji emu vlákno po dokončení příkazu už nepoužije.
+ *
+ * @field capacity        (IN)  Požadovaná velikost ringu (počet událostí).
+ * @field capacity_after  (OUT) Skutečně nastavená velikost (0 = alokace selhala).
+ */
+typedef struct st_DBGAPI_IO_HISTORY_CAPACITY_PARAM
+{
+    uint32_t capacity;
+    uint32_t capacity_after;
+} st_DBGAPI_IO_HISTORY_CAPACITY_PARAM;
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_BP_LOAD_FILE.
+ *
+ * Handler nahradí aktuální breakpointy, skupiny a $vars obsahem souboru
+ * (breakpoints_load_from_filepath). Stávající data se smažou vždy, i když
+ * soubor neexistuje nebo nejde přečíst (pak zůstane prázdný stav) -
+ * stejná sémantika jako dřívější přímé volání z UI. Příkaz proto vrací
+ * úspěch, kdykoli ho emu vlákno provedlo; výsledek načtení nehlásí.
+ *
+ * Struktura i řetězec žijí na zásobníku / v paměti odesílatele;
+ * synchronní submit zaručuje, že je emu vlákno po dokončení příkazu už
+ * nepoužije.
+ *
+ * @field filepath (IN) Cesta k souboru s breakpointy. NULL nebo prázdný
+ *                      řetězec = výchozí soubor (g_breakpoints.default_file
+ *                      vyhodnocený proti konfiguračnímu adresáři,
+ *                      breakpoints_load_from_file). Ownership: volajícího.
+ */
+typedef struct st_DBGAPI_BP_LOAD_FILE_PARAM
+{
+    const char *filepath;
+} st_DBGAPI_BP_LOAD_FILE_PARAM;
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_MHMAP_RESET_REGION.
+ *
+ * @field region_index (IN) Index regionu v tabulce mhmap_get_export_regions
+ *                          (pořadí tabů okna Memory Heatmap). Index mimo
+ *                          rozsah = příkaz selže (success=false), nic se
+ *                          nemění.
+ */
+typedef struct st_DBGAPI_MHMAP_RESET_REGION_PARAM
+{
+    uint32_t region_index;
+} st_DBGAPI_MHMAP_RESET_REGION_PARAM;
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_MHMAP_MERGE.
+ *
+ * Zdrojová mapa žije v paměti odesílatele (okno Memory Heatmap drží
+ * importovaná data); synchronní submit zaručuje, že ji emu vlákno po
+ * dokončení příkazu už nečte.
+ *
+ * @field src      (IN) Ukazatel na st_MHMAP se stejným layoutem jako
+ *                      g_mhmap. Jen ke čtení, ownership: volajícího.
+ * @field src_size (IN) Velikost @c src v bajtech; handler ji porovná se
+ *                      sizeof(st_MHMAP) a při neshodě selže (ochrana proti
+ *                      mapě z jiné architektury / verze).
+ * @field op       (IN) Hodnota en_MHMAP_MERGE_OP (0 = ADD se saturací,
+ *                      1 = SUB s ořezem na 0). Jiná hodnota = selhání.
+ */
+typedef struct st_DBGAPI_MHMAP_MERGE_PARAM
+{
+    const void *src;
+    size_t      src_size;
+    uint32_t    op;
+} st_DBGAPI_MHMAP_MERGE_PARAM;
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_MEMMAP_SET.
+ *
+ * Handler na emu vlákně provede v tomto pořadí:
+ *  1. g_memory.map = (g_memory.map & ~map_clear_mask) | map_set_mask,
+ *  2. při dmd_write (jen MZ-800) gdg_debug_set_regDMD(dmd_value) - stejné
+ *     vedlejší efekty GDG jako OUT (CEh): maska na bity 0-3, při změně
+ *     aktualizace framebufferu, ctc82530_on_regDMD_changed() (GATE0 CTC0),
+ *     vynulování mz700_wr_latch_is_used při přechodu do 800 módu
+ *     a přepočet RAM fast-path; navíc proti OUT bez záznamu hwlog a bez
+ *     HW event breakpointu "mode change" (zásah debuggeru není OUT
+ *     programu),
+ *  3. memory_reconnect_ram() - přepojení memram_read/write (memext)
+ *     a na MZ-800 s MZ800EMU_CFG_RAM_FASTPATH přepočet fast-path
+ *     tabulky CPU (mz800_ram_fastpath_rebuild),
+ *  4. debugger_screen_refresh_if_enabled() - vynucený refresh obrazu,
+ *     pokud je zapnuté "Auto refresh on edit".
+ *
+ * Operace (masky) místo celé nové hodnoty: bity, kterých se uživatel
+ * nedotkl, zůstanou tak, jak je mezitím nastavilo emu vlákno (OUT / IN
+ * E0-E6 mezi vykreslením okna a provedením příkazu).
+ *
+ * @field map_clear_mask (IN)  Bity g_memory.map k vynulování (0 = žádné;
+ *                             0xFF = celá hodnota se nahradí map_set_mask).
+ * @field map_set_mask   (IN)  Bity g_memory.map k nastavení (aplikuje se
+ *                             po clear masce).
+ * @field dmd_write      (IN)  true = nastavit DMD přes gdg_debug_set_regDMD().
+ *                             Na jiné platformě než MZ-800 příkaz s
+ *                             dmd_write=true selže a nic nezmění.
+ * @field dmd_value      (IN)  Nová hodnota DMD (platí jen s dmd_write;
+ *                             použijí se bity 0-3 jako u OUT CEh).
+ * @field map_after      (OUT) g_memory.map po provedení.
+ * @field dmd_after      (OUT) g_gdg.regDMD po provedení (MZ-800, dolních
+ *                             8 bitů), jinde 0.
+ */
+typedef struct st_DBGAPI_MEMMAP_SET_PARAM
+{
+    uint8_t map_clear_mask;
+    uint8_t map_set_mask;
+    bool    dmd_write;
+    uint8_t dmd_value;
+    uint8_t map_after;
+    uint8_t dmd_after;
+} st_DBGAPI_MEMMAP_SET_PARAM;
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_IO_ACTIVITY_RESET_PORT.
+ *
+ * Volí, které sloty tabulky g_io_activity handler vynuluje. Okno I/O Ports
+ * rozlišuje 8-bit porty katalogu (adresa <= 0FFh, aktivita se sčítá přes
+ * všech 256 high-byte slotů) a 16-bit / MMIO porty (jeden slot podle bus
+ * adresy).
+ *
+ * Struktura žije na zásobníku odesílatele; synchronní submit zaručuje,
+ * že ji emu vlákno po dokončení příkazu už nepoužije.
+ *
+ * @field port     (IN) Je-li @c is_8bit nenulové, low byte portu (horní
+ *                 bajt se ignoruje) -> io_activity_reset_port_8bit().
+ *                 Jinak plná 16-bit klíčová adresa slotu (bus adresa IORQ
+ *                 nebo MMIO adresa 0E000h..0E008h) -> io_activity_reset_port().
+ * @field is_8bit  (IN) 1 = 8-bit varianta (256 slotů), 0 = jeden slot.
+ */
+typedef struct st_DBGAPI_IO_ACTIVITY_RESET_PORT_PARAM
+{
+    uint16_t port;
+    uint8_t  is_8bit;
+} st_DBGAPI_IO_ACTIVITY_RESET_PORT_PARAM;
+
+/**
  * @brief Parametr pro CMD_EVENTLOG_SET_MASK.
  *
  * @field mask  (IN) Nová bitmask povolených kategorií (bit i = kategorie i).
@@ -1659,6 +1948,137 @@ typedef struct st_DBGAPI_EVENTLOG_MASK_PARAM
 {
     uint64_t mask;
 } st_DBGAPI_EVENTLOG_MASK_PARAM;
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_EVENTLOG_SET_MODE.
+ *
+ * Handler zapíše g_eventlog_config.mode a zavolá
+ * eventlog_recompute_active(), který podle režimu a stavu okna Events
+ * spustí / zastaví záznam (g_eventlog_active). Hodnota mimo
+ * en_EVENTLOG_MODE se odmítne (příkaz selže, nic se nezmění).
+ *
+ * Struktura žije na zásobníku odesílatele; synchronní submit zaručuje,
+ * že ji emu vlákno po dokončení příkazu už nepoužije.
+ *
+ * @field mode          (IN)  Nový režim (en_EVENTLOG_MODE: 0 = OFF,
+ *                            1 = WHEN_WINDOW_OPEN, 2 = ALWAYS).
+ * @field active_after  (OUT) g_eventlog_active po přepočtu (0 / 1).
+ */
+typedef struct st_DBGAPI_EVENTLOG_MODE_PARAM
+{
+    uint32_t mode;
+    uint32_t active_after;
+} st_DBGAPI_EVENTLOG_MODE_PARAM;
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_EVENTLOG_IMPORT_FILE.
+ *
+ * Handler zavolá eventlog_import_from_file(path) na emu vlákně: validace
+ * hlavičky, případné zvětšení ringu (eventlog_set_capacity), jinak
+ * vyprázdnění, a fread záznamů přímo do ringu. Příkaz uspěje jen při
+ * návratové hodnotě 0. Při chybě čtení záznamů loader ponechá v ringu
+ * částečně načtená data (rc = -1, @c count_after > 0); při chybě hlavičky
+ * zůstane ring beze změny.
+ *
+ * Struktura i řetězec žijí v paměti odesílatele; synchronní submit
+ * zaručuje, že je emu vlákno po dokončení příkazu už nepoužije.
+ *
+ * @field path            (IN)  Cesta k souboru (.evlog). NULL / prázdná
+ *                              = příkaz selže. Ownership: volajícího.
+ * @field rc              (OUT) Návratová hodnota eventlog_import_from_file
+ *                              (0 OK, -1 chyba).
+ * @field count_after     (OUT) Počet událostí v ringu po importu.
+ * @field capacity_after  (OUT) Kapacita ringu po importu (import ji může
+ *                              zvětšit).
+ */
+typedef struct st_DBGAPI_EVENTLOG_IMPORT_PARAM
+{
+    const char *path;
+    int32_t rc;
+    uint32_t count_after;
+    uint32_t capacity_after;
+} st_DBGAPI_EVENTLOG_IMPORT_PARAM;
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_EVENTLOG_TRIGGER_SET.
+ *
+ * Handler zavolá eventlog_trigger_set(kind, filter, name, &old_filter)
+ * na emu vlákně. Při úspěchu (rq->success == true) převzal modul
+ * eventlog_trigger @c filter a volající dostal v @c old_filter předchozí
+ * filtr, který musí uvolnit eventlog_filter_free(). Při neúspěchu
+ * (odmítnutí handlerem, timeout, plná fronta, ukončování) zůstává
+ * @c filter volajícímu a @c old_filter se nemění - volající ho
+ * inicializuje na NULL.
+ *
+ * Struktura i řetězec @c name žijí v paměti odesílatele; synchronní submit
+ * zaručuje, že je emu vlákno po dokončení příkazu už nepoužije (jméno si
+ * modul kopíruje).
+ *
+ * @field kind        (IN)  en_EVENTLOG_TRIGGER_KIND (0 = PAUSE, 1 = AUTOMARK).
+ * @field filter      (IN)  Nový filtr z eventlog_filter_parse() splňující
+ *                          eventlog_trigger_filter_is_armable(), nebo NULL
+ *                          = vypnout trigger. Typ je opaque
+ *                          st_EVENTLOG_FILTER* (void* kvůli závislostem
+ *                          hlavičky).
+ * @field name        (IN)  AUTOMARK: neprázdné jméno markeru (při filter
+ *                          != NULL povinné). PAUSE: ignoruje se.
+ * @field old_filter  (OUT) Předchozí filtr (st_EVENTLOG_FILTER*) nebo NULL;
+ *                          vlastnictví přechází na volajícího.
+ */
+typedef struct st_DBGAPI_EVENTLOG_TRIGGER_PARAM
+{
+    uint32_t kind;
+    void *filter;
+    const char *name;
+    void *old_filter;
+} st_DBGAPI_EVENTLOG_TRIGGER_PARAM;
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_FREEZE_ADD a DBGAPI_CMD_FREEZE_REMOVE.
+ *
+ * Klíč (region_kind, sub_id, offset) odpovídá st_FREEZE_ENTRY
+ * (freeze/freeze.h). ADD volá freeze_add() (existující záznam jen
+ * aktualizuje hodnotu), REMOVE volá freeze_remove(). Příkaz uspěje
+ * (rq->success) právě tehdy, když operace uspěla; výsledek je navíc
+ * v @c result.
+ *
+ * Struktura žije na zásobníku odesílatele; synchronní submit zaručuje,
+ * že ji emu vlákno po dokončení příkazu už nepoužije.
+ *
+ * @field region_kind (IN)  en_REGION_KIND (dbgapi_regions.h).
+ * @field sub_id      (IN)  Disambiguator banku / plane (0 u jednoduchých regionů).
+ * @field offset      (IN)  Offset v rámci regionu.
+ * @field value       (IN)  Zafrozená hodnota (jen ADD).
+ * @field result      (OUT) Návratová hodnota freeze_add (false = tabulka
+ *                          plná) / freeze_remove (false = záznam neexistoval).
+ */
+typedef struct st_DBGAPI_FREEZE_PARAM
+{
+    int32_t  region_kind;
+    int32_t  sub_id;
+    uint32_t offset;
+    uint8_t  value;
+    bool     result;
+} st_DBGAPI_FREEZE_PARAM;
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_CALLSTACK_SET_ACTIVE.
+ *
+ * Handler zavolá callstack_set_active(active != 0) na emu vlákně (zapnutí
+ * zaregistruje Z80 CALL/RET hooky a vyprázdní shadow stack, vypnutí hooky
+ * odregistruje a shadow ponechá). Volání je idempotentní.
+ *
+ * Struktura žije na zásobníku odesílatele; synchronní submit zaručuje,
+ * že ji emu vlákno po dokončení příkazu už nepoužije.
+ *
+ * @field active       (IN)  0 = vypnout, jinak zapnout.
+ * @field active_after (OUT) g_callstack_active po provedení (0 / 1).
+ */
+typedef struct st_DBGAPI_CALLSTACK_SET_ACTIVE_PARAM
+{
+    uint8_t active;
+    uint8_t active_after;
+} st_DBGAPI_CALLSTACK_SET_ACTIVE_PARAM;
 
 /**
  * @brief Parametr pro CMD_EVENTLOG_GET_EVENT.

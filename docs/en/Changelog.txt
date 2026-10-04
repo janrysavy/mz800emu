@@ -1,4 +1,16 @@
 
+	- BUGFIX: I/O Ports - the saved selection of recorded ports (Rec column) was discarded at start and after every history capacity change (all ports were recorded).
+
+	- BUGFIX: MCP - emu_debugger_activate did not start CPU history or heatmap recording tied to the debug window and emu_debugger_deactivate did not switch the emulation back to the fast path without debug hooks.
+
+	- BUGFIX: Debugger windows changed the emulator state concurrently with the running emulation (risk of a crash or corrupted data); the emulation thread now performs the changes. Affected: Memory Browser (write, Freeze Bytes), Event Viewer (capacity, Clear, mode, categories, import, Pause/Auto-mark on match), I/O Ports (history, Reset Activity), Breakpoints (Delete All, load from file, reset hit counter), Memory Heatmap (mode, Reset, Add/Sub), Memory Map (banking, DMD), MemExt Map, Callstack (Active, Reset), Ctrl+R and hiding the debugger.
+
+	- BUGFIX: MemExt Map Settings (PEHU) - the window showed twice the 8 kB bank number and Apply without edits changed the map.
+
+	- BUGFIX: I/O Ports - the saved history capacity was not applied at start (the history always held 10000 events while the option showed the saved value).
+
+	- BUGFIX: --run-mzf in MZ-800 mode and the DMD option in the Memory Map window switched the GDG mode without the side effects of OUT (CEh); after --run-mzf the CTC0 timer thus stayed blocked (GATE0 = 0), unlike a ROM load.
+
 	- New option --version: prints the version, revision, source origin and build details.
 
 	- New option --speed <percent|max>: emulation speed at start (mainly for --headless).
@@ -6,8 +18,6 @@
 	- BUGFIX: --run-mzf starts a program in the same state as after a ROM tape load (MZ-1500: missing palette and PCG graphics; MZ-800 and MZ-1500: muted timer sound; screen not cleared). CHANGE: on MZ-700 the real-time clock is no longer started (the ROM does not start it either).
 
 	- BUGFIX: MCP - stopped answering entirely when the emulation thread got stuck; now returns "Emulator busy: command still running" (after about 20 s, 10 min for file operations).
-
-	- BUGFIX: Memory Browser, Event Viewer and hiding the debugger wrote into the emulator concurrently with the running emulation; the emulation thread now performs the writes.
 
 	- Debugger and MCP - commands execute immediately while the emulation is paused (previously with up to 20 ms delay).
 
