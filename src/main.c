@@ -20,6 +20,7 @@
 #include "emulator/i18n_lang.h"
 #include "emulator.h"
 #include "emulator/customspeed.h"
+#include "emulator/mzarch/mzarch.h"
 #include "version_info.h"
 
 #ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
@@ -208,6 +209,11 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
       "Centronics interface (data, STROBE, BUSY). Overrides the [MZ1P16] active "
       "value from the INI. Only available on architectures with a Z80 PIO "
       "(MZ-800, MZ-1500)." },
+    { "--mode-switch",      SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<700|800>",
+      "Set the MZ-800 rear mode switch (SW1): 700 = MZ-700 mode, 800 = MZ-800 "
+      "mode. The ROM reads it when starting a program. Overrides the [MZ800] "
+      "mode_switch value from the INI. Invalid value = error and exit. Only "
+      "available on MZ-800." },
     { "--no-save-ini",      SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
       "Do not write the .ini file at exit (CLI overrides become session-only)." },
     { "--no-first-run-windows", SDLAPP_OPTION_FLAG, SDLAPP_OPTVAL_NONE,     NULL,        NULL,
@@ -324,6 +330,21 @@ int main(int argc, char *argv[])
         {
             return EXIT_FAILURE;
         };
+    };
+
+    /* --mode-switch: hodnota se ověří hned (neplatná = chyba a konec),
+     * aplikuje ji mz800_main při registraci konfigurace. Jinde než na MZ-800
+     * se přepínač z příkazové řádky nenastavuje. */
+    if (sdlapp_option_present("--mode-switch"))
+    {
+        en_MZ800_MODE_SW mode;
+        if (!mzarch_mode_sw_parse_cli(sdlapp_option_value("--mode-switch"), &mode))
+        {
+            return EXIT_FAILURE;
+        };
+#if MZARCH != 800
+        fprintf(stderr, "Warning: --mode-switch is only supported on MZ-800, ignoring\n");
+#endif
     };
 
     /* --spdfd: alternativní launch mód. Větvíme dřív, než se inicializuje

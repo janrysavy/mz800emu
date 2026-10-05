@@ -1,4 +1,10 @@
 
+	- Nová volba --mode-switch <700|800> (MZ-800): poloha zadního přepínače režimu. Poloha přepínače se nově ukládá do konfigurace.
+
+	- BUGFIX: Načtení snapshotu přepisovalo konfiguraci. Nastavení kazety (polarita, rychlost, kontrola velikosti MZF), plnění paměti rozšíření a záloha Pezik ramdisku se ze snapshotu neobnovují; připojení a typy zařízení, verze firmware Unicardu a druhý PSG se obnoví jen do ukončení emulátoru.
+
+	- OPRAVA DOKUMENTACE: Debugger - popis oken PCG editor a Memory Diff odpovídá skutečnému ovládání (PCG editor zapisuje každou změnu hned a nemá Save; Memory Diff má u každého zdroje vlastní region a režim).
+
 	- BUGFIX: I/O Ports - uložený výběr zaznamenávaných portů (sloupec Rec) se po startu a po každé změně kapacity historie zahodil (zaznamenávaly se všechny porty).
 
 	- BUGFIX: MCP - emu_debugger_activate nezapnulo záznam historie CPU ani heatmapy vázaný na okno debuggeru a emu_debugger_deactivate nevrátilo emulaci na rychlou cestu bez ladicích háčků.

@@ -324,6 +324,48 @@ if(Python3_FOUND)
                    "(Python ${Python3_VERSION})")
 
     # -----------------------------------------------------------
+    # Test 7d1: snapshot nepřepíše uživatelské INI (pipe)
+    # -----------------------------------------------------------
+    # Tři procesy mz800emu s ukládaným INI: A pořídí snapshot
+    # s nevýchozími nastaveními, B0 je referenční běh bez snapshotu,
+    # B1 snapshot načte. Preference (CMT, plnění MEMEXT, záloha Pezik)
+    # se neobnoví, stav stroje (připojení a typy periferií, FW Unicardu,
+    # druhý PSG) se obnoví jen pro běh; INI B1 po ukončení = INI B0.
+    add_test(
+        NAME    mcp_snapshot_ini
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_snapshot_ini.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_snapshot_ini PROPERTIES
+        LABELS  "e2e;mcp;pipe;snapshot"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_snapshot_ini "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Test 7d1b: zadní přepínač SW1 MZ-800 (INI + CLI, TCP)
+    # -----------------------------------------------------------
+    # --run-mzf s výchozím INI, [MZ800] mode_switch = MZ800,
+    # --mode-switch=800 a INI MZ800 + --mode-switch=700: DMD a paleta
+    # na exec adrese odpovídají módu, který ROM podle bitu 1 statusu
+    # nastaví; --mode-switch=900 skončí chybou.
+    add_test(
+        NAME    mcp_mode_switch
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_mode_switch.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_mode_switch PROPERTIES
+        LABELS  "e2e;mcp;tcp"
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_mode_switch "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
     # Test 7d2: rozsahové breakpointy (addr_end / addr_match_mode, pipe)
     # -----------------------------------------------------------
     # bp_create_with_init s addr_end bez RANGE vrátí warning (BP vznikne,

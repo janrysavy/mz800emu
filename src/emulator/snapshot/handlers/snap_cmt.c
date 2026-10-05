@@ -10,10 +10,13 @@
  * transport do STOP (cmt_sanitize_state) - jinak by emulace četla data
  * z nevložené pásky.
  *
- * Volba cpu_boost (automatická MAX SPEED během přehrávání) je uživatelská
- * preference, ne stav stroje: do snapshotu se dál zapisuje (kvůli
- * kompatibilitě se staršími verzemi emulátoru, které ji čtou), při načtení
- * se ale ignoruje a platí aktuální volba uživatele.
+ * Volby cpu_boost (automatická MAX SPEED během přehrávání), polarity
+ * (zadní přepínač polarity čtení), mz_cmtspeed (výchozí rychlost pásky)
+ * a mzfsize_check jsou uživatelské preference (cfg sekce [CMT]), ne stav
+ * stroje: do snapshotu se dál zapisují (kvůli kompatibilitě se staršími
+ * verzemi emulátoru, které je čtou), při načtení se ale ignorují a platí
+ * aktuální volby uživatele. Páska se ze snapshotu neotevírá, takže by
+ * obnovená polarita ani rychlost neměly na co působit.
  */
 
 #include <stdio.h>
@@ -56,9 +59,10 @@ static en_SNAPSHOT_RESULT snap_cmt_save(st_SNAPSHOT_CONTEXT *ctx)
     snapshot_xml_write_uint64(w, "paused_time", g_cmt.paused_time);
     snapshot_xml_write_uint64(w, "recording_last_event", g_cmt.recording_last_event);
 
-    /* Nastavení. cpu_boost se zapisuje jen kvůli kompatibilitě se staršími
-     * verzemi emulátoru, které ho při načtení obnovují; snap_cmt_load ho
-     * ignoruje (uživatelská preference). */
+    /* Nastavení. cpu_boost a mzfsize_check (a výše polarity, mz_cmtspeed)
+     * se zapisují jen kvůli kompatibilitě se staršími verzemi emulátoru,
+     * které je při načtení obnovují; snap_cmt_load je ignoruje (uživatelské
+     * preference). */
     snapshot_xml_write_int(w, "cpu_boost", (int)g_cmt.cpu_boost);
     snapshot_xml_write_int(w, "mzfsize_check", (int)g_cmt.mzfsize_check);
     snapshot_xml_write_int(w, "recording_to_stream", g_cmt.recording_to_stream);
@@ -87,16 +91,18 @@ static en_SNAPSHOT_RESULT snap_cmt_save(st_SNAPSHOT_CONTEXT *ctx)
  * varování na stderr. Nakonec cmt_cpu_boost_apply() srovná MAX SPEED
  * s obnoveným transportem a aktuální volbou cpu_boost.
  *
- * Element cpu_boost v XML se záměrně ignoruje: je to uživatelská
- * preference a cfg element CMT/cpu_boost ukazuje přímo na g_cmt.cpu_boost,
- * takže by hodnota ze snapshotu při ukončení emulátoru přepsala i INI.
+ * Elementy cpu_boost, polarity, mz_cmtspeed a mzfsize_check v XML se
+ * záměrně ignorují: jsou to uživatelské preference a jejich cfg elementy
+ * v sekci [CMT] ukazují přímo na proměnné g_cmt, takže by hodnota ze
+ * snapshotu při ukončení emulátoru přepsala i INI.
  *
  * @param ctx Kontext snapshotu (otevřený pro čtení).
  * @return SNAPSHOT_OK, nebo chyba čtení / parsování XML.
  *
  * @pre Emulace je pozastavená.
  * @post Platí invarianty st_CMT (bez pásky je transport ve STOP).
- * @post g_cmt.cpu_boost má stejnou hodnotu jako před voláním.
+ * @post g_cmt.cpu_boost, polarity, mz_cmtspeed a mzfsize_check mají
+ *       stejnou hodnotu jako před voláním.
  * @post Hrající páska (PLAY/RECORD bez pauzy) s cpu_boost -> MAX SPEED
  *       zapnutá; jinak neběží MAX SPEED zapnutá automatikou. MAX SPEED
  *       zvolená uživatelem se nemění.
@@ -134,8 +140,7 @@ static en_SNAPSHOT_RESULT snap_cmt_load(st_SNAPSHOT_CONTEXT *ctx)
     /* Základní stavové proměnné */
     if (snapshot_xml_read_int(r, "state", &ival)) g_cmt.state = (en_CMT_STATE)ival;
     snapshot_xml_read_int(r, "paused", &g_cmt.paused);
-    if (snapshot_xml_read_int(r, "polarity", &ival)) g_cmt.polarity = (en_CMT_STREAM_POLARITY)ival;
-    if (snapshot_xml_read_int(r, "mz_cmtspeed", &ival)) g_cmt.mz_cmtspeed = (en_CMTSPEED)ival;
+    /* polarity a mz_cmtspeed záměrně nečteme - uživatelské preference. */
     snapshot_xml_read_int(r, "output", &g_cmt.output);
 
     /* playsts: starší snapshoty ho neobsahují - odvodíme ze stavu. */
@@ -154,10 +159,9 @@ static en_SNAPSHOT_RESULT snap_cmt_load(st_SNAPSHOT_CONTEXT *ctx)
     snapshot_xml_read_uint64(r, "paused_time", &g_cmt.paused_time);
     snapshot_xml_read_uint64(r, "recording_last_event", &g_cmt.recording_last_event);
 
-    /* Nastavení. Element cpu_boost záměrně nečteme - je to uživatelská
-     * preference (cfg CMT/cpu_boost), ne stav stroje; obnovení by ji tiše
-     * a trvale přepsalo (i v INI). */
-    if (snapshot_xml_read_int(r, "mzfsize_check", &ival)) g_cmt.mzfsize_check = (en_CMT_MZFSIZE_CHECK)ival;
+    /* Nastavení. Elementy cpu_boost a mzfsize_check záměrně nečteme - jsou
+     * to uživatelské preference (cfg [CMT]), ne stav stroje; obnovení by je
+     * tiše a trvale přepsalo (i v INI). */
     snapshot_xml_read_int(r, "recording_to_stream", &g_cmt.recording_to_stream);
 
     /* Název posledního souboru */

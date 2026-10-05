@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "iface/iface_audio.h"
 
@@ -1524,19 +1525,30 @@ void mzarch_main_init(void)
  *
  */
 
-void mzarch_rear_dip_switch_mz700_compat(unsigned value)
+void mzarch_mode_sw_set(en_MZ800_MODE_SW mode)
 {
 #if MZARCH != 700
-    value &= 1;
-
-    if (value == g_mzarch_main.switch700)
-        return;
-
-    g_mzarch_main.switch700 = value;
+    g_mzarch_main.mode_sw = (mode == MZ800_MODE_SW_MZ800) ? MZ800_MODE_SW_MZ800 : MZ800_MODE_SW_MZ700;
 #else
-    /* MZ-700 nativní: žádný DIP přepínač MZ-700-mode, no-op */
-    (void)value;
+    /* MZ-700 nativní: přepínač MZ-700 / MZ-800 neexistuje, no-op */
+    (void)mode;
 #endif
+}
+
+bool mzarch_mode_sw_parse_cli(const char *text, en_MZ800_MODE_SW *out)
+{
+    if (text && strcmp(text, "700") == 0)
+    {
+        *out = MZ800_MODE_SW_MZ700;
+        return true;
+    }
+    if (text && strcmp(text, "800") == 0)
+    {
+        *out = MZ800_MODE_SW_MZ800;
+        return true;
+    }
+    fprintf(stderr, "Error: --mode-switch requires 700 or 800 (got: %s)\n", text ? text : "<none>");
+    return false;
 }
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED

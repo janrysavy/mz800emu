@@ -101,7 +101,7 @@ void mzarch_platform_bootstrap_post_header(uint16_t fstrt)
     mzarch_platform_load_prepare_body_map ( fstrt );
 
     /* Bod 2 - MZ-800 specific: nastavit startovní mode podle zadního
-     * switche (en_SWITCH700) v g_mzarch_main.switch700.
+     * přepínače SW1 (en_MZ800_MODE_SW) v g_mzarch_main.mode_sw.
      *
      * Společné napříč oběma stavy switche:
      *   - PROHIBITED = 0 (= banking mode není aktivní; pro jistotu clear)
@@ -110,11 +110,10 @@ void mzarch_platform_bootstrap_post_header(uint16_t fstrt)
     g_memory.map &= ~MEMORY_MZ800_MAP_FLAG_PROHIBITED;
     g_memory.map |= MEMORY_MZ800_MAP_FLAG_ROM_E000;
 
-    //if (g_mzarch_main.switch700 == SWITCH700_OFF)
-    if (!g_mzarch_main.switch700)
+    if (g_mzarch_main.mode_sw == MZ800_MODE_SW_MZ700)
     {
-        printf ( "Bootstrap: SWITCH700_ON = MZ-700 mode\n" );
-        /* SWITCH700_ON = MZ-700 mode: ]GOPGM (ECFCh) při DMD status
+        printf ( "Bootstrap: mode switch = MZ-700 mode\n" );
+        /* SW1 = MZ-700 mód: ]GOPGM (ECFCh) při DMD status
          * bit 1 = 0 mód nemění; DMD zůstává 08h z IPL (E816h). Po
          * resetu (gdg_reset) už DMD = 08h, zápis přes gdg_write_byte()
          * (cesta OUT CEh) je pak bez účinku; jinak proběhne se všemi
@@ -123,8 +122,8 @@ void mzarch_platform_bootstrap_post_header(uint16_t fstrt)
     }
     else
     {
-        printf ( "Bootstrap: SWITCH700_OFF = MZ-800 mode\n" );
-        /* SWITCH700_OFF = MZ-800 mode, ]GOPGM (ECFCh):
+        printf ( "Bootstrap: mode switch = MZ-800 mode\n" );
+        /* SW1 = MZ-800 mód, ]GOPGM (ECFCh):
          *   ED02h: OUT (0CEh),0     - DMD = 0 (320x200@4A),
          *   ED05h: CALL @BLACK      - E8E1h: OUT (0F0h) 00h, 10h, 20h, 30h, 40h
          *                             (PAL0-3 = 0, PALGRP = 0) a E8EEh
@@ -151,7 +150,7 @@ void mzarch_platform_bootstrap_post_header(uint16_t fstrt)
      * -> přepočti fast-path. */
     mz800_ram_fastpath_rebuild ();
 #endif
-    /* SWITCH700_ON = MZ-700 mode: ponechat default z _init.
+    /* SW1 = MZ-700 mód: ponechat default z _init.
      *   - DMD zůstává v MZ-700 mode (= bit 3 = 1, default po gdg_init).
      *   - VRAM se v MZ-700 mode připojuje automaticky s horní ROM
      *     (= ROM E000 implikuje VRAM D000-DFFF mapping, viz

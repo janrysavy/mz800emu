@@ -33,7 +33,7 @@
 
 
 /** @brief Uložená poloha zadního přepínače (obnoví se v tearDown). */
-static en_SWITCH700 s_saved_switch700;
+static en_MZ800_MODE_SW s_saved_mode_sw;
 
 
 /**
@@ -42,7 +42,7 @@ static en_SWITCH700 s_saved_switch700;
  */
 void setUp(void)
 {
-    s_saved_switch700 = g_mzarch_main.switch700;
+    s_saved_mode_sw = g_mzarch_main.mode_sw;
     gdg_reset();
     g_gdg.regct53g7 = 0;
     g_ctc8253[0].gate = 0;
@@ -51,17 +51,17 @@ void setUp(void)
 
 void tearDown(void)
 {
-    g_mzarch_main.switch700 = s_saved_switch700;
+    g_mzarch_main.mode_sw = s_saved_mode_sw;
     gdg_reset();
 }
 
 
 /**
- * @brief Větev MZ-800 módu (switch700 != 0): DMD 00h s vedlejšími efekty.
+ * @brief Větev MZ-800 módu (mode_sw = MZ800_MODE_SW_MZ800): DMD 00h s vedlejšími efekty.
  */
 void test_post_header_mz800_mode_sets_dmd_like_out(void)
 {
-    g_mzarch_main.switch700 = (en_SWITCH700) 1;
+    g_mzarch_main.mode_sw = MZ800_MODE_SW_MZ800;
     TEST_ASSERT_EQUAL_HEX32(0x08, g_gdg.regDMD);
 
     mzarch_platform_bootstrap_post_header(0x1200);
@@ -73,12 +73,12 @@ void test_post_header_mz800_mode_sets_dmd_like_out(void)
 
 
 /**
- * @brief Větev MZ-700 módu (switch700 == 0): DMD zůstane 08h, GATE0
+ * @brief Větev MZ-700 módu (mode_sw = MZ800_MODE_SW_MZ700): DMD zůstane 08h, GATE0
  *        i latch beze změny.
  */
 void test_post_header_mz700_mode_keeps_state(void)
 {
-    g_mzarch_main.switch700 = (en_SWITCH700) 0;
+    g_mzarch_main.mode_sw = MZ800_MODE_SW_MZ700;
 
     mzarch_platform_bootstrap_post_header(0x1200);
 

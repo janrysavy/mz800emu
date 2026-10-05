@@ -5,6 +5,9 @@
 
 #include "snapshot.h"
 #include "snapshot_config.h"
+#include "snapshot_xml.h"
+
+#include <stdio.h>
 #include "cfgmain.h"
 #include "libs/cfgfile/cfgroot.h"
 #include "libs/cfgfile/cfgmodule.h"
@@ -225,4 +228,21 @@ void snapshot_config_load(void)
 void snapshot_config_save(void)
 {
     /* Konfigurace se ukládá přes cfgroot_save (save callbacky elementů). */
+}
+
+
+void snapshot_config_pin_ini_value(const char *module_name, const char *element_name, unsigned ini_value)
+{
+    /* Bez konfigurace (unit testy snapshotu bez cfgmain) není co chránit. */
+    if (!g_cfgmain) {
+        return;
+    }
+    CFGMOD *cmod = cfgroot_get_module_by_name(g_cfgmain, (char *)module_name);
+    CFGELM *elm = cmod ? cfgmodule_get_element_by_name(cmod, (char *)element_name) : NULL;
+    if (!elm) {
+        SNAP_WARN("config", "INI key [%s] %s not found, value from snapshot may be saved to INI",
+                  module_name, element_name);
+        return;
+    }
+    cfgelement_pin_save_value(elm, ini_value);
 }

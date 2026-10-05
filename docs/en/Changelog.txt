@@ -1,4 +1,10 @@
 
+	- New option --mode-switch <700|800> (MZ-800): rear mode switch position. The switch position is now saved in the configuration.
+
+	- BUGFIX: Loading a snapshot overwrote the configuration. Cassette settings (polarity, speed, MZF size check), memory extension fill and the Pezik ramdisk backup are no longer restored from a snapshot; device connections and types, the Unicard firmware version and the second PSG are restored only until the emulator exits.
+
+	- DOCS FIX: Debugger - the PCG editor and Memory Diff window descriptions match the actual controls (the PCG editor writes every change immediately and has no Save; Memory Diff has its own region and mode for each source).
+
 	- BUGFIX: I/O Ports - the saved selection of recorded ports (Rec column) was discarded at start and after every history capacity change (all ports were recorded).
 
 	- BUGFIX: MCP - emu_debugger_activate did not start CPU history or heatmap recording tied to the debug window and emu_debugger_deactivate did not switch the emulation back to the fast path without debug hooks.

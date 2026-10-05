@@ -94,10 +94,11 @@ typedef struct MyImGui
      */
     bool showMemoryDiffWindow;
     /**
-     * V6: PCG glyph editor (MZ-1500). 8x8 bitmap editor pro 256 chars
-     * v každé z 3 PCG bank. Otevírá se z context menu nad PCG_1500 regionem
-     * v Memory Browseru NEBO z menu Debugger - PCG Editor. Žádný efekt na
-     * jiných archech (= zobrazí "region not available" warning).
+     * V6: PCG glyph editor (MZ-1500). 8x8 bitmap editor pro 1024 chars
+     * v každé z 3 PCG bank. Otevírá se jen z context menu nad PCG_1500
+     * regionem v Memory Browseru; na jiných archech region neexistuje,
+     * takže se okno otevřít nedá (render by zobrazil "region not
+     * available" hlášku).
      */
     bool showMembrowserPcgEditor;
     /**

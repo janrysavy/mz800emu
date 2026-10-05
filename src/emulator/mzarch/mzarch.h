@@ -12,11 +12,22 @@
 #include "hw-generic/gdg/gdg.h"
 #include "mzarch/mzevent.h"
 
-typedef enum en_SWITCH700
+/**
+ * @brief Poloha zadního přepínače SW1 MZ-800 (volba MZ-700 / MZ-800 módu).
+ *
+ * Hodnota je přímo bit 1 Status registru GDG (IN 0CEh). ROM 9Z-504M při
+ * bitu 1 = 0 ponechá MZ-700 mód, při bitu 1 = 1 zapíše DMD = 0 (MZ-800
+ * mód) a zhasne paletu - viz ]GOPGM (0ECFCh) a CTRL při resetu (0E853h).
+ * Shodně T1-1 ("Stav přepínače MZ-700 ON ... ON = 0"). Poloha přepínače
+ * nemění mód sama, čte ji jen ROM (a program).
+ *
+ * Číselné hodnoty jsou kompatibilní s elementem switch700 ve snapshotu.
+ */
+typedef enum en_MZ800_MODE_SW
 {
-    SWITCH700_OFF = 0,
-    SWITCH700_ON,
-} en_SWITCH700;
+    MZ800_MODE_SW_MZ700 = 0, /**< SW1 = ON: MZ-700 mód (výchozí, v praxi obvyklé nastavení) */
+    MZ800_MODE_SW_MZ800 = 1, /**< SW1 = OFF: MZ-800 mód */
+} en_MZ800_MODE_SW;
 
 typedef enum en_MZ800_HWCOMPAT_ALLOW_PSG1
 {
@@ -55,7 +66,7 @@ typedef struct st_mzarch_main
 #endif /* MZARCH == 800 */
 
 #if MZARCH != 700
-    en_SWITCH700 switch700;
+    en_MZ800_MODE_SW mode_sw; /**< Poloha zadního přepínače SW1 (= bit 1 Status registru GDG) */
 #endif /* MZARCH != 700 */
 
     app_mutex_t *reset_request_mutex;
@@ -74,9 +85,10 @@ typedef struct st_mzarch_main
 extern struct st_mzarch_main g_mzarch_main;
 
 #if MZARCH != 700
-#define MZARCH_TEST_REAR_DIP_SWITCH700 (g_mzarch_main.switch700 == 1)
+/** @brief Nenulové, je-li zadní přepínač SW1 v poloze MZ-800 mód. */
+#define MZARCH_TEST_MODE_SW_MZ800 (g_mzarch_main.mode_sw == MZ800_MODE_SW_MZ800)
 #else
-#define MZARCH_TEST_REAR_DIP_SWITCH700 (0) /* MZ-700 nativní: žádný DIP přepínač MZ-700-mode */
+#define MZARCH_TEST_MODE_SW_MZ800 (0) /* MZ-700 nativní: přepínač MZ-700 / MZ-800 neexistuje */
 #endif
 
 typedef enum en_INSIDEOP
@@ -123,7 +135,30 @@ extern "C"
      * @par Side effects Výpis na stderr, interní čítač výskytů.
      */
     extern void mzarch_main_report_screen_done_underflow(unsigned ticks);
-    extern void mzarch_rear_dip_switch_mz700_compat(unsigned value);
+
+    /**
+     * @brief Nastaví polohu zadního přepínače SW1 (MZ-700 / MZ-800 mód).
+     *
+     * Mění jen stav přepínače, ne aktuální mód GDG - ten přepíná ROM
+     * nebo program podle bitu 1 Status registru (typicky po resetu).
+     *
+     * @param mode Nová poloha přepínače.
+     *
+     * @note Na MZ-700 (MZARCH == 700) nic nedělá.
+     * @note Volá se z UI vlákna bez zámku (dosavadní praxe, zápis jedné
+     *       proměnné čtené emulačním vláknem).
+     */
+    extern void mzarch_mode_sw_set(en_MZ800_MODE_SW mode);
+
+    /**
+     * @brief Převede hodnotu volby --mode-switch na polohu přepínače SW1.
+     *
+     * @param text Hodnota volby: "700" (MZ-700 mód) nebo "800" (MZ-800 mód).
+     * @param out Výstup: poloha přepínače; při chybě se nemění.
+     * @return true při úspěchu; při neplatné nebo chybějící hodnotě vypíše
+     *         chybu na stderr (anglicky) a vrátí false.
+     */
+    extern bool mzarch_mode_sw_parse_cli(const char *text, en_MZ800_MODE_SW *out);
 
     /**
      * @brief Vynutí kompletní překreslení obrazovky emulátoru z aktuálního

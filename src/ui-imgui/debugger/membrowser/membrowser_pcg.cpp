@@ -7,11 +7,12 @@
  *
  * Editor layout:
  *   [Bank: combo 1/2/3]  [Char #: input 0..1023]  [< >]
- *   [Inverse] [Mirror H] [Mirror V] [Rotate 90 CW]
+ *   [Inverse] [Mirror H] [Mirror V] [Rotate 90 CW] [Clear] [Fill]
  *   +-------------------+
- *   |  8x8 grid editor  |  (cell size ~32 px, click toggle pixel)
+ *   |  8x8 grid editor  |  (cell size 32 px, click toggle pixel)
  *   +-------------------+
- *   Raw bytes: B0 B1 ... B7 (hex display read-only)
+ *   Raw: B0 B1 ... B7 (hex display read-only)
+ *   Bank addr range: char*8 .. char*8+7
  *
  * Pixel mapping (per existing emu konvence - viz vram_sim PCG):
  *   row 0..7 = byte[row]

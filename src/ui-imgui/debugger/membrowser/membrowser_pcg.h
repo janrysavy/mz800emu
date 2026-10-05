@@ -8,10 +8,12 @@
  * PCG znak 10 bity (PCGLO + 2 horní bity PCGHI, viz mz1500_framebuffer.c),
  * banka má MEMORY_SIZE_PCG_BANK = 8 KB (memory.h).
  *
- * Aktivace přes membrowser kontextové menu (RMB nad bytem v PCG_1500
- * regionu) nebo Debugger menu → PCG editor. Otevřeno = g_gui->showPcgEditor.
+ * Aktivace jen přes membrowser kontextové menu (RMB nad bytem v PCG_1500
+ * regionu, položka "Open in PCG editor..."); v menu Debugger položka není.
+ * Otevřeno = g_gui->showMembrowserPcgEditor.
  *
- * Akce: per-pixel click toggle, Inverse, Mirror H, Mirror V, Rotate 90 CW.
+ * Akce: per-pixel click toggle, Inverse, Mirror H, Mirror V, Rotate 90 CW,
+ * Clear, Fill. Každá změna se hned zapíše do PCG RAM (žádné Save/Undo).
  * Edit přes membrowser_io_make_emu_backend (PCG bank má vlastní region kind).
  *
  * Threading: UI-thread only.

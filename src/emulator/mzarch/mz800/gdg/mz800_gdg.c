@@ -263,7 +263,8 @@ uint8_t gdg_read_dmd_status_ioop(void)
     retval |= SIGNAL_GDG_STS_HS ? 1 << 5 : 0x00;
     retval |= SIGNAL_GDG_STS_VS ? 1 << 4 : 0x00;
     retval |= g_gdg.cksw ? 1 << 2 : 0x00;
-    retval |= (g_mzarch_main.switch700) ? 1 << 1 : 0x00;
+    /* Bit 1 = poloha SW1: 0 = MZ-700 mód, 1 = MZ-800 mód (viz en_MZ800_MODE_SW). */
+    retval |= (g_mzarch_main.mode_sw == MZ800_MODE_SW_MZ800) ? 1 << 1 : 0x00;
     retval |= SIGNAL_GDG_TEMPO;
     //    printf ( "read DMD sts = 0x%02x - HB: %d, VB: %d, HS: %d, VS: %d, row: %d, col: %d, PC: 0x%04x\n", retval, SIGNAL_GDG_HBLNK, SIGNAL_GDG_VBLNK, SIGNAL_GDG_STS_HS, SIGNAL_GDG_STS_VS, BEAM_ROW ( g_gdg.screen_ticks_elapsed ), BEAM_COL ( g_gdg.screen_ticks_elapsed ), z80ex_get_reg ( g_mz800_main.cpu, regPC )  );
     return retval;
