@@ -1,45 +1,45 @@
 /*
- * SDILENE TELO EMULACNI SMYCKY Z80 - dva preklady z jednoho zdroje.
+ * SDÍLENÉ TĚLO EMULAČNÍ SMYČKY Z80 - dva překlady z jednoho zdroje.
  *
- * Tento soubor se v z80.c includuje DVAKRAT (varianta A navrhu A4):
+ * Tento soubor se v z80.c includuje DVAKRÁT (varianta A návrhu A4):
  *
- *   1) Z80_DIRECT_REGS=0 -> z80_execute_batch() (puvodni "batch" jadro):
- *      hlavni registry (A,F,B,C,D,E,H,L,PC,SP,WZ,R,Q) jsou lokalni promenne
- *      (registrova cache), _lcache je aktivni, WRITEBACK/RELOAD synchronizuji
- *      cache <-> cpu->...  Amortizuje prolog/epilog na celou davku T-stavu.
+ *   1) Z80_DIRECT_REGS=0 -> z80_execute_batch() (původní "batch" jádro):
+ *      hlavní registry (A,F,B,C,D,E,H,L,PC,SP,WZ,R,Q) jsou lokální proměnné
+ *      (registrová cache), _lcache je aktivní, WRITEBACK/RELOAD synchronizují
+ *      cache <-> cpu->...  Amortizuje prolog/epilog na celou dávku T-stavů.
  *
- *   2) Z80_DIRECT_REGS=1 -> z80_execute_step() (per-step jadro BEZ cache):
- *      rA..rWZ jsou #define aliasy primo na cpu->...  _lcache se NEVYTVARI,
- *      cpu->_active_cache zustava NULL po celou dobu, WRITEBACK()/RELOAD()
- *      degeneruji na no-op (neni co prenaset, registry uz ZIJI v cpu->).
- *      Odstranuje prolog (RELOAD 14 reg) + _lcache init (14 ptr) + epilog
- *      (WRITEBACK 13 reg) + stack-spilling zpusobeny vzetim adres registru
- *      do _lcache. Volano z80_step() pro per-1 (cycle-accurate) emu smycku.
+ *   2) Z80_DIRECT_REGS=1 -> z80_execute_step() (per-step jádro BEZ cache):
+ *      rA..rWZ jsou #define aliasy přímo na cpu->...  _lcache se NEVYTVÁŘÍ,
+ *      cpu->_active_cache zůstává NULL po celou dobu, WRITEBACK()/RELOAD()
+ *      degenerují na no-op (není co přenášet, registry už ŽIJÍ v cpu->).
+ *      Odstraňuje prolog (RELOAD 14 reg) + _lcache init (14 ptr) + epilog
+ *      (WRITEBACK 13 reg) + stack-spilling způsobený vzetím adres registrů
+ *      do _lcache. Voláno z80_step() pro per-1 (cycle-accurate) emu smyčku.
  *
  * Parametrizace:
- *   Z80_EXEC_FN     - jmeno generovane funkce (z80_execute_batch / _step)
- *   Z80_DIRECT_REGS - 0 = cache, 1 = registry primo v cpu->
+ *   Z80_EXEC_FN     - jméno generované funkce (z80_execute_batch / _step)
+ *   Z80_DIRECT_REGS - 0 = cache, 1 = registry přímo v cpu->
  *
- * Pristupova vrstva (rA..rWZ + AF_VAL/SET_AF/... + WRITEBACK/RELOAD) je
- * jediny rozdil mezi variantami; vsech ~549 mist sahajicich na registry
- * pres tyto aliasy zustava textove identickych -> zadna diverze handleru.
+ * Přístupová vrstva (rA..rWZ + AF_VAL/SET_AF/... + WRITEBACK/RELOAD) je
+ * jediný rozdíl mezi variantami; všech ~549 míst sahajících na registry
+ * přes tyto aliasy zůstává textově identických -> žádná diverze handlerů.
  *
  * @param cpu Ukazatel na CPU instanci.
- * @param target_cycles Cilovy pocet T-stavu (ve step variante fakticky 1).
- * @return Skutecny pocet provedenych T-stavu.
- * @pre cpu != NULL, z80_init() bylo volano.
+ * @param target_cycles Cílový počet T-stavů (ve step variantě fakticky 1).
+ * @return Skutečný počet provedených T-stavů.
+ * @pre cpu != NULL, z80_init() bylo voláno.
  */
 HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
     /*
-     * Lokalni cache callback pointeru - eliminuje opakovanou dereferenci
-     * cpu->mread_cb na kazdem rd/wr/FETCH. GCC drzi tyto hodnoty
-     * v callee-saved registrech po celou dobu execute smycky.
+     * Lokální cache callback pointerů - eliminuje opakovanou dereferenci
+     * cpu->mread_cb na každém rd/wr/FETCH. GCC drží tyto hodnoty
+     * v callee-saved registrech po celou dobu execute smyčky.
      */
 #ifndef MZ800EMU_CFG_RAM_FASTPATH
     /*
-     * Pri zapnutem RAM fast-path jdou memory pristupy pres z80_fp_read/write
-     * (ctou cpu->mread_cb/mwrite_cb az ve fall-back vetvi), takze tato lokalni
-     * cache by byla nepouzita. Pri vypnutem fast-path = puvodni A5 chovani.
+     * Při zapnutém RAM fast-path jdou memory přístupy přes z80_fp_read/write
+     * (čtou cpu->mread_cb/mwrite_cb až ve fall-back větvi), takže tato lokální
+     * cache by byla nepoužita. Při vypnutém fast-path = původní A5 chování.
      */
     const z80_mread_cb  _mrd  = cpu->mread_cb;
     void * const        _mrd_d = cpu->mread_data;
@@ -53,11 +53,11 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 
 #if Z80_DIRECT_REGS
     /*
-     * Per-step varianta: hlavni registry jsou aliasy primo na pole cpu->.
-     * Zadna lokalni cache, zadny stack-spilling z vzeti adres. _active_cache
-     * zustava NULL po celou dobu (invariant z80.h posilen na "VZDY NULL"
-     * ve step variante). savedF je jedina lokalni promenna (interni Q-edge
-     * stav, neni architektonicky registr - viz DISPATCH nize).
+     * Per-step varianta: hlavní registry jsou aliasy přímo na pole cpu->.
+     * Žádná lokální cache, žádný stack-spilling z vzetí adres. _active_cache
+     * zůstává NULL po celou dobu (invariant z80.h posílen na "VŽDY NULL"
+     * ve step variantě). savedF je jediná lokální proměnná (interní Q-edge
+     * stav, není architektonický registr - viz DISPATCH níže).
      */
 #define rA  (cpu->af.h)
 #define rF  (cpu->af.l)
@@ -73,10 +73,10 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 #define rR  (cpu->r)
 #define rQ  (cpu->q)
     uint8_t savedF = rF;
-    /* _lcache se NEVYTVARI; _active_cache musi zustat NULL po celou dobu. */
+    /* _lcache se NEVYTVÁŘÍ; _active_cache musí zůstat NULL po celou dobu. */
     cpu->_active_cache = NULL;
 #else
-    /* Lokalni registrova cache (batch varianta) */
+    /* Lokální registrová cache (batch varianta) */
     uint8_t  rA  = cpu->af.h;
     uint8_t  rF  = cpu->af.l;
     uint8_t  rB  = cpu->bc.h;
@@ -93,10 +93,10 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
     uint8_t  savedF = rF;
 
     /*
-     * Registrace pointeru na lokalni cache - umoznuje z80_set_reg() volane
-     * z callbacku probihajici instrukce propsat zmeny ihned do techto
-     * lokalnich promennych (jinak by je WRITEBACK na konci instrukce
-     * prepsal zpet starou hodnotou).
+     * Registrace pointerů na lokální cache - umožňuje z80_set_reg() volané
+     * z callbacku probíhající instrukce propsat změny ihned do těchto
+     * lokálních proměnných (jinak by je WRITEBACK na konci instrukce
+     * přepsal zpět starou hodnotou).
      */
     z80_local_cache_t _lcache = {
         .A = &rA, .F = &rF,
@@ -111,9 +111,9 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 #endif
 
     int cycles_executed = 0;
-    int last_sync = 0;  /* Posledni bod synchronizace cpu->cycles */
+    int last_sync = 0;  /* Poslední bod synchronizace cpu->cycles */
 
-    /* Makra pro pristup k 16bit parum z lokalnich promennych */
+    /* Makra pro přístup k 16bit párům z lokálních proměnných */
 #define AF_VAL  ((uint16_t)((rA << 8) | rF))
 #define BC_VAL  ((uint16_t)((rB << 8) | rC))
 #define DE_VAL  ((uint16_t)((rD << 8) | rE))
@@ -124,21 +124,21 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 #define SET_DE(v) do { rD = (uint8_t)((v) >> 8); rE = (uint8_t)(v); } while(0)
 #define SET_HL(v) do { rH = (uint8_t)((v) >> 8); rL = (uint8_t)(v); } while(0)
 
-    /* WZ pristup */
+    /* WZ přístup */
 #define WZH_VAL ((uint8_t)(rWZ >> 8))
 #define WZL_VAL ((uint8_t)(rWZ & 0xFF))
 #define SET_WZH(v) do { rWZ = (rWZ & 0x00FF) | ((uint16_t)(v) << 8); } while(0)
 #define SET_WZL(v) do { rWZ = (rWZ & 0xFF00) | (uint8_t)(v); } while(0)
 
     /*
-     * Makra pro pristup k pameti/IO pres lokalni cache callback pointeru.
-     * Pouzivaji _mrd/_mwr/_prd/_pwr misto cpu->mread_cb atd.
+     * Makra pro přístup k paměti/IO přes lokální cache callback pointerů.
+     * Používají _mrd/_mwr/_prd/_pwr místo cpu->mread_cb atd.
      *
-     * E1 (KROK 1): pri zapnutem MZ800EMU_CFG_RAM_FASTPATH jdou cteni/zapisy
-     * do pameti pres z80_fp_read/z80_fp_write (inline page-table fast-path se
-     * fall-backem na callback). op_tstate inkrementuje makro (timing zachovan),
-     * helper resi jen pristup + replikaci vedlejsich efektu (regDBUS_latch).
-     * IO porty fast-path NEMA (zustavaji vzdy pres _prd/_pwr).
+     * E1 (KROK 1): při zapnutém MZ800EMU_CFG_RAM_FASTPATH jdou čtení/zápisy
+     * do paměti přes z80_fp_read/z80_fp_write (inline page-table fast-path se
+     * fall-backem na callback). op_tstate inkrementuje makro (timing zachován),
+     * helper řeší jen přístup + replikaci vedlejších efektů (regDBUS_latch).
+     * IO porty fast-path NEMÁ (zůstávají vždy přes _prd/_pwr).
      */
 #ifdef MZ800EMU_CFG_RAM_FASTPATH
 #define RD(addr)        (cpu->op_tstate += 3, z80_fp_read(cpu, (addr), 0))
@@ -148,9 +148,9 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 #else
 #define RD(addr)        (cpu->op_tstate += 3, _mrd(cpu, (addr), 0, _mrd_d))
 #define WR(addr, val)   do { cpu->op_tstate += 3; _mwr(cpu, (addr), (val), _mwr_d); } while(0)
-    /* M1 fetch z PC (opkodovy cyklus, 4 T-stavy, m1_state=1) - jen v DISPATCH a prefix handlerech */
+    /* M1 fetch z PC (opkódový cyklus, 4 T-stavy, m1_state=1) - jen v DISPATCH a prefix handlerech */
 #define M1_FETCH() (cpu->op_tstate += 4, _mrd(cpu, rPC++, 1, _mrd_d))
-    /* Operandovy fetch z PC (3 T-stavy, m1_state=0) - pro cteni operandu v instrukcich */
+    /* Operandový fetch z PC (3 T-stavy, m1_state=0) - pro čtení operandu v instrukcích */
 #define FETCH() (cpu->op_tstate += 3, _mrd(cpu, rPC++, 0, _mrd_d))
 #endif
 
@@ -161,26 +161,26 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 
 #define FETCH16() (tmp_lo = FETCH(), tmp_hi = FETCH(), (uint16_t)(tmp_lo | (tmp_hi << 8)))
 
-    /* Inkrementace R (dolnich 7 bitu) */
+    /* Inkrementace R (dolních 7 bitů) */
 #define INC_R() do { rR = (rR & 0x80) | ((rR + 1) & 0x7F); } while(0)
 
-    /* PUSH/POP pres lokalni SP a RD16/WR16 makra */
+    /* PUSH/POP přes lokální SP a RD16/WR16 makra */
 #define PUSH(val) do { rSP -= 2; WR16(rSP, val); } while(0)
 #define POP() (tmp16 = RD16(rSP), rSP += 2, tmp16)
 
 #if Z80_DIRECT_REGS
     /*
-     * Per-step varianta: registry ZIJI primo v cpu->, neni co prenaset.
-     * WRITEBACK = uplny no-op. RELOAD dorovnava jen savedF na aktualni rF
-     * (= cpu->af.l) - kdyz callback/interrupt zmenil F zvenci, savedF se
-     * musi posunout STEJNE jako v batch variante (RELOAD tam dela savedF=rF),
-     * jinak by se Q-edge logika DISPATCH chovala odlisne. Tim je Q-flag
-     * chovani bit-identicke s batch variantou.
+     * Per-step varianta: registry ŽIJÍ přímo v cpu->, není co přenášet.
+     * WRITEBACK = úplný no-op. RELOAD dorovnává jen savedF na aktuální rF
+     * (= cpu->af.l) - když callback/interrupt změnil F zvenčí, savedF se
+     * musí posunout STEJNĚ jako v batch variantě (RELOAD tam dělá savedF=rF),
+     * jinak by se Q-edge logika DISPATCH chovala odlišně. Tím je Q-flag
+     * chování bit-identické s batch variantou.
      */
 #define WRITEBACK() do { } while(0)
 #define RELOAD()    do { savedF = rF; } while(0)
 #else
-    /* Writeback lokalnich registru do struktury */
+    /* Writeback lokálních registrů do struktury */
 #define WRITEBACK() do { \
     cpu->af.h = rA; cpu->af.l = rF; \
     cpu->bc.h = rB; cpu->bc.l = rC; \
@@ -191,7 +191,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
     cpu->q = rQ; \
 } while(0)
 
-    /* Reload lokalnich registru ze struktury */
+    /* Reload lokálních registrů ze struktury */
 #define RELOAD() do { \
     rA = cpu->af.h; rF = cpu->af.l; \
     rB = cpu->bc.h; rC = cpu->bc.l; \
@@ -204,10 +204,10 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 #endif
 
     /*
-     * Fire iff_change_cb pokud nastaven. Volano po zmene cpu->iff1/iff2.
+     * Fire iff_change_cb pokud nastaven. Voláno po změně cpu->iff1/iff2.
      * Hot path: NULL ptr check + branch (= ~0 cycles pokud cb NULL).
-     * Pri volani callbacku z dispatch (op_F3, op_FB) je nutne pred-zavolat
-     * WRITEBACK() a po-RELOAD() (= callback muze cist registry pres
+     * Při volání callbacku z dispatch (op_F3, op_FB) je nutné před-zavolat
+     * WRITEBACK() a po-RELOAD() (= callback může číst registry přes
      * z80_get_reg apod.). Reason = z80_iff_change_reason_t cast na uint8_t.
      */
 #define FIRE_IFF_CHANGE(reason) do { \
@@ -250,7 +250,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
      *
      * Použít přímo RD16(rSP) by inkrementovalo op_tstate u zbytečné
      * druhé čtenářské operace (PEEK je čistě read, ne stack pop). Tady
-     * vyrobíme PEEK16 přímo přes rd_slow (= mread bez op_tstate tika),
+     * vyrobíme PEEK16 přímo přes rd_slow (= mread bez op_tstate tiku),
      * což odpovídá běžnému debug peek vzoru jinde v jádře.
      *
      * Hot path: jediný NULL ptr check.
@@ -266,9 +266,9 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
     } \
 } while(0)
 
-    /* Aritmeticke operace pouzivajici lokalni cache */
+    /* Aritmetické operace používající lokální cache */
 
-    /* 8bit ADD - vraci vysledek, nastavuje rF */
+    /* 8bit ADD - vrací výsledek, nastavuje rF */
 #define ADD8(a, b) ({ \
     uint16_t _r16 = (a) + (b); \
     uint8_t _r8 = (uint8_t)_r16; \
@@ -319,7 +319,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
     /* OR */
 #define OR8(val) do { rA |= (val); rF = sz53p_table[rA]; } while(0)
 
-    /* CP - porovnani (jako SUB, ale vysledek se neuklada, F3/F5 z operandu) */
+    /* CP - porovnání (jako SUB, ale výsledek se neukládá, F3/F5 z operandu) */
 #define CP8(val) do { \
     uint8_t _v = (val); \
     uint16_t _r16 = rA - _v; \
@@ -393,7 +393,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
     rH = _rh; rL = (uint8_t)_r32; \
 } while(0)
 
-    /* Rotace/posuvy (CB prefix) - vraceni vysledek, nastavuji rF */
+    /* Rotace/posuvy (CB prefix) - vracejí výsledek, nastavují rF */
 #define RLC(val) ({ \
     uint8_t _c = ((val) >> 7) & 1; \
     uint8_t _r = ((val) << 1) | _c; \
@@ -442,7 +442,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
     rF |= ((val) & (F3 | F5)); \
 } while(0)
 
-    /* BIT n, (HL)/(IX+d)/(IY+d) - F3/F5 z horniho bajtu adresy */
+    /* BIT n, (HL)/(IX+d)/(IY+d) - F3/F5 z horního bajtu adresy */
 #define BIT_MEM(n, val, addr_hi) do { \
     uint8_t _r = (val) & (1 << (n)); \
     rF = (rF & CF) | HF | (_r & SF); \
@@ -450,7 +450,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
     rF |= ((addr_hi) & (F3 | F5)); \
 } while(0)
 
-    /* Docasne promenne pro FETCH16/POP */
+    /* Dočasné proměnné pro FETCH16/POP */
     uint8_t tmp_lo, tmp_hi;
     uint16_t tmp16;
     int cycles;
@@ -459,7 +459,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 
 #if USE_COMPUTED_GOTO
 
-    /* Base opcode dispatch tabulka (256 zaznamu) */
+    /* Base opcode dispatch tabulka (256 záznamů) */
     static const void* const base_dispatch[256] = {
         &&op_00, &&op_01, &&op_02, &&op_03, &&op_04, &&op_05, &&op_06, &&op_07,
         &&op_08, &&op_09, &&op_0A, &&op_0B, &&op_0C, &&op_0D, &&op_0E, &&op_0F,
@@ -506,7 +506,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 } while(0)
 
     /*
-     * NEXT: lightweight - jen pricte cykly a dispatch dalsi instrukce.
+     * NEXT: lightweight - jen přičte cykly a dispatch další instrukce.
      * Interrupt handling a post_step jsou ve slow path (check_interrupts label).
      */
 #define NEXT(c) do { \
@@ -521,7 +521,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
     DISPATCH(); \
 } while(0)
 
-    /* NEXT_SLOW: pro instrukce co meni interrupt stav (EI, DI, HALT, RETI, RETN) */
+    /* NEXT_SLOW: pro instrukce co mění interrupt stav (EI, DI, HALT, RETI, RETN) */
 #define NEXT_SLOW(c) do { \
     cycles_executed += (c) + cpu->wait_cycles; \
     cpu->wait_cycles = 0; \
@@ -549,7 +549,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 
 #endif /* USE_COMPUTED_GOTO */
 
-    /* Vstupni bod: pocatecni interrupt check a start dispatch */
+    /* Vstupní bod: počáteční interrupt check a start dispatch */
     if (!cpu->external_int_handling) {
         bool ld_a_ir_was = cpu->ld_a_ir;
         cpu->ld_a_ir = false;
@@ -568,7 +568,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
             }
         }
     }
-    /* ei_delay se musi vycistit vzdy - i pri external_int_handling */
+    /* ei_delay se musí vyčistit vždy - i při external_int_handling */
     cpu->ei_delay = false;
 
     if (cpu->halted) {
@@ -587,7 +587,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 
     DISPATCH();
 
-    /* Slow path: zpracovani preruseni, post_step, kontrola halted */
+    /* Slow path: zpracování přerušení, post_step, kontrola halted */
 check_interrupts:
     {
         /* Post-step callback (MZ-700 per-line WAIT) */
@@ -604,7 +604,7 @@ check_interrupts:
             RELOAD();
         }
 
-        /* Zpracovani preruseni */
+        /* Zpracování přerušení */
         if (!cpu->external_int_handling) {
             bool ld_a_ir_was = cpu->ld_a_ir;
             cpu->ld_a_ir = false;
@@ -625,36 +625,36 @@ check_interrupts:
             }
         }
 #if !Z80_DIRECT_REGS
-        /* BATCH (Z80_DIRECT_REGS=0, verejne z80_execute): vstupni clear na
-         * zacatku z80_execute() bezi jen 1x na celou davku, proto ei_delay
-         * nastaveny instrukci EI uvnitr davky musi smazat tento epilog-clear,
-         * jinak by zustal viset pres dalsi instrukce v jednom z80_execute
-         * volani a maskovatelne preruseni by se po EI uvnitr davky neprijalo. */
+        /* BATCH (Z80_DIRECT_REGS=0, veřejné z80_execute): vstupní clear na
+         * začátku z80_execute() běží jen 1x na celou dávku, proto ei_delay
+         * nastavený instrukcí EI uvnitř dávky musí smazat tento epilog-clear,
+         * jinak by zůstal viset přes další instrukce v jednom z80_execute
+         * volání a maskovatelné přerušení by se po EI uvnitř dávky nepřijalo. */
         cpu->ei_delay = false;
 #else
         /* PER-STEP (Z80_DIRECT_REGS=1, z80_step) - EI-delay fix (gun-runner):
-         * clear je ZAMERNE VYNECHAN. ei_delay nastaveny op_FB (EI) musi PREZIT
-         * navrat z z80_step(), aby ho mzarch interrupt poll (mzarch_main_process_
-         * interrupt: 'iff1 && !ei_delay') jeste videl nastaveny a preruseni po EI
-         * zablokoval. Vycisti ho az vstupni clear na zacatku PRISTIHO z80_step,
-         * PRED dispatchem instrukce nasledujici po EI -> EI-delay = presne jedna
-         * instrukce. Replikuje noint_once z80ex jadra (set v EI(), clear na
-         * zacatku pristiho stepu). Bez tohoto byl interrupt prijat hned po EI:
-         * u sekvence "EI; LD SP,nn" pak push sel na stary zasobnik a poskodil
-         * pamet (regrese v2.0.2 - hra Gun Runner se zasekla). */
+         * clear je ZÁMĚRNĚ VYNECHÁN. ei_delay nastavený op_FB (EI) musí PŘEŽÍT
+         * návrat z z80_step(), aby ho mzarch interrupt poll (mzarch_main_process_
+         * interrupt: 'iff1 && !ei_delay') ještě viděl nastavený a přerušení po EI
+         * zablokoval. Vyčistí ho až vstupní clear na začátku PŘÍŠTÍHO z80_step,
+         * PŘED dispatchem instrukce následující po EI -> EI-delay = přesně jedna
+         * instrukce. Replikuje noint_once z80ex jádra (set v EI(), clear na
+         * začátku příštího stepu). Bez tohoto byl interrupt přijat hned po EI:
+         * u sekvence "EI; LD SP,nn" pak push šel na starý zásobník a poškodil
+         * paměť (regrese v2.0.2 - hra Gun Runner se zasekla). */
 #endif
 
-        /* HALT - cykly uz pricteny v NEXT_SLOW(4) */
+        /* HALT - cykly už přičteny v NEXT_SLOW(4) */
         if (cpu->halted) goto done;
 
         if (cycles_executed >= target_cycles) goto done;
 
-        /* INVARIANT (EI-delay lifetime): v per-step variante (Z80_DIRECT_REGS=1,
-         * target_cycles=1) je tento DISPATCH() nedosazitelny - radek vyse vzdy
-         * skoci na 'done' (kazda instrukce spotrebuje >=4 T). Pouziva se jen v
+        /* INVARIANT (EI-delay lifetime): v per-step variantě (Z80_DIRECT_REGS=1,
+         * target_cycles=1) je tento DISPATCH() nedosažitelný - řádek výše vždy
+         * skočí na 'done' (každá instrukce spotřebuje >=4 T). Používá se jen v
          * batch. POZOR: kdyby se v per-step na tento DISPATCH v budoucnu dalo
-         * dostat (napr. pre-empce / wait state), obesel by vstupni clear ei_delay
-         * a delay po EI by se protahl na 2 instrukce. */
+         * dostat (např. pre-empce / wait state), obešel by vstupní clear ei_delay
+         * a delay po EI by se protáhl na 2 instrukce. */
         DISPATCH();
     }
 
@@ -917,24 +917,24 @@ check_interrupts:
     /* HALT */
     op_76: cpu->halted = true;
            if (cpu->halt_cb) { WRITEBACK(); cpu->halt_cb(cpu, cpu->halt_data); RELOAD(); }
-           /* CPU control event - HALT entry. Nezavisly na halt_cb (= BC).
-            * Event vidi PC = X+1 (post-fetch, adresa za HALT) - sémantika
-            * eventu beze zmeny (viz test_eventlog). */
+           /* CPU control event - HALT entry. Nezávislý na halt_cb (= BC).
+            * Event vidí PC = X+1 (post-fetch, adresa za HALT) - sémantika
+            * eventu beze změny (viz test_eventlog). */
            if (cpu->cpu_ctrl_event_cb) {
                WRITEBACK();
                cpu->cpu_ctrl_event_cb(cpu, (uint8_t)Z80_CPU_CTRL_HALT_ENTER,
                                       cpu->pc, cpu->cpu_ctrl_event_data);
                RELOAD();
            }
-           /* BUG1 fix: behem HALT drzi realny Z80 PC = X = adresa instrukce
-            * HALT (instrukce se re-fetchuje cyklicky kvuli DRAM refreshi,
-            * PC se inkrementuje az pred skokem do INT/NMI rutiny - viz KB
-            * 12-cpu-control.md:27, 07-interrupts.md:147,151). FETCH() vsak
-            * PC uz inkrementoval na X+1, tak ho vratime na X. Inkrement
-            * zpet na X+1 (navratova adresa za HALT) provede INT/NMI accept
-            * v handle_interrupts_internal(). Az PO HALT_ENTER eventu vyse,
-            * aby event videl X+1. Dekrementujeme lokalni rPC - WRITEBACK na
-            * done: ho propise do cpu->pc. */
+           /* BUG1 fix: během HALT drží reálný Z80 PC = X = adresa instrukce
+            * HALT (instrukce se re-fetchuje cyklicky kvůli DRAM refreshi,
+            * PC se inkrementuje až před skokem do INT/NMI rutiny - viz KB
+            * 12-cpu-control.md:27, 07-interrupts.md:147,151). FETCH() však
+            * PC už inkrementoval na X+1, tak ho vrátíme na X. Inkrement
+            * zpět na X+1 (návratová adresa za HALT) provede INT/NMI accept
+            * v handle_interrupts_internal(). Až PO HALT_ENTER eventu výše,
+            * aby event viděl X+1. Dekrementujeme lokální rPC - WRITEBACK na
+            * done: ho propíše do cpu->pc. */
            rPC--;
            NEXT_SLOW(4);
 
@@ -1079,7 +1079,7 @@ check_interrupts:
     /* CALL nn */
     op_CD: { uint16_t addr = FETCH16(); rWZ = addr; FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); }
 
-    /* Aritmetika s okamzitym operandem */
+    /* Aritmetika s okamžitým operandem */
     op_C6: { uint8_t v = FETCH(); rA = ADD8(rA, v); NEXT(7); }
     op_CE: { uint8_t v = FETCH(); rA = ADC8(rA, v); NEXT(7); }
     op_D6: { uint8_t v = FETCH(); rA = SUB8(rA, v); NEXT(7); }
@@ -1092,10 +1092,10 @@ check_interrupts:
     /*
      * RST nn
      *
-     * Pred PUSH PC fire cpu_ctrl_event_cb (= konzument vidi puvodni PC
-     * predtim nez se zmeni na vektor). PC predavany do cb je rPC = adresa
-     * za RST opcode (= shodne s tim co se push na stack). WRITEBACK/RELOAD
-     * sjednoceni lokalni cache s cpu->pc na dobu callbacku.
+     * Před PUSH PC fire cpu_ctrl_event_cb (= konzument vidí původní PC
+     * předtím než se změní na vektor). PC předávaný do cb je rPC = adresa
+     * za RST opcode (= shodné s tím co se push na stack). WRITEBACK/RELOAD
+     * sjednocení lokální cache s cpu->pc na dobu callbacku.
      */
 #define RST_HOOK(_evt) do { \
     if (cpu->cpu_ctrl_event_cb) { \
@@ -1598,13 +1598,13 @@ check_interrupts:
                 NEXT(16);
             }
 
-            /* Nedokumentovane/neplatne ED instrukce - NOP (8T) */
+            /* Nedokumentované/neplatné ED instrukce - NOP (8T) */
             default: NEXT(8);
         }
     }
 
     /* ========== DD/FD prefix makro ========== */
-    /* Generujeme DD a FD handlery pomoci makra - IX vs IY */
+    /* Generujeme DD a FD handlery pomocí makra - IX vs IY */
 
 #define DDFD_PREFIX(IDX_W, IDX_H, IDX_L) do { \
     INC_R(); \
@@ -1787,7 +1787,7 @@ check_interrupts:
         case 0xE9: rPC = (IDX_W); NEXT(8); \
         /* LD SP, IX/IY */ \
         case 0xF9: rSP = (IDX_W); NEXT(10); \
-        /* Nerozpoznany opcode - provest jako normalni (prefix se ignoruje) */ \
+        /* Nerozpoznaný opcode - provést jako normální (prefix se ignoruje) */ \
         default: rPC--; NEXT(4); \
     } \
 } while(0)
@@ -1803,27 +1803,27 @@ dispatch_switch:
     {
         INC_R();
         uint8_t op = M1_FETCH();
-        /* Fallback switch - same labels ale pres switch */
-        /* (Pro non-GCC kompilatory - neni implementovano v teto verzi) */
+        /* Fallback switch - same labels ale přes switch */
+        /* (Pro non-GCC kompilátory - není implementováno v této verzi) */
         (void)op;
         goto done; /* Placeholder */
     }
 #endif
 
 done:
-    /* Lokalni cache zaniká s navratem - odregistrovat */
+    /* Lokální cache zaniká s návratem - odregistrovat */
     cpu->_active_cache = NULL;
-    /* Final sync cyklu co se nahromadily v fast path */
+    /* Final sync cyklů co se nahromadily v fast path */
     if (cycles_executed > last_sync) {
         cpu->cycles += cycles_executed - last_sync;
         cpu->total_cycles += cycles_executed - last_sync;
     }
-    /* Writeback lokalnich registru */
+    /* Writeback lokálních registrů */
     WRITEBACK();
 
     /*
-     * Uklid maker - NUTNE pro dvojity include teto .inc (batch + step).
-     * Bez kompletniho #undef by druhy include hlasil redefinici maker.
+     * Úklid maker - NUTNÉ pro dvojitý include této .inc (batch + step).
+     * Bez kompletního #undef by druhý include hlásil redefinici maker.
      */
 #undef AF_VAL
 #undef BC_VAL
@@ -1887,7 +1887,7 @@ done:
 }
 
 #if Z80_DIRECT_REGS
-/* Uvolneni registrovych aliasu step varianty (platnost = jen tento include). */
+/* Uvolnění registrových aliasů step varianty (platnost = jen tento include). */
 #undef rA
 #undef rF
 #undef rB

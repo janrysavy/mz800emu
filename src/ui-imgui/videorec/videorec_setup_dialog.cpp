@@ -28,6 +28,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "ui-imgui/videorec/videorec_menu.h"
 
@@ -268,6 +269,7 @@ void imgui_videorec_setup_dialog(void)
             config.countSelectionMax = 1;
             config.flags = ImGuiFileDialogFlags_Modal | ImGuiFileDialogFlags_DontShowHiddenFiles |
                            ImGuiFileDialogFlags_ShowDevicesButton;
+            imgui_filechooser_prepare_config(BASEUI_FCHOOSER_CAT_VIDEO, config);
             ImGuiFileDialog::Instance()->OpenDialog("VideorecDirChooser", _("Select Directory"), nullptr, config);
             s_dir_chooser_open = true;
         }

@@ -168,7 +168,7 @@ void imgui_qdisk_create_image(void)
 {
     baseui_fchooser_t *fch = NULL;
 
-    fch = baseui_filechooser_save_file(_("Create new QD image"), ".mzq", NULL, _("qdimage.mzq"), NULL, qdisk_create_image_cb, NULL);
+    fch = baseui_filechooser_save_file(BASEUI_FCHOOSER_CAT_QDISK, _("Create new QD image"), ".mzq", NULL, _("qdimage.mzq"), NULL, qdisk_create_image_cb, NULL);
 
     if (!fch)
     {

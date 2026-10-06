@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <glib.h>
 
+#include "baseui_fchooser_lastdir.h"
+
 typedef enum baseui_fchooser_state_t
 {
     BASEUI_FCHOOSER_STATE_CREATED,
@@ -29,6 +31,7 @@ typedef struct baseui_fchooser_t
 {
     baseui_fchooser_state_t state;
     baseui_fchooser_type_t type;
+    baseui_fchooser_category_t category; // kategorie pro paměť posledního adresáře
     char *title;
     char *filter;
     char *path;         // implicitni cesta
@@ -47,10 +50,10 @@ extern "C"
 {
 #endif
 
-    baseui_fchooser_t *baseui_filechooser_open_file(const char *title, const char *filter, const char *path, const char *fileName, const char *filePathName, BaseuiFchooserCb cb, gpointer user_data);
-    baseui_fchooser_t *baseui_filechooser_open_dir(const char *title, const char *path, const char *fileName, const char *filePathName, BaseuiFchooserCb cb, gpointer user_data);
-    baseui_fchooser_t *baseui_filechooser_open_rw_file(const char *title, const char *filter, const char *path, const char *fileName, const char *filePathName, BaseuiFchooserCb cb, gpointer user_data);
-    baseui_fchooser_t *baseui_filechooser_save_file(const char *title, const char *filter, const char *path, const char *fileName, const char *filePathName, BaseuiFchooserCb cb, gpointer user_data);
+    baseui_fchooser_t *baseui_filechooser_open_file(baseui_fchooser_category_t category, const char *title, const char *filter, const char *path, const char *fileName, const char *filePathName, BaseuiFchooserCb cb, gpointer user_data);
+    baseui_fchooser_t *baseui_filechooser_open_dir(baseui_fchooser_category_t category, const char *title, const char *path, const char *fileName, const char *filePathName, BaseuiFchooserCb cb, gpointer user_data);
+    baseui_fchooser_t *baseui_filechooser_open_rw_file(baseui_fchooser_category_t category, const char *title, const char *filter, const char *path, const char *fileName, const char *filePathName, BaseuiFchooserCb cb, gpointer user_data);
+    baseui_fchooser_t *baseui_filechooser_save_file(baseui_fchooser_category_t category, const char *title, const char *filter, const char *path, const char *fileName, const char *filePathName, BaseuiFchooserCb cb, gpointer user_data);
     void baseui_filechooser_destroy(baseui_fchooser_t *fch);
 
     /**
@@ -63,10 +66,10 @@ extern "C"
      */
     bool baseui_filechooser_can_wait(void);
 
-    char *baseui_filechooser_open_file_wait(const char *title, const char *filter, const char *path, const char *fileName, const char *filePathName, char **selected_path);
-    char *baseui_filechooser_open_dir_wait(const char *title, const char *path, const char *fileName, const char *filePathName);
-    char *baseui_filechooser_open_rw_file_wait(const char *title, const char *filter, const char *path, const char *fileName, const char *filePathName, char **selected_path);
-    char *baseui_filechooser_save_file_wait(const char *title, const char *filter, const char *path, const char *fileName, const char *filePathName, char **selected_path);
+    char *baseui_filechooser_open_file_wait(baseui_fchooser_category_t category, const char *title, const char *filter, const char *path, const char *fileName, const char *filePathName, char **selected_path);
+    char *baseui_filechooser_open_dir_wait(baseui_fchooser_category_t category, const char *title, const char *path, const char *fileName, const char *filePathName);
+    char *baseui_filechooser_open_rw_file_wait(baseui_fchooser_category_t category, const char *title, const char *filter, const char *path, const char *fileName, const char *filePathName, char **selected_path);
+    char *baseui_filechooser_save_file_wait(baseui_fchooser_category_t category, const char *title, const char *filter, const char *path, const char *fileName, const char *filePathName, char **selected_path);
 
     const char *baseui_filechooser_get_extension_ptr(const char *filepath);
 

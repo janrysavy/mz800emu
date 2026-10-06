@@ -79,6 +79,20 @@ extern "C" void snapshot_notification_show(const char *message, bool is_error)
 }
 
 /* ================================================================
+ * Stub paměti adresářů dialogu (skutečná implementace je
+ * v imgui_filechooser.cpp, který test nelinkuje). Dialog nastavení
+ * videa ji volá před OpenDialog; konfiguraci nechá beze změny.
+ * ================================================================ */
+
+#include "ui-imgui/filechooser/imgui_filechooser.h"
+
+void imgui_filechooser_prepare_config(baseui_fchooser_category_t category, IGFD::FileDialogConfig &config)
+{
+    (void)category;
+    (void)config;
+}
+
+/* ================================================================
  * SDL3 + GL + ImGui (vzor test_ui_smoke.cpp)
  * ================================================================ */
 

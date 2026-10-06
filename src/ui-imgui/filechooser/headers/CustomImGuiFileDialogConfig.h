@@ -146,7 +146,11 @@
 #define editPlaceButtonString ICON_IGFD_EDIT
 
 // a group for bookmarks will be added by default, but you can also create it yourself and many more
-//#define USE_PLACES_BOOKMARKS
+// Záložky uživatele (+/- v panelu Places). Ukládají se do INI emulátoru
+// (sekce [FILECHOOSER], klíč bookmarks) přes SerializePlaces(), viz
+// imgui_filechooser.cpp. Jméno skupiny je klíčem serializace - neměnit,
+// jinak se uložené záložky nenačtou.
+#define USE_PLACES_BOOKMARKS
 #define PLACES_BOOKMARK_DEFAULT_OPEPEND false
 #define placesBookmarksGroupName ICON_IGFD_BOOKMARK " Bookmarks"
 #define placesBookmarksDisplayOrder 0  // to the first

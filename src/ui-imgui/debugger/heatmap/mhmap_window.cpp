@@ -35,6 +35,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "libs/cfgfile/cfgmodule.h"
 #include "libs/cfgfile/cfgelement.h"
 #include "i18n.h"
@@ -618,6 +619,7 @@ static void open_import_dialog ( void )
                    ImGuiFileDialogFlags_ShowDevicesButton;
     /* Filtr na JSON soubory; uživatel může vybrat libovolný .json (typicky
      * meta.json), validace pak ověří format_version + mzarch. */
+    imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_EXPORT, config );
     ImGuiFileDialog::Instance ( )->OpenDialog ( "MhmapImportDir",
                                                 _( "Select CDL meta.json file" ),
                                                 ".json", config );
@@ -740,6 +742,7 @@ static void open_export_dialog ( void )
                    ImGuiFileDialogFlags_DontShowHiddenFiles |
                    ImGuiFileDialogFlags_ShowDevicesButton |
                    ImGuiFileDialogFlags_ConfirmOverwrite;
+    imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_EXPORT, config );
     ImGuiFileDialog::Instance ( )->OpenDialog ( "MhmapExportDir",
                                                 _( "Save CDL meta.json file" ),
                                                 ".json", config );

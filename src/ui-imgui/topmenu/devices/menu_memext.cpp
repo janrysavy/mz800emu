@@ -43,7 +43,7 @@ void imgui_memext_luftner_select_flash_filepath(void)
     baseui_fchooser_t *fch;
 
     const char *title = _("Select FLASH image file to open");
-    fch = baseui_filechooser_open_file(title, ".dat, .*", NULL, NULL, MEMEXT_LUFTNER_GET_FLASH_FILEPATH(), imgui_memext_luftner_select_flash_filepath_cb, NULL);
+    fch = baseui_filechooser_open_file(BASEUI_FCHOOSER_CAT_RAMDISK, title, ".dat, .*", NULL, NULL, MEMEXT_LUFTNER_GET_FLASH_FILEPATH(), imgui_memext_luftner_select_flash_filepath_cb, NULL);
 
     if (!fch)
     {

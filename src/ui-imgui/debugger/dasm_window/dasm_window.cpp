@@ -40,6 +40,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "i18n.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "ui-imgui/debugger/symbols/symdb_bridge.h"
@@ -865,6 +866,7 @@ static void open_save_browser(void)
               | ImGuiFileDialogFlags_ConfirmOverwrite;
     cfg.fileName = (s_state.save_dialect == DASM_DIALECT_SDCC_ASZ80)
                    ? "disasm.s" : "disasm.asm";
+    imgui_filechooser_prepare_config(BASEUI_FCHOOSER_CAT_DBG_EXPORT, cfg);
     ImGuiFileDialog::Instance()->OpenDialog(
         "DasmSavePicker",
         _("Save Disassembly As..."),

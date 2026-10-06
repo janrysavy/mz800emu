@@ -3159,7 +3159,12 @@ bool IGFD::PlacesFeature::m_DrawPlacesPane(FileDialogInternal& vFileDialogIntern
     for (const auto& group : m_OrderedGroups) {
         auto group_ptr = group.second.lock();
         if (group_ptr != nullptr) {
-            if (ImGui::CollapsingHeader(group_ptr->name.c_str(), group_ptr->collapsingHeaderFlag)) {
+            /* mz800emu: rozbalení řídí group_ptr->opened místo ImGui storage
+             * okna dialogu (ta je per titulek dialogu a neukládá se), aby byl
+             * stav společný pro všechny dialogy a aplikace ho mohla uložit. */
+            ImGui::SetNextItemOpen(group_ptr->opened, ImGuiCond_Always);
+            group_ptr->opened = ImGui::CollapsingHeader(group_ptr->name.c_str(), group_ptr->collapsingHeaderFlag);
+            if (group_ptr->opened) {
                 ImGui::BeginChild(group_ptr->name.c_str(), ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
                 if (group_ptr->canBeEdited) {
                     ImGui::PushID(group_ptr.get());
@@ -3293,6 +3298,7 @@ bool IGFD::PlacesFeature::AddPlacesGroup(const std::string& vGroupName, const si
     group_ptr->displayOrder  = vDisplayOrder;
     group_ptr->name          = vGroupName;
     group_ptr->defaultOpened = vOpenedByDefault;
+    group_ptr->opened        = vOpenedByDefault;  // mz800emu
     if (group_ptr->defaultOpened) {
         group_ptr->collapsingHeaderFlag = ImGuiTreeNodeFlags_DefaultOpen;
     }

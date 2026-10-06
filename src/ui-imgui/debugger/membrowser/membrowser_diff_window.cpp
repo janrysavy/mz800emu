@@ -42,6 +42,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "i18n.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 
@@ -505,6 +506,7 @@ static void open_export_dialog ( void )
                    | ImGuiFileDialogFlags_DontShowHiddenFiles
                    | ImGuiFileDialogFlags_ShowDevicesButton
                    | ImGuiFileDialogFlags_ConfirmOverwrite;
+    imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_MEMORY, config );
     ImGuiFileDialog::Instance ( )->OpenDialog (
         "MembrowserDiffExportFch",
         _( "Export diff as text" ),

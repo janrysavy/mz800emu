@@ -44,12 +44,12 @@ void imgui_ramdisk_std_open_file(void)
     if (RAMDISK_TEST_STD_TYPE(RAMDISK_TYPE_SRAM))
     {
         const char *title = _("Select SRAM disk image file to open");
-        fch = baseui_filechooser_open_rw_file(title, ".dat, .*", NULL, NULL, g_ramdisk.std.filepath, imgui_ramdisk_std_open_file_cb, NULL);
+        fch = baseui_filechooser_open_rw_file(BASEUI_FCHOOSER_CAT_RAMDISK, title, ".dat, .*", NULL, NULL, g_ramdisk.std.filepath, imgui_ramdisk_std_open_file_cb, NULL);
     }
     else
     {
         const char *title = _("Select ROM disk image file to open");
-        fch = baseui_filechooser_open_file(title, ".dat, .*", NULL, NULL, g_ramdisk.std.filepath, imgui_ramdisk_std_open_file_cb, NULL);
+        fch = baseui_filechooser_open_file(BASEUI_FCHOOSER_CAT_RAMDISK, title, ".dat, .*", NULL, NULL, g_ramdisk.std.filepath, imgui_ramdisk_std_open_file_cb, NULL);
     };
 
     if (!fch)

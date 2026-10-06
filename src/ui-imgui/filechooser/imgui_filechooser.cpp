@@ -16,6 +16,8 @@
 #include "libs/imgui/imgui_internal.h"
 #include "libs/igfd/ImGuiFileDialog.h"
 #include "baseui/baseui_filechooser.h"
+#include "baseui/baseui_fchooser_lastdir.h"
+#include "imgui_filechooser.h"
 #include "res/CustomFont.h"
 #include "libs/mzf/mzf.h"
 #include "libs/mzf/mzf_tools.h"
@@ -27,13 +29,18 @@ extern "C"
     void imgui_filechooser_settings_init(void);
 };
 
-// Cache pro persistované šířky panelů FileDialogu
+// Cache pro persistované šířky panelů FileDialogu a rozbalení skupin Places
 static struct {
     float placesPaneWidth = 200.0f;
     bool placesPaneShown = false;
     float sidePaneWidth = 350.0f;
+    bool bookmarksOpen = false; // skupina Bookmarks rozbalená
+    bool recentOpen = false;    // skupina Recent rozbalená
+    bool devicesOpen = true;    // skupina Devices rozbalená
     bool loaded = false;
 } s_igfd_panel_state;
+
+static void places_groups_apply(void);
 
 // --- ImGuiSettingsHandler callbacky ---
 
@@ -42,6 +49,9 @@ static void IGFD_ClearAllFn(ImGuiContext *, ImGuiSettingsHandler *)
     s_igfd_panel_state.placesPaneWidth = 200.0f;
     s_igfd_panel_state.placesPaneShown = false;
     s_igfd_panel_state.sidePaneWidth = 350.0f;
+    s_igfd_panel_state.bookmarksOpen = false;
+    s_igfd_panel_state.recentOpen = false;
+    s_igfd_panel_state.devicesOpen = true;
     s_igfd_panel_state.loaded = false;
 }
 
@@ -66,6 +76,15 @@ static void IGFD_ReadLineFn(ImGuiContext *, ImGuiSettingsHandler *, void *entry,
     } else if (sscanf(line, "PlacesPaneShown=%d", &ival) == 1) {
         s_igfd_panel_state.placesPaneShown = (ival != 0);
         s_igfd_panel_state.loaded = true;
+    } else if (sscanf(line, "PlacesBookmarksOpen=%d", &ival) == 1) {
+        s_igfd_panel_state.bookmarksOpen = (ival != 0);
+        s_igfd_panel_state.loaded = true;
+    } else if (sscanf(line, "PlacesRecentOpen=%d", &ival) == 1) {
+        s_igfd_panel_state.recentOpen = (ival != 0);
+        s_igfd_panel_state.loaded = true;
+    } else if (sscanf(line, "PlacesDevicesOpen=%d", &ival) == 1) {
+        s_igfd_panel_state.devicesOpen = (ival != 0);
+        s_igfd_panel_state.loaded = true;
     } else if (sscanf(line, "SidePaneWidth=%f", &fval) == 1) {
         /* Defenzivní clamp - nesmyslně nízká hodnota = ignorovat, vrátit
          * default. Ochrana pro případ, že se v dříve uloženém .ini ocitla
@@ -84,6 +103,7 @@ static void IGFD_ApplyAllFn(ImGuiContext *, ImGuiSettingsHandler *)
     auto *dlg = ImGuiFileDialog::Instance();
     dlg->SetPlacesPaneWidth(s_igfd_panel_state.placesPaneWidth);
     dlg->SetPlacesPaneShown(s_igfd_panel_state.placesPaneShown);
+    places_groups_apply();
     // sidePaneWidth se aplikuje při otevření dialogu přes config
 }
 
@@ -107,7 +127,237 @@ static void IGFD_WriteAllFn(ImGuiContext *, ImGuiSettingsHandler *handler, ImGui
     buf->appendf("PlacesPaneWidth=%.1f\n", dlg->GetPlacesPaneWidth());
     buf->appendf("PlacesPaneShown=%d\n", dlg->IsPlacesPaneShown() ? 1 : 0);
     buf->appendf("SidePaneWidth=%.1f\n", cached_sidepane_w);
+    buf->appendf("PlacesBookmarksOpen=%d\n", s_igfd_panel_state.bookmarksOpen ? 1 : 0);
+    buf->appendf("PlacesRecentOpen=%d\n", s_igfd_panel_state.recentOpen ? 1 : 0);
+    buf->appendf("PlacesDevicesOpen=%d\n", s_igfd_panel_state.devicesOpen ? 1 : 0);
     buf->append("\n");
+}
+
+/* ========================================================================= */
+/*          Paměť adresářů: Recent, záložky, zachycení výsledku              */
+/* ========================================================================= */
+
+/** @brief Fáze sledování dialogu otevřeného přes imgui_filechooser_prepare_config(). */
+typedef enum
+{
+    LASTDIR_TRACK_IDLE,      /**< nic se nesleduje */
+    LASTDIR_TRACK_REQUESTED, /**< prepare proběhlo, OpenDialog ještě nemusel proběhnout */
+    LASTDIR_TRACK_OPEN,      /**< dialog je (nebo byl) otevřený, čeká se na zavření */
+} lastdir_track_t;
+
+/**
+ * @brief Stav napojení IGFD na paměť adresářů.
+ *
+ * @c mutex chrání @c track, @c category a @c recent_dirty, protože
+ * imgui_filechooser_prepare_config() se volá i z EMU vlákna. Ostatní členy
+ * používá jen UI vlákno.
+ */
+static struct
+{
+    GMutex mutex;
+    lastdir_track_t track;               /**< fáze sledovaného dialogu */
+    baseui_fchooser_category_t category; /**< kategorie sledovaného dialogu */
+    bool recent_dirty;                   /**< skupinu Recent je třeba přestavět */
+    bool bookmarks_loaded;               /**< záložky z INI už jsou v IGFD */
+    std::string bookmarks_cache;         /**< naposledy uložená serializace záložek */
+    std::string recent_group_name;       /**< jméno skupiny Recent (lokalizované při vzniku) */
+} s_lastdir_ui = {};
+
+/**
+ * @brief Zapamatuje adresář sledovaného dialogu, pokud byl potvrzen.
+ *
+ * IGFD po Close() zachovává IsOk() i výsledné cesty až do dalšího
+ * OpenDialog(), takže výsledek lze vyzvednout i snímek po zavření.
+ *
+ * @pre Volající drží s_lastdir_ui.mutex a dialog není otevřený.
+ * @post track == LASTDIR_TRACK_IDLE.
+ */
+static void lastdir_collect_result_locked(void)
+{
+    auto *dlg = ImGuiFileDialog::Instance();
+    if (dlg->IsOk())
+    {
+        /* U souboru adresář, kde byl vybrán; u výběru adresáře adresář sám
+         * (baseui pro OPEN_DIR vrací také GetCurrentPath()). */
+        std::string dir = dlg->GetCurrentPath();
+        baseui_fchooser_lastdir_remember(s_lastdir_ui.category, dir.c_str());
+        s_lastdir_ui.recent_dirty = true;
+    }
+    s_lastdir_ui.track = LASTDIR_TRACK_IDLE;
+}
+
+/**
+ * @brief Naplní skupinu Recent v panelu Places ze seznamu posledních adresářů.
+ * @pre Volá se z UI vlákna, když se panel Places nevykresluje (mimo Display()).
+ */
+static void lastdir_rebuild_recent_group(void)
+{
+    auto *dlg = ImGuiFileDialog::Instance();
+    if (s_lastdir_ui.recent_group_name.empty())
+    {
+        s_lastdir_ui.recent_group_name = std::string(ICON_IGFD_FOLDER_OPEN " ") + _("Recent");
+        /* Pořadí 5: mezi záložkami (0) a disky (10); needitovatelná =
+         * neserializuje se do záložek. */
+        dlg->AddPlacesGroup(s_lastdir_ui.recent_group_name, 5, false, s_igfd_panel_state.recentOpen);
+    }
+    auto *group = dlg->GetPlacesGroupPtr(s_lastdir_ui.recent_group_name);
+    if (group == nullptr)
+        return;
+
+    group->places.clear();
+    char **recent = baseui_fchooser_lastdir_get_recent();
+    for (char **p = recent; *p != NULL; p++)
+    {
+        /* Jméno = poslední složka cesty; plná cesta je v tooltipu (IGFD). */
+        char *base = g_path_get_basename(*p);
+        bool use_full = (base[0] == '\0' || strcmp(base, ".") == 0 || strcmp(base, G_DIR_SEPARATOR_S) == 0);
+        group->AddPlace(use_full ? *p : base, *p, false);
+        g_free(base);
+    }
+    g_strfreev(recent);
+}
+
+/**
+ * @brief Vrátí ukazatel na příznak rozbalení v cache pro skupinu Places.
+ * @param i Index skupiny: 0 = Bookmarks, 1 = Recent, 2 = Devices.
+ * @param name [out] Jméno skupiny v IGFD (u Recent prázdné, dokud skupina nevznikla).
+ * @return Ukazatel do s_igfd_panel_state.
+ */
+static bool *places_group_state(int i, std::string &name)
+{
+    switch (i)
+    {
+    case 0:
+        name = placesBookmarksGroupName;
+        return &s_igfd_panel_state.bookmarksOpen;
+    case 1:
+        name = s_lastdir_ui.recent_group_name;
+        return &s_igfd_panel_state.recentOpen;
+    default:
+        name = placesDevicesGroupName;
+        return &s_igfd_panel_state.devicesOpen;
+    }
+}
+
+/**
+ * @brief Nastaví rozbalení skupin Places v IGFD podle cache (po načtení imgui.ini).
+ * @pre UI vlákno, mimo Display(). Neexistující skupinu (Recent před prvním
+ *      otevřením dialogu) přeskočí - ta převezme stav z cache při vzniku.
+ */
+static void places_groups_apply(void)
+{
+    for (int i = 0; i < 3; i++)
+    {
+        std::string name;
+        bool *state = places_group_state(i, name);
+        auto *group = name.empty() ? nullptr : ImGuiFileDialog::Instance()->GetPlacesGroupPtr(name);
+        if (group != nullptr)
+            group->opened = *state;
+    }
+}
+
+/**
+ * @brief Přenese rozbalení skupin Places z IGFD do cache (uživatel klikl na hlavičku).
+ * @return true, pokud se některý stav změnil (je třeba uložit imgui.ini).
+ */
+static bool places_groups_sync(void)
+{
+    bool changed = false;
+    for (int i = 0; i < 3; i++)
+    {
+        std::string name;
+        bool *state = places_group_state(i, name);
+        auto *group = name.empty() ? nullptr : ImGuiFileDialog::Instance()->GetPlacesGroupPtr(name);
+        if (group != nullptr && group->opened != *state)
+        {
+            *state = group->opened;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+/**
+ * @brief Jednou za snímek: údržba paměti adresářů pro všechny IGFD dialogy.
+ *
+ * - při prvním volání načte záložky z INI do IGFD,
+ * - přestaví skupinu Recent, když se změnila,
+ * - sleduje otevření a zavření dialogu a po potvrzení zapamatuje adresář,
+ * - když je dialog otevřený, ukládá změny záložek do paměti (INI se zapíše
+ *   při ukončení).
+ *
+ * @pre Volat z UI vlákna, mimo vykreslování dialogu.
+ */
+static void lastdir_frame_update(void)
+{
+    auto *dlg = ImGuiFileDialog::Instance();
+
+    if (!s_lastdir_ui.bookmarks_loaded)
+    {
+        char *bm = baseui_fchooser_lastdir_get_bookmarks();
+        dlg->DeserializePlaces(bm);
+        s_lastdir_ui.bookmarks_cache = bm;
+        g_free(bm);
+        s_lastdir_ui.bookmarks_loaded = true;
+    }
+
+    bool open = dlg->IsOpened();
+
+    g_mutex_lock(&s_lastdir_ui.mutex);
+    if (s_lastdir_ui.track == LASTDIR_TRACK_REQUESTED && open)
+        s_lastdir_ui.track = LASTDIR_TRACK_OPEN;
+    else if (s_lastdir_ui.track == LASTDIR_TRACK_OPEN && !open)
+        lastdir_collect_result_locked();
+    bool rebuild = s_lastdir_ui.recent_dirty;
+    s_lastdir_ui.recent_dirty = false;
+    g_mutex_unlock(&s_lastdir_ui.mutex);
+
+    if (rebuild)
+        lastdir_rebuild_recent_group();
+
+    /* Záložky se mění jen v otevřeném dialogu (+/-, přejmenování). */
+    if (open)
+    {
+        std::string bm = dlg->SerializePlaces();
+        if (bm != s_lastdir_ui.bookmarks_cache)
+        {
+            baseui_fchooser_lastdir_set_bookmarks(bm.c_str());
+            s_lastdir_ui.bookmarks_cache = bm;
+        }
+    }
+}
+
+void imgui_filechooser_prepare_config(baseui_fchooser_category_t category, IGFD::FileDialogConfig &config)
+{
+    g_mutex_lock(&s_lastdir_ui.mutex);
+    if (!ImGuiFileDialog::Instance()->IsOpened())
+    {
+        /* Předchozí dialog zavřený ve stejném snímku (řetězené dialogy) -
+         * vyzvednout jeho výsledek dřív, než ho OpenDialog() smaže. */
+        if (s_lastdir_ui.track == LASTDIR_TRACK_OPEN)
+            lastdir_collect_result_locked();
+        s_lastdir_ui.track = LASTDIR_TRACK_REQUESTED;
+        s_lastdir_ui.category = category;
+        s_lastdir_ui.recent_dirty = true;
+    }
+    g_mutex_unlock(&s_lastdir_ui.mutex);
+
+    char *out_path = NULL;
+    char *out_fileName = NULL;
+    char *out_filePathName = NULL;
+    baseui_fchooser_lastdir_resolve(category,
+                                    config.path.empty() ? NULL : config.path.c_str(),
+                                    config.fileName.empty() ? NULL : config.fileName.c_str(),
+                                    config.filePathName.empty() ? NULL : config.filePathName.c_str(),
+                                    &out_path, &out_fileName, &out_filePathName);
+
+    config.filePathName = (out_filePathName != NULL) ? out_filePathName : "";
+    config.path = (out_path != NULL) ? out_path : "";
+    config.fileName = (out_fileName != NULL) ? out_fileName : "";
+
+    g_free(out_path);
+    g_free(out_fileName);
+    g_free(out_filePathName);
 }
 
 void imgui_filechooser_settings_init(void)
@@ -260,6 +510,9 @@ void imgui_file_chooser_window(void)
     // ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.5f, 0.0f, 1.0f)); // Oranžová při hoveru
     ImGui::SetNextWindowSize(ImVec2(1200, 768), ImGuiCond_FirstUseEver);
 
+    /* Paměť adresářů pro všechny IGFD dialogy (i ty z debuggeru). */
+    lastdir_frame_update();
+
     /* Detekce změny šířky Devices panelu (placesPaneWidth) během dialog
      * session - splitter drag mění m_PlacesPaneWidth přímo bez ImGui dirty
      * markeru, takže auto-save .ini neuložil změněnou hodnotu. Per frame
@@ -288,6 +541,8 @@ void imgui_file_chooser_window(void)
             s_igfd_panel_state.sidePaneWidth = sw;
             changed = true;
         };
+        if (places_groups_sync())
+            changed = true;
         if (changed)
             ImGui::MarkIniSettingsDirty();
     }
@@ -377,6 +632,8 @@ void imgui_filechooser_new(baseui_fchooser_t *fch)
 
     IGFD::FileDialogConfig config;
 
+    /* Výchozí hodnoty volajícího; "." a prázdné hodnoty nahradí paměť
+     * adresářů podle kategorie. (Pozn.: std::string nelze přiřadit NULL.) */
     if (fch->filePathName != NULL)
     {
         config.filePathName = fch->filePathName;
@@ -384,8 +641,10 @@ void imgui_filechooser_new(baseui_fchooser_t *fch)
     else
     {
         config.path = (fch->path != NULL) ? fch->path : default_path;
-        config.fileName = (fch->fileName != NULL) ? fch->fileName : NULL;
+        if (fch->fileName != NULL)
+            config.fileName = fch->fileName;
     };
+    imgui_filechooser_prepare_config(fch->category, config);
 
     config.countSelectionMax = 1;
     config.flags = ImGuiFileDialogFlags_Modal | ImGuiFileDialogFlags_DontShowHiddenFiles | ImGuiFileDialogFlags_ShowDevicesButton | ImGuiFileDialogFlags_CaseInsensitiveExtentionFiltering;

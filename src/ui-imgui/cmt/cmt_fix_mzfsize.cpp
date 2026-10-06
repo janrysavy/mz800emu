@@ -249,7 +249,7 @@ void imgui_cmt_fix_mzfsize_popup(bool *p_open)
             g_ui_cmt_mzfsize.filename = NULL;
 
             const char *title = _("Save MZF file as");
-            baseui_fchooser_t *fch = baseui_filechooser_open_rw_file(title, ".mzf, .m12, .mzt", NULL, NULL, "newfile.mzf", imgui_cmt_fix_mzfsize_saveas_cb, srcFile);
+            baseui_fchooser_t *fch = baseui_filechooser_open_rw_file(BASEUI_FCHOOSER_CAT_MZF, title, ".mzf, .m12, .mzt", NULL, NULL, "newfile.mzf", imgui_cmt_fix_mzfsize_saveas_cb, srcFile);
             if (!fch)
             {
                 fprintf(stderr, "%s(%d): filechooser error\n", __FILE__, __LINE__);

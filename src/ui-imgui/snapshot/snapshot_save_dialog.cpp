@@ -11,6 +11,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 
 // Lokalizace
@@ -57,6 +58,7 @@ static void snapshot_save_open_file_dialog(void)
                    ImGuiFileDialogFlags_CaseInsensitiveExtentionFiltering |
                    ImGuiFileDialogFlags_ConfirmOverwrite;
 
+    imgui_filechooser_prepare_config(BASEUI_FCHOOSER_CAT_SNAPSHOT, config);
     ImGuiFileDialog::Instance()->OpenDialog(
         "SnapshotSaveDialog", _("Save Snapshot"), ".mzs", config);
     s_file_dialog_open = true;

@@ -52,6 +52,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "i18n.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 
@@ -680,6 +681,7 @@ static void vars_render_sticky_header ( size_t visible_count, size_t total_count
         config.flags = ImGuiFileDialogFlags_Modal |
                        ImGuiFileDialogFlags_DontShowHiddenFiles |
                        ImGuiFileDialogFlags_ConfirmOverwrite;
+        imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_LISTS, config );
         ImGuiFileDialog::Instance ( )->OpenDialog (
             "VarsSaveDialog", _( "Save Variables As..." ),
             ".vars", config );
@@ -695,6 +697,7 @@ static void vars_render_sticky_header ( size_t visible_count, size_t total_count
         config.countSelectionMax = 1;
         config.flags = ImGuiFileDialogFlags_Modal |
                        ImGuiFileDialogFlags_DontShowHiddenFiles;
+        imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_LISTS, config );
         ImGuiFileDialog::Instance ( )->OpenDialog (
             "VarsLoadDialog", _( "Load Variables From..." ),
             ".vars,.*", config );
@@ -710,6 +713,7 @@ static void vars_render_sticky_header ( size_t visible_count, size_t total_count
         config.countSelectionMax = 1;
         config.flags = ImGuiFileDialogFlags_Modal |
                        ImGuiFileDialogFlags_DontShowHiddenFiles;
+        imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_LISTS, config );
         ImGuiFileDialog::Instance ( )->OpenDialog (
             "VarsMergeDialog", _( "Merge Variables From..." ),
             ".vars,.*", config );

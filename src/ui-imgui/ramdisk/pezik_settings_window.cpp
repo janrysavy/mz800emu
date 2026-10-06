@@ -17,6 +17,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "ui-imgui/auto_layout.h"
 
@@ -202,6 +203,7 @@ static void DrawPezikSection(const char *label, PezikSettingsUI *ui,
         config.flags = ImGuiFileDialogFlags_Modal |
                        ImGuiFileDialogFlags_DontShowHiddenFiles |
                        ImGuiFileDialogFlags_ShowDevicesButton;
+        imgui_filechooser_prepare_config(BASEUI_FCHOOSER_CAT_RAMDISK, config);
         ImGuiFileDialog::Instance()->OpenDialog(fch_id, _("Select backup file"), ".dat,.*", config);
         *fch_open = true;
     }

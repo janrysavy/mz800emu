@@ -144,8 +144,11 @@ list(APPEND _test_emu_sources
 
 # baseui/baseui_tools.c - obsahuje pomocné funkce které emu potřebuje
 # (baseui.c a baseui_filechooser.c jsou GUI - stubujeme).
+# baseui_fchooser_lastdir.c - paměť adresářů dialogu (čisté C + cfgfile),
+# registruje ji cfgmain_init().
 list(APPEND _test_emu_sources
     ${CMAKE_SOURCE_DIR}/src/baseui/baseui_tools.c
+    ${CMAKE_SOURCE_DIR}/src/baseui/baseui_fchooser_lastdir.c
 )
 
 # generic_driver/ - file/memory driver

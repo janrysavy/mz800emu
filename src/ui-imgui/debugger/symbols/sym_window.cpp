@@ -54,6 +54,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "i18n.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "ui-imgui/auto_layout.h"
@@ -645,6 +646,7 @@ static void sym_render_sticky_header ( size_t visible_count, size_t total_count 
             config.countSelectionMax = 1;
             config.flags = ImGuiFileDialogFlags_Modal |
                            ImGuiFileDialogFlags_DontShowHiddenFiles;
+            imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_SYMBOLS, config );
             ImGuiFileDialog::Instance ( )->OpenDialog (
                 "SymLoadDialog", _("Load Symbols From..."),
                 ".noi,.map,.sym,.lbl,.*", config );
@@ -659,6 +661,7 @@ static void sym_render_sticky_header ( size_t visible_count, size_t total_count 
             config.flags = ImGuiFileDialogFlags_Modal |
                            ImGuiFileDialogFlags_DontShowHiddenFiles |
                            ImGuiFileDialogFlags_ConfirmOverwrite;
+            imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_SYMBOLS, config );
             ImGuiFileDialog::Instance ( )->OpenDialog (
                 "SymSaveDialog", _("Save .lbl As..."),
                 ".lbl", config );
@@ -723,6 +726,7 @@ static void sym_render_sticky_header ( size_t visible_count, size_t total_count 
                 config.countSelectionMax = 1;
                 config.flags = ImGuiFileDialogFlags_Modal |
                                ImGuiFileDialogFlags_DontShowHiddenFiles;
+                imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_SYMBOLS, config );
                 ImGuiFileDialog::Instance ( )->OpenDialog (
                     "SymDefaultLblDialog", _("Select Default .lbl File"),
                     ".lbl,.*", config );

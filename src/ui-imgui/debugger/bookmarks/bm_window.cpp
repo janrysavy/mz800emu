@@ -63,6 +63,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "i18n.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "ui-imgui/auto_layout.h"
@@ -343,6 +344,7 @@ static void bm_render_header ( size_t total_count, size_t filtered_count ) {
         config.flags = ImGuiFileDialogFlags_Modal |
                        ImGuiFileDialogFlags_DontShowHiddenFiles |
                        ImGuiFileDialogFlags_ConfirmOverwrite;
+        imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_LISTS, config );
         ImGuiFileDialog::Instance ( )->OpenDialog (
             "BookmarksSaveDialog", _( "Save Bookmarks As..." ),
             ".bookmarks", config );
@@ -356,6 +358,7 @@ static void bm_render_header ( size_t total_count, size_t filtered_count ) {
         config.countSelectionMax = 1;
         config.flags = ImGuiFileDialogFlags_Modal |
                        ImGuiFileDialogFlags_DontShowHiddenFiles;
+        imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_LISTS, config );
         ImGuiFileDialog::Instance ( )->OpenDialog (
             "BookmarksLoadDialog", _( "Load Bookmarks From..." ),
             ".bookmarks,.*", config );
@@ -372,6 +375,7 @@ static void bm_render_header ( size_t total_count, size_t filtered_count ) {
         config.countSelectionMax = 1;
         config.flags = ImGuiFileDialogFlags_Modal |
                        ImGuiFileDialogFlags_DontShowHiddenFiles;
+        imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_LISTS, config );
         ImGuiFileDialog::Instance ( )->OpenDialog (
             "BookmarksMergeDialog", _( "Merge Bookmarks From..." ),
             ".bookmarks,.*", config );

@@ -16,6 +16,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 
 // Lokalizace
@@ -232,6 +233,7 @@ static void snapshot_load_open_file_dialog(void)
     config.sidePane = Snapshot_InfoPane;
     config.sidePaneWidth = 350.0f;
 
+    imgui_filechooser_prepare_config(BASEUI_FCHOOSER_CAT_SNAPSHOT, config);
     ImGuiFileDialog::Instance()->OpenDialog(
         "SnapshotLoadDialog", _("Load Snapshot"), ".mzs", config);
     s_file_dialog_open = true;

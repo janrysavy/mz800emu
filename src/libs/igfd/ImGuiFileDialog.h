@@ -795,6 +795,7 @@ private:
         bool canBeSaved                              = false;  // defined by code, can be used for prevent serialization / deserialization
         size_t displayOrder                          = 0U;     // the display order will be usedf first, then alphanumeric
         bool defaultOpened                           = false;  // the group is opened by default
+        bool opened                                  = false;  // mz800emu: aktuální rozbalení skupiny (sdílené všemi dialogy, persistuje aplikace)
         bool canBeEdited                             = false;  // will show +/- button for add/remove place in the group
         char editBuffer[MAX_FILE_DIALOG_NAME_BUFFER] = "";     // temp buffer for name edition
         int32_t selectedPlaceForEdition              = -1;

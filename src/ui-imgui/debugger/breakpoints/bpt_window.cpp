@@ -45,6 +45,7 @@
 #include "libs/imgui/imgui.h"
 #include "libs/imgui/imgui_internal.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "i18n.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "ui-imgui/auto_layout.h"
@@ -1333,6 +1334,7 @@ static void bpt_render_menu ( void ) {
             config.countSelectionMax = 1;
             config.flags = ImGuiFileDialogFlags_Modal |
                            ImGuiFileDialogFlags_DontShowHiddenFiles;
+            imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_LISTS, config );
             ImGuiFileDialog::Instance ( )->OpenDialog (
                 "BptLoadDialog", _( "Load Breakpoints From..." ),
                 ".bpt,.*", config );
@@ -1346,6 +1348,7 @@ static void bpt_render_menu ( void ) {
             config.flags = ImGuiFileDialogFlags_Modal |
                            ImGuiFileDialogFlags_DontShowHiddenFiles |
                            ImGuiFileDialogFlags_ConfirmOverwrite;
+            imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_LISTS, config );
             ImGuiFileDialog::Instance ( )->OpenDialog (
                 "BptSaveDialog", _( "Save Breakpoints As..." ),
                 ".bpt", config );
@@ -1382,6 +1385,7 @@ static void bpt_render_menu ( void ) {
             config.countSelectionMax = 1;
             config.flags = ImGuiFileDialogFlags_Modal |
                            ImGuiFileDialogFlags_DontShowHiddenFiles;
+            imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_LISTS, config );
             ImGuiFileDialog::Instance ( )->OpenDialog (
                 "BptDefaultFileDialog", _( "Select Default BPT File" ),
                 ".bpt,.*", config );

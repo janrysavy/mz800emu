@@ -55,6 +55,7 @@ add_subdirectory(debugger)
 add_subdirectory(memory)
 add_subdirectory(peripherals)
 add_subdirectory(snapshot)
+add_subdirectory(baseui)
 
 # UI
 add_subdirectory(ui)

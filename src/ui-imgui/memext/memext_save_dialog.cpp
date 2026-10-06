@@ -11,6 +11,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "ui-imgui/auto_layout.h"
 #include "memext_content.h"
@@ -194,6 +195,7 @@ extern "C" void imgui_memext_save_dialog(void) {
                            ImGuiFileDialogFlags_DontShowHiddenFiles |
                            ImGuiFileDialogFlags_ShowDevicesButton |
                            ImGuiFileDialogFlags_ConfirmOverwrite;
+            imgui_filechooser_prepare_config(BASEUI_FCHOOSER_CAT_MEMEXT, config);
             ImGuiFileDialog::Instance()->OpenDialog("MemextSaveFch", _("Save file"), ".dat,.bin,.mzf,.*", config);
             s_save_fch_open = true;
         }

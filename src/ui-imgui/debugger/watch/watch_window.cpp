@@ -82,6 +82,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "i18n.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 
@@ -1321,6 +1322,7 @@ static void watch_render_sticky_header ( size_t visible_count, size_t total_coun
         config.flags = ImGuiFileDialogFlags_Modal |
                        ImGuiFileDialogFlags_DontShowHiddenFiles |
                        ImGuiFileDialogFlags_ConfirmOverwrite;
+        imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_LISTS, config );
         ImGuiFileDialog::Instance ( )->OpenDialog (
             "WatchSaveDialog", _( "Save Watches As..." ),
             ".watch,.*", config );
@@ -1335,6 +1337,7 @@ static void watch_render_sticky_header ( size_t visible_count, size_t total_coun
         config.path = def ? def : ".";
         config.flags = ImGuiFileDialogFlags_Modal |
                        ImGuiFileDialogFlags_DontShowHiddenFiles;
+        imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_LISTS, config );
         ImGuiFileDialog::Instance ( )->OpenDialog (
             "WatchLoadDialog", _( "Load Watches From..." ),
             ".watch,.*", config );

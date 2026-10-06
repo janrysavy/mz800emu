@@ -83,7 +83,7 @@ void imgui_ide8_open_file(en_IDE8_DRIVE drive_id)
 
     const char *title = (drive_id == IDE8_DRIVE_MASTER) ? _("Select IDE8 HDD0 image file to open") : _("Select IDE8 HDD1 image file to open");
 
-    baseui_fchooser_t *fch = baseui_filechooser_open_rw_file(title, ".img, .dat, .*", NULL, NULL, ide8_drive_get_filepath(drive_id), imgui_ide8_open_file_cb, (gpointer)drive_id);
+    baseui_fchooser_t *fch = baseui_filechooser_open_rw_file(BASEUI_FCHOOSER_CAT_HDD, title, ".img, .dat, .*", NULL, NULL, ide8_drive_get_filepath(drive_id), imgui_ide8_open_file_cb, (gpointer)drive_id);
     if (!fch)
     {
         fprintf(stderr, "%s(%d): filechooser error\n", __FILE__, __LINE__);

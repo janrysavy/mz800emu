@@ -74,6 +74,7 @@
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 
 #include "i18n.h"
 
@@ -2973,6 +2974,7 @@ static void psg_scope_open_csv_dialog ( void )
                  | ImGuiFileDialogFlags_ShowDevicesButton
                  | ImGuiFileDialogFlags_ConfirmOverwrite;
 
+    imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_EXPORT, config );
     ImGuiFileDialog::Instance ( )->OpenDialog (
         "PSGScopeExportCSV",
         _( "Export PSG notes as CSV" ),
@@ -3000,6 +3002,7 @@ static void psg_scope_open_midi_dialog ( void )
                  | ImGuiFileDialogFlags_ShowDevicesButton
                  | ImGuiFileDialogFlags_ConfirmOverwrite;
 
+    imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_EXPORT, config );
     ImGuiFileDialog::Instance ( )->OpenDialog (
         "PSGScopeExportMIDI",
         _( "Export PSG notes as MIDI" ),

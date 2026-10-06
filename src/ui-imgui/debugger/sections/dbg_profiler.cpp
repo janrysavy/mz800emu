@@ -60,6 +60,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "i18n.h"
 
 #include "dbg_profiler.h"
@@ -691,6 +692,7 @@ static void open_export_dialog ( void )
                  | ImGuiFileDialogFlags_ShowDevicesButton
                  | ImGuiFileDialogFlags_ConfirmOverwrite;
 
+    imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_EXPORT, config );
     ImGuiFileDialog::Instance ( )->OpenDialog (
         "ProfilerExportDialog",
         _( "Export profiler data as CSV" ),

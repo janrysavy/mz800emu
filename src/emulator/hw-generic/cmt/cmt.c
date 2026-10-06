@@ -579,7 +579,7 @@ void cmt_ui_record(void)
     if (!CMT_TEST_FILLED)
     {
 
-        baseui_fchooser_t *fch = baseui_filechooser_save_file(_("Create a new WAV file"), ".wav", NULL, NULL, _("newfile.wav"), cmt_ui_record_cb, NULL);
+        baseui_fchooser_t *fch = baseui_filechooser_save_file(BASEUI_FCHOOSER_CAT_CMT, _("Create a new WAV file"), ".wav", NULL, NULL, _("newfile.wav"), cmt_ui_record_cb, NULL);
         if (!fch)
         {
             fprintf(stderr, "%s(%d): filechooser error\n", __FILE__, __LINE__);
@@ -925,7 +925,7 @@ static void cmt_ui_open_cb(baseui_fchooser_t *fch)
 
 void cmt_ui_open(bool play_immediately)
 {
-    baseui_fchooser_t *fch = baseui_filechooser_open_file(_("Select CMT file to open"), g_ui_cmt_filters, NULL, NULL, g_cmt.last_filename, cmt_ui_open_cb, GINT_TO_POINTER(play_immediately));
+    baseui_fchooser_t *fch = baseui_filechooser_open_file(BASEUI_FCHOOSER_CAT_CMT, _("Select CMT file to open"), g_ui_cmt_filters, NULL, NULL, g_cmt.last_filename, cmt_ui_open_cb, GINT_TO_POINTER(play_immediately));
     if (!fch)
     {
         fprintf(stderr, "%s(%d): filechooser error\n", __FILE__, __LINE__);

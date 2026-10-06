@@ -813,9 +813,9 @@ void qdisk_ui_mount ( void ) {
     baseui_fchooser_t *fch = NULL;
 
     if ( g_qdisk.type == QDISK_TYPE_IMAGE ) {
-        fch = baseui_filechooser_open_rw_file(_("Select existing .MZQ file or create new QD image"), ".mzq", NULL, NULL, cfgelement_get_text_value ( g_elm_std_fp ), qdisk_ui_mount_cb, NULL);
+        fch = baseui_filechooser_open_rw_file(BASEUI_FCHOOSER_CAT_QDISK, _("Select existing .MZQ file or create new QD image"), ".mzq", NULL, NULL, cfgelement_get_text_value ( g_elm_std_fp ), qdisk_ui_mount_cb, NULL);
     } else {
-        fch = baseui_filechooser_open_dir(_("Select directory to mount as virtual Quick Disk"), NULL, NULL, cfgelement_get_text_value ( g_elm_virt_fp ), qdisk_ui_mount_cb, NULL);
+        fch = baseui_filechooser_open_dir(BASEUI_FCHOOSER_CAT_QDISK, _("Select directory to mount as virtual Quick Disk"), NULL, NULL, cfgelement_get_text_value ( g_elm_virt_fp ), qdisk_ui_mount_cb, NULL);
     };
 
     if (!fch)

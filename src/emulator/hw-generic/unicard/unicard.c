@@ -2296,7 +2296,7 @@ static void unicard_ui_select_sd_root_directory_cb(baseui_fchooser_t *fch)
 
 void unicard_ui_select_sd_root_directory(void)
 {
-    baseui_fchooser_t *fch = baseui_filechooser_open_dir(_("Select SD root directory for Unicard"), NULL, NULL, unicard_get_sd_root_dirpath(), unicard_ui_select_sd_root_directory_cb, NULL);
+    baseui_fchooser_t *fch = baseui_filechooser_open_dir(BASEUI_FCHOOSER_CAT_SDCARD, _("Select SD root directory for Unicard"), NULL, NULL, unicard_get_sd_root_dirpath(), unicard_ui_select_sd_root_directory_cb, NULL);
     if (!fch) {
         fprintf(stderr, "%s(%d): filechooser error\n", __FILE__, __LINE__);
     }

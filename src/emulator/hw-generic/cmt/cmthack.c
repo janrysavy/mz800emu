@@ -184,7 +184,7 @@ void cmthack_load_file(void)
     emulator_measuring_maxspeed_stall_begin();
     framebuffer_flush_full_screen();
 
-    char *filename = baseui_filechooser_open_file_wait(_("Select a MZF File"), ".mzf, .m12, .*", NULL, NULL, g_cmthack.last_filename, NULL);
+    char *filename = baseui_filechooser_open_file_wait(BASEUI_FCHOOSER_CAT_MZF, _("Select a MZF File"), ".mzf, .m12, .*", NULL, NULL, g_cmthack.last_filename, NULL);
 
     if (filename == NULL)
     {

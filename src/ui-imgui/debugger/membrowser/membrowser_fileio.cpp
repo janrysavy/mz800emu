@@ -39,6 +39,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "i18n.h"
 
 #include <cstdio>
@@ -218,6 +219,7 @@ extern "C" void membrowser_fileio_open_load ( int region_id )
     config.flags = ImGuiFileDialogFlags_Modal
                    | ImGuiFileDialogFlags_DontShowHiddenFiles
                    | ImGuiFileDialogFlags_ShowDevicesButton;
+    imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_MEMORY, config );
     ImGuiFileDialog::Instance ( )->OpenDialog (
         "MembrowserLoadFch",
         _( "Load .bin into region" ),
@@ -238,6 +240,7 @@ static void open_save_igfd ( void )
                    | ImGuiFileDialogFlags_DontShowHiddenFiles
                    | ImGuiFileDialogFlags_ShowDevicesButton
                    | ImGuiFileDialogFlags_ConfirmOverwrite;
+    imgui_filechooser_prepare_config ( BASEUI_FCHOOSER_CAT_DBG_MEMORY, config );
     ImGuiFileDialog::Instance ( )->OpenDialog (
         "MembrowserSaveFch",
         _( "Save region as .bin" ),

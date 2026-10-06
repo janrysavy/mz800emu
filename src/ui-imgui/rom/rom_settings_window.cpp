@@ -14,6 +14,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "ui-imgui/auto_layout.h"
 
@@ -112,6 +113,7 @@ static void open_file_chooser(const char *id, char *target, int target_size) {
     config.flags = ImGuiFileDialogFlags_Modal |
                    ImGuiFileDialogFlags_DontShowHiddenFiles |
                    ImGuiFileDialogFlags_ShowDevicesButton;
+    imgui_filechooser_prepare_config(BASEUI_FCHOOSER_CAT_ROM, config);
     ImGuiFileDialog::Instance()->OpenDialog(s_fch_id, _("Select ROM file"), ".rom,.bin,.*", config);
     s_fch_open = true;
 }

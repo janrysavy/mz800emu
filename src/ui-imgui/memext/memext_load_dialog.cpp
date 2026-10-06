@@ -11,6 +11,7 @@
 
 #include "libs/imgui/imgui.h"
 #include "libs/igfd/ImGuiFileDialog.h"
+#include "ui-imgui/filechooser/imgui_filechooser.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "ui-imgui/auto_layout.h"
 #include "memext_content.h"
@@ -115,6 +116,7 @@ extern "C" void imgui_memext_load_dialog(void) {
             config.flags = ImGuiFileDialogFlags_Modal |
                            ImGuiFileDialogFlags_DontShowHiddenFiles |
                            ImGuiFileDialogFlags_ShowDevicesButton;
+            imgui_filechooser_prepare_config(BASEUI_FCHOOSER_CAT_MEMEXT, config);
             ImGuiFileDialog::Instance()->OpenDialog("MemextLoadFch", _("Select file"), ".*", config);
             s_load_fch_open = true;
         }

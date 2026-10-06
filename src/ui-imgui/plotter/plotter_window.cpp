@@ -357,7 +357,7 @@ static void plotter_save_png_cb(baseui_fchooser_t *fch)
 static void plotter_save_dialog()
 {
     baseui_fchooser_t *fch = baseui_filechooser_save_file(
-        _("Save plotter drawing"), ".png", NULL, _("plotter.png"), NULL,
+        BASEUI_FCHOOSER_CAT_PLOTTER, _("Save plotter drawing"), ".png", NULL, _("plotter.png"), NULL,
         plotter_save_png_cb, NULL);
     if (!fch)
         fprintf(stderr, "%s(%d): filechooser error\n", __FILE__, __LINE__);
