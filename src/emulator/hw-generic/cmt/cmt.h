@@ -155,6 +155,7 @@ extern "C" {
     void cmt_eject ( void );
     bool cmt_sanitize_state ( void );
     int cmt_change_speed ( en_CMTSPEED cmtspeed );
+    int cmt_tape_set_block_cmt_speed ( int block_id, en_CMTSPEED cmtspeed );
 
     void cmt_screen_done_period ( void );
     int cmt_read_data ( void );

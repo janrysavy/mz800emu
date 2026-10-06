@@ -572,6 +572,11 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
     cpu->ei_delay = false;
 
     if (cpu->halted) {
+        /* Opakovaný fetch HALT (po 4 T, kvůli refreshi DRAM) je M1 cyklus,
+         * proto R += 1 (báze cpu/z80/07-interrupts.md "HALT instrukce" +
+         * 09-r-register.md; z80ex totéž). Bez toho loader Interkarate
+         * po HALT dešifroval špatným klíčem (regrese v2.0.2). */
+        INC_R();
         cycles = 4;
         cpu->cycles += cycles;
         cpu->total_cycles += cycles;

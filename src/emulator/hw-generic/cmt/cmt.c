@@ -706,6 +706,50 @@ int cmt_change_speed(en_CMTSPEED cmtspeed)
     return ret;
 }
 
+/**
+ * @brief Nastaví vlastní rychlost jednoho bloku vložené pásky (per-blok override).
+ *
+ * Blok se přepne na vlastní rychlost (blspeed = CMTEXT_BLOCK_SPEED_SET) a
+ * uloží se mu cmtspeed. Bez SET by cmtmzftape_block_open() rychlost bloku
+ * ignorovala a použila globální g_cmt.mz_cmtspeed (dříve chyba MCP
+ * cmt_tape_block_speed - nastavení nemělo účinek). GUI seznam bloků
+ * (cmt_tape_index.cpp) nastavuje obojí stejně.
+ *
+ * Změna se projeví při příštím otevření bloku; právě otevřený blok se
+ * nepřegeneruje.
+ *
+ * @param block_id Index bloku v páskovém kontejneru (0..count-1).
+ * @param cmtspeed Rychlost (platná en_CMTSPEED, viz cmtspeed_is_valid()).
+ * @return 0 při úspěchu; -1 bez vložené pásky, u pásky bez indexu bloků
+ *         (jiný kontejner než CMTEXT_CONTAINER_TYPE_SIMPLE_TAPE) nebo při
+ *         block_id mimo rozsah; -2 při neplatné rychlosti. Při chybě se
+ *         nic nemění.
+ *
+ * @pre Voláno z emulátorového vlákna.
+ * @post Při úspěchu cmtext_container_get_block_speed() == SET a
+ *       cmtext_container_get_block_cmt_speed() == cmtspeed pro block_id.
+ */
+int cmt_tape_set_block_cmt_speed(int block_id, en_CMTSPEED cmtspeed)
+{
+    if ((!CMT_TEST_FILLED) || (!g_cmt.ext))
+        return -1;
+    if (!cmtspeed_is_valid(cmtspeed))
+        return -2;
+    st_CMTEXT_CONTAINER *container = cmtext_get_container(g_cmt.ext);
+    if (!container)
+        return -1;
+    /* Per-blok rychlost má smysl jen pro SIMPLE_TAPE (má index bloků);
+     * SINGLE container index nemá a settery by dereferencovaly NULL
+     * container->tape. Settery mají na rozsah block_id jen assert. */
+    if ((cmtext_container_get_type(container) != CMTEXT_CONTAINER_TYPE_SIMPLE_TAPE)
+        || (block_id < 0)
+        || (block_id >= cmtext_container_get_count_blocks(container)))
+        return -1;
+    cmtext_container_set_block_speed(container, block_id, CMTEXT_BLOCK_SPEED_SET);
+    cmtext_container_set_block_cmt_speed(container, block_id, cmtspeed);
+    return 0;
+}
+
 void cmt_exit(void)
 {
 

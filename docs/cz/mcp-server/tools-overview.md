@@ -2019,7 +2019,8 @@ Returns: `{"ok": true, "block_id": <int>}`.
 
 Per-blok rychlost (JEN cmt speed, žádné další parametry; SIMPLE_TAPE).
 `speed` přijímá stejné klíče/int jako `emu_cmt_set_speed`. Vyžaduje
-naloženou pásku.
+naloženou pásku. Rychlost platí od příštího otevření bloku (přechod na
+blok při přehrávání, `emu_cmt_tape_seek`); právě otevřený blok se nemění.
 
 Args:
 - `block_id` (required): index bloku (0-based).

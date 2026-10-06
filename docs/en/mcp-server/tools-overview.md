@@ -2061,7 +2061,9 @@ Returns: `{"ok": true, "block_id": <int>}`.
 
 Per-block speed (cmt speed only, no other parameters; SIMPLE_TAPE).
 `speed` accepts the same keys/int as `emu_cmt_set_speed`. Requires a
-loaded tape.
+loaded tape. The speed applies from the next opening of the block
+(advancing to it during playback, `emu_cmt_tape_seek`); the currently
+open block is not changed.
 
 Args:
 - `block_id` (required): 0-based block index.

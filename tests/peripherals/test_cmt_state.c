@@ -18,7 +18,10 @@
  *     STOP vypne MAX SPEED zapnutou boostem, MAX SPEED zvolenou uživatelem
  *     CMT nemění (snapshot, play/stop, pauza); snapshot neobnovuje volbu
  *     cpu_boost (uživatelská preference), MAX SPEED po načtení odpovídá
- *     aktuální volbě uživatele.
+ *     aktuální volbě uživatele,
+ *   - per-blok rychlost pásky (cmt_tape_set_block_cmt_speed, backing MCP
+ *     cmt_tape_block_speed) se projeví při otevření bloku (dříve se
+ *     ignorovala, protože blok nebyl přepnut na CMTEXT_BLOCK_SPEED_SET).
  *
  * Testovací MZF se generuje do dočasného adresáře (g_get_tmp_dir), žádná
  * cizí data se nepoužívají.
@@ -597,6 +600,75 @@ void test_cmt_wav_stop_play_restarts_from_beginning(void)
 
 /* === MAIN === */
 
+/**
+ * @brief Zapíše dvoublokovou MZT pásku (dvakrát testovací MZF za sebou).
+ *
+ * @param mzt_path Cílová cesta MZT.
+ * @return true při úspěchu.
+ */
+static bool write_test_mzt(const char *mzt_path)
+{
+    gchar *data = NULL;
+    gsize len = 0;
+    if (!g_file_get_contents(s_mzf_path, &data, &len, NULL)) return false;
+    FILE *fh = fopen(mzt_path, "wb");
+    if (!fh) { g_free(data); return false; }
+    bool ok = (fwrite(data, 1, len, fh) == len) && (fwrite(data, 1, len, fh) == len);
+    if (fclose(fh) != 0) ok = false;
+    g_free(data);
+    return ok;
+}
+
+/*
+ * Per-blok rychlost (MCP cmt_tape_block_speed): blok s nastavenou rychlostí
+ * se otevře v ní, i když globální rychlost je 1:1. Dříve se nastavila jen
+ * cmtspeed bez blspeed = SET a cmtmzftape_block_open() vzal globální 1:1.
+ */
+void test_cmt_tape_block_speed_applies_on_block_open(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    gchar *mzt = g_strconcat(s_mzf_path, ".mzt", NULL);
+    TEST_ASSERT_TRUE_MESSAGE(write_test_mzt(mzt), "cannot write test MZT");
+
+    en_CMTSPEED saved_speed = g_cmt.mz_cmtspeed;
+    g_cmt.mz_cmtspeed = CMTSPEED_1_1;
+
+    TEST_ASSERT_EQUAL_INT(EXIT_SUCCESS, cmt_open_file_by_extension(mzt));
+    st_CMTEXT_CONTAINER *container = cmtext_get_container(g_cmt.ext);
+    TEST_ASSERT_NOT_NULL(container);
+    TEST_ASSERT_EQUAL_INT(2, cmtext_container_get_count_blocks(container));
+
+    /* chybové případy nic nemění */
+    TEST_ASSERT_EQUAL_INT(-1, cmt_tape_set_block_cmt_speed(2, CMTSPEED_3_1));
+    TEST_ASSERT_EQUAL_INT(-1, cmt_tape_set_block_cmt_speed(-1, CMTSPEED_3_1));
+    TEST_ASSERT_EQUAL_INT(-2, cmt_tape_set_block_cmt_speed(1, CMTSPEED_NONE));
+    TEST_ASSERT_EQUAL_INT(CMTEXT_BLOCK_SPEED_DEFAULT, cmtext_container_get_block_speed(container, 1));
+
+    TEST_ASSERT_EQUAL_INT(0, cmt_tape_set_block_cmt_speed(1, CMTSPEED_3_1));
+    TEST_ASSERT_EQUAL_INT(CMTEXT_BLOCK_SPEED_SET, cmtext_container_get_block_speed(container, 1));
+
+    /* přechod na blok 1 jako při přehrávání: blok se otevře v 3:1 = 3600 Bd */
+    TEST_ASSERT_EQUAL_INT(EXIT_SUCCESS, g_cmt.ext->container->cb_next_block());
+    TEST_ASSERT_EQUAL_INT(1, cmtext_block_get_block_id(g_cmt.ext->block));
+    TEST_ASSERT_EQUAL_UINT16(3600, g_cmt.ext->block->cb_get_bdspeed(g_cmt.ext));
+
+    cmt_eject();
+    g_cmt.mz_cmtspeed = saved_speed;
+    g_remove(mzt);
+    g_free(mzt);
+}
+
+/* Per-blok rychlost na pásce bez indexu bloků (samostatné MZF) se odmítne. */
+void test_cmt_tape_block_speed_rejected_on_single(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    TEST_ASSERT_EQUAL_INT(-1, cmt_tape_set_block_cmt_speed(0, CMTSPEED_3_1)); /* bez pásky */
+    TEST_ASSERT_EQUAL_INT(EXIT_SUCCESS, cmt_open_file_by_extension(s_mzf_path));
+    TEST_ASSERT_EQUAL_INT(-1, cmt_tape_set_block_cmt_speed(0, CMTSPEED_3_1));
+}
+
 int main(int argc, char *argv[])
 {
     mztest_parse_args(argc, argv);
@@ -621,6 +693,8 @@ int main(int argc, char *argv[])
     RUN_TEST(test_cmt_cpu_boost_follows_pause_and_option);
     RUN_TEST(test_cmt_snapshot_does_not_restore_cpu_boost_on);
     RUN_TEST(test_cmt_snapshot_does_not_restore_cpu_boost_off);
+    RUN_TEST(test_cmt_tape_block_speed_applies_on_block_open);
+    RUN_TEST(test_cmt_tape_block_speed_rejected_on_single);
 
     int result = UNITY_END();
     g_free(s_mzf_path);

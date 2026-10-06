@@ -2369,8 +2369,10 @@ async def emu_cmt_tape_set_block_speed(block_id: int, speed) -> str:
     Per-block speed override for SIMPLE_TAPE containers. Only the cmt
     speed ratio is adjustable per block (no other per-block parameters).
     ``speed`` accepts the same ratio string keys or int 1..9 as
-    ``emu_cmt_set_speed``. Requires a loaded tape. Sensitive: changes
-    emulator state (MCP action).
+    ``emu_cmt_set_speed``. Requires a loaded tape. The speed applies
+    from the next opening of the block (advancing to it during playback,
+    ``emu_cmt_tape_seek``); the currently open block is not changed.
+    Sensitive: changes emulator state (MCP action).
 
     Args:
         block_id: 0-based block index.

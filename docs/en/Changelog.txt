@@ -1,4 +1,8 @@
 
+	- BUGFIX: CPU - the R register was not incremented during the HALT instruction nor when accepting an interrupt (INT, NMI). Programs deriving a key or timing from the R register did not work (e.g. the tape version of the game Interkarate: the screen did not turn black after loading the first part). Broken since version 2.0.2.
+
+	- BUGFIX: MCP - emu_cmt_tape_set_block_speed (cmt_tape_block_speed) had no effect, the block was played at the global speed.
+
 	- New option --mode-switch <700|800> (MZ-800): rear mode switch position. The switch position is now saved in the configuration.
 
 	- BUGFIX: Loading a snapshot overwrote the configuration. Cassette settings (polarity, speed, MZF size check), memory extension fill and the Pezik ramdisk backup are no longer restored from a snapshot; device connections and types, the Unicard firmware version and the second PSG are restored only until the emulator exits.

@@ -1,4 +1,8 @@
 
+	- BUGFIX: CPU - registr R se nezvyšoval během instrukce HALT ani při přijetí přerušení (INT, NMI). Programy, které z registru R odvozují klíč nebo časování, nefungovaly (např. kazetová verze hry Interkarate: po nahrání prvního dílu nezčernala obrazovka). Chyba od verze 2.0.2.
+
+	- BUGFIX: MCP - emu_cmt_tape_set_block_speed (cmt_tape_block_speed) neměl žádný účinek, blok se přehrál globální rychlostí.
+
 	- Nová volba --mode-switch <700|800> (MZ-800): poloha zadního přepínače režimu. Poloha přepínače se nově ukládá do konfigurace.
 
 	- BUGFIX: Načtení snapshotu přepisovalo konfiguraci. Nastavení kazety (polarita, rychlost, kontrola velikosti MZF), plnění paměti rozšíření a záloha Pezik ramdisku se ze snapshotu neobnovují; připojení a typy zařízení, verze firmware Unicardu a druhý PSG se obnoví jen do ukončení emulátoru.

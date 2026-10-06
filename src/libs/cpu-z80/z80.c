@@ -416,10 +416,28 @@ HOT int z80_execute(z80_t *cpu, int target_cycles) {
 /* ========== Zpracovani preruseni ========== */
 
 /**
+ * @brief Inkrement registru R za M1 cyklus potvrzení přerušení (INT i NMI).
+ *
+ * Přijetí INT (IM 0/1/2) i NMI začíná M1 cyklem s refreshem, proto R vzroste
+ * o 1 (báze mz800-knowledge cpu/z80/09-r-register.md, tabulka "Přijetí INT
+ * a NMI"; z80ex dělá totéž). Mění se jen dolních 7 bitů, bit 7 zůstává.
+ * Chybějící inkrement byl regresí v2.0.2 (loader hry Interkarate odvozuje
+ * dešifrovací klíč z R po HALT čekajícím na přerušení).
+ *
+ * @param cpu Ukazatel na CPU instanci (pracuje se strukturou, ne s locals).
+ * @pre Voláno mimo běh z80_execute() nebo po WRITEBACK() (cpu->r je aktuální).
+ * @post cpu->r = (r & 0x80) | ((r + 1) & 0x7F).
+ */
+static inline void inc_r_on_int_ack(z80_t *cpu) {
+    cpu->r = (uint8_t)((cpu->r & 0x80) | ((cpu->r + 1) & 0x7F));
+}
+
+/**
  * @brief Interni handler preruseni.
  *
  * Zpracovava NMI a maskovane preruseni (IM0/1/2).
  * Volan z execute smycky - pracuje primo se strukturou (ne s locals).
+ * Pri prijeti NMI i INT zvysi R o 1 (inc_r_on_int_ack).
  *
  * @param cpu Ukazatel na CPU instanci.
  * @return Pocet T-stavu spotrebovanych obsluhou, nebo 0.
@@ -448,6 +466,7 @@ static int handle_interrupts_internal(z80_t *cpu) {
      */
     if (cpu->nmi_pending) {
         bool was_halted = cpu->halted;
+        inc_r_on_int_ack(cpu);
         cpu->nmi_pending = false;
         cpu->halted = false;
         cpu->iff2 = cpu->iff1;
@@ -490,6 +509,7 @@ static int handle_interrupts_internal(z80_t *cpu) {
             return 0;
         }
         bool was_halted = cpu->halted;
+        inc_r_on_int_ack(cpu);
         cpu->int_pending = false;
         cpu->halted = false;
         cpu->iff1 = 0;

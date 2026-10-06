@@ -395,7 +395,7 @@ typedef struct z80_s {
     uint16_t sp;          /**< Stack Pointer */
     uint16_t pc;          /**< Program Counter */
     uint8_t  i;           /**< Interrupt Vector */
-    uint8_t  r;           /**< Memory Refresh */
+    uint8_t  r;           /**< Memory Refresh - +1 za každý M1 cyklus (i opakovaný fetch HALT a potvrzení INT/NMI), mění se jen bity 0-6 */
     /* Prerusovaci system */
     uint8_t  iff1, iff2;  /**< Interrupt Flip-Flops */
     uint8_t  im;          /**< Interrupt Mode (0, 1, 2) */

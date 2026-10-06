@@ -39,3 +39,13 @@ mz_add_test(cpu_z80_ei_delay
     LIBS     mzlib_cpu_z80
     LABELS   "standalone;libs"
 )
+
+# Pokriva inkrement R pri opakovanem fetchi HALT a pri prijeti INT/NMI
+# (regrese v2.0.2 - loader hry Interkarate desifruje klicem z R po HALT).
+# Viz emu-experiments/interkarate-cmt/.
+mz_add_test(cpu_z80_r_register
+    TYPE     STANDALONE
+    SOURCES  test_r_register.c
+    LIBS     mzlib_cpu_z80
+    LABELS   "standalone;libs"
+)

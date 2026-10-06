@@ -7250,42 +7250,12 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 rq->success = false;
                 break;
             };
-            if ( ( !CMT_TEST_FILLED ) || ( !g_cmt.ext ) )
-            {
-                p->out_result = -1;
-                rq->success = false;
-                break;
-            };
-            if ( !cmtspeed_is_valid ( (en_CMTSPEED) p->cmtspeed ) )
-            {
-                p->out_result = -2;
-                rq->success = false;
-                break;
-            };
-            st_CMTEXT_CONTAINER *container = cmtext_get_container ( g_cmt.ext );
-            if ( !container )
-            {
-                p->out_result = -1;
-                rq->success = false;
-                break;
-            };
-            /* Per-blok speed má smysl jen pro SIMPLE_TAPE (= má tape
-             * index). SINGLE container nemá per-blok data; set funkce by
-             * dereferencovala NULL container->tape. Také kontrolujeme
-             * rozsah block_id (= set funkce má jen assert). */
-            if ( ( cmtext_container_get_type ( container )
-                   != CMTEXT_CONTAINER_TYPE_SIMPLE_TAPE )
-                 || ( p->block_id < 0 )
-                 || ( p->block_id >= cmtext_container_get_count_blocks ( container ) ) )
-            {
-                p->out_result = -1;
-                rq->success = false;
-                break;
-            };
-            cmtext_container_set_block_cmt_speed ( container, p->block_id,
-                                                   (en_CMTSPEED) p->cmtspeed );
-            p->out_result = 0;
-            rq->success = true;
+            /* Validace (páska, SIMPLE_TAPE, rozsah, rychlost) a nastavení
+             * blspeed = SET + cmtspeed dělá cmt_tape_set_block_cmt_speed()
+             * (-1 = páska/blok, -2 = neplatná rychlost). */
+            p->out_result = cmt_tape_set_block_cmt_speed ( p->block_id,
+                                                           (en_CMTSPEED) p->cmtspeed );
+            rq->success = ( p->out_result == 0 );
             break;
         }
 
