@@ -917,27 +917,23 @@ st_CMT_STREAM* mztape_create_stream_from_mztapemzf ( st_MZTAPE_MZF *mztmzf, en_C
         {
 #if 0
             /*
-             * Přímý bitstream path — ponechán jako kompilační alternativa k budoucímu prověření.
+             * Dvě cesty k bitstreamu, obě kvantizují hrany na mřížku sample_rate:
              *
-             * Princip bitstream:
-             * Při daném sample rate se každý pulz kvantizuje na celý počet vzorků.
-             * Zaokrouhlovací chyba se akumuluje pulz po pulzu. Při vyšších rychlostech
-             * (3600 Bd = divisor 3.0) se pulzy zkracují → relativní chyba roste → časování
-             * se rozjede natolik, že ROM rutina přestane pulzy rozpoznávat.
+             * Přímý bitstream (#if 0, mztape_create_cmt_bitstream_from_mztmzf):
+             * ideální průběh pulzů se navzorkuje po vzorcích; zbytek času se
+             * přenáší do dalšího pulzu (pulse_time -= pulse->total), takže poloha
+             * hran se neposouvá, ale každá hrana padne na nejbližší další vzorek
+             * a šířky jednotlivých pulzů kolísají o 1 vzorek.
              *
-             * Princip vstream:
-             * Ukládá přesný počet vzorků pro každý pulz samostatně (RLE kódování).
-             * Zaokrouhlení probíhá nezávisle pro každý pulz → chyba se neakumuluje.
-             * Konverze vstream → bitstream pak produkuje přesnější výsledek, protože
-             * každý pulz má korektně zaokrouhlený počet vzorků.
+             * Přes vstream (#else, výchozí): každý půlpulz se zaokrouhlí na celý
+             * počet vzorků samostatně (round); šířky jsou stálé, ale zkreslené.
+             * Při 3:1 a 44,1 kHz z krátkého pulzu 81,9/92,7 us vznikne
+             * 90,7/90,7 us (dlouhý 156,8/164,8 -> 158,7/158,7 us).
              *
-             * Pozorovaný problém:
-             * Interkarate screen při 3600 Bd — přímý bitstream se nenačetl,
-             * vstream → bitstream konverze funguje spolehlivě.
-             *
-             * Závěr: přímý bitstream path ponechán jako kompilační alternativa
-             * (#if 0/#if 1) k budoucímu prověření a případné opravě
-             * (např. kompenzací akumulované chyby).
+             * Ani jedna cesta není přesná. Zavaděče s pevným okamžikem vzorkování
+             * bitu (Interkarate, díly 2-3 při 3:1) na 44,1 kHz načítají
+             * nespolehlivě. Emulátor proto MZF přehrává jako vstream s frekvencí
+             * taktu GDG (cmt_mzf.c); bitstream zůstává pro WAV.
              */
             st_CMT_BITSTREAM *bitstream = mztape_create_cmt_bitstream_from_mztmzf ( mztmzf, mztape_fset, cmtspeed, rate );
             if ( !bitstream ) {

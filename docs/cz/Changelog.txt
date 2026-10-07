@@ -1,4 +1,6 @@
 
+	- BUGFIX: Kazeta - soubory MZF a MZT se přehrávaly s délkami pulzů zaokrouhlenými na vzorky 44,1 kHz. Při rychlosti 3:1 se tím zkreslil krátký pulz (high 90,7 µs místo 81,9 µs) a programy s vlastním rychlým zavaděčem se nenačetly nebo načítaly nespolehlivě (např. Interkarate, díly 2 a 3). Pulzy se nyní generují s přesností taktu GDG.
+
 	- Dialog pro výběr souboru si pamatuje poslední adresář zvlášť pro každý druh souborů (kazeta, diskety, Quick Disk, ROM, snapshoty, debugger, ...) i po restartu emulátoru, tak jako tomu bylo ve verzích 1.0.x (uloženo v konfiguraci, sekce [FILECHOOSER]). V panelu Places přibyla skupina Recent s posledními adresáři a skupina Bookmarks pro vlastní záložky (tlačítka + a -); rozbalení skupin Bookmarks, Recent a Devices se pamatuje.
 
 	- BUGFIX: CPU - registr R se nezvyšoval během instrukce HALT ani při přijetí přerušení (INT, NMI). Programy, které z registru R odvozují klíč nebo časování, nefungovaly (např. kazetová verze hry Interkarate: po nahrání prvního dílu nezčernala obrazovka). Chyba od verze 2.0.2.

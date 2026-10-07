@@ -1,4 +1,6 @@
 
+	- BUGFIX: Cassette - MZF and MZT files were played with pulse lengths rounded to 44.1 kHz samples. At 3:1 speed this distorted the short pulse (high 90.7 µs instead of 81.9 µs), so programs with their own fast loader failed to load or loaded unreliably (e.g. Interkarate, parts 2 and 3). Pulses are now generated with GDG clock precision.
+
 	- The file dialog remembers the last directory separately for each kind of file (tape, disks, Quick Disk, ROM, snapshots, debugger, ...), also across emulator restarts, as it did in versions 1.0.x (stored in the configuration, section [FILECHOOSER]). The Places panel has a new Recent group with the last used directories and a Bookmarks group for your own bookmarks (+ and - buttons); the expanded state of the Bookmarks, Recent and Devices groups is remembered.
 
 	- BUGFIX: CPU - the R register was not incremented during the HALT instruction nor when accepting an interrupt (INT, NMI). Programs deriving a key or timing from the R register did not work (e.g. the tape version of the game Interkarate: the screen did not turn black after loading the first part). Broken since version 2.0.2.

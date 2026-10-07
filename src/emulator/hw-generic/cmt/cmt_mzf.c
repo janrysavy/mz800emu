@@ -139,10 +139,33 @@ static void cmtmzf_eject ( void ) {
 }
 
 
+/**
+ * @brief Vygeneruje CMT stream bloku MZF (formát MZ-800 SANE).
+ *
+ * Vstream se generuje s frekvencí GDGCLK_BASE: každý půlpulz se zaokrouhlí
+ * na celý takt GDG (u MZ-800 asi 56 ns), hrany pásky tedy leží prakticky
+ * přesně podle délek pulzů z mztape a nekvantizují se na mřížku vzorkovací
+ * frekvence. Přehrávání (cmtext_block_get_output) převádí takty GDG na
+ * vzorky poměrem rate / GDGCLK_BASE, tj. 1:1.
+ *
+ * Bitstream se generuje s CMTSTREAM_DEFAULT_RATE (44,1 kHz) - jen jako
+ * kompilační alternativa (CMTMZF_DEFAULT_STREAM_BITSTREAM) a pro případný
+ * export do WAV. Půlpulzy se při něm zaokrouhlí na celé vzorky; při 3:1
+ * z krátkého pulzu 81,9/92,7 us vznikne 90,7/90,7 us a zavaděče s pevným
+ * okamžikem vzorkování bitu (např. Interkarate, díly 2-3) pak načítají
+ * nespolehlivě.
+ *
+ * @param mztapemzf MZF data bloku (vlastní je blockspec, funkce je jen čte).
+ * @param cmtspeed Rychlost záznamu (dělitel délek pulzů).
+ * @param type Typ streamu: CMT_STREAM_TYPE_VSTREAM nebo CMT_STREAM_TYPE_BITSTREAM.
+ * @return Nový stream (vlastník je volající, uvolnit cmt_stream_destroy),
+ *         NULL při chybě (chybu hlásí mztape přes g_mztape_error_cb).
+ * @note Vedlejší efekt: vypíše parametry streamu na stdout.
+ */
 static st_CMT_STREAM* cmtmzf_generate_stream_from_mztapemzf ( st_MZTAPE_MZF *mztapemzf, en_CMTSPEED cmtspeed, en_CMT_STREAM_TYPE type ) {
 
-    st_CMT_STREAM *stream = mztape_create_stream_from_mztapemzf ( mztapemzf, cmtspeed, type, MZTAPE_FORMATSET_MZ800_SANE, CMTSTREAM_DEFAULT_RATE );
-    //st_CMT_STREAM *stream = mztape_create_stream_from_mztapemzf ( mztapemzf, cmtspeed, type, MZTAPE_FORMATSET_MZ800_SANE, GDGCLK_BASE );
+    uint32_t rate = ( type == CMT_STREAM_TYPE_VSTREAM ) ? GDGCLK_BASE : CMTSTREAM_DEFAULT_RATE;
+    st_CMT_STREAM *stream = mztape_create_stream_from_mztapemzf ( mztapemzf, cmtspeed, type, MZTAPE_FORMATSET_MZ800_SANE, rate );
     if ( !stream ) {
         return NULL;
     };
@@ -189,8 +212,14 @@ static uint16_t cmtmzf_get_bdspeed ( void *cmtext ) {
 }
 
 
-#define CMTMZF_DEFAULT_STREAM_BITSTREAM
-//#define CMTMZF_DEFAULT_STREAM_VSTREAM
+/*
+ * Typ streamu, ze kterého se MZF přehrává (právě jedno z maker):
+ * CMTMZF_DEFAULT_STREAM_VSTREAM - vstream s přesností taktu GDG (výchozí),
+ * CMTMZF_DEFAULT_STREAM_BITSTREAM - bitstream 44,1 kHz (pulzy zaokrouhlené
+ * na vzorky, viz cmtmzf_generate_stream_from_mztapemzf).
+ */
+//#define CMTMZF_DEFAULT_STREAM_BITSTREAM
+#define CMTMZF_DEFAULT_STREAM_VSTREAM
 
 
 st_CMTEXT_BLOCK* cmtmzf_block_open ( st_HANDLER *h, uint32_t offset, int block_id, int pause_after, en_CMTEXT_BLOCK_SPEED block_speed, en_CMTSPEED cmtspeed ) {
