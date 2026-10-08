@@ -1250,6 +1250,13 @@ static gchar *mzarch_cli_option_value_utf8(const char *name)
     return g_strdup(raw);
 }
 
+void mzarch_main_reset_and_run_mzf(const char *filename)
+{
+    /* Stejná sekvence jako start s CLI --run-mzf v mzarch_main(). */
+    mzarch_main_reset();
+    mzarch_bootstrap_run_mzf(filename);
+}
+
 void mzarch_main(void)
 {
     mzarch_main_reset();

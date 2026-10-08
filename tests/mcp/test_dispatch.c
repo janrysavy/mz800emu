@@ -83,8 +83,11 @@
  *
  * video-capture Task 18 doplnil videorec_timebase (přepnutí časové základny
  * emulated / realtime, přidán na KONEC cmd_map[]) = 167 + 1 = 168.
+ *
+ * mcp-run-mzf-bootstrap doplnil media_run_mzf (reset + bootstrap jako
+ * --run-mzf, přidán na KONEC cmd_map[]) = 168 + 1 = 169.
  */
-#define MCP_EXPECTED_CMD_COUNT 168
+#define MCP_EXPECTED_CMD_COUNT 169
 
 
 /* ====================================================================== */
@@ -1225,7 +1228,7 @@ void test_stall_limit_table(void) {
         DBGAPI_CMD_SNAPSHOT_SAVE_BUFFER, DBGAPI_CMD_SNAPSHOT_LOAD_BUFFER,
         DBGAPI_CMD_PROFILER_EXPORT, DBGAPI_CMD_CDL_EXPORT,
         DBGAPI_CMD_VIDEOREC, DBGAPI_CMD_MEDIA_LOAD_MZF,
-        DBGAPI_CMD_MEDIA_LOAD_BINARY, DBGAPI_CMD_MEDIA_INSERT,
+        DBGAPI_CMD_MEDIA_RUN_MZF, DBGAPI_CMD_MEDIA_LOAD_BINARY, DBGAPI_CMD_MEDIA_INSERT,
         DBGAPI_CMD_MEDIA_EJECT, DBGAPI_CMD_CMT_OPEN, DBGAPI_CMD_CMT_RECORD,
         DBGAPI_CMD_GET_FRAME_SCREENSHOT_PNG,
     };
@@ -3927,6 +3930,63 @@ void test_media_load_mzf_both_path_and_b64_rejected(void) {
     char *resp = NULL;
     en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
     TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/**
+ * @brief media_run_mzf: path varianta jde přes DBGAPI_CMD_MEDIA_RUN_MZF
+ *        a odpověď nese "reset":true.
+ */
+void test_media_run_mzf_path_happy(void) {
+    dispatch_stub_reset();
+    g_stub_state.media_fake_result = 0;
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"id\":1105,\"cmd\":\"media_run_mzf\","
+        "\"data\":{\"path\":\"/tmp/test.mzf\"}}");
+    char *resp = NULL;
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_MEDIA_RUN_MZF,
+                           g_stub_state.media_last_cmd);
+    TEST_ASSERT_EQUAL_STRING("/tmp/test.mzf",
+                              g_stub_state.media_last_filepath);
+    TEST_ASSERT_TRUE(strstr(resp, "\"ok\":true") != NULL);
+    TEST_ASSERT_TRUE(strstr(resp, "\"reset\":true") != NULL);
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/**
+ * @brief media_run_mzf: chyby parametrů a emulátoru.
+ *
+ * Bez path i bytes_b64 = INVALID_PARAMS (nic se neodešle). out_result -4
+ * (soubor kratší než fsize) se hlásí jako chyba s informací, že reset
+ * neproběhl.
+ */
+void test_media_run_mzf_errors(void) {
+    dispatch_stub_reset();
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"id\":1106,\"cmd\":\"media_run_mzf\","
+        "\"data\":{}}");
+    char *resp = NULL;
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.media_last_cmd);
+    free(resp);
+    jsonl_msg_free(req);
+
+    dispatch_stub_reset();
+    g_stub_state.media_fake_result = -4;
+    req = _make_request(
+        "{\"type\":\"request\",\"id\":1107,\"cmd\":\"media_run_mzf\","
+        "\"data\":{\"path\":\"/tmp/short.mzf\"}}");
+    resp = NULL;
+    rc = mcp_dispatch_request(req, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, rc);
+    TEST_ASSERT_TRUE(strstr(resp, "not reset") != NULL);
     free(resp);
     jsonl_msg_free(req);
 }
@@ -6636,6 +6696,8 @@ int main(void) {
     /* V1.B.1 - Media Tools (6 testů) */
     RUN_TEST(test_media_load_mzf_path_happy);
     RUN_TEST(test_media_load_mzf_both_path_and_b64_rejected);
+    RUN_TEST(test_media_run_mzf_path_happy);
+    RUN_TEST(test_media_run_mzf_errors);
     RUN_TEST(test_media_load_binary_addr_validation);
     RUN_TEST(test_media_insert_each_slot);
     RUN_TEST(test_media_insert_invalid_slot);

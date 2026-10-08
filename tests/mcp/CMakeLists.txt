@@ -300,6 +300,26 @@ if(Python3_FOUND)
     message(STATUS "  tests/mcp: registered mcp_run_mzf_state "
                    "(Python ${Python3_VERSION})")
 
+    # MCP media_run_mzf = stejný stav jako --run-mzf (všechny 4 binárky):
+    # reference --run-mzf zastavená exec breakpointem proti media_run_mzf
+    # v pauze nad "špinavým" strojem (IM 2, I, vektor Z80 PIO); chybný
+    # soubor stroj nezresetuje; spuštění za běhu. MCP TCP port volný (ne
+    # 23800). Bez binárek 77 (SKIP).
+    add_test(
+        NAME    mcp_media_run_mzf
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_media_run_mzf.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_media_run_mzf PROPERTIES
+        LABELS  "e2e;mcp;tcp"
+        TIMEOUT 200
+        RUN_SERIAL TRUE
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_media_run_mzf "
+                   "(Python ${Python3_VERSION})")
+
     # -----------------------------------------------------------
     # Test 7d: CMT + snapshot pořízený během přehrávání (pipe)
     # -----------------------------------------------------------

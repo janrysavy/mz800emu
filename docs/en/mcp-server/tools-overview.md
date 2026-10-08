@@ -79,7 +79,7 @@ documented separately in [Resources overview](resources-overview.md).
 | `emu_profiler_export` | no | Export profile to CSV or JSON file |
 | `emu_profiler_get` | no | Inline JSON with entries + global stats |
 | `emu_media_load_mzf` | no | CMT-hack instant load of MZF (header + body) into RAM at LOAD_ADDR (path or bytes_b64) |
-| `emu_media_run_mzf` | **YES** | Load MZF + ROM disconnect + JP STRT (composite, autentic Sharp ROM Monitor LOAD handover) |
+| `emu_media_run_mzf` | **YES** | Reset + start MZF in the `--run-mzf` state (default); `bootstrap=false` = load + ROM disconnect + JP STRT without reset |
 | `emu_media_load_binary` | **YES** | Raw bytes from file to Z80 memory, **destructive** |
 | `emu_media_insert` | **YES** | Insert image into slot (auto-eject when already mounted) |
 | `emu_media_eject` | no | Eject image from slot |
@@ -1121,18 +1121,34 @@ neither PC nor SP and restores the HL/BC/AF scratch registers it uses.
 
 After `media_load_mzf` the CPU stays where it was (= typically the
 ROM Monitor scan loop) - data is in RAM but no jump is performed.
-To also start executing the program use `emu_media_run_mzf`
-(= composite below).
+To also start executing the program use `emu_media_run_mzf` (below).
 
 ### `emu_media_run_mzf` (sensitive)
 
-Composite tool: loads MZF + disconnects lower/upper ROM (= ports
-0xE0/0xE1) + jumps to the MZF EXEC address (= STRT field at offset
-0x16 of the header). Authentic Sharp ROM Monitor LOAD handover
-without waiting for a tape signal or ROM Monitor command prompt.
+Loads an MZF and starts it from the EXEC address in the header
+(offset 0x16). Two variants selected by the `bootstrap` parameter:
+
+- **`bootstrap=true` (default)** - resets the machine and starts the
+  program exactly like the CLI option `--run-mzf` (emulator command
+  `media_run_mzf`). The machine is in the state the ROM leaves it in
+  after loading a program from tape: CPU registers (IM 1, DI,
+  SP = 0x10F0, the registers the ROM passes to the program), 8255,
+  8253, Z80 PIO, PSG, GDG, VRAM and the monitor work area in RAM. The
+  reset is the same as `emu_reset`, so the result does not depend on
+  what ran in the emulator before. The pause state is kept: when paused,
+  the program waits at its first instruction (PC = EXEC). The file is
+  checked before the reset - a missing, unreadable or truncated file
+  returns an error and the machine is not reset.
+- **`bootstrap=false`** - the older composite without a reset:
+  `emu_media_load_mzf` + disconnect lower/upper ROM (ports 0xE0/0xE1) +
+  `emu_set_register` PC. Nothing else is initialised: interrupt mode,
+  IFF, Z80 PIO, CTC, palette and all other state stay as the previous
+  program left them. The program may then behave differently than after
+  a tape load (for example it gets no interrupts).
 
 ```
 emu_media_run_mzf(path="/programs/mzdos.mzf")
+emu_media_run_mzf(path="/programs/mzdos.mzf", bootstrap=false)
 ```
 
 Returns:
@@ -1144,21 +1160,21 @@ Returns:
     "file_type": 1, "filename": "mzdos",
     "file_size": 4096, "load_addr": 256, "exec_addr": 256
   },
-  "rom_disconnected": true,
+  "bootstrap": true,
+  "reset": true,
   "pc_set_to": 256
 }
 ```
 
-Implementation = Python composite (= `emu_media_load_mzf` +
-`emu_io_write` x2 + `emu_set_register` PC). The MZF header is
-parsed client-side (= fast, no round-trip for the header).
+With `bootstrap=false` the result has `"bootstrap": false,
+"reset": false` and also `"rom_disconnected": true`. The MZF header is
+parsed by the wrapper (Python).
 
-**Destructive:** The CPU starts executing code from RAM with the
-ROM disconnected immediately. If you do NOT want this autentic
-flow (= you want the ROM Monitor LOAD process simulated via
-keyboard), use `emu_media_insert(slot='cmt', path=...)` +
-`emu_input_send_keys` with "LOAD\r" (= slower, but exercises the
-full ROM Monitor state machine).
+**Destructive:** both variants replace the running program. If the
+program must go through the real ROM path (IPL or monitor reading the
+tape with its own loader), use `emu_media_insert(slot='cmt', path=...)`
+or `emu_cmt_open` and the load command from the keyboard (slower, but
+it runs the whole ROM code).
 
 ### `emu_media_load_binary` (sensitive)
 
@@ -1787,7 +1803,7 @@ Returns:
     {"id": 0, "kind": "logical", "name": "Z80 view",
      "logical_base": 0, "size": 65536, "writable": true,
      "connected": true, "mapped_now": true},
-    {"id": 1, "kind": "ram", "name": "RAM (raw 64K)",
+    {"id": 1, "kind": "ram", "name": "User RAM (64 KB)",
      "logical_base": null, "size": 65536, ...},
     {"id": 2, "kind": "rom_lower", "name": "Monitor ROM (lower)",
      "logical_base": 0, "size": 4096, "writable": false, ...},
@@ -1806,6 +1822,14 @@ ramdisk_pezik, prohibited_shadow`.
 
 `sub_id` disambiguates regions of the same kind (= plane index, bank
 index, PEZIK instance).
+
+The `ram` region ("User RAM (64 KB)") is the 64 KB of RAM as the CPU
+would see it if RAM were mapped in the whole address space (ROM and VRAM
+do not apply). Without Memext it is the built-in DRAM. With Memext
+connected it is the currently mapped Memext banks, not the built-in DRAM
+(the CPU does not see that one). It can therefore differ from
+`memory/ram.bin` in a `.mzs` snapshot, which always holds the built-in
+DRAM - details in `emulator://docs/memory_layout` (Memext section).
 
 **ID stability**: per session, NOT per HW reconfigure. After
 `periph_attach/detach` or `media_insert/eject` the client must call

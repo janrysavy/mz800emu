@@ -661,6 +661,12 @@ typedef enum en_DBGAPI_CMD
     DBGAPI_CMD_EVENTLOG_TRIGGER_SET,           /* Nastavit / vypnout trigger (eventlog_trigger_set) - data_ptr: st_DBGAPI_EVENTLOG_TRIGGER_PARAM* */
     DBGAPI_CMD_EVENTLOG_TRIGGER_CLEAR_MATCHES, /* Vymazat počítadla shod triggeru (eventlog_trigger_clear_matches) - data_ptr: const uint32_t* (en_EVENTLOG_TRIGGER_KIND) */
 
+    /* Reset + zavedení MZF stejně jako CLI --run-mzf
+     * (mzarch_main_reset_and_run_mzf). Na rozdíl od MEDIA_LOAD_MZF jde
+     * o start programu v definovaném stavu, ne o load do běžícího stroje.
+     * Přidáno na KONEC enumu kvůli stabilitě číselných hodnot. */
+    DBGAPI_CMD_MEDIA_RUN_MZF,        /* Reset + bootstrap --run-mzf - data_ptr: st_DBGAPI_MEDIA_PARAM* (filepath povinný) */
+
 } en_DBGAPI_CMD;
 
 /* ============================================================================
@@ -2816,7 +2822,8 @@ typedef enum en_DBGAPI_MEDIA_SLOT
 /**
  * @brief Společný parametr pro Media Tools CMD (V1.B.1).
  *
- * Sdílen mezi DBGAPI_CMD_MEDIA_LOAD_MZF / LOAD_BINARY / INSERT / EJECT.
+ * Sdílen mezi DBGAPI_CMD_MEDIA_LOAD_MZF / RUN_MZF / LOAD_BINARY / INSERT /
+ * EJECT. RUN_MZF používá stejná pole a kódy out_result jako LOAD_MZF.
  * Jednotlivé CMD používají jen relevantní pole - viz docstring per CMD.
  *
  * Vlastnictví: caller (MCP dispatch.c) alokuje stringy přes g_strdup
@@ -2843,6 +2850,9 @@ typedef enum en_DBGAPI_MEDIA_SLOT
  *                     Pro LOAD_MZF: -1 = neplatný parametr, -2 = fáze 1
  *                     (hlavička) selhala (soubor/header), -3 = fáze 2
  *                     (tělo) selhala (= CARRY z cmthack_result).
+ *                     Pro RUN_MZF navíc -4 = soubor je kratší než
+ *                     128 + fsize (zjištěno před resetem, stroj se
+ *                     nezresetoval); -2 také znamená, že reset neproběhl.
  */
 typedef struct st_DBGAPI_MEDIA_PARAM
 {

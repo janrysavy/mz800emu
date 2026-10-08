@@ -498,6 +498,8 @@ static en_MCP_DISPATCH_RESULT _handle_profiler_get(const st_JSONL_MESSAGE *req,
 /* V1.B.1 - Media Tools fwd decls */
 static en_MCP_DISPATCH_RESULT _handle_media_load_mzf(const st_JSONL_MESSAGE *req,
                                                       char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_media_run_mzf(const st_JSONL_MESSAGE *req,
+                                                     char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_media_load_binary(const st_JSONL_MESSAGE *req,
                                                          char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_media_insert(const st_JSONL_MESSAGE *req,
@@ -1089,6 +1091,10 @@ static const st_MCP_CMD_MAP_ENTRY g_cmd_map[] = {
     /* video-capture Task 18 - časová základna nahrávání. Přidáno na KONEC
      * tabulky kvůli stabilitě pozičního indexu v hello supported_commands. */
     { "videorec_timebase",       DBGAPI_CMD_VIDEOREC,                 _handle_videorec_timebase       },
+    /* Spuštění MZF v definovaném stavu (reset + bootstrap jako --run-mzf).
+     * Přidáno na KONEC tabulky kvůli stabilitě pozičního indexu v hello
+     * supported_commands. */
+    { "media_run_mzf",           DBGAPI_CMD_MEDIA_RUN_MZF,            _handle_media_run_mzf           },
     /* sentinel */
     { NULL,              DBGAPI_CMD_NONE,              NULL                  },
 };
@@ -7732,19 +7738,29 @@ static bool _b64_to_tempfile(const char *b64, char **out_path) {
 
 
 /**
- * @brief `media_load_mzf` - rychlý CMT-hack load MZF do RAM.
+ * @brief Společná část `media_load_mzf` a `media_run_mzf`.
  *
- * Parametry (právě jeden):
+ * Parametry požadavku (právě jeden):
  *   - `path` (string) - filesystem cesta k .mzf
- *   - `bytes_b64` (string) - inline base64 obsah .mzf
+ *   - `bytes_b64` (string) - inline base64 obsah .mzf (dekóduje se do
+ *     dočasného souboru, který se po provedení příkazu smaže)
  *
- * Volá `DBGAPI_CMD_MEDIA_LOAD_MZF`. Handler vykoná plný dvoufázový load
- * (hlavička + post-header mapping + tělo) analogicky bootstrap.c, obchází
- * CMT play emulaci. Při selhání souboru/hlavičky (out_result=-2) nebo těla
- * (out_result=-3) vrací error, ne falešný ok.
+ * @param req          Požadavek MCP.
+ * @param cmd          DBGAPI_CMD_MEDIA_LOAD_MZF nebo DBGAPI_CMD_MEDIA_RUN_MZF.
+ * @param cmd_name     Jméno příkazu MCP pro obecnou chybovou zprávu.
+ * @param out_response Výstup: alokovaná JSON odpověď.
+ * @return MCP_DISPATCH_OK; MCP_DISPATCH_INVALID_PARAMS při chybě parametrů;
+ *         MCP_DISPATCH_EMU_ERROR, když příkaz v emulátoru selhal. Kód
+ *         out_result se mapuje na zprávu: -2 soubor/hlavička, -3 tělo,
+ *         -4 soubor kratší než fsize (jen RUN_MZF, stroj se neresetoval).
+ *
+ * Při úspěchu vrací `{"ok":true, "load_addr", "exec_addr", "size",
+ * "result_code"}`, pro RUN_MZF navíc `"reset":true`.
  */
-static en_MCP_DISPATCH_RESULT _handle_media_load_mzf(const st_JSONL_MESSAGE *req,
-                                                      char **out_response) {
+static en_MCP_DISPATCH_RESULT _media_mzf_common(const st_JSONL_MESSAGE *req,
+                                                 en_DBGAPI_CMD cmd,
+                                                 const char *cmd_name,
+                                                 char **out_response) {
     int64_t req_id = jsonl_msg_get_req_id(req);
     JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
     if (!data_node || json_node_get_node_type(data_node) != JSON_NODE_OBJECT) {
@@ -7783,7 +7799,7 @@ static en_MCP_DISPATCH_RESULT _handle_media_load_mzf(const st_JSONL_MESSAGE *req
         .out_exec_addr = 0,
         .out_result    = 0,
     };
-    bool ok = _submit_dbgapi(DBGAPI_CMD_MEDIA_LOAD_MZF, &param, NULL);
+    bool ok = _submit_dbgapi(cmd, &param, NULL);
     if (tmp_path) {
         g_unlink(tmp_path);
         g_free(tmp_path);
@@ -7791,12 +7807,18 @@ static en_MCP_DISPATCH_RESULT _handle_media_load_mzf(const st_JSONL_MESSAGE *req
     if (!ok) {
         int rc = param.out_result;
         g_free(path); g_free(b64);
-        /* rc: -2 = soubor/hlavička selhala, -3 = tělo selhalo, -1 = param */
+        /* rc: -2 = soubor/hlavička selhala, -3 = tělo selhalo,
+         * -4 = soubor kratší než fsize (ověřeno před resetem), -1 = param */
+        char *fallback = g_strdup_printf("%s failed", cmd_name);
         const char *msg = (rc == -2) ? "Cannot open MZF file or invalid header"
                         : (rc == -3) ? "MZF body load failed (checksum/IO)"
-                                     : "media_load_mzf failed";
-        return _err_response(req_id, msg,
-                             MCP_DISPATCH_EMU_ERROR, out_response);
+                        : (rc == -4) ? "MZF file is shorter than the size in its header (machine was not reset)"
+                                     : fallback;
+        en_MCP_DISPATCH_RESULT res = _err_response(req_id, msg,
+                                                   MCP_DISPATCH_EMU_ERROR,
+                                                   out_response);
+        g_free(fallback);
+        return res;
     }
     JsonObject *resp = json_object_new();
     json_object_set_boolean_member(resp, "ok", TRUE);
@@ -7804,8 +7826,42 @@ static en_MCP_DISPATCH_RESULT _handle_media_load_mzf(const st_JSONL_MESSAGE *req
     json_object_set_int_member(resp, "exec_addr", (gint64)param.out_exec_addr);
     json_object_set_int_member(resp, "size", (gint64)param.out_size);
     json_object_set_int_member(resp, "result_code", param.out_result);
+    if (cmd == DBGAPI_CMD_MEDIA_RUN_MZF) {
+        json_object_set_boolean_member(resp, "reset", TRUE);
+    }
     g_free(path); g_free(b64);
     return _ok_response(req_id, resp, out_response);
+}
+
+
+/**
+ * @brief `media_load_mzf` - rychlý CMT-hack load MZF do RAM.
+ *
+ * Parametry viz _media_mzf_common(). Volá `DBGAPI_CMD_MEDIA_LOAD_MZF`.
+ * Handler vykoná plný dvoufázový load (hlavička + post-header mapping +
+ * tělo) analogicky bootstrap.c, obchází CMT play emulaci. Stav stroje
+ * (registry, periferie, mapování) nemění. Při selhání souboru/hlavičky
+ * (out_result=-2) nebo těla (out_result=-3) vrací error, ne falešný ok.
+ */
+static en_MCP_DISPATCH_RESULT _handle_media_load_mzf(const st_JSONL_MESSAGE *req,
+                                                      char **out_response) {
+    return _media_mzf_common(req, DBGAPI_CMD_MEDIA_LOAD_MZF, "media_load_mzf",
+                             out_response);
+}
+
+
+/**
+ * @brief `media_run_mzf` - reset stroje a spuštění MZF jako CLI `--run-mzf`.
+ *
+ * Parametry viz _media_mzf_common(). Volá `DBGAPI_CMD_MEDIA_RUN_MZF`:
+ * úplný reset a bootstrap (stav jako po zavedení programu z pásky přes
+ * ROM), PC = exec adresa. Stav pauzy emulace se nemění. Soubor se ověří
+ * před resetem; chybný soubor (out_result -2 nebo -4) stroj nezresetuje.
+ */
+static en_MCP_DISPATCH_RESULT _handle_media_run_mzf(const st_JSONL_MESSAGE *req,
+                                                     char **out_response) {
+    return _media_mzf_common(req, DBGAPI_CMD_MEDIA_RUN_MZF, "media_run_mzf",
+                             out_response);
 }
 
 
@@ -12601,6 +12657,7 @@ int mcp_dispatch_stall_limit_ms(int cmd) {
         case DBGAPI_CMD_CDL_EXPORT:
         case DBGAPI_CMD_VIDEOREC:
         case DBGAPI_CMD_MEDIA_LOAD_MZF:
+        case DBGAPI_CMD_MEDIA_RUN_MZF:
         case DBGAPI_CMD_MEDIA_LOAD_BINARY:
         case DBGAPI_CMD_MEDIA_INSERT:
         case DBGAPI_CMD_MEDIA_EJECT:

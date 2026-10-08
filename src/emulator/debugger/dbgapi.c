@@ -843,6 +843,7 @@ const char *dbgapi_cmd_to_str(en_DBGAPI_CMD cmd)
         /* V1.B.1 - Media Tools */
         case DBGAPI_CMD_MEDIA_LOAD_MZF:            return "media_load_mzf";
         case DBGAPI_CMD_MEDIA_LOAD_BINARY:         return "media_load_binary";
+        case DBGAPI_CMD_MEDIA_RUN_MZF:             return "media_run_mzf";
         case DBGAPI_CMD_MEDIA_INSERT:              return "media_insert";
         case DBGAPI_CMD_MEDIA_EJECT:               return "media_eject";
         case DBGAPI_CMD_MEDIA_STATE:               return "media_state";
@@ -4441,7 +4442,8 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
              *     8255/CTC/PIO). media_load_mzf je load mid-session, ne boot.
              *   - NEnastaví SP (= bootstrap to dělá jako run-prep, my jsme
              *     load-only).
-             *   - NEnastaví PC (= práce composite emu_media_run_mzf / caller).
+             *   - NEnastaví PC (= práce volajícího; spuštění v definovaném
+             *     stavu dělá DBGAPI_CMD_MEDIA_RUN_MZF).
              *
              * Mapping: na MZ-800 je po resetu header buffer 0x10F0 mapovaný
              * na CG-ROM (= ROM_1000), takže nejdřív uložíme g_memory.map a
@@ -4546,6 +4548,89 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             p->out_size = mzf_header.fsize;
 
             if ( body_failed )
+            {
+                p->out_result = -3;
+                rq->success = false;
+                break;
+            };
+
+            p->out_result = 0;
+            rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_MEDIA_RUN_MZF:
+        {
+            /* Spuštění MZF v definovaném stavu: reset stroje + bootstrap
+             * jako CLI --run-mzf (mzarch_main_reset_and_run_mzf). Na rozdíl
+             * od MEDIA_LOAD_MZF výsledek nezávisí na předchozím stavu stroje
+             * (Z80 PIO, IM, paleta, CTC, ...).
+             *
+             * Soubor se ověří PŘED resetem (čitelná hlavička, tělo
+             * o délce fsize za ní), aby chybná cesta nebo zkrácený soubor
+             * nezresetovaly běžící program. Kódy out_result jako LOAD_MZF,
+             * navíc -4 = soubor kratší než 128 + fsize (zjištěno před
+             * resetem). -3 zde znamená selhání CMT hacku až po resetu.
+             *
+             * Reset v drainu fronty je stejná situace jako načtení snapshotu
+             * (SNAPSHOT_LOAD_*): celý stav stroje se nahradí mezi
+             * instrukcemi. */
+            st_DBGAPI_MEDIA_PARAM *p =
+                (st_DBGAPI_MEDIA_PARAM *) rq->data_ptr;
+            if ( !p || !p->filepath || p->filepath[0] == '\0' )
+            {
+                if ( p )
+                {
+                    p->out_result = -1;
+                    p->out_size = 0;
+                };
+                rq->success = false;
+                break;
+            };
+
+            /* Hlavička a délka souboru. Pole hlavičky jsou little-endian. */
+            uint8_t raw_hdr[sizeof ( st_MZF_HEADER )];
+            bool hdr_ok = false;
+            gint64 file_len = -1;
+            FILE *fp = g_fopen ( p->filepath, "rb" );
+            if ( fp )
+            {
+                hdr_ok = ( fread ( raw_hdr, 1, sizeof ( raw_hdr ), fp )
+                           == sizeof ( raw_hdr ) );
+                if ( fseek ( fp, 0, SEEK_END ) == 0 )
+                {
+                    file_len = (gint64) ftell ( fp );
+                };
+                fclose ( fp );
+            };
+            if ( !hdr_ok )
+            {
+                p->out_result = -2;
+                p->out_size = 0;
+                rq->success = false;
+                break;
+            };
+            uint16_t fsize = (uint16_t) ( raw_hdr[offsetof ( st_MZF_HEADER, fsize )]
+                             | ( raw_hdr[offsetof ( st_MZF_HEADER, fsize ) + 1] << 8 ) );
+            uint16_t fstrt = (uint16_t) ( raw_hdr[offsetof ( st_MZF_HEADER, fstrt )]
+                             | ( raw_hdr[offsetof ( st_MZF_HEADER, fstrt ) + 1] << 8 ) );
+            uint16_t fexec = (uint16_t) ( raw_hdr[offsetof ( st_MZF_HEADER, fexec )]
+                             | ( raw_hdr[offsetof ( st_MZF_HEADER, fexec ) + 1] << 8 ) );
+            p->out_load_addr = fstrt;
+            p->out_exec_addr = fexec;
+            p->out_size = fsize;
+            if ( file_len < (gint64) ( sizeof ( st_MZF_HEADER ) + fsize ) )
+            {
+                p->out_result = -4;
+                rq->success = false;
+                break;
+            };
+
+            mzarch_main_reset_and_run_mzf ( p->filepath );
+
+            /* CARRY v AF = selhání CMT hacku (cmthack_result). Bootstrap po
+             * načtení těla AF nemění. */
+            if ( z80_get_reg ( g_mzarch_main.cpu, Z80_REG_AF ) & 0x01 )
             {
                 p->out_result = -3;
                 rq->success = false;

@@ -3798,36 +3798,52 @@ def _parse_mzf_header(raw: bytes) -> dict:
 
 
 @mcp.tool()
-async def emu_media_run_mzf(path: str = "", bytes_b64: str = "") -> str:
+async def emu_media_run_mzf(path: str = "", bytes_b64: str = "",
+                            bootstrap: bool = True) -> str:
     """Load an MZF program AND start executing it from the MZF EXEC
-    address (autentic Sharp ROM Monitor LOAD handover).
+    address.
 
-    Composite of ``emu_media_load_mzf`` + ROM disconnect via ``emu_io_write``
-    on ports 0xE0/0xE1 + ``emu_set_register`` PC=exec_addr. The MZF
-    header is parsed client-side (Python) to obtain the EXEC address; the
-    actual body load goes through the emulator's CMT hack as in
-    ``emu_media_load_mzf``.
+    With ``bootstrap=True`` (default) the emulator is RESET and the
+    program is started exactly like the CLI option ``--run-mzf``: the
+    machine is put into the state the ROM leaves it in after loading a
+    program from tape (CPU registers incl. IM 1, DI and SP=0x10F0, 8255,
+    8253 CTC, Z80 PIO, PSG, GDG, VRAM, monitor work area in RAM, the
+    entry registers the platform ROM passes to the program), then PC =
+    exec address. The reset is the same as ``emu_reset``, so the result
+    does not depend on what ran in the emulator before. The pause state
+    is kept: if the emulation was paused, the program waits at its first
+    instruction. The file is checked before the reset - a missing,
+    unreadable or truncated file returns an error and does NOT reset the
+    machine.
 
-    WARNING: This is destructive. The CPU starts executing from the MZF
-    EXEC address with the lower ROM disconnected; whatever code was at
-    the ROM-shadowed RAM region is now visible. Save a snapshot beforehand
-    if you need to recover the previous state.
+    With ``bootstrap=False`` this is the older composite without a reset:
+    ``emu_media_load_mzf`` + ROM disconnect via ``emu_io_write`` on ports
+    0xE0/0xE1 + ``emu_set_register`` PC=exec_addr. Nothing else is
+    initialised: interrupt mode, IFF, Z80 PIO, CTC, palette and all other
+    state stay whatever the previous program left there, so a program can
+    behave differently than after a real tape load (e.g. no interrupts).
 
-    Provide exactly one of ``path`` or ``bytes_b64``. Returns a JSON
-    payload with the parsed header fields and the steps performed.
+    WARNING: Both variants are destructive. Save a snapshot beforehand if
+    you need to recover the previous state.
+
+    Provide exactly one of ``path`` or ``bytes_b64``. The MZF header is
+    parsed client-side (Python) to report the header fields.
 
     Args:
         path: Filesystem path to a .mzf file.
         bytes_b64: Inline base64-encoded MZF content.
+        bootstrap: True = reset + ``--run-mzf`` bootstrap (defined state),
+            False = load into the running machine and jump (no reset).
 
     Returns on success:
       ``{"loaded": true, "header": {file_type, filename, file_size,
-         load_addr, exec_addr}, "rom_disconnected": true,
-         "pc_set_to": int}``.
+         load_addr, exec_addr}, "bootstrap": bool, "reset": bool,
+         "pc_set_to": int}``; with ``bootstrap=False`` also
+         ``"rom_disconnected": true``.
 
     Returns on error:
-      ``{"error": "..."}`` - the partial operations performed before the
-      error are NOT rolled back.
+      ``{"error": "..."}``. With ``bootstrap=False`` the partial
+      operations performed before the error are NOT rolled back.
     """
     has_path = bool(path)
     has_b64 = bool(bytes_b64)
@@ -3850,9 +3866,25 @@ async def emu_media_run_mzf(path: str = "", bytes_b64: str = "") -> str:
     if "error" in hdr:
         return json.dumps(hdr)
     exec_addr = hdr["exec_addr"]
-
-    # 1. Load MZF body do RAM
     args = {"path": path} if has_path else {"bytes_b64": bytes_b64}
+
+    if bootstrap:
+        # Reset + bootstrap jako CLI --run-mzf, celé v emulátoru v jednom
+        # příkazu (soubor ověří emulátor před resetem).
+        resp = await _send_request("media_run_mzf", args)
+        if not resp.get("success", False):
+            return json.dumps(
+                {"error": resp.get("error", "media_run_mzf failed"),
+                 "header": hdr})
+        return json.dumps({
+            "loaded": True,
+            "header": hdr,
+            "bootstrap": True,
+            "reset": True,
+            "pc_set_to": exec_addr,
+        })
+
+    # Varianta bez resetu: 1. Load MZF body do RAM
     resp = await _send_request("media_load_mzf", args)
     if not resp.get("success", False):
         return json.dumps(
@@ -3881,6 +3913,8 @@ async def emu_media_run_mzf(path: str = "", bytes_b64: str = "") -> str:
     return json.dumps({
         "loaded": True,
         "header": hdr,
+        "bootstrap": False,
+        "reset": False,
         "rom_disconnected": True,
         "pc_set_to": exec_addr,
     })

@@ -1,4 +1,6 @@
 
+	- BUGFIX: MCP - emu_media_run_mzf only loaded the program and jumped to its start; interrupt mode, Z80 PIO, CTC, palette and all other state stayed as the previous program left them, so the program could behave differently than after a tape load (e.g. it got no interrupts). It now resets the machine and starts the program in the same state as the --run-mzf option (new command media_run_mzf). A missing or truncated file returns an error without a reset. The old behaviour without a reset is available as emu_media_run_mzf with bootstrap=false.
+
 	- BUGFIX: Keyboard - selecting a nonexistent keyboard column (value 10 to 15 in bits 0-3 of 8255 port A) made port B return a bogus value (typically 00h, as if all keys were pressed). A real MZ-800 selects no column in this case and returns FFh (verified on hardware). Programs that wait for all keys to be released and scan these values as well got stuck (e.g. Antiriad in the S. Hecht version stayed on the title screen).
 
 	- BUGFIX: Cassette - MZF and MZT files were played with pulse lengths rounded to 44.1 kHz samples. At 3:1 speed this distorted the short pulse (high 90.7 µs instead of 81.9 µs), so programs with their own fast loader failed to load or loaded unreliably (e.g. Interkarate, parts 2 and 3). Pulses are now generated with GDG clock precision.

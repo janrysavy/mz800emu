@@ -111,6 +111,28 @@ extern "C"
 
     extern void mzarch_main_init(void);
     extern void mzarch_main(void);
+
+    /**
+     * @brief Resetuje stroj a zavede MZF stejně jako CLI `--run-mzf`.
+     *
+     * Provede úplný reset (mzarch_main_reset(): GDG, paměť, CPU, periferie,
+     * stav debuggeru) a hned za ním mzarch_bootstrap_run_mzf(). Výsledný stav
+     * nezávisí na tom, co v emulátoru běželo předtím, a je shodný se stavem
+     * po startu emulátoru s `--run-mzf`.
+     *
+     * @param filename Cesta k MZF souboru (UTF-8).
+     *
+     * @pre Volá se z emulátorového vlákna v bodě mezi instrukcemi (drain
+     *      fronty dbgapi). Soubor ověřil volající: při nečitelném souboru
+     *      se chová jako mzarch_bootstrap_run_mzf() (viz bootstrap.h).
+     * @post PC = exec adresa MZF, CPU stojí před první instrukcí programu.
+     *       Stav pauzy emulace se nemění.
+     *
+     * Vedlejší efekty: stejné jako tlačítko Reset (BP událost reset, záznam
+     * COLD_RESET do Event Vieweru, zrušení frame-bounded běhu) plus zápisy
+     * bootstrapu do periferií a RAM.
+     */
+    extern void mzarch_main_reset_and_run_mzf(const char *filename);
     extern void mzarch_main_insideop_iorq(void);
     extern void mzarch_main_insideop_mreq(void);
     extern void mzarch_main_insideop_mreq_e00x(void);

@@ -8,7 +8,7 @@ Read individual topics on demand via `resources/read`.
 | URI | What to look up here |
 |-----|----------------------|
 | `emulator://docs/error_handling` | How to read a failed tool response: which errors mean "not executed, safe to retry" (`Emulator busy: ...`), "partially executed" or a real failure; request timing, the 10 s queue timeout and the ~20 s limit for a started command. |
-| `emulator://docs/memory_layout` | Z80 64 KB address space layout per platform (MZ-700 / MZ-800 native / MZ-800 700-compat / MZ-1500). Banking ports `0xE0..0xE6`. Key ROM entry points, IRQ vectors, text/color VRAM regions. |
+| `emulator://docs/memory_layout` | Z80 64 KB address space layout per platform (MZ-700 / MZ-800 native / MZ-800 700-compat / MZ-1500). Banking ports `0xE0..0xE6`. Memory expansion (Memext) replacing the RAM, memory files inside a `.mzs` snapshot. Key ROM entry points, IRQ vectors, text/color VRAM regions. |
 | `emulator://docs/bp_dsl` | Breakpoint condition expression language: registers, memory deref `[addr]`, port read `port[N]`, operators, built-in functions, `$user_vars`, examples. Same language is used by Watch expressions and Action DSL arguments. |
 | `emulator://docs/smart_vars` | `$name` user variables: how to create / read / write from BP action DSL, persistence rules (`.bpt` + `.vars`), lifecycle, reading via `emulator://vars`. |
 | `emulator://docs/action_dsl` | BP Action DSL grammar - what runs when a breakpoint fires. Commands: `log`, `set <reg>`, `poke`, `mark`, `$var` writes, `if/then/else`, `enable` / `disable` / `disable_self`, `clear_vars`, `continue`, plus the forwarding commands `cdl_start` / `cdl_stop` / `cdl_reset` / `cdl_export`, `trace_start` / `trace_stop` / `trace_save`, `snapshot` (one smart BP instead of repeated MCP calls). `log` format specs, stop vs continue semantics. |
@@ -16,7 +16,7 @@ Read individual topics on demand via `resources/read`.
 | `emulator://docs/eventlog_mask` | EventLog 64-bit category mask: bit assignments per `en_EVENTLOG_CATEGORY`, common mask recipes ("memory writes only", "IRQ only"), how to pass via `emu_eventlog_set_mask`. |
 | `emulator://docs/sharp_display_code` | Sharp MZ ASCII vs display code vs standard ASCII. Mapping tables, inverse video, decoding `emulator://video/text_dump`. |
 | `emulator://docs/mz800_keyboard` | Sharp MZ-800 keyboard: physical layout, per-key matrix position + emitted characters, modifiers (SHIFT / CTRL / GRAPH / ALPHA), the four character layers, canonical key names for the `emu_input_send_keys` injection tool, recipes for typing graphics / semigraphics. MZ-700 / MZ-1500 as a diff (no TAB, longer ALPHA). |
-| `emulator://docs/cmt_workflow` | CMT cassette workflow: real tape (`emu_cmt_*`) vs cmthack instant load, transport flow, WAV recording, speed ratios / polarity / cpu boost / mzfsize check, SIMPLE_TAPE multi-block seek + per-block speed. Cross-refs `emulator://periph/cmt` and `emulator://periph/cmt/tape`. |
+| `emulator://docs/cmt_workflow` | CMT cassette workflow: real tape (`emu_cmt_*`) vs cmthack instant load, starting a program in a defined state (`emu_media_run_mzf`), transport flow, WAV recording, speed ratios / polarity / cpu boost / mzfsize check, SIMPLE_TAPE multi-block seek + per-block speed. Cross-refs `emulator://periph/cmt` and `emulator://periph/cmt/tape`. |
 | `emulator://docs/videorec_workflow` | Recording a gameplay video (all builds): `emu_videorec_*` tools, recipe start -> play with keystrokes -> markers -> snapshot retake -> stop, error messages, export of the recording to MP4. |
 
 ## When to read what
@@ -32,10 +32,11 @@ Read individual topics on demand via `resources/read`.
   `eventlog_mask`.
 - Decoding text from `emulator://video/text_dump` or `emu_mem_read` of
   the text VRAM region -> `sharp_display_code`.
-- Reading / writing memory and want to know what region is what ->
-  `memory_layout`.
-- Loading a program from cassette, recording to tape, or working with
-  a multi-block tape -> `cmt_workflow`.
+- Reading / writing memory and want to know what region is what, or
+  reading RAM from a `.mzs` snapshot (Memext!) -> `memory_layout`.
+- Loading a program from cassette, starting a program in the same state
+  as after a tape load, recording to tape, or working with a multi-block
+  tape -> `cmt_workflow`.
 - Injecting keystrokes via `emu_input_send_keys` and need the exact key names,
   or want to type Sharp graphics / special characters -> `mz800_keyboard`.
 - Recording a video of a game (with chapters and retakes) and exporting it

@@ -1067,6 +1067,7 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
             break;
 
         case DBGAPI_CMD_MEDIA_LOAD_MZF:
+        case DBGAPI_CMD_MEDIA_RUN_MZF:
         case DBGAPI_CMD_MEDIA_LOAD_BINARY:
         case DBGAPI_CMD_MEDIA_INSERT:
         case DBGAPI_CMD_MEDIA_EJECT:

@@ -27,7 +27,7 @@ Commands that legitimately run long in the emulator thread (file I/O or
 large data) get a much longer limit of **10 minutes** instead of 10 s:
 `trace_stop`, `trace_save`, `snapshot_save`, `snapshot_save_buffer`,
 `snapshot_load`, `snapshot_load_buffer`, `profiler_export`, `cdl_export`,
-all `videorec_*` tools, `media_load_mzf`, `media_load_binary`,
+all `videorec_*` tools, `media_load_mzf`, `media_run_mzf`, `media_load_binary`,
 `media_insert`, `media_eject`, `cmt_open`, `cmt_record`,
 `get_frame_screenshot`, `screenshot_save_to_file` (and the wrapper tools
 built on them). The 10 s queue limit applies to them as well. A client

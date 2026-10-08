@@ -34,6 +34,11 @@ Z pohledu kompatibility se snapshot v paměti chová **identicky** se
 snapshotem v souboru - stejný checksum, stejné metadata, stejné
 ověřování architektury, stejná podpora obou architektur MZ-800/700/1500.
 
+Soubory s pamětí uvnitř archivu (`memory/ram.bin`, `memory/vram.bin`,
+`memory/memext_ram.bin`, ...) popisuje `emulator://docs/memory_layout`.
+Pozor: se zapojeným Memextem je RAM, kterou vidí CPU, v
+`memory/memext_ram.bin`, ne v `memory/ram.bin`.
+
 ## Omezení
 
 - Maximální velikost vstupu pro načtení z paměti je 2 GB. Reálné

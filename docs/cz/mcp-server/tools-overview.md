@@ -79,7 +79,7 @@ dokumentu [Resources overview](resources-overview.md).
 | `emu_profiler_export` | ne | Export profile do CSV nebo JSON souboru |
 | `emu_profiler_get` | ne | Inline JSON s entries + globální stats |
 | `emu_media_load_mzf` | ne | CMT-hack instant load MZF (header + body) do RAM na LOAD_ADDR (path nebo bytes_b64) |
-| `emu_media_run_mzf` | **ANO** | Load MZF + ROM disconnect + JP STRT (composite, autentic Sharp ROM Monitor LOAD handover) |
+| `emu_media_run_mzf` | **ANO** | Reset + spuštění MZF ve stavu jako po `--run-mzf` (výchozí); `bootstrap=false` = load + ROM disconnect + JP STRT bez resetu |
 | `emu_media_load_binary` | **ANO** | Raw bajty z file do Z80 paměti, **destruktivní** |
 | `emu_media_insert` | **ANO** | Vloží image do slotu (auto-eject pokud již vloženo) |
 | `emu_media_eject` | ne | Vyjme image ze slotu |
@@ -1091,18 +1091,33 @@ registry HL/BC/AF.
 
 CPU po `media_load_mzf` zůstává tam, kde byla (= typicky v ROM
 Monitor scan loop) - data jsou v RAM, ale na ně se neskočí. Pokud
-chcete program i spustit, použijte `emu_media_run_mzf` (= composite
-níže).
+chcete program i spustit, použijte `emu_media_run_mzf` (níže).
 
 ### `emu_media_run_mzf` (sensitive)
 
-Composite tool: nahraje MZF + odpojí dolní/horní ROM (= port
-0xE0/0xE1) + skočí na MZF EXEC adresu (= STRT field, offset 0x16
-v hlavičce). Autentický Sharp ROM Monitor LOAD handover bez čekání
-na tape signal nebo ROM Monitor command prompt.
+Nahraje MZF a spustí ho od EXEC adresy z hlavičky (offset 0x16).
+Dvě varianty podle parametru `bootstrap`:
+
+- **`bootstrap=true` (výchozí)** - reset stroje a zavedení programu
+  stejně jako CLI volba `--run-mzf` (příkaz emulátoru `media_run_mzf`).
+  Stroj je ve stavu, v jakém ho ROM nechá po nahrání programu z pásky:
+  registry CPU (IM 1, DI, SP = 0x10F0, registry, které ROM předává
+  programu), 8255, 8253, Z80 PIO, PSG, GDG, VRAM a pracovní oblast
+  monitoru v RAM. Reset je stejný jako `emu_reset`, takže výsledek
+  nezávisí na tom, co v emulátoru běželo předtím. Stav pauzy se nemění:
+  v pauze program čeká na první instrukci (PC = EXEC). Soubor se ověří
+  před resetem - neexistující, nečitelný nebo zkrácený soubor vrátí chybu
+  a stroj se nezresetuje.
+- **`bootstrap=false`** - starší složené volání bez resetu:
+  `emu_media_load_mzf` + odpojení dolní/horní ROM (porty 0xE0/0xE1) +
+  `emu_set_register` PC. Nic dalšího se nenastavuje: režim přerušení,
+  IFF, Z80 PIO, CTC, paleta a ostatní stav zůstanou po předchozím
+  programu. Program se pak může chovat jinak než po nahrání z pásky
+  (například mu nechodí přerušení).
 
 ```
 emu_media_run_mzf(path="/programs/mzdos.mzf")
+emu_media_run_mzf(path="/programs/mzdos.mzf", bootstrap=false)
 ```
 
 Vrací:
@@ -1114,21 +1129,21 @@ Vrací:
     "file_type": 1, "filename": "mzdos",
     "file_size": 4096, "load_addr": 256, "exec_addr": 256
   },
-  "rom_disconnected": true,
+  "bootstrap": true,
+  "reset": true,
   "pc_set_to": 256
 }
 ```
 
-Implementace = Python composite (= `emu_media_load_mzf` +
-`emu_io_write` x2 + `emu_set_register` PC). MZF hlavička se
-parsuje klient-side (= rychlé, bez round-tripu pro header).
+S `bootstrap=false` je `"bootstrap": false, "reset": false` a navíc
+`"rom_disconnected": true`. MZF hlavička se parsuje na straně wrapperu
+(Python).
 
-**Destruktivní:** CPU začne vykonávat kód z RAM s odpojenou ROM
-ihned. Pokud nechcete tento autentic flow (= chcete ROM Monitor
-LOAD process simulovaný přes klávesnici), použijte
-`emu_media_insert(slot='cmt', path=...)` + `emu_input_send_keys`
-sekvenci s "LOAD\r" (= pomalejší, ale projde plný ROM Monitor
-state machine).
+**Destruktivní:** obě varianty přepíšou běžící program. Pokud má
+program projít skutečnou cestou přes ROM (IPL nebo monitor čte pásku
+přes vlastní loader), použijte `emu_media_insert(slot='cmt', path=...)`
+nebo `emu_cmt_open` a příkaz pro nahrání z klávesnice (pomalejší, ale
+projde celý kód ROM).
 
 ### `emu_media_load_binary` (sensitive)
 
@@ -1748,7 +1763,7 @@ Returns:
     {"id": 0, "kind": "logical", "name": "Z80 view",
      "logical_base": 0, "size": 65536, "writable": true,
      "connected": true, "mapped_now": true},
-    {"id": 1, "kind": "ram", "name": "RAM (raw 64K)",
+    {"id": 1, "kind": "ram", "name": "User RAM (64 KB)",
      "logical_base": null, "size": 65536, ...},
     {"id": 2, "kind": "rom_lower", "name": "Monitor ROM (lower)",
      "logical_base": 0, "size": 4096, "writable": false, ...},
@@ -1767,6 +1782,14 @@ ramdisk_pezik, prohibited_shadow`.
 
 `sub_id` disambiguuje regiony stejného kindu (= plane index, bank
 index, PEZIK instance).
+
+Region `ram` ("User RAM (64 KB)") je 64 KB RAM tak, jak by ji viděl
+CPU, kdyby byla RAM namapovaná v celém adresním prostoru (ROM a VRAM se
+neuplatní). Bez Memextu je to vestavěná DRAM. Se zapojeným Memextem jsou
+to banky Memextu, které jsou právě namapované, ne vestavěná DRAM (tu CPU
+nevidí). Proto se může lišit od `memory/ram.bin` ve snapshotu `.mzs`,
+který vždy obsahuje vestavěnou DRAM - podrobnosti v
+`emulator://docs/memory_layout` (sekce o Memextu).
 
 **Stabilita ID**: per session, NE per HW reconfigure. Po
 `periph_attach/detach` nebo `media_insert/eject` klient musí volat

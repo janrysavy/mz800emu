@@ -37,6 +37,11 @@ From a compatibility standpoint, an in-memory snapshot behaves
 **identically** to a file snapshot - same checksum, same metadata, same
 architecture verification, same support for MZ-800/700/1500.
 
+The memory files inside the archive (`memory/ram.bin`, `memory/vram.bin`,
+`memory/memext_ram.bin`, ...) are described in
+`emulator://docs/memory_layout`. Note: with Memext connected, the RAM
+the CPU sees is in `memory/memext_ram.bin`, not in `memory/ram.bin`.
+
 ## Limits
 
 - Maximum input size for in-memory load is 2 GB. Real-world MZ-800

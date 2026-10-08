@@ -109,6 +109,30 @@ SINGLE containers (a plain .mzf) hold one block.
 When no tape is loaded the tape resource returns
 `{"available": false, "blocks": []}`.
 
+## Starting a program in a defined state
+
+A program may behave differently depending on what ran in the machine
+before it (interrupt mode, Z80 PIO interrupt vector, CTC, palette, ...).
+To get the same state as after a real tape load, use one of:
+
+- `emu_media_run_mzf(path)` with the default `bootstrap=true`: resets
+  the machine and starts the program exactly like the CLI option
+  `--run-mzf` (the state the ROM leaves after loading from tape, PC =
+  exec address). The result does not depend on the previous state. When
+  the emulation is paused, the program waits at its first instruction,
+  so you can set breakpoints before `emu_run`.
+- `emu_reset`, let the ROM boot (`emu_run` with `frames`), then load
+  from the virtual tape through the ROM (`emu_cmt_open` + the load key
+  or command + `emu_cmt_play`). Slowest, but it runs the real ROM and
+  loader code.
+
+Avoid `emu_media_run_mzf(bootstrap=false)` and `emu_media_load_mzf` +
+`emu_set_register` PC when the previous state matters: they only load
+the file and jump, everything else stays as the previous program left
+it. Example: a game part started this way over the running first part
+of the same game stopped getting interrupts, while the same procedure
+right after the emulator start worked.
+
 ## When to use what
 
 - "Just boot this MZF fast" -> `emu_cmt_hack_set(true)` +

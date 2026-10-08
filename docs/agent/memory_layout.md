@@ -89,6 +89,47 @@ are accessible and `emulator://video/text_dump` returns data. The
 mode flip is detectable via `emulator://platform/info` (`mode` field
 = `native` / `compat700`).
 
+## Memory expansion (Memext) replaces the RAM
+
+When a memory expansion is connected (INI `[MEMEXT] connected = 1`,
+`type` = PEHU or LUFTNER), the Z80 sees the expansion RAM instead of the
+built-in DRAM: each 4 KB slot of the address space that is mapped to RAM
+points into a 4 KB bank of the expansion. ROM, VRAM and I/O mapping are
+unchanged. The built-in DRAM stays in the emulator but the CPU does not
+see it.
+
+Where to read the memory the program actually uses:
+
+| Source | With Memext connected |
+|--------|-----------------------|
+| `emulator://memory/...`, `emu_mem_read` | CPU view (current banking) - the expansion RAM where RAM is mapped |
+| `emu_region_read` region `ram` ("User RAM (64 KB)") | The 64 KB the CPU would see if RAM were mapped everywhere - i.e. the expansion banks currently mapped, not the built-in DRAM. With a LUFTNER FLASH bank mapped, that slot shows the write-only scratch, not FLASH. |
+| `emu_region_read` regions `memext_ram` (`sub_id` = bank) | One 4 KB bank of the expansion RAM |
+| Snapshot `.mzs`: `memory/ram.bin` | The built-in DRAM (64 KB), bypassed by Memext - for example still the power-on fill pattern |
+| Snapshot `.mzs`: `memory/memext_ram.bin` | The whole expansion RAM (512 KB) - see below |
+
+Snapshot (`.mzs` is a ZIP archive) memory files:
+
+| File | Content |
+|------|---------|
+| `memory/ram.bin` | Built-in DRAM, 64 KB, linear 0x0000..0xFFFF. Not the CPU view when Memext is connected. |
+| `memory/vram.bin` | VRAM (MZ-800 planes I+II / MZ-700 and MZ-1500 text and attribute VRAM) |
+| `memory/exvram.bin` | MZ-800 only: extended VRAM (planes III+IV) |
+| `memory/pcg.bin` | MZ-1500 only: PCG banks |
+| `memory/memory_state.xml` | Banking state (`map`) |
+| `memory/memext_ram.bin` | Expansion RAM, 512 KB, as 4 KB banks: bank `n` at offset `n * 0x1000` |
+| `memory/memext_flash.bin` | LUFTNER FLASH, 512 KB |
+| `devices/memext.xml` | Connection, type and the 16-entry `map`: `entry_i` = bank seen in the 4 KB slot `i` (slot 0 = 0x0000..0x0FFF); bit 7 set = FLASH bank `entry_i & 0x7F` |
+
+`memext_ram.bin` and `memext_flash.bin` are only written when Memext is
+connected and INI `[SNAPSHOT] include_memext = 1` (default). To get the
+CPU's RAM byte at address `A` from a snapshot with Memext: read
+`entry_(A >> 12)` from `devices/memext.xml`, then the byte at offset
+`entry * 0x1000 + (A & 0x0FFF)` of `memext_ram.bin` (or of
+`memext_flash.bin` with `entry & 0x7F` when bit 7 is set). With the
+identity map (`entry_i = i`) the first 64 KB of `memext_ram.bin` are the
+CPU's 64 KB in order.
+
 ## MZ-1500 layout
 
 MZ-1500 is a Japanese-market MZ-700 successor with PCG / palette
