@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <math.h>
+#include <string.h>
 
 #include "libs/mzf/mzf.h"
 #include "libs/mzf/mzf_tools.h"
@@ -73,7 +74,12 @@ void cmtmzf_blockspec_destroy ( st_CMTMZF_BLOCKSPEC *blspec ) {
 }
 
 
-st_CMTMZF_BLOCKSPEC* cmtmzf_blockspec_new ( st_HANDLER *h, uint32_t offset, en_CMTSPEED cmtspeed ) {
+st_CMTMZF_BLOCKSPEC* cmtmzf_blockspec_new ( st_HANDLER *h, uint32_t offset, en_CMTSPEED cmtspeed, const st_MZTAPE_PULSES_LENGTH *pulses ) {
+
+    if ( cmtspeed_is_custom ( cmtspeed ) && !pulses ) {
+        fprintf ( stderr, "%s():%d - Custom speed without pulses\n", __func__, __LINE__ );
+        return NULL;
+    };
 
     st_MZF_HEADER *hdr = (st_MZF_HEADER*) baseui_tools_mem_alloc0 ( sizeof ( st_MZF_HEADER ) );
     if ( !hdr ) {
@@ -113,6 +119,7 @@ st_CMTMZF_BLOCKSPEC* cmtmzf_blockspec_new ( st_HANDLER *h, uint32_t offset, en_C
     blspec->hdr = hdr;
     blspec->mztmzf = mztmzf;
     blspec->cmtspeed = cmtspeed;
+    if ( cmtspeed_is_custom ( cmtspeed ) ) blspec->pulses = *pulses;
 
     return blspec;
 }
@@ -155,24 +162,41 @@ static void cmtmzf_eject ( void ) {
  * okamžikem vzorkování bitu (např. Interkarate, díly 2-3) pak načítají
  * nespolehlivě.
  *
+ * Rychlost dává buď poměr (délky pulzů Intercopy vydělené poměrem), nebo
+ * CMTSPEED_CUSTOM s vlastními délkami pulzů (např. z hlavičky CMTSPEED
+ * zařízení UniCMT); ty se na takt zaokrouhlují stejně.
+ *
  * @param mztapemzf MZF data bloku (vlastní je blockspec, funkce je jen čte).
- * @param cmtspeed Rychlost záznamu (dělitel délek pulzů).
+ * @param cmtspeed Rychlost záznamu: poměr nebo CMTSPEED_CUSTOM.
+ * @param pulses Vlastní délky pulzů (povinné pro CMTSPEED_CUSTOM, jinak se ignoruje).
  * @param type Typ streamu: CMT_STREAM_TYPE_VSTREAM nebo CMT_STREAM_TYPE_BITSTREAM.
  * @return Nový stream (vlastník je volající, uvolnit cmt_stream_destroy),
  *         NULL při chybě (chybu hlásí mztape přes g_mztape_error_cb).
  * @note Vedlejší efekt: vypíše parametry streamu na stdout.
  */
-static st_CMT_STREAM* cmtmzf_generate_stream_from_mztapemzf ( st_MZTAPE_MZF *mztapemzf, en_CMTSPEED cmtspeed, en_CMT_STREAM_TYPE type ) {
+static st_CMT_STREAM* cmtmzf_generate_stream_from_mztapemzf ( st_MZTAPE_MZF *mztapemzf, en_CMTSPEED cmtspeed, const st_MZTAPE_PULSES_LENGTH *pulses, en_CMT_STREAM_TYPE type ) {
 
     uint32_t rate = ( type == CMT_STREAM_TYPE_VSTREAM ) ? GDGCLK_BASE : CMTSTREAM_DEFAULT_RATE;
-    st_CMT_STREAM *stream = mztape_create_stream_from_mztapemzf ( mztapemzf, cmtspeed, type, MZTAPE_FORMATSET_MZ800_SANE, rate );
+    st_CMT_STREAM *stream;
+    if ( cmtspeed_is_custom ( cmtspeed ) ) {
+        stream = mztape_create_stream_from_mztapemzf_pulses ( mztapemzf, pulses, type, CMTMZF_FORMATSET, rate );
+    } else {
+        stream = mztape_create_stream_from_mztapemzf ( mztapemzf, cmtspeed, type, CMTMZF_FORMATSET, rate );
+    };
     if ( !stream ) {
         return NULL;
     };
 
-    char buff[100];
-    cmtspeed_get_speedtxt ( buff, sizeof ( buff ), cmtspeed, MZTAPE_DEFAULT_BDSPEED );
-    printf ( "%s speed: %s\n", cmtext_get_name ( g_cmt_mzf ), buff );
+    if ( cmtspeed_is_custom ( cmtspeed ) ) {
+        printf ( "%s speed: custom pulses %0.3f / %0.3f / %0.3f / %0.3f us (~%0.2f:1)\n", cmtext_get_name ( g_cmt_mzf ),
+                 pulses->long_pulse.high * 1e6, pulses->long_pulse.low * 1e6,
+                 pulses->short_pulse.high * 1e6, pulses->short_pulse.low * 1e6,
+                 mztape_pulses_get_ratio ( CMTMZF_FORMATSET, pulses ) );
+    } else {
+        char buff[100];
+        cmtspeed_get_speedtxt ( buff, sizeof ( buff ), cmtspeed, MZTAPE_DEFAULT_BDSPEED );
+        printf ( "%s speed: %s\n", cmtext_get_name ( g_cmt_mzf ), buff );
+    };
     printf ( "%s stream type: %s\n", cmtext_get_name ( g_cmt_mzf ), cmt_stream_get_stream_type_txt ( stream ) );
     printf ( "%s stream size: %0.2f kB\n", cmtext_get_name ( g_cmt_mzf ), (float) cmt_stream_get_size ( stream ) / 1024 );
     printf ( "%s rate: %d Hz\n", cmtext_get_name ( g_cmt_mzf ), cmt_stream_get_rate ( stream ) );
@@ -182,6 +206,19 @@ static st_CMT_STREAM* cmtmzf_generate_stream_from_mztapemzf ( st_MZTAPE_MZF *mzt
 }
 
 
+/**
+ * @brief Callback bloku: přegeneruje stream na novou výchozí rychlost Virtual CMT.
+ *
+ * Volá ho cmt_change_speed() / cmt_change_custom_pulses() jen pro blok
+ * s CMTEXT_BLOCK_SPEED_DEFAULT. Pro CMTSPEED_CUSTOM se použijí výchozí
+ * vlastní délky pulzů g_cmt.mz_custom_pulses (volající je nastaví předem).
+ *
+ * @param cmtext Rozšíření, jehož aktuální blok se mění (st_CMTEXT*).
+ * @param cmtspeed Nová rychlost: poměr nebo CMTSPEED_CUSTOM.
+ * @return EXIT_SUCCESS (i když se nic nezměnilo); EXIT_FAILURE, pokud blok
+ *         nemá výchozí rychlost nebo se stream nepodařilo vytvořit (blok
+ *         pak zůstane beze změny).
+ */
 static int cmtmzf_set_speed ( void *cmtext, en_CMTSPEED cmtspeed ) {
     assert ( cmtext != NULL );
     st_CMTEXT *cext = (st_CMTEXT*) cmtext;
@@ -189,25 +226,42 @@ static int cmtmzf_set_speed ( void *cmtext, en_CMTSPEED cmtspeed ) {
     assert ( block != NULL );
     if ( block->block_speed != CMTEXT_BLOCK_SPEED_DEFAULT ) return EXIT_FAILURE;
     st_CMTMZF_BLOCKSPEC *blspec = (st_CMTMZF_BLOCKSPEC*) block->spec;
-    if ( blspec->cmtspeed == cmtspeed ) return EXIT_SUCCESS;
+    const st_MZTAPE_PULSES_LENGTH *pulses = &g_cmt.mz_custom_pulses;
+    if ( blspec->cmtspeed == cmtspeed ) {
+        if ( !cmtspeed_is_custom ( cmtspeed ) ) return EXIT_SUCCESS;
+        if ( 0 == memcmp ( &blspec->pulses, pulses, sizeof ( *pulses ) ) ) return EXIT_SUCCESS;
+    };
 
     assert ( block->stream != NULL );
 
-    st_CMT_STREAM *stream = cmtmzf_generate_stream_from_mztapemzf ( blspec->mztmzf, cmtspeed, block->stream->stream_type );
+    st_CMT_STREAM *stream = cmtmzf_generate_stream_from_mztapemzf ( blspec->mztmzf, cmtspeed, pulses, block->stream->stream_type );
     if ( !stream ) return EXIT_FAILURE;
     cmt_stream_destroy ( block->stream );
     block->stream = stream;
 
     blspec->cmtspeed = cmtspeed;
+    if ( cmtspeed_is_custom ( cmtspeed ) ) blspec->pulses = *pulses;
     return EXIT_SUCCESS;
 }
 
 
+/**
+ * @brief Callback bloku: přenosová rychlost aktuálního bloku v Bd.
+ *
+ * U vlastních délek pulzů jde o ekvivalent vůči 1:1 (1200 Bd krát
+ * mztape_pulses_get_ratio()), tedy jen orientační údaj.
+ *
+ * @param cmtext Rozšíření s otevřeným MZF blokem (st_CMTEXT*).
+ * @return Rychlost v Bd (zaokrouhlená).
+ */
 static uint16_t cmtmzf_get_bdspeed ( void *cmtext ) {
     assert ( cmtext != NULL );
     st_CMTEXT *cext = (st_CMTEXT*) cmtext;
     st_CMTMZF_BLOCKSPEC *blspec = (st_CMTMZF_BLOCKSPEC*) cext->block->spec;
     assert ( blspec != NULL );
+    if ( cmtspeed_is_custom ( blspec->cmtspeed ) ) {
+        return (uint16_t) round ( MZTAPE_DEFAULT_BDSPEED * mztape_pulses_get_ratio ( CMTMZF_FORMATSET, &blspec->pulses ) );
+    };
     return (uint16_t) round ( MZTAPE_DEFAULT_BDSPEED * g_cmtspeed_divisor[blspec->cmtspeed] );
 }
 
@@ -222,17 +276,17 @@ static uint16_t cmtmzf_get_bdspeed ( void *cmtext ) {
 #define CMTMZF_DEFAULT_STREAM_VSTREAM
 
 
-st_CMTEXT_BLOCK* cmtmzf_block_open ( st_HANDLER *h, uint32_t offset, int block_id, int pause_after, en_CMTEXT_BLOCK_SPEED block_speed, en_CMTSPEED cmtspeed ) {
+st_CMTEXT_BLOCK* cmtmzf_block_open ( st_HANDLER *h, uint32_t offset, int block_id, int pause_after, en_CMTEXT_BLOCK_SPEED block_speed, en_CMTSPEED cmtspeed, const st_MZTAPE_PULSES_LENGTH *pulses ) {
 
     printf ( "%s block id: %d\n", cmtext_get_name ( g_cmt_mzf ), block_id );
 
-    st_CMTMZF_BLOCKSPEC *blspec = cmtmzf_blockspec_new ( h, offset, cmtspeed );
+    st_CMTMZF_BLOCKSPEC *blspec = cmtmzf_blockspec_new ( h, offset, cmtspeed, pulses );
     if ( !blspec ) {
         return NULL;
     }
 
 #ifdef CMTMZF_DEFAULT_STREAM_BITSTREAM
-    st_CMT_STREAM *stream = cmtmzf_generate_stream_from_mztapemzf ( blspec->mztmzf, cmtspeed, CMT_STREAM_TYPE_BITSTREAM );
+    st_CMT_STREAM *stream = cmtmzf_generate_stream_from_mztapemzf ( blspec->mztmzf, cmtspeed, &blspec->pulses, CMT_STREAM_TYPE_BITSTREAM );
 #if 0
     st_HANDLER *hwav = generic_driver_open_memory ( NULL, g_driver_realloc, 1 );
     if ( !hwav ) {
@@ -258,7 +312,7 @@ st_CMTEXT_BLOCK* cmtmzf_block_open ( st_HANDLER *h, uint32_t offset, int block_i
 
 #endif
 #ifdef CMTMZF_DEFAULT_STREAM_VSTREAM
-    st_CMT_STREAM *stream = cmtmzf_generate_stream_from_mztapemzf ( blspec->mztmzf, cmtspeed, CMT_STREAM_TYPE_VSTREAM );
+    st_CMT_STREAM *stream = cmtmzf_generate_stream_from_mztapemzf ( blspec->mztmzf, cmtspeed, &blspec->pulses, CMT_STREAM_TYPE_VSTREAM );
 #endif
     if ( !stream ) {
         cmtmzf_blockspec_destroy ( blspec );
@@ -300,7 +354,7 @@ static int cmtmzf_container_open ( char *filename ) {
         return EXIT_FAILURE;
     };
 
-    st_CMTEXT_BLOCK *block = cmtmzf_block_open ( h, 0, 0, 0, CMTEXT_BLOCK_SPEED_DEFAULT, g_cmt.mz_cmtspeed );
+    st_CMTEXT_BLOCK *block = cmtmzf_block_open ( h, 0, 0, 0, CMTEXT_BLOCK_SPEED_DEFAULT, g_cmt.mz_cmtspeed, &g_cmt.mz_custom_pulses );
     if ( !block ) {
         baseui_error ( "%s: Can't create cmt block\n", cmtext_get_description ( g_cmt_mzf ) );
         cmtmzf_container_close ( container );

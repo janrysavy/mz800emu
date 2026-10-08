@@ -346,3 +346,24 @@ void cmtext_container_set_block_cmt_speed ( st_CMTEXT_CONTAINER *container, int 
             break;
     };
 }
+
+
+int cmtext_container_get_block_pulses ( st_CMTEXT_CONTAINER *container, int block_id, st_MZTAPE_PULSES_LENGTH *pulses ) {
+    assert ( container );
+    assert ( block_id < container->count_blocks );
+    st_CMTEXT_TAPE_INDEX *idx = &container->tape->index[block_id];
+    if ( idx->bltype != CMTEXT_BLOCK_TYPE_MZF ) return EXIT_FAILURE;
+    if ( !cmtspeed_is_custom ( idx->item.mzf.cmtspeed ) ) return EXIT_FAILURE;
+    *pulses = idx->item.mzf.pulses;
+    return EXIT_SUCCESS;
+}
+
+
+int cmtext_container_set_block_pulses ( st_CMTEXT_CONTAINER *container, int block_id, const st_MZTAPE_PULSES_LENGTH *pulses ) {
+    assert ( container );
+    assert ( block_id < container->count_blocks );
+    st_CMTEXT_TAPE_INDEX *idx = &container->tape->index[block_id];
+    if ( idx->bltype != CMTEXT_BLOCK_TYPE_MZF ) return EXIT_FAILURE;
+    idx->item.mzf.pulses = *pulses;
+    return EXIT_SUCCESS;
+}

@@ -1970,16 +1970,24 @@ emu_cmt_stop()                     # ukonči, flush WAV
 
 ### `emu_cmt_set_speed` (sensitive)
 
-Nastaví rychlostní poměr reálné pásky vůči 1200 Bd. Přijímá string klíč
-nebo en_CMTSPEED int: `1:1` (1), `2:1` (2), `2:1_cpm` (3), `3:1` (4),
-`3:2` (5), `7:3` (6), `8:3` (7), `9:7` (8), `25:14` (9). Mění výchozí
-rychlost; per-blok override viz `emu_cmt_tape_set_block_speed`. Odráží
-se v `cmtspeed` v `emulator://periph/cmt`.
+Nastaví výchozí rychlost virtuální kazety: poměr vůči 1200 Bd, nebo
+vlastní délky pulzů. Přijímá string klíč nebo en_CMTSPEED int: `1:1` (1),
+`2:1` (2), `2:1_cpm` (3), `3:1` (4), `3:2` (5), `7:3` (6), `8:3` (7),
+`9:7` (8), `25:14` (9), `custom` (10 = dříve uložené vlastní délky
+pulzů). Místo `speed` lze předat `pulses_us` = `[long_high, long_low,
+short_high, short_low]` v µs (dlouhý pulz = bit 1, krátký = bit 0), každá
+délka v (0, 65535]; pořadí odpovídá hlavičce CMTSPEED zařízení UniCMT
+(UniCMT 3x = `[156, 164, 80, 92]`). Délky se uloží (i do konfigurace)
+a výchozí rychlost se přepne na `custom`. Mění výchozí rychlost; per-blok
+override viz `emu_cmt_tape_set_block_speed`. Odráží se v `cmtspeed`,
+`default_pulses_us` a `custom_pulses_us` v `emulator://periph/cmt`.
 
 Args:
-- `speed` (required): poměr string ("2:1") nebo int (2).
+- `speed` (optional): poměr string ("2:1") nebo int (2).
+- `pulses_us` (optional): 4 délky pulzů v µs (místo `speed`).
 
-Returns: `{"ok": true, "property": "speed", "value": <int>}`.
+Returns: `{"ok": true, "property": "speed", "value": <int>}`, pro
+`pulses_us` `{"ok": true, "property": "custom_pulses", "pulses_us": [...]}`.
 
 ### `emu_cmt_set_polarity` (sensitive)
 
@@ -2041,15 +2049,24 @@ Returns: `{"ok": true, "block_id": <int>}`.
 ### `emu_cmt_tape_set_block_speed` (sensitive)
 
 Per-blok rychlost (JEN cmt speed, žádné další parametry; SIMPLE_TAPE).
-`speed` přijímá stejné klíče/int jako `emu_cmt_set_speed`. Vyžaduje
-naloženou pásku. Rychlost platí od příštího otevření bloku (přechod na
-blok při přehrávání, `emu_cmt_tape_seek`); právě otevřený blok se nemění.
+`speed` přijímá stejné klíče poměrů / int 1..9 jako `emu_cmt_set_speed`,
+`pulses_us` vlastní délky pulzů bloku (jen MZ bloky, blok pak má
+`speed` 10). Vyžaduje naloženou pásku. Rychlost platí od příštího
+otevření bloku (přechod na blok při přehrávání, `emu_cmt_tape_seek`);
+právě otevřený blok se nemění.
+
+Bloky za hlavičkou CMTSPEED (UniCMT) v páskách `.mzt` mají vlastní
+rychlost z hlavičky už po otevření pásky; samotná hlavička se nepřehrává
+a ve výpisu bloků není. Výpis `emulator://periph/cmt/tape` hlásí u bloku
+`block_speed` ("default" / "set" / "none") a efektivní `pulses_us`.
 
 Args:
 - `block_id` (required): index bloku (0-based).
-- `speed` (required): poměr string ("2:1") nebo int (2).
+- `speed` (optional): poměr string ("2:1") nebo int (2).
+- `pulses_us` (optional): 4 délky pulzů v µs (místo `speed`).
 
-Returns: `{"ok": true, "block_id": <int>, "speed": <int>}`.
+Returns: `{"ok": true, "block_id": <int>, "speed": <int>}` (u
+`pulses_us` navíc `"pulses_us": [...]`).
 
 ### Příklad workflow - multi-blok páska
 

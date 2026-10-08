@@ -1,4 +1,10 @@
 
+	- Kazeta - podpora hlaviček CMTSPEED zařízení UniCMT v páskách MZT. Hlavička vložená mezi díly pásky (např. 2xspeed.mzf, 3xspeed.mzf) nastaví délky pulzů všech dalších dílů až do další hlavičky; sama se nepřehrává a v seznamu bloků není. Pulzy se přehrají přesně podle hlavičky, ne zaokrouhlené na nejbližší poměr rychlosti.
+
+	- Kazeta - Virtual CMT umí vlastní délky pulzů jako výchozí rychlost i jako rychlost jednotlivého bloku (položka Custom pulses... ve výběru rychlosti: čtyři délky v µs, předvolby UniCMT 1x, 2x a 3x). Výchozí vlastní pulzy se ukládají do konfigurace. MCP: parametr pulses_us u emu_cmt_set_speed a emu_cmt_tape_set_block_speed, výpis pásky a stav kazety hlásí délky pulzů.
+
+	- BUGFIX: Kazeta - výchozí rychlost 2:1 (cp/m) se do konfigurace uložila jako neplatná hodnota a po restartu emulátoru platila rychlost 1:1 (stejně rychlosti 3:2, 9:7 a 25:14 nastavené přes MCP).
+
 	- BUGFIX: MCP - emu_media_run_mzf jen nahrál program a skočil na jeho začátek; režim přerušení, Z80 PIO, CTC, paleta a ostatní stav zůstaly po předchozím programu, takže se program mohl chovat jinak než po nahrání z pásky (např. mu nechodila přerušení). Nově stroj resetuje a spustí program ve stejném stavu jako volba --run-mzf (nový příkaz media_run_mzf). Neexistující nebo zkrácený soubor vrátí chybu bez resetu. Původní chování bez resetu zůstává jako emu_media_run_mzf s bootstrap=false.
 
 	- BUGFIX: Klávesnice - při výběru neexistujícího sloupce klávesnice (hodnota 10 až 15 v bitech 0-3 portu A obvodu 8255) vracel port B nesmyslnou hodnotu (typicky 00h, tedy jako by byly stisknuté všechny klávesy). Skutečný MZ-800 v tomto případě nevybere žádný sloupec a vrací FFh (ověřeno na HW). Programy, které čekají na uvolnění kláves a procházejí i tyto hodnoty, se zasekly (např. Antiriad ve verzi S. Hechta zůstal na titulní obrazovce).

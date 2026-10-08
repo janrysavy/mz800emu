@@ -11,6 +11,7 @@
  *
  * @par Changelog:
  * - 2026-03-14: Proběhla kompletní revize a refaktorizace. Vytvořeny unit testy.
+ * - 2026-10-08: Přidána hodnota CMTSPEED_CUSTOM (vlastní délky pulzů, UniCMT).
  *
  * @par Licence:
  * This program is free software: you can redistribute it and/or modify
@@ -52,7 +53,10 @@ extern "C" {
         CMTSPEED_8_3,       /**< Poměr 8:3 — CP/M cmt.com */
         CMTSPEED_9_7,       /**< Poměr 9:7 */
         CMTSPEED_25_14,     /**< Poměr 25:14 */
-        CMTSPEED_COUNT      /**< Počet platných hodnot (sentinel — nepoužívat jako rychlost) */
+        CMTSPEED_CUSTOM,    /**< Vlastní délky pulzů (např. hlavička CMTSPEED zařízení UniCMT).
+                                 Nejde o poměr: délky nese volající zvlášť, divisor je 0
+                                 a cmtspeed_is_valid() vrací 0. */
+        CMTSPEED_COUNT      /**< Počet hodnot enumu (sentinel — nepoužívat jako rychlost) */
     } en_CMTSPEED;
 
     /** @brief Pole násobitelů rychlosti indexované hodnotami en_CMTSPEED. */
@@ -63,16 +67,28 @@ extern "C" {
 
 
     /**
-     * @brief Ověří, zda je zadaná rychlost platná.
+     * @brief Ověří, zda je zadaná rychlost platný poměr.
      *
      * Platná rychlost je v rozsahu CMTSPEED_1_1 .. CMTSPEED_25_14 (včetně).
-     * CMTSPEED_NONE a CMTSPEED_COUNT nejsou platné.
+     * CMTSPEED_NONE, CMTSPEED_CUSTOM (vlastní délky pulzů, nejde o poměr)
+     * a CMTSPEED_COUNT nejsou platné.
      *
      * @param cmtspeed Rychlostní poměr k ověření.
-     * @return 1 pokud je rychlost platná, 0 jinak.
+     * @return 1 pokud je rychlost platný poměr, 0 jinak.
      */
     static inline int cmtspeed_is_valid ( en_CMTSPEED cmtspeed ) {
-        return ( cmtspeed > CMTSPEED_NONE && cmtspeed < CMTSPEED_COUNT );
+        return ( cmtspeed > CMTSPEED_NONE && cmtspeed < CMTSPEED_CUSTOM );
+    }
+
+
+    /**
+     * @brief Zjistí, zda hodnota znamená vlastní délky pulzů.
+     *
+     * @param cmtspeed Hodnota rychlosti.
+     * @return 1 pro CMTSPEED_CUSTOM, 0 jinak.
+     */
+    static inline int cmtspeed_is_custom ( en_CMTSPEED cmtspeed ) {
+        return ( cmtspeed == CMTSPEED_CUSTOM );
     }
 
 
@@ -82,7 +98,8 @@ extern "C" {
      * Např. pro CMTSPEED_2_1 vrací 2.0, pro CMTSPEED_7_3 vrací 2.333...
      *
      * @param cmtspeed Rychlostní poměr.
-     * @return Násobitel jako double. Pro neplatné hodnoty vrací 0.0.
+     * @return Násobitel jako double. Pro neplatné hodnoty a CMTSPEED_CUSTOM
+     *         vrací 0.0.
      */
     static inline double cmtspeed_get_divisor ( en_CMTSPEED cmtspeed ) {
         if ( cmtspeed < 0 || cmtspeed >= CMTSPEED_COUNT ) return 0;
@@ -97,7 +114,8 @@ extern "C" {
      *
      * @param cmtspeed Rychlostní poměr.
      * @param base_bdspeed Základní baudová rychlost (typicky 1200).
-     * @return Vypočtená baudová rychlost. Pro neplatné hodnoty vrací 0.
+     * @return Vypočtená baudová rychlost. Pro neplatné hodnoty a
+     *         CMTSPEED_CUSTOM vrací 0.
      */
     static inline uint16_t cmtspeed_get_bdspeed ( en_CMTSPEED cmtspeed, uint16_t base_bdspeed ) {
         if ( cmtspeed < 0 || cmtspeed >= CMTSPEED_COUNT ) return 0;
@@ -108,7 +126,8 @@ extern "C" {
     /**
      * @brief Vrátí textový řetězec s poměrem rychlosti.
      *
-     * Např. "7:3", "2:1 (cp/m)". Pro neplatné hodnoty vrací "?:?".
+     * Např. "7:3", "2:1 (cp/m)", pro CMTSPEED_CUSTOM "custom". Pro neplatné
+     * hodnoty vrací "?:?".
      *
      * @param cmtspeed Rychlostní poměr.
      * @return Ukazatel na statický řetězec s poměrem.
@@ -123,7 +142,8 @@ extern "C" {
      * @brief Formátuje řetězec s baudovou rychlostí.
      *
      * Výstup: "2400 Bd" nebo "2400 Bd (cp/m)" pro CP/M variantu.
-     * Pro neplatné hodnoty "? Bd".
+     * Pro neplatné hodnoty a CMTSPEED_CUSTOM (Bd závisí na délkách pulzů,
+     * které funkce nezná) "? Bd".
      *
      * @param dsttxt Cílový buffer pro výstupní řetězec.
      * @param size Velikost cílového bufferu v bajtech.
@@ -131,7 +151,10 @@ extern "C" {
      * @param base_bdspeed Základní baudová rychlost (typicky 1200).
      */
     static inline void cmtspeed_get_speedtxt ( char *dsttxt, int size, en_CMTSPEED cmtspeed, uint16_t base_bdspeed ) {
-        if ( cmtspeed < 0 || cmtspeed >= CMTSPEED_COUNT ) { snprintf ( dsttxt, size, "? Bd" ); return; }
+        if ( cmtspeed < 0 || cmtspeed >= CMTSPEED_COUNT || cmtspeed == CMTSPEED_CUSTOM ) {
+            snprintf ( dsttxt, size, "? Bd" );
+            return;
+        }
         if ( cmtspeed == CMTSPEED_2_1_CPM ) {
             snprintf ( dsttxt, size, "%d Bd (cp/m)", cmtspeed_get_bdspeed ( cmtspeed, base_bdspeed ) );
         } else {
@@ -143,7 +166,8 @@ extern "C" {
     /**
      * @brief Formátuje kombinovaný řetězec "poměr - rychlost Bd".
      *
-     * Výstup: např. "7:3 - 2800 Bd". Pro neplatné hodnoty "?:? - ? Bd".
+     * Výstup: např. "7:3 - 2800 Bd". Pro neplatné hodnoty "?:? - ? Bd",
+     * pro CMTSPEED_CUSTOM "custom - ? Bd".
      *
      * @param dsttxt Cílový buffer pro výstupní řetězec.
      * @param size Velikost cílového bufferu v bajtech.
@@ -152,6 +176,10 @@ extern "C" {
      */
     static inline void cmtspeed_get_ratiospeedtxt ( char *dsttxt, int size, en_CMTSPEED cmtspeed, uint16_t base_bdspeed ) {
         if ( cmtspeed < 0 || cmtspeed >= CMTSPEED_COUNT ) { snprintf ( dsttxt, size, "?:? - ? Bd" ); return; }
+        if ( cmtspeed == CMTSPEED_CUSTOM ) {
+            snprintf ( dsttxt, size, "%s - ? Bd", cmtspeed_get_ratiotxt ( cmtspeed ) );
+            return;
+        }
         snprintf ( dsttxt, size, "%s - %d Bd", cmtspeed_get_ratiotxt ( cmtspeed ), cmtspeed_get_bdspeed ( cmtspeed, base_bdspeed ) );
     }
 

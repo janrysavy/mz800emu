@@ -182,6 +182,31 @@ static void test_bounds_invalid_speed ( void ) {
 }
 
 
+/**
+ * @brief Testuje CMTSPEED_CUSTOM — vlastní délky pulzů nejsou poměr.
+ *
+ * Hodnota se přidala na konec enumu, čísla dosavadních rychlostí (MCP, INI)
+ * se tedy nesmí změnit. Funkce pracující s poměrem ji musí odmítnout.
+ */
+static void test_custom ( void ) {
+    TEST_ASSERT_EQUAL_INT ( 9, CMTSPEED_25_14 );
+    TEST_ASSERT_EQUAL_INT ( 10, CMTSPEED_CUSTOM );
+    TEST_ASSERT_FALSE ( cmtspeed_is_valid ( CMTSPEED_CUSTOM ) );
+    TEST_ASSERT_TRUE ( cmtspeed_is_custom ( CMTSPEED_CUSTOM ) );
+    TEST_ASSERT_FALSE ( cmtspeed_is_custom ( CMTSPEED_1_1 ) );
+    TEST_ASSERT_FALSE ( cmtspeed_is_custom ( CMTSPEED_NONE ) );
+    TEST_ASSERT_EQUAL_DOUBLE ( 0.0, cmtspeed_get_divisor ( CMTSPEED_CUSTOM ) );
+    TEST_ASSERT_EQUAL_UINT16 ( 0, cmtspeed_get_bdspeed ( CMTSPEED_CUSTOM, 1200 ) );
+    TEST_ASSERT_EQUAL_STRING ( "custom", cmtspeed_get_ratiotxt ( CMTSPEED_CUSTOM ) );
+
+    char buf[64];
+    cmtspeed_get_speedtxt ( buf, sizeof ( buf ), CMTSPEED_CUSTOM, 1200 );
+    TEST_ASSERT_EQUAL_STRING ( "? Bd", buf );
+    cmtspeed_get_ratiospeedtxt ( buf, sizeof ( buf ), CMTSPEED_CUSTOM, 1200 );
+    TEST_ASSERT_EQUAL_STRING ( "custom - ? Bd", buf );
+}
+
+
 /* ========================================================================
  * main
  * ======================================================================== */
@@ -202,6 +227,7 @@ int main ( void ) {
     RUN_TEST ( test_get_speedtxt );
     RUN_TEST ( test_get_ratiospeedtxt );
     RUN_TEST ( test_bounds_invalid_speed );
+    RUN_TEST ( test_custom );
 
     return UNITY_END ();
 }

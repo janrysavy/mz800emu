@@ -3797,6 +3797,10 @@ typedef struct st_DBGAPI_PERIPH_CMT_PARAM
     uint64_t start_time;         /**< OUT: gdg_total_ticks při zahájení PLAY/RECORD. */
     uint64_t paused_time;        /**< OUT: gdg_total_ticks při pauznutí. */
     char     image_basename[64]; /**< OUT: jen filename (basename) MZF, NUL-terminated. */
+    double   default_pulses_us[4]; /**< OUT: délky pulzů výchozí rychlosti v µs (LONG high, LONG low,
+                                        SHORT high, SHORT low) - pro poměr i CMTSPEED_CUSTOM. */
+    double   custom_pulses_us[4];  /**< OUT: uložené výchozí vlastní délky pulzů v µs (g_cmt.mz_custom_pulses),
+                                        platí při cmtspeed == CMTSPEED_CUSTOM. */
 } st_DBGAPI_PERIPH_CMT_PARAM;
 
 
@@ -4338,20 +4342,24 @@ typedef struct st_DBGAPI_CMT_HACK_SET_PARAM
  */
 typedef enum en_DBGAPI_CMT_PROPERTY
 {
-    DBGAPI_CMT_PROP_SPEED = 0,    /**< value = en_CMTSPEED (1..9), cmt_change_speed. */
+    DBGAPI_CMT_PROP_SPEED = 0,    /**< value = en_CMTSPEED (1..9 poměr, 10 = CMTSPEED_CUSTOM s uloženými
+                                       vlastními pulzy), cmt_change_speed. */
     DBGAPI_CMT_PROP_POLARITY,     /**< value = 0/1, cmt_rear_dip_switch_cmt_inverted_polarity. */
     DBGAPI_CMT_PROP_CPU_BOOST,    /**< value = 0/1, cmt_cpu_boost_set. */
     DBGAPI_CMT_PROP_MZFSIZE_CHECK,/**< value = 0/1, cmt_mzfsize_check_set. */
+    DBGAPI_CMT_PROP_CUSTOM_PULSES,/**< pulses_us = vlastní délky pulzů v µs, cmt_change_custom_pulses
+                                       (výchozí rychlost se přepne na CMTSPEED_CUSTOM); value se nepoužívá. */
 } en_DBGAPI_CMT_PROPERTY;
 
 /**
  * @brief Parametr pro DBGAPI_CMD_CMT_SET_PROPERTY.
  *
  * Klient zvolí vlastnost a její hodnotu. Pro SPEED je `value` hodnota
- * en_CMTSPEED v rozsahu 1..9 (= CMTSPEED_1_1 .. CMTSPEED_25_14);
- * handler ji validuje přes cmtspeed_is_valid a při neplatné hodnotě
- * vrátí out_result = -1, success = false. Pro POLARITY/CPU_BOOST/
- * MZFSIZE_CHECK je `value` boolean (0/1).
+ * en_CMTSPEED v rozsahu 1..9 (= CMTSPEED_1_1 .. CMTSPEED_25_14) nebo 10
+ * (CMTSPEED_CUSTOM = uložené vlastní délky pulzů); jinou hodnotu handler
+ * odmítne s out_result = -1, success = false. Pro POLARITY/CPU_BOOST/
+ * MZFSIZE_CHECK je `value` boolean (0/1). Pro CUSTOM_PULSES nese délky
+ * `pulses_us` (každá v rozsahu (0, MZTAPE_PULSE_US_MAX]), jinak -1.
  *
  * @invariant property je platná hodnota en_DBGAPI_CMT_PROPERTY, jinak
  *            handler vrátí success = false a out_result = -1.
@@ -4360,6 +4368,7 @@ typedef struct st_DBGAPI_CMT_SET_PROPERTY_PARAM
 {
     en_DBGAPI_CMT_PROPERTY property; /**< IN: zvolená vlastnost. */
     int                    value;    /**< IN: hodnota (význam dle property). */
+    double                 pulses_us[4]; /**< IN: jen CUSTOM_PULSES - LONG high, LONG low, SHORT high, SHORT low (µs). */
     int                    out_result; /**< OUT: 0 = OK, -1 = neplatná property/hodnota. */
 } st_DBGAPI_CMT_SET_PROPERTY_PARAM;
 
@@ -4402,16 +4411,20 @@ typedef struct st_DBGAPI_CMT_TAPE_SEEK_PARAM
 /**
  * @brief Parametr pro DBGAPI_CMD_CMT_TAPE_BLOCK_SPEED.
  *
- * Nastaví per-blok cmt rychlost přes cmtext_container_set_block_cmt_speed.
- * Per Michal lze per-blok nastavit JEN cmt speed (= žádné další parametry).
- * `cmtspeed` musí být platná en_CMTSPEED hodnota (1..9). Bez pásky nebo
- * neplatná rychlost -> out_result != 0, success = false.
+ * Nastaví per-blok cmt rychlost: poměr (cmt_tape_set_block_cmt_speed) nebo
+ * vlastní délky pulzů (use_pulses = 1, cmt_tape_set_block_pulses; blok pak
+ * má cmtspeed CMTSPEED_CUSTOM). Per Michal lze per-blok nastavit JEN cmt
+ * speed (= žádné další parametry). Bez pásky, blok mimo rozsah / ne MZF
+ * u vlastních pulzů nebo neplatná rychlost -> out_result != 0,
+ * success = false.
  */
 typedef struct st_DBGAPI_CMT_TAPE_BLOCK_SPEED_PARAM
 {
-    int block_id;   /**< IN: cílový blok (0-based). */
-    int cmtspeed;   /**< IN: en_CMTSPEED hodnota (1..9). */
-    int out_result; /**< OUT: 0 = OK, -1 = bez pásky, -2 = neplatná rychlost. */
+    int     block_id;     /**< IN: cílový blok (0-based). */
+    int     cmtspeed;     /**< IN: en_CMTSPEED poměr (1..9); ignoruje se při use_pulses. */
+    uint8_t use_pulses;   /**< IN: 1 = nastavit vlastní délky pulzů z pulses_us. */
+    double  pulses_us[4]; /**< IN: LONG high, LONG low, SHORT high, SHORT low (µs). */
+    int     out_result;   /**< OUT: 0 = OK, -1 = bez pásky / blok, -2 = neplatná rychlost nebo délky. */
 } st_DBGAPI_CMT_TAPE_BLOCK_SPEED_PARAM;
 
 /** @brief Maximální délka názvu bloku v st_DBGAPI_CMT_TAPE_BLOCK_ENTRY (vč. NUL). */
@@ -4421,7 +4434,11 @@ typedef struct st_DBGAPI_CMT_TAPE_BLOCK_SPEED_PARAM
  * @brief Záznam jednoho bloku pásky pro DBGAPI_CMD_CMT_TAPE_LIST.
  *
  * Fixní buffer pro `name` (= žádné heap stringy, caller jen uvolní
- * samotné pole entries). `cmtspeed` je en_CMTSPEED hodnota bloku.
+ * samotné pole entries). `cmtspeed` je en_CMTSPEED hodnota bloku
+ * (platí pro block_speed = SET; 10 = vlastní délky pulzů).
+ * `block_speed` je en_CMTEXT_BLOCK_SPEED (0=NONE, 1=DEFAULT, 2=SET).
+ * `pulses_us` jsou efektivní délky pulzů MZ bloku (has_pulses = 1):
+ * u výchozí rychlosti délky výchozí rychlosti Virtual CMT.
  * `type` je en_CMTEXT_BLOCK_TYPE (0=WAV, 1=MZF, 2=TAPHEADER, 3=TAPDATA).
  * `playable`/`recordable` jsou per-extension příznaky (= stejné pro
  * všechny bloky téže pásky), kopírují se do každého záznamu pro pohodlí.
@@ -4435,6 +4452,9 @@ typedef struct st_DBGAPI_CMT_TAPE_BLOCK_ENTRY
     uint8_t is_current;                      /**< 1 = právě přehrávaný blok. */
     uint8_t playable;                        /**< 1 = páska je playable. */
     uint8_t recordable;                      /**< 1 = páska je recordable. */
+    uint8_t block_speed;                     /**< en_CMTEXT_BLOCK_SPEED bloku. */
+    uint8_t has_pulses;                      /**< 1 = pulses_us platí (MZ blok). */
+    double  pulses_us[4];                    /**< Efektivní délky pulzů v µs (LONG high/low, SHORT high/low). */
 } st_DBGAPI_CMT_TAPE_BLOCK_ENTRY;
 
 /**

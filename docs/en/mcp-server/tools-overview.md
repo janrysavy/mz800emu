@@ -2012,17 +2012,26 @@ emu_cmt_stop()                     # finish, flush WAV
 
 ### `emu_cmt_set_speed` (sensitive)
 
-Sets the real tape speed ratio relative to 1200 Bd. Accepts a ratio
-string key or the en_CMTSPEED int: `1:1` (1), `2:1` (2), `2:1_cpm` (3),
-`3:1` (4), `3:2` (5), `7:3` (6), `8:3` (7), `9:7` (8), `25:14` (9).
-Changes the default speed; per-block override via
-`emu_cmt_tape_set_block_speed`. Reflected as `cmtspeed` in
+Sets the default speed of the virtual cassette: a ratio relative to
+1200 Bd, or custom pulse lengths. Accepts a ratio string key or the
+en_CMTSPEED int: `1:1` (1), `2:1` (2), `2:1_cpm` (3), `3:1` (4),
+`3:2` (5), `7:3` (6), `8:3` (7), `9:7` (8), `25:14` (9), `custom`
+(10 = the custom pulse lengths stored earlier). Instead of `speed` you
+can pass `pulses_us` = `[long_high, long_low, short_high, short_low]` in
+microseconds (long pulse = bit 1, short pulse = bit 0), each in
+(0, 65535]; the order is that of the UniCMT CMTSPEED header (UniCMT 3x =
+`[156, 164, 80, 92]`). The lengths are stored (also in the
+configuration) and the default speed switches to `custom`. Changes the
+default speed; per-block override via `emu_cmt_tape_set_block_speed`.
+Reflected as `cmtspeed`, `default_pulses_us` and `custom_pulses_us` in
 `emulator://periph/cmt`.
 
 Args:
-- `speed` (required): ratio string ("2:1") or int (2).
+- `speed` (optional): ratio string ("2:1") or int (2).
+- `pulses_us` (optional): 4 pulse lengths in microseconds (instead of `speed`).
 
-Returns: `{"ok": true, "property": "speed", "value": <int>}`.
+Returns: `{"ok": true, "property": "speed", "value": <int>}`, for
+`pulses_us` `{"ok": true, "property": "custom_pulses", "pulses_us": [...]}`.
 
 ### `emu_cmt_set_polarity` (sensitive)
 
@@ -2084,16 +2093,25 @@ Returns: `{"ok": true, "block_id": <int>}`.
 ### `emu_cmt_tape_set_block_speed` (sensitive)
 
 Per-block speed (cmt speed only, no other parameters; SIMPLE_TAPE).
-`speed` accepts the same keys/int as `emu_cmt_set_speed`. Requires a
-loaded tape. The speed applies from the next opening of the block
-(advancing to it during playback, `emu_cmt_tape_seek`); the currently
-open block is not changed.
+`speed` accepts the same ratio keys / int 1..9 as `emu_cmt_set_speed`,
+`pulses_us` custom pulse lengths of the block (MZ blocks only, the block
+then has `speed` 10). Requires a loaded tape. The speed applies from the
+next opening of the block (advancing to it during playback,
+`emu_cmt_tape_seek`); the currently open block is not changed.
+
+Blocks after a CMTSPEED header (UniCMT) in an `.mzt` tape already have
+their own speed from the header when the tape is opened; the header
+itself is not played and is not listed. The listing
+`emulator://periph/cmt/tape` reports `block_speed` ("default" / "set" /
+"none") and the effective `pulses_us` of each block.
 
 Args:
 - `block_id` (required): 0-based block index.
-- `speed` (required): ratio string ("2:1") or int (2).
+- `speed` (optional): ratio string ("2:1") or int (2).
+- `pulses_us` (optional): 4 pulse lengths in microseconds (instead of `speed`).
 
-Returns: `{"ok": true, "block_id": <int>, "speed": <int>}`.
+Returns: `{"ok": true, "block_id": <int>, "speed": <int>}` (with
+`"pulses_us": [...]` for `pulses_us`).
 
 ### Example workflow - multi-block tape
 

@@ -67,6 +67,29 @@ static void cmtmzftape_eject ( void ) {
 }
 
 
+/**
+ * @brief Projde MZT a sestaví index jeho MZF bloků.
+ *
+ * Hlavičky CMTSPEED zařízení UniCMT (viz mztape_unicmt_speed_marker())
+ * se do indexu nedostanou: všem dalším blokům až do další hlavičky
+ * nastaví pevnou rychlost (CMTEXT_BLOCK_SPEED_SET) CMTSPEED_CUSTOM
+ * s délkami pulzů z hlavičky. Bloky před první hlavičkou mají výchozí
+ * rychlost Virtual CMT. Hlavička s nulovou délkou pulzu se zahodí
+ * s varováním a rychlost se nezmění.
+ *
+ * Na HW UniCMT pásku s hlavičkou CMTSPEED jako prvním blokem nepřehraje
+ * (pozorováno, příčina neznámá, báze hw/25-unicmt.md kap. 2.1). Emulátor
+ * to nenapodobuje, jen to vypíše.
+ *
+ * @param h Handler s celým MZT v paměti.
+ * @param offset Offset první hlavičky.
+ * @param cmtspeed Výchozí rychlost uložená do bloků bez hlavičky (informativní;
+ *        bloky s výchozí rychlostí ji při otevření berou z g_cmt).
+ * @param[out] count_blocks Počet bloků v indexu (bez hlaviček CMTSPEED).
+ * @return Nový index (vlastník je volající), NULL při chybě čtení nebo
+ *         alokace. Prázdný MZT (nebo jen hlavičky CMTSPEED) vrátí NULL
+ *         s *count_blocks == 0.
+ */
 static st_CMTEXT_TAPE_INDEX* cmtmzftape_container_index_new ( st_HANDLER *h, uint32_t offset, en_CMTSPEED cmtspeed, int *count_blocks ) {
 
     *count_blocks = 0;
@@ -80,6 +103,11 @@ static st_CMTEXT_TAPE_INDEX* cmtmzftape_container_index_new ( st_HANDLER *h, uin
     st_CMTEXT_TAPE_INDEX *index = NULL;
     int i = 0;
 
+    /* rychlost z poslední hlavičky CMTSPEED (UniCMT) */
+    int marker_active = 0;
+    st_MZTAPE_PULSES_LENGTH marker_pulses;
+    memset ( &marker_pulses, 0x00, sizeof ( marker_pulses ) );
+
     while ( offset < h->spec.memspec.size ) {
 
         if ( EXIT_FAILURE == mzf_read_header_on_offset ( h, offset, hdr ) ) {
@@ -87,6 +115,36 @@ static st_CMTEXT_TAPE_INDEX* cmtmzftape_container_index_new ( st_HANDLER *h, uin
             baseui_tools_mem_free ( hdr );
             cmtext_container_tapeindex_destroy ( index, i );
             return NULL;
+        };
+
+        uint8_t raw_hdr[sizeof ( st_MZF_HEADER )];
+        if ( EXIT_SUCCESS != generic_driver_read ( h, offset, raw_hdr, sizeof ( raw_hdr ) ) ) {
+            fprintf ( stderr, "%s():%d - Can't read MZF header\n", __func__, __LINE__ );
+            baseui_tools_mem_free ( hdr );
+            cmtext_container_tapeindex_destroy ( index, i );
+            return NULL;
+        };
+
+        st_MZTAPE_PULSES_LENGTH pulses;
+        en_MZTAPE_UNICMT_MARKER marker = mztape_unicmt_speed_marker ( raw_hdr, &pulses );
+        if ( marker != MZTAPE_UNICMT_MARKER_NONE ) {
+            if ( marker == MZTAPE_UNICMT_MARKER_VALID ) {
+                marker_active = 1;
+                marker_pulses = pulses;
+                printf ( "%s: UniCMT CMTSPEED header at offset 0x%x: pulses %0.0f / %0.0f / %0.0f / %0.0f us (~%0.2f:1) for next blocks\n",
+                         cmtext_get_description ( g_cmt_mzftape ), offset,
+                         pulses.long_pulse.high * 1e6, pulses.long_pulse.low * 1e6,
+                         pulses.short_pulse.high * 1e6, pulses.short_pulse.low * 1e6,
+                         mztape_pulses_get_ratio ( CMTMZF_FORMATSET, &pulses ) );
+                if ( i == 0 ) {
+                    printf ( "%s: note: CMTSPEED header is the first block; the real UniCMT does not play such a tape\n", cmtext_get_description ( g_cmt_mzftape ) );
+                };
+            } else {
+                fprintf ( stderr, "%s: warning: CMTSPEED header at offset 0x%x has a zero pulse length, ignored\n", cmtext_get_description ( g_cmt_mzftape ), offset );
+            };
+            /* hlavička CMTSPEED nemá tělo (délka 0 je podmínkou rozpoznání) */
+            offset += sizeof ( st_MZF_HEADER );
+            continue;
         };
 
         char ascii_filename[MZF_FNAME_FULL_LENGTH];
@@ -102,13 +160,14 @@ static st_CMTEXT_TAPE_INDEX* cmtmzftape_container_index_new ( st_HANDLER *h, uin
 
         idx->block_id = i++;
         idx->offset = offset;
-        idx->blspeed = CMTEXT_BLOCK_SPEED_DEFAULT;
+        idx->blspeed = ( marker_active ) ? CMTEXT_BLOCK_SPEED_SET : CMTEXT_BLOCK_SPEED_DEFAULT;
         idx->bltype = CMTEXT_BLOCK_TYPE_MZF;
         idx->pause_after = CMTMZFTAPE_DEFAULT_PAUSE_AFTER;
 
         st_CMTEXT_TAPE_ITEM_MZF *mzfitem = &idx->item.mzf;
 
-        mzfitem->cmtspeed = cmtspeed;
+        mzfitem->cmtspeed = ( marker_active ) ? CMTSPEED_CUSTOM : cmtspeed;
+        mzfitem->pulses = marker_pulses;
         mzfitem->ftype = hdr->ftype;
         mzfitem->fsize = hdr->fsize;
         mzfitem->fstrt = hdr->fstrt;
@@ -156,10 +215,12 @@ st_CMTEXT_BLOCK* cmtmzftape_block_open ( int block_id ) {
     uint32_t offset = idx->offset;
     en_CMTEXT_BLOCK_SPEED blspeed = idx->blspeed;
     st_CMTEXT_TAPE_ITEM_MZF *mzfitem = &idx->item.mzf;
-    en_CMTSPEED cmtspeed = ( blspeed == CMTEXT_BLOCK_SPEED_SET ) ? mzfitem->cmtspeed : g_cmt.mz_cmtspeed; // pokud neni SET, tak je DEFAULT
+    // pokud neni SET, tak je DEFAULT
+    en_CMTSPEED cmtspeed = ( blspeed == CMTEXT_BLOCK_SPEED_SET ) ? mzfitem->cmtspeed : g_cmt.mz_cmtspeed;
+    const st_MZTAPE_PULSES_LENGTH *pulses = ( blspeed == CMTEXT_BLOCK_SPEED_SET ) ? &mzfitem->pulses : &g_cmt.mz_custom_pulses;
     uint16_t pause_after = idx->pause_after;
 
-    st_CMTEXT_BLOCK *block = cmtmzf_block_open ( g_cmt_mzftape->container->tape->h, offset, block_id, pause_after, blspeed, cmtspeed );
+    st_CMTEXT_BLOCK *block = cmtmzf_block_open ( g_cmt_mzftape->container->tape->h, offset, block_id, pause_after, blspeed, cmtspeed, pulses );
     if ( !block ) {
         return NULL;
     };
@@ -223,6 +284,13 @@ static int cmtmzftape_container_open ( char *filename ) {
     int count_blocks = 0;
 
     st_CMTEXT_TAPE_INDEX *index = cmtmzftape_container_index_new ( h, 0, g_cmt.mz_cmtspeed, &count_blocks );
+
+    /* MZT jen s hlavičkami CMTSPEED (nebo prázdný) nemá žádný blok */
+    if ( ( !index ) && ( !count_blocks ) && ( h->spec.memspec.size > 0 ) ) {
+        baseui_error ( "%s: No playable block in '%s'\n", cmtext_get_description ( g_cmt_mzftape ), filename );
+        generic_driver_close ( h );
+        return EXIT_FAILURE;
+    };
 
     if ( !index ) {
         generic_driver_close ( h );

@@ -35,6 +35,7 @@ extern "C" {
 
 #include "libs/generic_driver/generic_driver.h"
 #include "libs/cmtspeed/cmtspeed.h"
+#include "libs/mztape/mztape.h"
 
 #include "cmtext_block_defs.h"
 
@@ -45,6 +46,12 @@ extern "C" {
     } en_CMTEXT_CONTAINER_TYPE;
 
 
+    /**
+     * @brief Položka indexu pásky pro MZF blok.
+     *
+     * cmtspeed platí jen pro blok s CMTEXT_BLOCK_SPEED_SET; pulses jen
+     * pro cmtspeed == CMTSPEED_CUSTOM (např. z hlavičky CMTSPEED UniCMT).
+     */
     typedef struct st_CMTEXT_TAPE_ITEM_MZF {
         char *fname;
         uint8_t ftype;
@@ -52,6 +59,7 @@ extern "C" {
         uint16_t fexec;
         uint16_t fstrt;
         en_CMTSPEED cmtspeed;
+        st_MZTAPE_PULSES_LENGTH pulses; /**< vlastní délky pulzů (jen CMTSPEED_CUSTOM) */
     } st_CMTEXT_TAPE_ITEM_MZF;
 
 
@@ -146,6 +154,27 @@ extern "C" {
     extern int cmtext_container_get_block_fexec ( st_CMTEXT_CONTAINER *container, int block_id );
     extern en_CMTSPEED cmtext_container_get_block_cmt_speed ( st_CMTEXT_CONTAINER *container, int block_id );
     extern void cmtext_container_set_block_cmt_speed ( st_CMTEXT_CONTAINER *container, int block_id, en_CMTSPEED cmtspeed );
+
+    /**
+     * @brief Vrátí uložené vlastní délky pulzů MZF bloku.
+     *
+     * @param container Kontejner s indexem bloků (SIMPLE_TAPE).
+     * @param block_id Index bloku (v rozsahu, kontroluje jen assert).
+     * @param[out] pulses Délky pulzů.
+     * @return EXIT_SUCCESS, pokud je blok MZF s cmtspeed CMTSPEED_CUSTOM;
+     *         jinak EXIT_FAILURE a *pulses se nemění.
+     */
+    extern int cmtext_container_get_block_pulses ( st_CMTEXT_CONTAINER *container, int block_id, st_MZTAPE_PULSES_LENGTH *pulses );
+
+    /**
+     * @brief Uloží MZF bloku vlastní délky pulzů (nemění blspeed ani cmtspeed).
+     *
+     * @param container Kontejner s indexem bloků (SIMPLE_TAPE).
+     * @param block_id Index bloku (v rozsahu, kontroluje jen assert).
+     * @param pulses Délky pulzů (kopírují se).
+     * @return EXIT_SUCCESS pro MZF blok, jinak EXIT_FAILURE (nic se nemění).
+     */
+    extern int cmtext_container_set_block_pulses ( st_CMTEXT_CONTAINER *container, int block_id, const st_MZTAPE_PULSES_LENGTH *pulses );
 
 #ifdef __cplusplus
 }

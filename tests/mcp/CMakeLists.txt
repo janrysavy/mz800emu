@@ -344,6 +344,26 @@ if(Python3_FOUND)
                    "(Python ${Python3_VERSION})")
 
     # -----------------------------------------------------------
+    # MZT s hlavičkou CMTSPEED (UniCMT) a vlastní délky pulzů (pipe)
+    # -----------------------------------------------------------
+    # Páska LOADER + CMTSPEED + DATA: ROM z boot menu nahraje LOADER,
+    # ten přes RHEAD/RDATA díl za hlavičkou. Hlavička 1x -> nahraje,
+    # 3x -> ROM nenahraje, 3x s per-blok pulzy 1x přes MCP -> nahraje;
+    # výchozí vlastní pulzy přes cmt_set_property custom_pulses.
+    add_test(
+        NAME    mcp_cmt_unicmt_mzt
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_cmt_unicmt_mzt.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_cmt_unicmt_mzt PROPERTIES
+        LABELS  "e2e;mcp;pipe;cmt"
+        TIMEOUT 300
+    )
+    message(STATUS "  tests/mcp: registered mcp_cmt_unicmt_mzt "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
     # Test 7d1: snapshot nepřepíše uživatelské INI (pipe)
     # -----------------------------------------------------------
     # Tři procesy mz800emu s ukládaným INI: A pořídí snapshot

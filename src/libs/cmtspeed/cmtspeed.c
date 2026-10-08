@@ -9,6 +9,7 @@
  *
  * @par Changelog:
  * - 2026-03-14: Proběhla kompletní revize a refaktorizace. Vytvořeny unit testy.
+ * - 2026-10-08: Přidána hodnota CMTSPEED_CUSTOM (vlastní délky pulzů, UniCMT).
  *
  * @par Licence:
  * This program is free software: you can redistribute it and/or modify
@@ -43,12 +44,13 @@ const double g_cmtspeed_divisor[] = {
                                      ( (double) 8 / 3 ),
                                      ( (double) 9 / 7 ),
                                      ( (double) 25 / 14 ),
+                                     0, // custom - vlastní délky pulzů, nejde o poměr
 };
 
 /** @brief Textové popisy poměrů rychlosti indexované hodnotami en_CMTSPEED.
  *
  * Řetězce ve formátu "X:Y", např. "1:1", "7:3". Pro CMTSPEED_NONE obsahuje "?:?",
- * pro CMTSPEED_2_1_CPM obsahuje "2:1 (cp/m)".
+ * pro CMTSPEED_2_1_CPM obsahuje "2:1 (cp/m)", pro CMTSPEED_CUSTOM "custom".
  */
 const char *g_cmtspeed_ratio[] = {
                                   "?:?",
@@ -61,5 +63,6 @@ const char *g_cmtspeed_ratio[] = {
                                   "8:3",
                                   "9:7",
                                   "25:14",
+                                  "custom",
 };
 

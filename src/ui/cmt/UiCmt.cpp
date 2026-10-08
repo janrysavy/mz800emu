@@ -1,6 +1,7 @@
 #include "main.h"
 #include "libs/sdlapp/sdlapp.h"
 #include <stdio.h>
+#include <string.h>
 #include <glib.h>
 #include <vector>
 #include <string>
@@ -30,6 +31,11 @@ std::string UiCmt::getSpeedTxt(en_CMTEXT_BLOCK_TYPE bltype, en_CMTEXT_BLOCK_SPEE
     if (blspeed == CMTEXT_BLOCK_SPEED_DEFAULT)
     {
         return std::string(_("Default"));
+    };
+
+    if (cmtspeed_is_custom(cmtspeed))
+    {
+        return std::string((get_rateiospeed) ? _("Custom pulses...") : _("Custom pulses"));
     };
 
     if (bltype == CMTEXT_BLOCK_TYPE_MZF)
@@ -84,7 +90,53 @@ std::vector<UiCmtSpeedList_t> createSpeedList(en_CMTEXT_BLOCK_TYPE bltype)
         src_cmtspeed++;
     };
 
+    /* MZ záznam umí i vlastní délky pulzů (výběr otevře editor) */
+    if (bltype == CMTEXT_BLOCK_TYPE_MZF)
+    {
+        speed_list.push_back({CMTSPEED_CUSTOM, UiCmt::getSpeedTxt(bltype, CMTEXT_BLOCK_SPEED_SET, CMTSPEED_CUSTOM, true)});
+    };
+
     return speed_list;
+}
+
+/**
+ * @brief Naformátuje délku v µs: celé číslo bez desetin, jinak nejvýš 3 desetinná místa.
+ *
+ * @param us Délka v µs.
+ * @return Text bez koncových nul.
+ */
+static std::string format_us(double us)
+{
+    char buff[32];
+    snprintf(buff, sizeof(buff), "%.3f", us);
+    std::string s(buff);
+    while (!s.empty() && (s.back() == '0'))
+        s.pop_back();
+    if (!s.empty() && (s.back() == '.'))
+        s.pop_back();
+    return s;
+}
+
+std::string UiCmt::getPulsesTxt(const st_MZTAPE_PULSES_LENGTH *pulses)
+{
+    char ratio[32];
+    snprintf(ratio, sizeof(ratio), "%.2f", mztape_pulses_get_ratio(CMTMZF_FORMATSET, pulses));
+    return format_us(pulses->long_pulse.high * 1e6) + "/" + format_us(pulses->long_pulse.low * 1e6) + "/" +
+           format_us(pulses->short_pulse.high * 1e6) + "/" + format_us(pulses->short_pulse.low * 1e6) +
+           " \xC2\xB5s (~" + ratio + ":1)";
+}
+
+/** @brief Předvolby vlastních délek pulzů - sady hlaviček CMTSPEED UniCMT (báze hw/25-unicmt.md). */
+static const UiCmtPulsesPreset_t g_uicmt_pulses_presets[] = {
+    {"UniCMT 1x", {470.0, 494.0, 240.0, 278.0}},
+    {"UniCMT 2x", {235.0, 247.0, 120.0, 139.0}},
+    {"UniCMT 3x", {156.0, 164.0, 80.0, 92.0}},
+};
+
+const UiCmtPulsesPreset_t *UiCmt::getPulsesPresets(int *count)
+{
+    *count = (int)(sizeof(g_uicmt_pulses_presets) / sizeof(g_uicmt_pulses_presets[0]));
+    return g_uicmt_pulses_presets;
 }
 
 std::vector<UiCmtSpeedList_t> UiCmt::getMzSpeedList(void)
@@ -114,8 +166,19 @@ std::vector<UiCmtSpeedList_t> UiCmt::getMzSpeedListDefault(void)
     return default_speed_list;
 }
 
-int UiCmt::getLengthInSec(en_CMTEXT_BLOCK_TYPE bltype, en_CMTEXT_BLOCK_SPEED blspeed, en_CMTSPEED cmtspeed, int fsize)
+int UiCmt::getLengthInSec(en_CMTEXT_BLOCK_TYPE bltype, en_CMTEXT_BLOCK_SPEED blspeed, en_CMTSPEED cmtspeed, int fsize, const st_MZTAPE_PULSES_LENGTH *pulses)
 {
+    if (cmtspeed_is_custom(cmtspeed))
+    {
+        /* Bd vlastních pulzů = ekvivalentní poměr vůči 1:1 */
+        double ratio = (pulses) ? mztape_pulses_get_ratio(CMTMZF_FORMATSET, pulses) : 0;
+        if ((bltype != CMTEXT_BLOCK_TYPE_MZF) || (blspeed == CMTEXT_BLOCK_SPEED_NONE) || (!(ratio > 0)))
+        {
+            return -1;
+        };
+        return (int)((fsize * 9) / (MZTAPE_DEFAULT_BDSPEED * ratio));
+    };
+
     uint16_t base_bdspeed;
 
     if (blspeed == CMTEXT_BLOCK_SPEED_NONE)
@@ -224,10 +287,23 @@ void UiCmt::updateTapeFilelist(void)
 
         en_CMTSPEED cmtspeed = cmtext_container_get_block_cmt_speed(container, i);
 
-        std::string cmtspeed_txt = UiCmt::getSpeedTxt(bltype, blspeed, cmtspeed, false);
+        /* efektivní délky pulzů MZ bloku (výchozí rychlost i vlastní) */
+        st_MZTAPE_PULSES_LENGTH pulses;
+        memset(&pulses, 0x00, sizeof(pulses));
+        bool has_pulses = (cmtspeed_mz_visible && (0 == cmt_tape_get_block_pulses(i, &pulses)));
+
+        std::string cmtspeed_txt;
+        if ((blspeed == CMTEXT_BLOCK_SPEED_SET) && cmtspeed_is_custom(cmtspeed) && has_pulses)
+        {
+            cmtspeed_txt = UiCmt::getPulsesTxt(&pulses);
+        }
+        else
+        {
+            cmtspeed_txt = UiCmt::getSpeedTxt(bltype, blspeed, cmtspeed, false);
+        };
 
         GString *gs = g_string_new(0);
-        int length = UiCmt::getLengthInSec(bltype, blspeed, cmtspeed, fsize);
+        int length = UiCmt::getLengthInSec(bltype, blspeed, cmtspeed, fsize, (has_pulses) ? &pulses : nullptr);
         if (length > 0)
         {
             g_string_printf(gs, "%02d:%02d", (length / 60), (length % 60));
@@ -263,6 +339,8 @@ void UiCmt::updateTapeFilelist(void)
         entry.block_speed = blspeed;
         entry.cmtspeed = cmtspeed;
         entry.cmtspeed_txt = cmtspeed_txt;
+        entry.has_pulses = has_pulses;
+        entry.pulses = pulses;
 
         if (cmtspeed_mz_visible)
         {

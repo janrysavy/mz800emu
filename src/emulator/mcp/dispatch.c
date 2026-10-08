@@ -58,6 +58,8 @@
 #endif
 
 #include "../debugger/dbgapi_cmdrq.h"
+/* CMTSPEED_CUSTOM pro cmt_tape_block_speed s vlastními pulzy */
+#include "libs/cmtspeed/cmtspeed.h"
 /* history_get potřebuje st_DEBUGGER_HISTORY_ROW + g_debugger_history +
  * konstanty DEBUGGER_HISTORY_LENGTH / POSMASK / MAX_INSTR_BYTES. */
 #include "../debugger/debugger.h"
@@ -1138,6 +1140,57 @@ static gint64 _obj_int_or(JsonObject *obj, const char *key, gint64 def) {
     if (!node || json_node_is_null(node)) return def;
     if (json_node_get_node_type(node) != JSON_NODE_VALUE) return def;
     return json_node_get_int(node);
+}
+
+
+/**
+ * @brief Načte z JsonObject pole "pulses_us" - délky pulzů kazety v µs.
+ *
+ * Pořadí odpovídá hlavičce CMTSPEED zařízení UniCMT: LONG high, LONG low,
+ * SHORT high, SHORT low. Rozsah hodnot kontroluje až emulátor
+ * (mztape_pulses_set_us).
+ *
+ * @param obj Objekt s polem (smí být NULL).
+ * @param[out] out Načtené délky; při neúspěchu se nemění.
+ * @return TRUE, pokud pole existuje a obsahuje právě 4 čísla (int nebo
+ *         double); jinak FALSE.
+ */
+static gboolean _obj_pulses_us(JsonObject *obj, double out[4]) {
+    if (!obj || !json_object_has_member(obj, "pulses_us")) return FALSE;
+    JsonNode *node = json_object_get_member(obj, "pulses_us");
+    if (!node || json_node_get_node_type(node) != JSON_NODE_ARRAY) return FALSE;
+    JsonArray *arr = json_node_get_array(node);
+    if (json_array_get_length(arr) != 4) return FALSE;
+    double tmp[4];
+    for (guint i = 0; i < 4; i++) {
+        JsonNode *el = json_array_get_element(arr, i);
+        if (!el || json_node_get_node_type(el) != JSON_NODE_VALUE) return FALSE;
+        GType t = json_node_get_value_type(el);
+        if (t == G_TYPE_INT64) {
+            tmp[i] = (double)json_node_get_int(el);
+        } else if (t == G_TYPE_DOUBLE) {
+            tmp[i] = json_node_get_double(el);
+        } else {
+            return FALSE;
+        }
+    }
+    memcpy(out, tmp, sizeof(tmp));
+    return TRUE;
+}
+
+
+/**
+ * @brief Sestaví JSON pole 4 délek pulzů v µs (pořadí jako _obj_pulses_us).
+ *
+ * @param us Délky v µs.
+ * @return Nové pole (vlastnictví přebírá objekt, do kterého se vloží).
+ */
+static JsonArray *_pulses_us_array(const double us[4]) {
+    JsonArray *arr = json_array_new();
+    for (int i = 0; i < 4; i++) {
+        json_array_add_double_element(arr, us[i]);
+    }
+    return arr;
 }
 
 
@@ -10148,11 +10201,16 @@ static en_MCP_DISPATCH_RESULT _handle_cmt_hack_set(
  *
  * Forwarduje na DBGAPI_CMD_CMT_SET_PROPERTY. Vstupní JSON pole:
  *   - `property` (string, povinné): "speed" / "polarity" / "cpu_boost" /
- *     "mzfsize_check"
- *   - `value` (int, povinné): pro "speed" en_CMTSPEED hodnota 1..9,
- *     pro ostatní boolean 0/1.
+ *     "mzfsize_check" / "custom_pulses"
+ *   - `value` (int, povinné kromě "custom_pulses"): pro "speed"
+ *     en_CMTSPEED hodnota 1..9 (poměr) nebo 10 (vlastní pulzy uložené
+ *     dříve), pro ostatní boolean 0/1.
+ *   - `pulses_us` (pole 4 čísel, povinné pro "custom_pulses"): vlastní
+ *     délky pulzů v µs (LONG high, LONG low, SHORT high, SHORT low);
+ *     výchozí rychlost se přepne na vlastní pulzy.
  *
- * Layout response: {"ok": true, "property": str, "value": int}
+ * Layout response: {"ok": true, "property": str, "value": int}, pro
+ * "custom_pulses" {"ok": true, "property": str, "pulses_us": [4]}.
  */
 static en_MCP_DISPATCH_RESULT _handle_cmt_set_property(
     const st_JSONL_MESSAGE *req, char **out_response) {
@@ -10169,14 +10227,39 @@ static en_MCP_DISPATCH_RESULT _handle_cmt_set_property(
         return _err_response(req_id, "Missing required field: property",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
+    st_DBGAPI_CMT_SET_PROPERTY_PARAM param;
+    memset(&param, 0, sizeof(param));
+
+    if (strcmp(property, "custom_pulses") == 0) {
+        if (!_obj_pulses_us(data_obj, param.pulses_us)) {
+            g_free(property);
+            return _err_response(req_id,
+                                 "Missing or invalid field: pulses_us "
+                                 "(array of 4 numbers in microseconds)",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        param.property = DBGAPI_CMT_PROP_CUSTOM_PULSES;
+        if (!_submit_dbgapi(DBGAPI_CMD_CMT_SET_PROPERTY, &param, NULL)) {
+            g_free(property);
+            return _err_response(req_id,
+                                 "cmt_set_property failed (each pulse length "
+                                 "must be > 0 and <= 65535 us)",
+                                 MCP_DISPATCH_EMU_ERROR, out_response);
+        }
+        JsonObject *resp = json_object_new();
+        json_object_set_boolean_member(resp, "ok", TRUE);
+        json_object_set_string_member(resp, "property", property);
+        json_object_set_array_member(resp, "pulses_us", _pulses_us_array(param.pulses_us));
+        g_free(property);
+        return _ok_response(req_id, resp, out_response);
+    }
+
     if (!json_object_has_member(data_obj, "value")) {
         g_free(property);
         return _err_response(req_id, "Missing required field: value",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
 
-    st_DBGAPI_CMT_SET_PROPERTY_PARAM param;
-    memset(&param, 0, sizeof(param));
     param.value = (int)_obj_int_or(data_obj, "value", 0);
     if (strcmp(property, "speed") == 0) {
         param.property = DBGAPI_CMT_PROP_SPEED;
@@ -10190,7 +10273,7 @@ static en_MCP_DISPATCH_RESULT _handle_cmt_set_property(
         g_free(property);
         return _err_response(req_id,
                              "Invalid property (allowed: speed, polarity, "
-                             "cpu_boost, mzfsize_check)",
+                             "cpu_boost, mzfsize_check, custom_pulses)",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
 
@@ -10332,10 +10415,13 @@ static en_MCP_DISPATCH_RESULT _handle_cmt_tape_seek(
  * @brief `cmt_tape_block_speed` handler - per-blok cmt rychlost.
  *
  * Forwarduje na DBGAPI_CMD_CMT_TAPE_BLOCK_SPEED. Vyžaduje int `block_id`
- * a int `speed` (en_CMTSPEED 1..9). Bez pásky nebo neplatná rychlost ->
- * success = false.
+ * a buď int `speed` (en_CMTSPEED poměr 1..9), nebo `pulses_us` (pole
+ * 4 čísel - vlastní délky pulzů v µs; blok pak má speed 10 =
+ * CMTSPEED_CUSTOM). Bez pásky, MZ blok mimo rozsah nebo neplatná
+ * rychlost/délky -> success = false.
  *
- * Layout response: {"ok": true, "block_id": int, "speed": int}
+ * Layout response: {"ok": true, "block_id": int, "speed": int}, u
+ * vlastních pulzů navíc "pulses_us": [4].
  */
 static en_MCP_DISPATCH_RESULT _handle_cmt_tape_block_speed(
     const st_JSONL_MESSAGE *req, char **out_response) {
@@ -10347,27 +10433,42 @@ static en_MCP_DISPATCH_RESULT _handle_cmt_tape_block_speed(
                              out_response);
     }
     JsonObject *data_obj = json_node_get_object(data_node);
+    gboolean has_pulses = json_object_has_member(data_obj, "pulses_us");
     if (!json_object_has_member(data_obj, "block_id")
-        || !json_object_has_member(data_obj, "speed")) {
+        || (!json_object_has_member(data_obj, "speed") && !has_pulses)) {
         return _err_response(req_id, "Missing required fields: block_id, "
-                             "speed", MCP_DISPATCH_INVALID_PARAMS,
+                             "speed or pulses_us", MCP_DISPATCH_INVALID_PARAMS,
                              out_response);
     }
 
     st_DBGAPI_CMT_TAPE_BLOCK_SPEED_PARAM param;
     memset(&param, 0, sizeof(param));
     param.block_id = (int)_obj_int_or(data_obj, "block_id", 0);
-    param.cmtspeed = (int)_obj_int_or(data_obj, "speed", 0);
+    if (has_pulses) {
+        if (!_obj_pulses_us(data_obj, param.pulses_us)) {
+            return _err_response(req_id,
+                                 "Invalid field: pulses_us (array of 4 "
+                                 "numbers in microseconds)",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        param.use_pulses = 1;
+        param.cmtspeed = CMTSPEED_CUSTOM;
+    } else {
+        param.cmtspeed = (int)_obj_int_or(data_obj, "speed", 0);
+    }
     if (!_submit_dbgapi(DBGAPI_CMD_CMT_TAPE_BLOCK_SPEED, &param, NULL)) {
         return _err_response(req_id,
-                             "cmt_tape_block_speed failed (no tape or bad "
-                             "speed)",
+                             "cmt_tape_block_speed failed (no tape, bad "
+                             "block or bad speed / pulse lengths)",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
     JsonObject *resp = json_object_new();
     json_object_set_boolean_member(resp, "ok", TRUE);
     json_object_set_int_member(resp, "block_id", (gint64)param.block_id);
     json_object_set_int_member(resp, "speed", (gint64)param.cmtspeed);
+    if (param.use_pulses) {
+        json_object_set_array_member(resp, "pulses_us", _pulses_us_array(param.pulses_us));
+    }
     return _ok_response(req_id, resp, out_response);
 }
 
@@ -10380,7 +10481,12 @@ static en_MCP_DISPATCH_RESULT _handle_cmt_tape_block_speed(
  *   {"available": bool, "container_type": int, "current_block": int,
  *    "count": int, "truncated": bool, "blocks": [
  *      {"block_id", "name", "cmt_speed", "type", "is_current",
- *       "playable", "recordable"} ... ]}
+ *       "playable", "recordable", "block_speed", "pulses_us"?} ... ]}
+ *
+ * "block_speed" je "none" / "default" / "set" (en_CMTEXT_BLOCK_SPEED);
+ * "cmt_speed" platí pro "set" (10 = vlastní délky pulzů). "pulses_us"
+ * (jen MZ bloky) jsou efektivní délky pulzů v µs, se kterými se blok
+ * přehraje (LONG high, LONG low, SHORT high, SHORT low).
  *
  * `available=false` znamená nenaloženou pásku nebo chybějící container;
  * blocks je pak prázdné. Read-only (= nemění stav), ale prochází stejným
@@ -10425,6 +10531,12 @@ static en_MCP_DISPATCH_RESULT _handle_cmt_tape_list(
                                        e->playable ? TRUE : FALSE);
         json_object_set_boolean_member(item, "recordable",
                                        e->recordable ? TRUE : FALSE);
+        static const char *const block_speed_txt[] = { "none", "default", "set" };
+        json_object_set_string_member(item, "block_speed",
+            (e->block_speed < 3) ? block_speed_txt[e->block_speed] : "none");
+        if (e->has_pulses) {
+            json_object_set_array_member(item, "pulses_us", _pulses_us_array(e->pulses_us));
+        }
         json_array_add_object_element(arr, item);
     }
     json_object_set_array_member(resp, "blocks", arr);
@@ -12022,7 +12134,13 @@ static en_MCP_DISPATCH_RESULT _handle_get_periph_wd1793(
  *    "cmtspeed": int, "cpu_boost": bool, "mzfsize_check": bool,
  *    "output": int, "playsts": int, "cmthack_enabled": bool,
  *    "start_time": int, "paused_time": int,
- *    "image_basename": str}
+ *    "image_basename": str, "default_pulses_us": [4],
+ *    "custom_pulses_us": [4]}
+ *
+ * "cmtspeed" 10 = výchozí rychlost jsou vlastní délky pulzů
+ * ("custom_pulses_us"). "default_pulses_us" jsou délky pulzů výchozí
+ * rychlosti (v µs: LONG high, LONG low, SHORT high, SHORT low), se
+ * kterými se přehrají bloky bez vlastní rychlosti.
  *
  * Pole "cmthack_enabled" (CMT-A) reflektuje stav cmthack ROM patche
  * (= instant load), nezávisle na reálném stavu pásky.
@@ -12054,6 +12172,8 @@ static en_MCP_DISPATCH_RESULT _handle_get_periph_cmt(
     json_object_set_int_member(resp,     "start_time",        (gint64)param.start_time);
     json_object_set_int_member(resp,     "paused_time",       (gint64)param.paused_time);
     json_object_set_string_member(resp,  "image_basename",    param.image_basename);
+    json_object_set_array_member(resp,   "default_pulses_us", _pulses_us_array(param.default_pulses_us));
+    json_object_set_array_member(resp,   "custom_pulses_us",  _pulses_us_array(param.custom_pulses_us));
     return _ok_response(req_id, resp, out_response);
 }
 

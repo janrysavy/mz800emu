@@ -1,4 +1,10 @@
 
+	- Tape - support for the CMTSPEED headers of the UniCMT device in MZT tapes. A header placed between the parts of a tape (e.g. 2xspeed.mzf, 3xspeed.mzf) sets the pulse lengths of all following parts up to the next header; the header itself is not played and is not listed among the blocks. The pulses are played exactly as given by the header, not rounded to the nearest speed ratio.
+
+	- Tape - Virtual CMT can use custom pulse lengths as the default speed and as the speed of a single block (Custom pulses... item in the speed selection: four lengths in µs, presets UniCMT 1x, 2x and 3x). The default custom pulses are saved in the configuration. MCP: pulses_us parameter of emu_cmt_set_speed and emu_cmt_tape_set_block_speed; the tape listing and the tape state report the pulse lengths.
+
+	- BUGFIX: Tape - the default speed 2:1 (cp/m) was saved in the configuration as an invalid value and the speed 1:1 applied after an emulator restart (the same for speeds 3:2, 9:7 and 25:14 set via MCP).
+
 	- BUGFIX: MCP - emu_media_run_mzf only loaded the program and jumped to its start; interrupt mode, Z80 PIO, CTC, palette and all other state stayed as the previous program left them, so the program could behave differently than after a tape load (e.g. it got no interrupts). It now resets the machine and starts the program in the same state as the --run-mzf option (new command media_run_mzf). A missing or truncated file returns an error without a reset. The old behaviour without a reset is available as emu_media_run_mzf with bootstrap=false.
 
 	- BUGFIX: Keyboard - selecting a nonexistent keyboard column (value 10 to 15 in bits 0-3 of 8255 port A) made port B return a bogus value (typically 00h, as if all keys were pressed). A real MZ-800 selects no column in this case and returns FFh (verified on hardware). Programs that wait for all keys to be released and scan these values as well got stuck (e.g. Antiriad in the S. Hecht version stayed on the title screen).

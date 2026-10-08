@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-06 13:22+0200\n"
+"POT-Creation-Date: 2026-10-08 21:08+0200\n"
 "PO-Revision-Date: 2026-03-11 21:00+0100\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -34,7 +34,7 @@ msgid "Open Directory"
 msgstr "Map openen"
 
 #: src/baseui/baseui_filechooser.c:110
-#: src/ui-imgui/filechooser/imgui_filechooser.cpp:543
+#: src/ui-imgui/filechooser/imgui_filechooser.cpp:626
 msgid "Untitled File Chooser"
 msgstr "Bestandskiezer"
 
@@ -89,15 +89,15 @@ msgstr "Nieuw WAV-bestand aanmaken"
 msgid "newfile.wav"
 msgstr "newfile.wav"
 
-#: src/emulator/hw-generic/cmt/cmt.c:850
+#: src/emulator/hw-generic/cmt/cmt.c:1043
 msgid "All Supported CMT Files"
 msgstr "Alle ondersteunde CMT-bestanden"
 
-#: src/emulator/hw-generic/cmt/cmt.c:851
+#: src/emulator/hw-generic/cmt/cmt.c:1044
 msgid "Tape Files"
 msgstr "Tapebestanden"
 
-#: src/emulator/hw-generic/cmt/cmt.c:928
+#: src/emulator/hw-generic/cmt/cmt.c:1121
 msgid "Select CMT file to open"
 msgstr "Selecteer CMT-bestand om te openen"
 
@@ -138,11 +138,19 @@ msgstr "Gebruiker"
 msgid "User Defined ROM"
 msgstr "Door gebruiker gedefinieerde ROM"
 
-#: src/ui/cmt/UiCmt.cpp:32
+#: src/ui/cmt/UiCmt.cpp:33
 msgid "Default"
 msgstr "Standaard"
 
-#: src/ui/cmt/UiCmt.cpp:45
+#: src/ui/cmt/UiCmt.cpp:38
+msgid "Custom pulses..."
+msgstr "Eigen pulsen..."
+
+#: src/ui/cmt/UiCmt.cpp:38
+msgid "Custom pulses"
+msgstr "Eigen pulsen"
+
+#: src/ui/cmt/UiCmt.cpp:51
 msgid "UNKNOWN"
 msgstr "ONBEKEND"
 
@@ -440,20 +448,20 @@ msgstr "Opslaan als"
 msgid "Save MZF file as"
 msgstr "MZF-bestand opslaan als"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:219
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:245
 msgid "Tape Filelist"
 msgstr "Tape-bestandslijst"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:255
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:279 src/ui-imgui/cmt/cmt_window.cpp:212
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:281
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:305 src/ui-imgui/cmt/cmt_window.cpp:212
 #: src/ui-imgui/debugger/sections/dbg_stack_panel.cpp:2677
 #: src/ui-imgui/debugger/vars/vars_window.cpp:1502
 #: src/ui-imgui/debugger/watch/watch_window.cpp:1696
 msgid "Name"
 msgstr "Naam"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:256
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:282 src/ui-imgui/cmt/cmt_window.cpp:211
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:282
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:308 src/ui-imgui/cmt/cmt_window.cpp:211
 #: src/ui-imgui/debugger/watch/watch_window.cpp:1700
 #: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:132
 #: src/ui-imgui/joy/joy_setup_window.cpp:239
@@ -462,8 +470,8 @@ msgstr "Naam"
 msgid "Type"
 msgstr "Type"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:257
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:285
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:283
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:311
 #: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:133
 #: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:209
 #: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:211
@@ -472,24 +480,24 @@ msgstr "Type"
 msgid "Size"
 msgstr "Grootte"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:258
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:288
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:284
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:314
 msgid "Start"
 msgstr "Start"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:259
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:291
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:285
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:317
 msgid "Exec"
 msgstr "Exec"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:260
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:294 src/ui-imgui/cmt/cmt_window.cpp:213
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:286
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:320 src/ui-imgui/cmt/cmt_window.cpp:213
 #: src/ui-imgui/topmenu/menu_speed.cpp:27
 msgid "Speed"
 msgstr "Snelheid"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:261
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:297
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:287
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:323
 msgid "Length"
 msgstr "Lengte"
 
@@ -501,7 +509,7 @@ msgstr "Afspeeltijd:"
 msgid "Remaining time:"
 msgstr "Resterende tijd:"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:80 src/ui-imgui/cmt/cmt_window.cpp:807
+#: src/ui-imgui/cmt/cmt_window.cpp:80 src/ui-imgui/cmt/cmt_window.cpp:826
 msgid "CMT Hack"
 msgstr "CMT Hack"
 
@@ -549,54 +557,127 @@ msgstr "SSize"
 msgid "Default MZ Speed:"
 msgstr "Standaard MZ-snelheid:"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:781 src/ui-imgui/cmt/cmt_window.cpp:895
+#: src/ui-imgui/cmt/cmt_window.cpp:800 src/ui-imgui/cmt/cmt_window.cpp:914
 msgid "Virtual CMT"
 msgstr "Virtuele CMT"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:816
+#: src/ui-imgui/cmt/cmt_window.cpp:835
 msgid "CMT Hack is activated!"
 msgstr "CMT Hack is geactiveerd!"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:817
+#: src/ui-imgui/cmt/cmt_window.cpp:836
 msgid "Virtual CMT is not available!"
 msgstr "Virtuele CMT is niet beschikbaar!"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:823
+#: src/ui-imgui/cmt/cmt_window.cpp:842
 #: src/ui-imgui/version_check/imgui_version_check.cpp:390
 msgid "Close"
 msgstr "Sluiten"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:844
+#: src/ui-imgui/cmt/cmt_window.cpp:863
 msgid "No tape loaded"
 msgstr "Geen tape geladen"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:853
+#: src/ui-imgui/cmt/cmt_window.cpp:872
 msgid "Recording"
 msgstr "Opname"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:863
+#: src/ui-imgui/cmt/cmt_window.cpp:882
 msgid "Playing"
 msgstr "Afspelen"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:878
+#: src/ui-imgui/cmt/cmt_window.cpp:897
 msgid "Stopped - Ready to Play"
 msgstr "Gestopt - Klaar om af te spelen"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:885
+#: src/ui-imgui/cmt/cmt_window.cpp:904
 msgid "(paused)"
 msgstr "(gepauzeerd)"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:906
+#: src/ui-imgui/cmt/cmt_window.cpp:925
 msgid "*** Empty ***"
 msgstr "*** Leeg ***"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:912
+#: src/ui-imgui/cmt/cmt_window.cpp:931
 msgid "Recording (paused)"
 msgstr "Opname (gepauzeerd)"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:916
+#: src/ui-imgui/cmt/cmt_window.cpp:935
 msgid "Recording.."
 msgstr "Opname.."
+
+#: src/ui-imgui/cmt/ImGuiCmt.cpp:109
+msgid "Custom Tape Pulses"
+msgstr "Eigen bandpulsen"
+
+#: src/ui-imgui/cmt/ImGuiCmt.cpp:121
+msgid "Pulse lengths in microseconds (order of the UniCMT CMTSPEED header):"
+msgstr "Pulslengtes in microseconden (volgorde van de UniCMT CMTSPEED-header):"
+
+#: src/ui-imgui/cmt/ImGuiCmt.cpp:125
+msgid "Long pulse high (bit 1)"
+msgstr "Lange puls high (bit 1)"
+
+#: src/ui-imgui/cmt/ImGuiCmt.cpp:126
+msgid "Long pulse low (bit 1)"
+msgstr "Lange puls low (bit 1)"
+
+#: src/ui-imgui/cmt/ImGuiCmt.cpp:127
+msgid "Short pulse high (bit 0)"
+msgstr "Korte puls high (bit 0)"
+
+#: src/ui-imgui/cmt/ImGuiCmt.cpp:128
+msgid "Short pulse low (bit 0)"
+msgstr "Korte puls low (bit 0)"
+
+#: src/ui-imgui/cmt/ImGuiCmt.cpp:137
+msgid "Presets:"
+msgstr "Voorinstellingen:"
+
+#: src/ui-imgui/cmt/ImGuiCmt.cpp:150
+msgid "Revert"
+msgstr "Terugzetten"
+
+#: src/ui-imgui/cmt/ImGuiCmt.cpp:164
+#, c-format
+msgid "Equivalent speed: ~%.2f:1 (%.0f Bd)"
+msgstr "Overeenkomende snelheid: ~%.2f:1 (%.0f Bd)"
+
+#: src/ui-imgui/cmt/ImGuiCmt.cpp:168
+#, c-format
+msgid "Each length must be greater than 0 and at most %.0f µs."
+msgstr "Elke lengte moet groter zijn dan 0 en hoogstens %.0f µs."
+
+#: src/ui-imgui/cmt/ImGuiCmt.cpp:175
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2419
+#: src/ui-imgui/dsk/dsk_create_window.cpp:104
+#: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:109
+#: src/ui-imgui/joy/joy_setup_window.cpp:564
+#: src/ui-imgui/message/message_window.cpp:90
+#: src/ui-imgui/snapshot/snapshot_notification.cpp:95
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:338
+msgid "OK"
+msgstr "OK"
+
+#: src/ui-imgui/cmt/ImGuiCmt.cpp:187
+#: src/ui-imgui/debugger/membrowser/membrowser_annot_dialog.cpp:148
+#: src/ui-imgui/debugger/membrowser/membrowser_fill_dialog.cpp:264
+#: src/ui-imgui/debugger/sections/dbg_focus_to.cpp:264
+#: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:104
+#: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:111
+#: src/ui-imgui/joy/joy_setup_window.cpp:571
+#: src/ui-imgui/memext/memext_load_dialog.cpp:185
+#: src/ui-imgui/memext/memext_map_window.cpp:291
+#: src/ui-imgui/memext/memext_save_dialog.cpp:207
+#: src/ui-imgui/ramdisk/pezik_settings_window.cpp:289
+#: src/ui-imgui/rom/rom_settings_window.cpp:323
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:139
+#: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:176
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:99
+#: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:93
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:343
+msgid "Cancel"
+msgstr "Annuleren"
 
 #: src/ui-imgui/debugger/bookmarks/bm_window.cpp:267
 msgid "- Cancel##bm_add_toggle"
@@ -4438,25 +4519,6 @@ msgstr "Kleurlabel"
 msgid "Delete"
 msgstr "Verwijderen"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_annot_dialog.cpp:148
-#: src/ui-imgui/debugger/membrowser/membrowser_fill_dialog.cpp:264
-#: src/ui-imgui/debugger/sections/dbg_focus_to.cpp:264
-#: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:104
-#: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:111
-#: src/ui-imgui/joy/joy_setup_window.cpp:571
-#: src/ui-imgui/memext/memext_load_dialog.cpp:185
-#: src/ui-imgui/memext/memext_map_window.cpp:291
-#: src/ui-imgui/memext/memext_save_dialog.cpp:207
-#: src/ui-imgui/ramdisk/pezik_settings_window.cpp:289
-#: src/ui-imgui/rom/rom_settings_window.cpp:323
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:139
-#: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:176
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:99
-#: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:93
-#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:343
-msgid "Cancel"
-msgstr "Annuleren"
-
 #: src/ui-imgui/debugger/membrowser/membrowser_annot_dialog.cpp:192
 #, c-format
 msgid "Annotation @ 0x%08X"
@@ -7320,16 +7382,6 @@ msgstr ""
 msgid "Change the bank mapping or edit VEC so it points to RAM."
 msgstr "Wijzig bank-mapping of bewerk VEC zodat het naar RAM wijst."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2419
-#: src/ui-imgui/dsk/dsk_create_window.cpp:104
-#: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:109
-#: src/ui-imgui/joy/joy_setup_window.cpp:564
-#: src/ui-imgui/message/message_window.cpp:90
-#: src/ui-imgui/snapshot/snapshot_notification.cpp:95
-#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:338
-msgid "OK"
-msgstr "OK"
-
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:1443
 msgid "History of already executed instructions"
 msgstr "Geschiedenis van reeds uitgevoerde instructies"
@@ -9351,31 +9403,31 @@ msgstr "Datum"
 msgid "Places"
 msgstr "Plaatsen"
 
-#: src/ui-imgui/filechooser/imgui_filechooser.cpp:177
+#: src/ui-imgui/filechooser/imgui_filechooser.cpp:198
 msgid "Recent"
 msgstr "Recent"
 
-#: src/ui-imgui/filechooser/imgui_filechooser.cpp:327
+#: src/ui-imgui/filechooser/imgui_filechooser.cpp:408
 msgid "MZF File Info"
 msgstr "MZF-bestandsinformatie"
 
-#: src/ui-imgui/filechooser/imgui_filechooser.cpp:379
+#: src/ui-imgui/filechooser/imgui_filechooser.cpp:460
 msgid "NAME:"
 msgstr "NAAM:"
 
-#: src/ui-imgui/filechooser/imgui_filechooser.cpp:386
+#: src/ui-imgui/filechooser/imgui_filechooser.cpp:467
 msgid "TYPE:"
 msgstr "TYPE:"
 
-#: src/ui-imgui/filechooser/imgui_filechooser.cpp:393
+#: src/ui-imgui/filechooser/imgui_filechooser.cpp:474
 msgid "SIZE:"
 msgstr "GROOTTE:"
 
-#: src/ui-imgui/filechooser/imgui_filechooser.cpp:400
+#: src/ui-imgui/filechooser/imgui_filechooser.cpp:481
 msgid "STRT:"
 msgstr "START:"
 
-#: src/ui-imgui/filechooser/imgui_filechooser.cpp:407
+#: src/ui-imgui/filechooser/imgui_filechooser.cpp:488
 msgid "EXEC:"
 msgstr "EXEC:"
 

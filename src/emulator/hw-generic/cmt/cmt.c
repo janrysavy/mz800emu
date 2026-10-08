@@ -677,6 +677,18 @@ int cmt_record_to_file(const char *path)
     return EXIT_SUCCESS;
 }
 
+/**
+ * @brief Změní výchozí rychlost Virtual CMT (bloky s CMTEXT_BLOCK_SPEED_DEFAULT).
+ *
+ * Při zastaveném transportu se vložený blok s výchozí rychlostí hned
+ * přegeneruje. CMTSPEED_CUSTOM znamená výchozí vlastní délky pulzů
+ * g_cmt.mz_custom_pulses (nastavují se přes cmt_change_custom_pulses()).
+ *
+ * @param cmtspeed Poměr nebo CMTSPEED_CUSTOM.
+ * @return EXIT_SUCCESS; EXIT_FAILURE, pokud se blok nepodařilo přegenerovat
+ *         (výchozí rychlost se pak nemění).
+ * @pre Voláno z emulátorového vlákna nebo z UI vlákna při zastaveném transportu.
+ */
 int cmt_change_speed(en_CMTSPEED cmtspeed)
 {
     int ret = EXIT_SUCCESS;
@@ -750,6 +762,89 @@ int cmt_tape_set_block_cmt_speed(int block_id, en_CMTSPEED cmtspeed)
     return 0;
 }
 
+int cmt_change_custom_pulses(const st_MZTAPE_PULSES_LENGTH *pulses)
+{
+    /* cb_set_speed bloku čte výchozí vlastní pulzy z g_cmt - nastavit
+     * předem a při neúspěchu vrátit */
+    st_MZTAPE_PULSES_LENGTH saved = g_cmt.mz_custom_pulses;
+    g_cmt.mz_custom_pulses = *pulses;
+    if (EXIT_SUCCESS != cmt_change_speed(CMTSPEED_CUSTOM))
+    {
+        g_cmt.mz_custom_pulses = saved;
+        ui_cmt_window_update();
+        return EXIT_FAILURE;
+    };
+    return EXIT_SUCCESS;
+}
+
+int cmt_tape_set_block_pulses(int block_id, const st_MZTAPE_PULSES_LENGTH *pulses)
+{
+    if ((!CMT_TEST_FILLED) || (!g_cmt.ext))
+        return -1;
+    st_CMTEXT_CONTAINER *container = cmtext_get_container(g_cmt.ext);
+    if (!container)
+        return -1;
+    /* stejné meze jako cmt_tape_set_block_cmt_speed() */
+    if ((cmtext_container_get_type(container) != CMTEXT_CONTAINER_TYPE_SIMPLE_TAPE)
+        || (block_id < 0)
+        || (block_id >= cmtext_container_get_count_blocks(container)))
+        return -1;
+    if (EXIT_SUCCESS != cmtext_container_set_block_pulses(container, block_id, pulses))
+        return -1;
+    cmtext_container_set_block_speed(container, block_id, CMTEXT_BLOCK_SPEED_SET);
+    cmtext_container_set_block_cmt_speed(container, block_id, CMTSPEED_CUSTOM);
+    return 0;
+}
+
+int cmt_get_speed_pulses(en_CMTSPEED cmtspeed, const st_MZTAPE_PULSES_LENGTH *custom, st_MZTAPE_PULSES_LENGTH *pulses)
+{
+    if (cmtspeed_is_custom(cmtspeed))
+    {
+        if (!custom)
+            return EXIT_FAILURE;
+        *pulses = *custom;
+        return EXIT_SUCCESS;
+    };
+    return mztape_get_speed_pulses(CMTMZF_FORMATSET, cmtspeed, pulses);
+}
+
+int cmt_tape_get_block_pulses(int block_id, st_MZTAPE_PULSES_LENGTH *pulses)
+{
+    if ((!CMT_TEST_FILLED) || (!g_cmt.ext))
+        return -1;
+    st_CMTEXT_CONTAINER *container = cmtext_get_container(g_cmt.ext);
+    if (!container)
+        return -1;
+    if (cmtext_container_get_type(container) != CMTEXT_CONTAINER_TYPE_SIMPLE_TAPE)
+    {
+        /* samostatný soubor: jediný blok; MZF nese rychlost svého streamu,
+         * WAV rychlost nemá */
+        st_CMTEXT_BLOCK *block = g_cmt.ext->block;
+        if ((block_id != 0) || (!block) || (cmtext_block_get_type(block) != CMTEXT_BLOCK_TYPE_MZF))
+            return -1;
+        const st_CMTMZF_BLOCKSPEC *blspec = (const st_CMTMZF_BLOCKSPEC *)block->spec;
+        return (EXIT_SUCCESS == cmt_get_speed_pulses(blspec->cmtspeed, &blspec->pulses, pulses)) ? 0 : -1;
+    };
+    if ((block_id < 0) || (block_id >= cmtext_container_get_count_blocks(container)))
+        return -1;
+    if (cmtext_container_get_block_type(container, block_id) != CMTEXT_BLOCK_TYPE_MZF)
+        return -1;
+    int ret;
+    if (cmtext_container_get_block_speed(container, block_id) == CMTEXT_BLOCK_SPEED_SET)
+    {
+        en_CMTSPEED cmtspeed = cmtext_container_get_block_cmt_speed(container, block_id);
+        if (cmtspeed_is_custom(cmtspeed))
+            ret = cmtext_container_get_block_pulses(container, block_id, pulses);
+        else
+            ret = cmt_get_speed_pulses(cmtspeed, NULL, pulses);
+    }
+    else
+    {
+        ret = cmt_get_speed_pulses(g_cmt.mz_cmtspeed, &g_cmt.mz_custom_pulses, pulses);
+    };
+    return (ret == EXIT_SUCCESS) ? 0 : -1;
+}
+
 void cmt_exit(void)
 {
 
@@ -769,6 +864,82 @@ void cmt_propagatecfg_cmt_speed(void *e, void *data)
     (void)data;
     g_cmt.mz_cmtspeed = cfgelement_get_keyword_value((CFGELM *)e);
     ui_cmt_window_update();
+}
+
+/**
+ * @brief Výchozí vlastní délky pulzů v µs: LONG high, LONG low, SHORT high, SHORT low.
+ *
+ * Sada 1xspeed.mzf zařízení UniCMT, shodná s nominálem ROM ze servisního
+ * manuálu (báze hw/25-unicmt.md kap. 2.1).
+ */
+static const double g_cmt_default_custom_pulses_us[4] = {470.0, 494.0, 240.0, 278.0};
+
+/** @brief Názvy INI klíčů vlastních délek pulzů (pořadí jako g_cmt_cfg_custom_pulses_us). */
+static char *g_cmt_cfg_custom_pulses_name[4] = {
+    "mz_custom_pulse_long_high_us",
+    "mz_custom_pulse_long_low_us",
+    "mz_custom_pulse_short_high_us",
+    "mz_custom_pulse_short_low_us",
+};
+
+/**
+ * @brief Zrcadlo g_cmt.mz_custom_pulses v µs pro cfg elementy (save handler ukazuje sem).
+ *
+ * Synchronizuje ho cmt_cfg_custom_pulses_sync() před uložením INI
+ * (cfgmodule save callback) a propagate callback po načtení.
+ */
+static float g_cmt_cfg_custom_pulses_us[4];
+
+/** @brief Elementy vlastních délek pulzů (pro propagate callback). */
+static CFGELM *g_cmt_cfg_custom_pulses_elm[4];
+
+/**
+ * @brief Přepíše zrcadlo g_cmt_cfg_custom_pulses_us z g_cmt.mz_custom_pulses.
+ */
+static void cmt_cfg_custom_pulses_sync(void)
+{
+    g_cmt_cfg_custom_pulses_us[0] = (float)(g_cmt.mz_custom_pulses.long_pulse.high * 1e6);
+    g_cmt_cfg_custom_pulses_us[1] = (float)(g_cmt.mz_custom_pulses.long_pulse.low * 1e6);
+    g_cmt_cfg_custom_pulses_us[2] = (float)(g_cmt.mz_custom_pulses.short_pulse.high * 1e6);
+    g_cmt_cfg_custom_pulses_us[3] = (float)(g_cmt.mz_custom_pulses.short_pulse.low * 1e6);
+}
+
+/**
+ * @brief Propagate callback klíčů mz_custom_pulse_*_us: složí výchozí vlastní délky pulzů.
+ *
+ * Volá se pro každý ze 4 klíčů; čte vždy všechny čtyři elementy, takže
+ * po posledním z nich platí hodnoty z INI. Neplatná kombinace (nemůže
+ * nastat díky rozsahu elementů) ponechá předchozí délky.
+ *
+ * @param e Měněný element (nepoužívá se).
+ * @param data Nepoužívá se.
+ */
+static void cmt_propagatecfg_custom_pulses(void *e, void *data)
+{
+    (void)e;
+    (void)data;
+    double us[4];
+    for (int i = 0; i < 4; i++)
+    {
+        us[i] = (g_cmt_cfg_custom_pulses_elm[i]) ? cfgelement_get_float_value(g_cmt_cfg_custom_pulses_elm[i])
+                                                 : g_cmt_default_custom_pulses_us[i];
+    };
+    mztape_pulses_set_us(&g_cmt.mz_custom_pulses, us[0], us[1], us[2], us[3]);
+    cmt_cfg_custom_pulses_sync();
+    ui_cmt_window_update();
+}
+
+/**
+ * @brief Save callback modulu CMT: před zápisem INI srovná zrcadlo vlastních pulzů.
+ *
+ * @param m Modul (nepoužívá se).
+ * @param data Nepoužívá se.
+ */
+static void cmt_cfg_save_cb(void *m, void *data)
+{
+    (void)m;
+    (void)data;
+    cmt_cfg_custom_pulses_sync();
 }
 
 void cmt_rear_dip_switch_cmt_inverted_polarity(unsigned value)
@@ -808,16 +979,38 @@ void cmt_init(void)
 
     CFGMOD *cmod = cfgroot_register_new_module(g_cfgmain, "CMT");
 
+    /* výchozí vlastní délky pulzů platí, i když INI klíče chybí */
+    mztape_pulses_set_us(&g_cmt.mz_custom_pulses,
+                         g_cmt_default_custom_pulses_us[0], g_cmt_default_custom_pulses_us[1],
+                         g_cmt_default_custom_pulses_us[2], g_cmt_default_custom_pulses_us[3]);
+    cmt_cfg_custom_pulses_sync();
+    cfgmodule_set_save_cb(cmod, cmt_cfg_save_cb, NULL);
+
     CFGELM *elm;
     elm = cfgmodule_register_new_element(cmod, "mz_cmtspeed", CFGENTYPE_KEYWORD, CMTSPEED_1_1,
                                          CMTSPEED_1_1, "SPEED_1/1",
                                          CMTSPEED_2_1, "SPEED_2/1",
+                                         CMTSPEED_2_1_CPM, "SPEED_2/1_CPM",
+                                         CMTSPEED_3_2, "SPEED_3/2",
                                          CMTSPEED_7_3, "SPEED_7/3",
                                          CMTSPEED_8_3, "SPEED_8/3",
                                          CMTSPEED_3_1, "SPEED_3/1",
+                                         CMTSPEED_9_7, "SPEED_9/7",
+                                         CMTSPEED_25_14, "SPEED_25/14",
+                                         CMTSPEED_CUSTOM, "SPEED_CUSTOM",
                                          -1);
     cfgelement_set_propagate_cb(elm, cmt_propagatecfg_cmt_speed, NULL);
     cfgelement_set_handlers(elm, NULL, (void *)&g_cmt.mz_cmtspeed);
+
+    /* vlastní délky pulzů pro SPEED_CUSTOM (µs, rozsah jako hlavička CMTSPEED) */
+    for (int i = 0; i < 4; i++)
+    {
+        elm = cfgmodule_register_new_element(cmod, g_cmt_cfg_custom_pulses_name[i], CFGENTYPE_FLOAT,
+                                             g_cmt_default_custom_pulses_us[i], 0.1, MZTAPE_PULSE_US_MAX);
+        g_cmt_cfg_custom_pulses_elm[i] = elm;
+        cfgelement_set_propagate_cb(elm, cmt_propagatecfg_custom_pulses, NULL);
+        cfgelement_set_handlers(elm, NULL, (void *)&g_cmt_cfg_custom_pulses_us[i]);
+    };
 
     elm = cfgmodule_register_new_element(cmod, "cmt_polarity_inverted", CFGENTYPE_BOOL, CMT_STREAM_POLARITY_NORMAL);
     // cfgelement_set_propagate_cb(elm, cmt_propagatecfg_inverted_polarity, NULL);

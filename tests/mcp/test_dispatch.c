@@ -3992,6 +3992,104 @@ void test_media_run_mzf_errors(void) {
 }
 
 
+/**
+ * @brief Pomocník testů vlastních pulzů: odešle request a vrátí výsledek dispatch.
+ *
+ * @param json Celý request řádek.
+ * @param[out] out_resp Odpověď (vlastník je volající, free); smí být NULL.
+ * @return Výsledek mcp_dispatch_request().
+ */
+static en_MCP_DISPATCH_RESULT _cmt_pulses_dispatch(const char *json, char **out_resp) {
+    st_JSONL_MESSAGE *req = _make_request(json);
+    char *resp = NULL;
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+    jsonl_msg_free(req);
+    if (out_resp) {
+        *out_resp = resp;
+    } else {
+        free(resp);
+    }
+    return rc;
+}
+
+
+/**
+ * @brief cmt_set_property "custom_pulses": validace pulses_us před dbgapi.
+ *
+ * Chybějící pole, jiný počet prvků než 4 nebo nečíselný prvek se odmítne
+ * jako INVALID_PARAMS bez volání emulátoru. Platné pole se předá a vrátí
+ * v odpovědi; selhání emulátoru (neplatné délky) = EMU_ERROR.
+ */
+void test_cmt_set_property_custom_pulses(void) {
+    dispatch_stub_reset();
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _cmt_pulses_dispatch(
+        "{\"type\":\"request\",\"id\":1201,\"cmd\":\"cmt_set_property\","
+        "\"data\":{\"property\":\"custom_pulses\"}}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _cmt_pulses_dispatch(
+        "{\"type\":\"request\",\"id\":1202,\"cmd\":\"cmt_set_property\","
+        "\"data\":{\"property\":\"custom_pulses\",\"pulses_us\":[156,164,80]}}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _cmt_pulses_dispatch(
+        "{\"type\":\"request\",\"id\":1203,\"cmd\":\"cmt_set_property\","
+        "\"data\":{\"property\":\"custom_pulses\",\"pulses_us\":[\"156\",164,80,92]}}", NULL));
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.call_count);
+
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _cmt_pulses_dispatch(
+        "{\"type\":\"request\",\"id\":1204,\"cmd\":\"cmt_set_property\","
+        "\"data\":{\"property\":\"custom_pulses\",\"pulses_us\":[156,164,80.5,92]}}", &resp));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_CMT_SET_PROPERTY, g_stub_state.last_cmd);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"pulses_us\""));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "80.5"));
+    free(resp);
+
+    dispatch_stub_reset();
+    g_stub_state.fail_next = true;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, _cmt_pulses_dispatch(
+        "{\"type\":\"request\",\"id\":1205,\"cmd\":\"cmt_set_property\","
+        "\"data\":{\"property\":\"custom_pulses\",\"pulses_us\":[0,164,80,92]}}", NULL));
+
+    /* ostatní vlastnosti dál vyžadují value */
+    dispatch_stub_reset();
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _cmt_pulses_dispatch(
+        "{\"type\":\"request\",\"id\":1206,\"cmd\":\"cmt_set_property\","
+        "\"data\":{\"property\":\"speed\"}}", NULL));
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.call_count);
+}
+
+
+/**
+ * @brief cmt_tape_block_speed s pulses_us: blok dostane speed 10 (CUSTOM).
+ */
+void test_cmt_tape_block_speed_pulses(void) {
+    dispatch_stub_reset();
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _cmt_pulses_dispatch(
+        "{\"type\":\"request\",\"id\":1211,\"cmd\":\"cmt_tape_block_speed\","
+        "\"data\":{\"block_id\":1}}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _cmt_pulses_dispatch(
+        "{\"type\":\"request\",\"id\":1212,\"cmd\":\"cmt_tape_block_speed\","
+        "\"data\":{\"block_id\":1,\"pulses_us\":[156,164]}}", NULL));
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.call_count);
+
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _cmt_pulses_dispatch(
+        "{\"type\":\"request\",\"id\":1213,\"cmd\":\"cmt_tape_block_speed\","
+        "\"data\":{\"block_id\":1,\"pulses_us\":[156,164,80,92]}}", &resp));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_CMT_TAPE_BLOCK_SPEED, g_stub_state.last_cmd);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"speed\":10"));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"pulses_us\""));
+    free(resp);
+
+    /* poměr beze změny */
+    dispatch_stub_reset();
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _cmt_pulses_dispatch(
+        "{\"type\":\"request\",\"id\":1214,\"cmd\":\"cmt_tape_block_speed\","
+        "\"data\":{\"block_id\":1,\"speed\":4}}", &resp));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"speed\":4"));
+    TEST_ASSERT_NULL(strstr(resp, "pulses_us"));
+    free(resp);
+}
+
+
 void test_media_load_binary_addr_validation(void) {
     /* addr=-1 nebo addr=65536 -> INVALID_PARAMS. addr=0x4000 OK. */
     dispatch_stub_reset();
@@ -6698,6 +6796,8 @@ int main(void) {
     RUN_TEST(test_media_load_mzf_both_path_and_b64_rejected);
     RUN_TEST(test_media_run_mzf_path_happy);
     RUN_TEST(test_media_run_mzf_errors);
+    RUN_TEST(test_cmt_set_property_custom_pulses);
+    RUN_TEST(test_cmt_tape_block_speed_pulses);
     RUN_TEST(test_media_load_binary_addr_validation);
     RUN_TEST(test_media_insert_each_slot);
     RUN_TEST(test_media_insert_invalid_slot);

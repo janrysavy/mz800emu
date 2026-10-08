@@ -61,3 +61,10 @@ mz_add_test(cmt_state
     SOURCES  test_cmt_state.c
     LABELS   "emu;peripherals;cmt"
 )
+
+# Vlastní délky pulzů Virtual CMT a hlavičky CMTSPEED zařízení UniCMT v MZT.
+mz_add_test(cmt_unicmt
+    TYPE     EMU
+    SOURCES  test_cmt_unicmt.c
+    LABELS   "emu;peripherals;cmt"
+)

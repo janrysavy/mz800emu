@@ -106,6 +106,7 @@
  * jsou per-arch volitelné přes CFG_HWEXT_HAVE_* makra v mzarch_config.h. */
 #include "hw-generic/cmt/cmt.h"
 #include "hw-generic/cmt/cmthack.h"
+#include "libs/mztape/mztape.h"
 /* fix mzdos 0008: media_load_mzf zrcadlí bootstrap.c plný load (header +
  * post-header mapping + body). Potřebujeme post_header per-arch + MZF
  * header strukturu. */
@@ -134,6 +135,20 @@
 #endif
 #include "iface/iface_video.h"
 #include "hw-generic/gdg/framebuffer.h"
+
+/**
+ * @brief Převede délky pulzů (sekundy) na pole µs v pořadí hlavičky CMTSPEED.
+ *
+ * @param pulses Délky pulzů (nesmí být NULL).
+ * @param[out] us Pole 4 hodnot: LONG high, LONG low, SHORT high, SHORT low.
+ */
+static void dbgapi_cmt_pulses_to_us ( const st_MZTAPE_PULSES_LENGTH *pulses, double us[ 4 ] )
+{
+    us[ 0 ] = pulses->long_pulse.high * 1e6;
+    us[ 1 ] = pulses->long_pulse.low * 1e6;
+    us[ 2 ] = pulses->short_pulse.high * 1e6;
+    us[ 3 ] = pulses->short_pulse.low * 1e6;
+}
 #endif
 
 /* V1.B.2 - cfgmain INI handle pro Settings + Periph attach handlery. */
@@ -6284,6 +6299,11 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 memcpy ( p->image_basename, base, blen );
                 p->image_basename[ blen ] = '\0';
             };
+            /* délky pulzů: efektivní výchozí rychlosti a uložené vlastní */
+            st_MZTAPE_PULSES_LENGTH dflt;
+            if ( EXIT_SUCCESS == cmt_get_speed_pulses ( g_cmt.mz_cmtspeed, &g_cmt.mz_custom_pulses, &dflt ) )
+                dbgapi_cmt_pulses_to_us ( &dflt, p->default_pulses_us );
+            dbgapi_cmt_pulses_to_us ( &g_cmt.mz_custom_pulses, p->custom_pulses_us );
             rq->success = true;
             break;
         }
@@ -7221,7 +7241,9 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             switch ( p->property )
             {
                 case DBGAPI_CMT_PROP_SPEED:
-                    if ( !cmtspeed_is_valid ( (en_CMTSPEED) p->value ) )
+                    /* poměr, nebo CMTSPEED_CUSTOM = uložené vlastní pulzy */
+                    if ( ( !cmtspeed_is_valid ( (en_CMTSPEED) p->value ) )
+                         && ( !cmtspeed_is_custom ( (en_CMTSPEED) p->value ) ) )
                     {
                         p->out_result = -1;
                         rq->success = false;
@@ -7232,6 +7254,22 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                         rq->success = true;
                     };
                     break;
+                case DBGAPI_CMT_PROP_CUSTOM_PULSES:
+                {
+                    st_MZTAPE_PULSES_LENGTH pulses;
+                    if ( ( EXIT_SUCCESS != mztape_pulses_set_us ( &pulses, p->pulses_us[ 0 ], p->pulses_us[ 1 ],
+                                                                   p->pulses_us[ 2 ], p->pulses_us[ 3 ] ) )
+                         || ( EXIT_SUCCESS != cmt_change_custom_pulses ( &pulses ) ) )
+                    {
+                        p->out_result = -1;
+                        rq->success = false;
+                    }
+                    else
+                    {
+                        rq->success = true;
+                    };
+                    break;
+                }
                 case DBGAPI_CMT_PROP_POLARITY:
                     cmt_rear_dip_switch_cmt_inverted_polarity ( p->value ? 1u : 0u );
                     rq->success = true;
@@ -7338,8 +7376,21 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             /* Validace (páska, SIMPLE_TAPE, rozsah, rychlost) a nastavení
              * blspeed = SET + cmtspeed dělá cmt_tape_set_block_cmt_speed()
              * (-1 = páska/blok, -2 = neplatná rychlost). */
-            p->out_result = cmt_tape_set_block_cmt_speed ( p->block_id,
-                                                           (en_CMTSPEED) p->cmtspeed );
+            if ( p->use_pulses )
+            {
+                /* vlastní délky pulzů: blok dostane CMTSPEED_CUSTOM */
+                st_MZTAPE_PULSES_LENGTH pulses;
+                if ( EXIT_SUCCESS != mztape_pulses_set_us ( &pulses, p->pulses_us[ 0 ], p->pulses_us[ 1 ],
+                                                            p->pulses_us[ 2 ], p->pulses_us[ 3 ] ) )
+                    p->out_result = -2;
+                else
+                    p->out_result = cmt_tape_set_block_pulses ( p->block_id, &pulses );
+            }
+            else
+            {
+                p->out_result = cmt_tape_set_block_cmt_speed ( p->block_id,
+                                                               (en_CMTSPEED) p->cmtspeed );
+            };
             rq->success = ( p->out_result == 0 );
             break;
         }
@@ -7397,6 +7448,11 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                     e->block_id   = 0;
                     e->cmtspeed   = (int) g_cmt.mz_cmtspeed;
                     e->type       = (uint8_t) CMTEXT_BLOCK_TYPE_MZF;
+                    e->block_speed = (uint8_t) cmtext_block_get_block_speed ( g_cmt.ext->block );
+                    st_MZTAPE_PULSES_LENGTH pulses;
+                    e->has_pulses = (uint8_t)( 0 == cmt_tape_get_block_pulses ( 0, &pulses ) ? 1 : 0 );
+                    if ( e->has_pulses )
+                        dbgapi_cmt_pulses_to_us ( &pulses, e->pulses_us );
                     e->is_current = (uint8_t)( p->current_block == 0 ? 1 : 0 );
                     e->playable   = (uint8_t)( playable ? 1 : 0 );
                     e->recordable = (uint8_t)( recordable ? 1 : 0 );
@@ -7421,6 +7477,11 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 e->block_id   = i;
                 e->cmtspeed   = (int) cmtext_container_get_block_cmt_speed ( container, i );
                 e->type       = (uint8_t) cmtext_container_get_block_type ( container, i );
+                e->block_speed = (uint8_t) cmtext_container_get_block_speed ( container, i );
+                st_MZTAPE_PULSES_LENGTH pulses;
+                e->has_pulses = (uint8_t)( 0 == cmt_tape_get_block_pulses ( i, &pulses ) ? 1 : 0 );
+                if ( e->has_pulses )
+                    dbgapi_cmt_pulses_to_us ( &pulses, e->pulses_us );
                 e->is_current = (uint8_t)( i == p->current_block ? 1 : 0 );
                 e->playable   = (uint8_t)( playable ? 1 : 0 );
                 e->recordable = (uint8_t)( recordable ? 1 : 0 );

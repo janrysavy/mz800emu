@@ -2144,8 +2144,9 @@ async def emu_cmt_hack_set(enabled: bool) -> str:
 
 # CMT-B - tape speed ratio keys -> en_CMTSPEED integer values.
 # The emulator enum (cmtspeed.h) is: 1_1=1, 2_1=2, 2_1_cpm=3, 3_1=4,
-# 3_2=5, 7_3=6, 8_3=7, 9_7=8, 25_14=9. We expose stable string ratio
-# keys plus the raw int for clients that prefer numeric.
+# 3_2=5, 7_3=6, 8_3=7, 9_7=8, 25_14=9, custom=10 (custom pulse lengths,
+# see pulses_us). We expose stable string ratio keys plus the raw int for
+# clients that prefer numeric.
 _CMT_SPEED_KEYS = {
     "1:1": 1,
     "2:1": 2,
@@ -2156,21 +2157,27 @@ _CMT_SPEED_KEYS = {
     "8:3": 7,
     "9:7": 8,
     "25:14": 9,
+    "custom": 10,
 }
 
+# en_CMTSPEED value of custom pulse lengths (CMTSPEED_CUSTOM).
+_CMT_SPEED_CUSTOM = 10
 
-def _cmt_resolve_speed(speed) -> int:
-    """Resolve a CMT speed argument to the en_CMTSPEED integer (1..9).
+
+def _cmt_resolve_speed(speed, allow_custom: bool = True) -> int:
+    """Resolve a CMT speed argument to the en_CMTSPEED integer.
 
     Accepts either a ratio string key ("1:1", "2:1", "2:1_cpm", "3:1",
-    "3:2", "7:3", "8:3", "9:7", "25:14") or an integer / numeric string
-    in range 1..9. Returns 0 for anything unrecognized (the backend then
-    rejects it).
+    "3:2", "7:3", "8:3", "9:7", "25:14", "custom") or an integer /
+    numeric string in range 1..10 (10 = custom pulse lengths, only when
+    ``allow_custom``). Returns 0 for anything unrecognized (the backend
+    then rejects it).
     """
     if isinstance(speed, str):
         key = speed.strip().lower()
         if key in _CMT_SPEED_KEYS:
-            return _CMT_SPEED_KEYS[key]
+            v = _CMT_SPEED_KEYS[key]
+            return v if (allow_custom or v != _CMT_SPEED_CUSTOM) else 0
         try:
             speed = int(key)
         except ValueError:
@@ -2179,38 +2186,95 @@ def _cmt_resolve_speed(speed) -> int:
         v = int(speed)
     except (TypeError, ValueError):
         return 0
-    return v if 1 <= v <= 9 else 0
+    top = _CMT_SPEED_CUSTOM if allow_custom else 9
+    return v if 1 <= v <= top else 0
+
+
+def _cmt_resolve_pulses(pulses_us):
+    """Validate custom tape pulse lengths.
+
+    Returns a list of 4 floats (microseconds: long high, long low, short
+    high, short low - the order of the UniCMT CMTSPEED header) or None
+    when the argument is not a sequence of 4 numbers in (0, 65535].
+    A JSON string with such a list is accepted too.
+    """
+    if isinstance(pulses_us, str):
+        try:
+            pulses_us = json.loads(pulses_us)
+        except ValueError:
+            return None
+    if not isinstance(pulses_us, (list, tuple)) or len(pulses_us) != 4:
+        return None
+    out = []
+    for v in pulses_us:
+        if isinstance(v, bool):
+            return None
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        if not (0 < f <= 65535):
+            return None
+        out.append(f)
+    return out
 
 
 @mcp.tool()
-async def emu_cmt_set_speed(speed) -> str:
-    """Set the REAL cassette tape playback/record speed ratio.
+async def emu_cmt_set_speed(speed=None, pulses_us=None) -> str:
+    """Set the default playback speed of the virtual cassette (Virtual CMT).
 
     The Sharp MZ tape can run at several speed ratios relative to the
-    1200 Bd baseline. Accepts either a ratio string key or the raw
-    en_CMTSPEED integer:
+    1200 Bd baseline, or with custom pulse lengths. Pass either ``speed``
+    (ratio string key or the raw en_CMTSPEED integer) or ``pulses_us``:
 
     * "1:1" (1) - standard 1200 Bd
     * "2:1" (2), "2:1_cpm" (3), "3:1" (4), "3:2" (5)
     * "7:3" (6, Intercopy 10.2), "8:3" (7, CP/M cmt.com)
     * "9:7" (8), "25:14" (9)
+    * "custom" (10) - the custom pulse lengths stored earlier
+    * ``pulses_us=[long_high, long_low, short_high, short_low]`` - custom
+      pulse lengths in microseconds, the order of the UniCMT CMTSPEED
+      header (UniCMT 3x = [156, 164, 80, 92]); each in (0, 65535]. The
+      default speed switches to custom (10) and the lengths are stored.
 
-    The change applies to the default tape speed; per-block overrides are
-    set with ``emu_cmt_tape_set_block_speed``. Reflected as ``cmtspeed``
-    in ``emulator://periph/cmt``. Sensitive: changes emulator state.
+    The change applies to blocks with the default speed; per-block
+    overrides are set with ``emu_cmt_tape_set_block_speed`` (blocks after
+    a UniCMT CMTSPEED header in an .mzt already have their own speed).
+    Reflected as ``cmtspeed``, ``default_pulses_us`` and
+    ``custom_pulses_us`` in ``emulator://periph/cmt``. Sensitive: changes
+    emulator state.
 
     Args:
-        speed: ratio string ("2:1") or int (2).
+        speed: ratio string ("2:1") or int (2); omit when using pulses_us.
+        pulses_us: list of 4 numbers (microseconds); omit when using speed.
 
     Returns:
-        JSON ``{"ok": true, "property": "speed", "value": int}`` or
-        ``{"error": "..."}`` on failure (unknown ratio / value).
+        JSON ``{"ok": true, "property": "speed", "value": int}`` or, for
+        ``pulses_us``, ``{"ok": true, "property": "custom_pulses",
+        "pulses_us": [...]}``; ``{"error": "..."}`` on failure.
     """
+    if pulses_us is not None:
+        if speed not in (None, "", "custom", _CMT_SPEED_CUSTOM):
+            return json.dumps(
+                {"error": "Pass either speed or pulses_us, not both"})
+        pulses = _cmt_resolve_pulses(pulses_us)
+        if pulses is None:
+            return json.dumps(
+                {"error": f"Invalid pulses_us: {pulses_us!r} (use 4 "
+                          f"numbers in microseconds, each in (0, 65535])"})
+        resp = await _send_request(
+            "cmt_set_property",
+            {"property": "custom_pulses", "pulses_us": pulses})
+        if not resp.get("success", False):
+            return json.dumps(
+                {"error": resp.get("error", "cmt_set_speed failed")})
+        return json.dumps(_data_or_error(resp))
     value = _cmt_resolve_speed(speed)
     if value == 0:
         return json.dumps(
             {"error": f"Invalid CMT speed: {speed!r} "
-                      f"(use one of {sorted(_CMT_SPEED_KEYS)} or 1..9)"})
+                      f"(use one of {sorted(_CMT_SPEED_KEYS)}, 1..10 "
+                      f"or pulses_us)"})
     resp = await _send_request(
         "cmt_set_property", {"property": "speed", "value": value})
     if not resp.get("success", False):
@@ -2363,30 +2427,51 @@ async def emu_cmt_tape_seek(block_id: int) -> str:
 
 
 @mcp.tool()
-async def emu_cmt_tape_set_block_speed(block_id: int, speed) -> str:
+async def emu_cmt_tape_set_block_speed(block_id: int, speed=None,
+                                       pulses_us=None) -> str:
     """Set the playback speed of a single tape block (cmt speed only).
 
     Per-block speed override for SIMPLE_TAPE containers. Only the cmt
-    speed ratio is adjustable per block (no other per-block parameters).
-    ``speed`` accepts the same ratio string keys or int 1..9 as
-    ``emu_cmt_set_speed``. Requires a loaded tape. The speed applies
-    from the next opening of the block (advancing to it during playback,
-    ``emu_cmt_tape_seek``); the currently open block is not changed.
-    Sensitive: changes emulator state (MCP action).
+    speed is adjustable per block (no other per-block parameters): pass
+    either ``speed`` (the same ratio string keys or int 1..9 as
+    ``emu_cmt_set_speed``) or ``pulses_us`` (custom pulse lengths in
+    microseconds, [long_high, long_low, short_high, short_low], the order
+    of the UniCMT CMTSPEED header; MZ blocks only). Requires a loaded
+    tape. The speed applies from the next opening of the block (advancing
+    to it during playback, ``emu_cmt_tape_seek``); the currently open
+    block is not changed. Sensitive: changes emulator state (MCP action).
 
     Args:
         block_id: 0-based block index.
-        speed: ratio string ("2:1") or int (2).
+        speed: ratio string ("2:1") or int (2); omit when using pulses_us.
+        pulses_us: list of 4 numbers (microseconds); omit when using speed.
 
     Returns:
-        JSON ``{"ok": true, "block_id": int, "speed": int}`` on success
+        JSON ``{"ok": true, "block_id": int, "speed": int}`` (with
+        ``"speed": 10`` and ``"pulses_us"`` for custom pulses) on success
         or ``{"error": "..."}`` on failure (no tape / bad speed).
     """
-    value = _cmt_resolve_speed(speed)
+    if pulses_us is not None:
+        if speed not in (None, "", "custom", _CMT_SPEED_CUSTOM):
+            return json.dumps(
+                {"error": "Pass either speed or pulses_us, not both"})
+        pulses = _cmt_resolve_pulses(pulses_us)
+        if pulses is None:
+            return json.dumps(
+                {"error": f"Invalid pulses_us: {pulses_us!r} (use 4 "
+                          f"numbers in microseconds, each in (0, 65535])"})
+        resp = await _send_request(
+            "cmt_tape_block_speed",
+            {"block_id": int(block_id), "pulses_us": pulses})
+        if not resp.get("success", False):
+            return json.dumps(
+                {"error": resp.get("error", "cmt_tape_set_block_speed failed")})
+        return json.dumps(_data_or_error(resp))
+    value = _cmt_resolve_speed(speed, allow_custom=False)
     if value == 0:
         return json.dumps(
             {"error": f"Invalid CMT speed: {speed!r} "
-                      f"(use one of {sorted(_CMT_SPEED_KEYS)} or 1..9)"})
+                      f"(use a ratio key, 1..9 or pulses_us)"})
     resp = await _send_request(
         "cmt_tape_block_speed",
         {"block_id": int(block_id), "speed": value})
@@ -6676,7 +6761,15 @@ async def resource_periph_cmt() -> str:
     "paused": bool, "filled": bool, "polarity_inverted": bool,
     "cmtspeed": int, "cpu_boost": bool, "mzfsize_check": bool,
     "output": int, "playsts": int, "start_time": int,
-    "paused_time": int, "image_basename": str}``.
+    "paused_time": int, "image_basename": str,
+    "default_pulses_us": [4 floats], "custom_pulses_us": [4 floats]}``.
+
+    ``cmtspeed`` is the default tape speed (en_CMTSPEED, see
+    ``emu_cmt_set_speed``; 10 = custom pulse lengths).
+    ``default_pulses_us`` are the pulse lengths of the default speed in
+    microseconds (long high, long low, short high, short low);
+    ``custom_pulses_us`` are the stored custom lengths used when
+    ``cmtspeed`` is 10.
 
     ``state`` and ``paused`` are orthogonal - PLAY + paused=true means
     the playback is suspended. ``filled`` is true when an MZF image is
@@ -6716,10 +6809,17 @@ async def resource_periph_cmt_tape() -> str:
 
     Each block: ``{"block_id": int, "name": str, "cmt_speed": int,
     "type": int, "is_current": bool, "playable": bool,
-    "recordable": bool}``. ``cmt_speed`` is the en_CMTSPEED value (1..9,
-    see ``emu_cmt_set_speed``); ``type`` is the block type (0=WAV,
-    1=MZF, 2=TAPHEADER, 3=TAPDATA). ``playable`` / ``recordable`` are
-    per-tape flags repeated on each block for convenience.
+    "recordable": bool, "block_speed": "none"|"default"|"set",
+    "pulses_us": [4 floats]}``. ``block_speed`` "default" follows the
+    default tape speed, "set" has its own ``cmt_speed`` (the en_CMTSPEED
+    value 1..9, or 10 = custom pulse lengths, see ``emu_cmt_set_speed``).
+    ``pulses_us`` (MZ blocks only) are the effective pulse lengths in
+    microseconds the block plays with (long high, long low, short high,
+    short low). Blocks that follow a UniCMT CMTSPEED header in an .mzt
+    have "set" speed with the header's pulse lengths; the header itself
+    is not listed. ``type`` is the block type (0=WAV, 1=MZF,
+    2=TAPHEADER, 3=TAPDATA). ``playable`` / ``recordable`` are per-tape
+    flags repeated on each block for convenience.
 
     When no tape is loaded (or the container is missing) the payload is
     ``{"available": false, "blocks": []}``. Seek with

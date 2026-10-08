@@ -33,6 +33,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include "libs/mztape/mztape.h"
 #include "libs/mzf/mzf.h"
@@ -461,6 +462,277 @@ static void test_create_error_no_use_after_free ( void ) {
  * main
  * ======================================================================== */
 
+/* ========================================================================
+ * Vlastní délky pulzů a hlavička CMTSPEED (UniCMT)
+ * ======================================================================== */
+
+/** @brief Takt GDG MZ-800 (Hz) - frekvence vstreamu MZF v emulátoru. */
+#define TEST_GDG_RATE 17721600
+
+/** @brief Porovná délky pulzů s hodnotami v µs (tolerance 1e-6 µs). */
+static void assert_pulses_us ( const st_MZTAPE_PULSES_LENGTH *p, double lh, double ll, double sh, double sl ) {
+    TEST_ASSERT_DOUBLE_WITHIN ( 1e-12, lh / 1e6, p->long_pulse.high );
+    TEST_ASSERT_DOUBLE_WITHIN ( 1e-12, ll / 1e6, p->long_pulse.low );
+    TEST_ASSERT_DOUBLE_WITHIN ( 1e-12, ( lh + ll ) / 1e6, p->long_pulse.total );
+    TEST_ASSERT_DOUBLE_WITHIN ( 1e-12, sh / 1e6, p->short_pulse.high );
+    TEST_ASSERT_DOUBLE_WITHIN ( 1e-12, sl / 1e6, p->short_pulse.low );
+    TEST_ASSERT_DOUBLE_WITHIN ( 1e-12, ( sh + sl ) / 1e6, p->short_pulse.total );
+}
+
+
+/** @brief mztape_pulses_set_us: převod µs -> s, meze, při chybě beze změny. */
+static void test_pulses_set_us ( void ) {
+    MZTEST_REQUIRE_LEVEL ( MZTEST_LEVEL_UNIT );
+
+    st_MZTAPE_PULSES_LENGTH p;
+    TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, mztape_pulses_set_us ( &p, 156, 164, 80, 92 ) );
+    assert_pulses_us ( &p, 156, 164, 80, 92 );
+
+    /* desetinné hodnoty projdou */
+    TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, mztape_pulses_set_us ( &p, 470.5, 494.25, 240.125, 278.0 ) );
+    assert_pulses_us ( &p, 470.5, 494.25, 240.125, 278.0 );
+
+    /* neplatné hodnoty - *p se nemění */
+    st_MZTAPE_PULSES_LENGTH saved = p;
+    TEST_ASSERT_EQUAL_INT ( EXIT_FAILURE, mztape_pulses_set_us ( &p, 0, 164, 80, 92 ) );
+    TEST_ASSERT_EQUAL_INT ( EXIT_FAILURE, mztape_pulses_set_us ( &p, 156, -1, 80, 92 ) );
+    TEST_ASSERT_EQUAL_INT ( EXIT_FAILURE, mztape_pulses_set_us ( &p, 156, 164, NAN, 92 ) );
+    TEST_ASSERT_EQUAL_INT ( EXIT_FAILURE, mztape_pulses_set_us ( &p, 156, 164, 80, MZTAPE_PULSE_US_MAX + 1 ) );
+    TEST_ASSERT_EQUAL_MEMORY ( &saved, &p, sizeof ( p ) );
+
+    TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, mztape_pulses_set_us ( &p, MZTAPE_PULSE_US_MAX, 1, 1, 1 ) );
+}
+
+
+/** @brief mztape_get_speed_pulses: konstanty Intercopy / cmt.com vydělené poměrem. */
+static void test_get_speed_pulses ( void ) {
+    MZTEST_REQUIRE_LEVEL ( MZTEST_LEVEL_UNIT );
+
+    st_MZTAPE_PULSES_LENGTH p;
+    TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, mztape_get_speed_pulses ( MZTAPE_FORMATSET_MZ800_SANE, CMTSPEED_1_1, &p ) );
+    assert_pulses_us ( &p, 470.330, 494.308, 245.802, 278.204 );
+
+    TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, mztape_get_speed_pulses ( MZTAPE_FORMATSET_MZ800_SANE, CMTSPEED_3_1, &p ) );
+    assert_pulses_us ( &p, 470.330 / 3, 494.308 / 3, 245.802 / 3, 278.204 / 3 );
+
+    /* 2:1 CP/M má jiný tvar pulzu (cmt.com), ne jen jiný poměr */
+    TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, mztape_get_speed_pulses ( MZTAPE_FORMATSET_MZ800_SANE, CMTSPEED_2_1_CPM, &p ) );
+    assert_pulses_us ( &p, 524.796 / 2, 488.665 / 2, 304.762 / 2, 262.935 / 2 );
+
+    st_MZTAPE_PULSES_LENGTH saved = p;
+    TEST_ASSERT_EQUAL_INT ( EXIT_FAILURE, mztape_get_speed_pulses ( MZTAPE_FORMATSET_MZ800_SANE, CMTSPEED_CUSTOM, &p ) );
+    TEST_ASSERT_EQUAL_INT ( EXIT_FAILURE, mztape_get_speed_pulses ( MZTAPE_FORMATSET_MZ800_SANE, CMTSPEED_NONE, &p ) );
+    TEST_ASSERT_EQUAL_INT ( EXIT_FAILURE, mztape_get_speed_pulses ( MZTAPE_FORMATSET_COUNT, CMTSPEED_1_1, &p ) );
+    TEST_ASSERT_EQUAL_MEMORY ( &saved, &p, sizeof ( p ) );
+}
+
+
+/** @brief mztape_pulses_get_ratio: orientační poměr vůči 1:1. */
+static void test_pulses_get_ratio ( void ) {
+    MZTEST_REQUIRE_LEVEL ( MZTEST_LEVEL_UNIT );
+
+    st_MZTAPE_PULSES_LENGTH p;
+    TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, mztape_get_speed_pulses ( MZTAPE_FORMATSET_MZ800_SANE, CMTSPEED_1_1, &p ) );
+    TEST_ASSERT_DOUBLE_WITHIN ( 1e-9, 1.0, mztape_pulses_get_ratio ( MZTAPE_FORMATSET_MZ800_SANE, &p ) );
+
+    /* UniCMT 3x: (964,638 + 524,006) / (156 + 164 + 80 + 92) = 3,0257 */
+    TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, mztape_pulses_set_us ( &p, 156, 164, 80, 92 ) );
+    TEST_ASSERT_DOUBLE_WITHIN ( 0.0001, 3.0257, mztape_pulses_get_ratio ( MZTAPE_FORMATSET_MZ800_SANE, &p ) );
+
+    TEST_ASSERT_EQUAL_DOUBLE ( 0.0, mztape_pulses_get_ratio ( MZTAPE_FORMATSET_COUNT, &p ) );
+    TEST_ASSERT_EQUAL_DOUBLE ( 0.0, mztape_pulses_get_ratio ( MZTAPE_FORMATSET_MZ800_SANE, NULL ) );
+}
+
+
+/**
+ * @brief Sestaví hlavičku CMTSPEED jako soubor 3xspeed.mzf z USB disku UniCMT FW 0.5.
+ *
+ * Bajty podle hexdumpu v bázi (hw/25-unicmt.md, kap. 2.1): typ 00h, jméno
+ * "CMTSPEED" + 0Dh, délka/zaváděcí/startovací adresa 0, bajt 20h = 01h,
+ * na 30h 4x uint16 LE 156, 164, 80, 92.
+ *
+ * @param[out] hdr Cílový buffer 128 bajtů.
+ */
+static void make_cmtspeed_3x ( uint8_t *hdr ) {
+    static const char name[] = "CMTSPEED\r";
+    static const uint16_t us[4] = { 156, 164, 80, 92 };
+    memset ( hdr, 0, 128 );
+    memcpy ( &hdr[0x01], name, sizeof ( name ) - 1 );
+    hdr[0x20] = 0x01;
+    for ( int i = 0; i < 4; i++ ) {
+        hdr[0x30 + i * 2] = (uint8_t) ( us[i] & 0xFF );
+        hdr[0x31 + i * 2] = (uint8_t) ( us[i] >> 8 );
+    }
+}
+
+
+/** @brief mztape_unicmt_speed_marker: rozpoznání hlavičky CMTSPEED. */
+static void test_unicmt_speed_marker ( void ) {
+    MZTEST_REQUIRE_LEVEL ( MZTEST_LEVEL_UNIT );
+
+    uint8_t hdr[128];
+    st_MZTAPE_PULSES_LENGTH p;
+
+    make_cmtspeed_3x ( hdr );
+    TEST_ASSERT_EQUAL_INT ( MZTAPE_UNICMT_MARKER_VALID, mztape_unicmt_speed_marker ( hdr, &p ) );
+    assert_pulses_us ( &p, 156, 164, 80, 92 );
+    TEST_ASSERT_EQUAL_INT ( MZTAPE_UNICMT_MARKER_VALID, mztape_unicmt_speed_marker ( hdr, NULL ) );
+
+    /* bajt 20h se nekontroluje */
+    hdr[0x20] = 0x00;
+    TEST_ASSERT_EQUAL_INT ( MZTAPE_UNICMT_MARKER_VALID, mztape_unicmt_speed_marker ( hdr, NULL ) );
+
+    /* běžné MZF bloky: jiný typ, jiné jméno, nenulová délka těla */
+    make_cmtspeed_3x ( hdr );
+    hdr[0x00] = 0x01;
+    TEST_ASSERT_EQUAL_INT ( MZTAPE_UNICMT_MARKER_NONE, mztape_unicmt_speed_marker ( hdr, NULL ) );
+    make_cmtspeed_3x ( hdr );
+    hdr[0x09] = ' ';  /* "CMTSPEED " bez 0Dh za jménem */
+    TEST_ASSERT_EQUAL_INT ( MZTAPE_UNICMT_MARKER_NONE, mztape_unicmt_speed_marker ( hdr, NULL ) );
+    make_cmtspeed_3x ( hdr );
+    hdr[0x02] = 'X';
+    TEST_ASSERT_EQUAL_INT ( MZTAPE_UNICMT_MARKER_NONE, mztape_unicmt_speed_marker ( hdr, NULL ) );
+    make_cmtspeed_3x ( hdr );
+    hdr[0x13] = 0x01;
+    TEST_ASSERT_EQUAL_INT ( MZTAPE_UNICMT_MARKER_NONE, mztape_unicmt_speed_marker ( hdr, NULL ) );
+
+    /* nulová délka pulzu = neplatná hlavička, *p beze změny */
+    make_cmtspeed_3x ( hdr );
+    hdr[0x34] = 0x00;
+    hdr[0x35] = 0x00;
+    st_MZTAPE_PULSES_LENGTH saved = p;
+    TEST_ASSERT_EQUAL_INT ( MZTAPE_UNICMT_MARKER_INVALID, mztape_unicmt_speed_marker ( hdr, &p ) );
+    TEST_ASSERT_EQUAL_MEMORY ( &saved, &p, sizeof ( p ) );
+}
+
+
+/**
+ * @brief Přečte celý vstream a ověří, že je bajtově shodný s druhým.
+ */
+static void assert_vstreams_equal ( st_CMT_VSTREAM *a, st_CMT_VSTREAM *b ) {
+    TEST_ASSERT_EQUAL_UINT32 ( a->size, b->size );
+    TEST_ASSERT_EQUAL_UINT64 ( a->scans, b->scans );
+    TEST_ASSERT_EQUAL_MEMORY ( a->data, b->data, a->size );
+}
+
+
+/**
+ * @brief Vstream z poměru a vstream z délek pulzů toho poměru jsou shodné.
+ *
+ * Délky z mztape_get_speed_pulses() tedy přesně popisují, co emulátor pro
+ * daný poměr přehrává (GUI je nabízí jako výchozí bod vlastních pulzů).
+ */
+static void test_vstream_pulses_match_ratio ( void ) {
+    MZTEST_REQUIRE_LEVEL ( MZTEST_LEVEL_UNIT );
+
+    st_HANDLER *h = create_test_mzf_in_memory ( 64 );
+    TEST_ASSERT_NOT_NULL ( h );
+    st_MZTAPE_MZF *mztmzf = mztape_create_mztapemzf ( h, 0 );
+    TEST_ASSERT_NOT_NULL ( mztmzf );
+
+    const uint32_t rates[] = { 44100, 48000, TEST_GDG_RATE };
+    for ( size_t r = 0; r < sizeof ( rates ) / sizeof ( rates[0] ); r++ ) {
+        for ( int i = 0; g_mztape_speed[i] != CMTSPEED_NONE; i++ ) {
+            st_MZTAPE_PULSES_LENGTH p;
+            TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, mztape_get_speed_pulses ( MZTAPE_FORMATSET_MZ800_SANE, g_mztape_speed[i], &p ) );
+            st_CMT_VSTREAM *a = mztape_create_cmt_vstream_from_mztmzf ( mztmzf, MZTAPE_FORMATSET_MZ800_SANE, g_mztape_speed[i], rates[r] );
+            st_CMT_VSTREAM *b = mztape_create_cmt_vstream_from_mztmzf_pulses ( mztmzf, MZTAPE_FORMATSET_MZ800_SANE, &p, rates[r] );
+            TEST_ASSERT_NOT_NULL ( a );
+            TEST_ASSERT_NOT_NULL ( b );
+            assert_vstreams_equal ( a, b );
+            cmt_vstream_destroy ( a );
+            cmt_vstream_destroy ( b );
+        }
+    }
+
+    /* CUSTOM není poměr - ratio cesta ho odmítne */
+    TEST_ASSERT_NULL ( mztape_create_cmt_vstream_from_mztmzf ( mztmzf, MZTAPE_FORMATSET_MZ800_SANE, CMTSPEED_CUSTOM, 44100 ) );
+
+    mztape_mztmzf_destroy ( mztmzf );
+}
+
+
+/**
+ * @brief Vlastní délky pulzů: počty vzorků high/low = round(délka * rate).
+ *
+ * UniCMT 3x na taktu GDG MZ-800: krátký 80 / 92 µs = 1418 / 1630 taktů,
+ * dlouhý 156 / 164 µs = 2765 / 2906 taktů. Záznam začíná dlouhým GAPem
+ * (MZTAPE_LGAP_LENGTH_SANE krátkých pulzů), za ním dlouhý tapemark
+ * (40 dlouhých).
+ */
+static void test_vstream_custom_pulse_samples ( void ) {
+    MZTEST_REQUIRE_LEVEL ( MZTEST_LEVEL_UNIT );
+
+    st_HANDLER *h = create_test_mzf_in_memory ( 16 );
+    TEST_ASSERT_NOT_NULL ( h );
+    st_MZTAPE_MZF *mztmzf = mztape_create_mztapemzf ( h, 0 );
+    TEST_ASSERT_NOT_NULL ( mztmzf );
+
+    st_MZTAPE_PULSES_LENGTH p;
+    TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, mztape_pulses_set_us ( &p, 156, 164, 80, 92 ) );
+    st_CMT_VSTREAM *v = mztape_create_cmt_vstream_from_mztmzf_pulses ( mztmzf, MZTAPE_FORMATSET_MZ800_SANE, &p, TEST_GDG_RATE );
+    TEST_ASSERT_NOT_NULL ( v );
+
+    cmt_vstream_read_reset ( v );
+    uint64_t samples;
+    int value;
+    for ( int i = 0; i < MZTAPE_LGAP_LENGTH_SANE; i++ ) {
+        TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, cmt_vstream_read_pulse ( v, &samples, &value ) );
+        TEST_ASSERT_EQUAL_INT ( 1, value );
+        TEST_ASSERT_EQUAL_UINT64 ( 1418, samples );
+        TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, cmt_vstream_read_pulse ( v, &samples, &value ) );
+        TEST_ASSERT_EQUAL_INT ( 0, value );
+        TEST_ASSERT_EQUAL_UINT64 ( 1630, samples );
+    }
+    TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, cmt_vstream_read_pulse ( v, &samples, &value ) );
+    TEST_ASSERT_EQUAL_INT ( 1, value );
+    TEST_ASSERT_EQUAL_UINT64 ( 2765, samples );
+    TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, cmt_vstream_read_pulse ( v, &samples, &value ) );
+    TEST_ASSERT_EQUAL_INT ( 0, value );
+    TEST_ASSERT_EQUAL_UINT64 ( 2906, samples );
+
+    /* celkový počet vzorků = dlouhé * (2765 + 2906) + krátké * (1418 + 1630) */
+    uint64_t long_pulses, short_pulses;
+    mztape_compute_pulses ( mztmzf, MZTAPE_FORMATSET_MZ800_SANE, &long_pulses, &short_pulses );
+    TEST_ASSERT_EQUAL_UINT64 ( long_pulses * ( 2765 + 2906 ) + short_pulses * ( 1418 + 1630 ), cmt_vstream_get_count_scans ( v ) );
+
+    cmt_vstream_destroy ( v );
+
+    /* část pulzu kratší než půl vzorku -> chyba (při 44,1 kHz je vzorek 22,7 µs) */
+    TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, mztape_pulses_set_us ( &p, 156, 164, 80, 10 ) );
+    TEST_ASSERT_NULL ( mztape_create_cmt_vstream_from_mztmzf_pulses ( mztmzf, MZTAPE_FORMATSET_MZ800_SANE, &p, 44100 ) );
+    TEST_ASSERT_NULL ( mztape_create_cmt_vstream_from_mztmzf_pulses ( mztmzf, MZTAPE_FORMATSET_MZ800_SANE, NULL, 44100 ) );
+
+    mztape_mztmzf_destroy ( mztmzf );
+}
+
+
+/** @brief mztape_create_stream_from_mztapemzf_pulses: vstream i bitstream. */
+static void test_stream_from_pulses ( void ) {
+    MZTEST_REQUIRE_LEVEL ( MZTEST_LEVEL_UNIT );
+
+    st_HANDLER *h = create_test_mzf_in_memory ( 16 );
+    TEST_ASSERT_NOT_NULL ( h );
+    st_MZTAPE_MZF *mztmzf = mztape_create_mztapemzf ( h, 0 );
+    TEST_ASSERT_NOT_NULL ( mztmzf );
+
+    st_MZTAPE_PULSES_LENGTH p;
+    TEST_ASSERT_EQUAL_INT ( EXIT_SUCCESS, mztape_pulses_set_us ( &p, 470, 494, 240, 278 ) );
+
+    st_CMT_STREAM *s = mztape_create_stream_from_mztapemzf_pulses ( mztmzf, &p, CMT_STREAM_TYPE_VSTREAM, MZTAPE_FORMATSET_MZ800_SANE, TEST_GDG_RATE );
+    TEST_ASSERT_NOT_NULL ( s );
+    TEST_ASSERT_EQUAL_INT ( CMT_STREAM_TYPE_VSTREAM, s->stream_type );
+    cmt_stream_destroy ( s );
+
+    s = mztape_create_stream_from_mztapemzf_pulses ( mztmzf, &p, CMT_STREAM_TYPE_BITSTREAM, MZTAPE_FORMATSET_MZ800_SANE, 44100 );
+    TEST_ASSERT_NOT_NULL ( s );
+    TEST_ASSERT_EQUAL_INT ( CMT_STREAM_TYPE_BITSTREAM, s->stream_type );
+    cmt_stream_destroy ( s );
+
+    mztape_mztmzf_destroy ( mztmzf );
+}
+
+
 int main ( int argc, char *argv[] ) {
     mztest_parse_args ( argc, argv );
     mztest_init ();
@@ -484,6 +756,13 @@ int main ( int argc, char *argv[] ) {
     /* Regresní testy */
     RUN_TEST ( test_destroy_frees_body );
     RUN_TEST ( test_create_error_no_use_after_free );
+    RUN_TEST ( test_pulses_set_us );
+    RUN_TEST ( test_get_speed_pulses );
+    RUN_TEST ( test_pulses_get_ratio );
+    RUN_TEST ( test_unicmt_speed_marker );
+    RUN_TEST ( test_vstream_pulses_match_ratio );
+    RUN_TEST ( test_vstream_custom_pulse_samples );
+    RUN_TEST ( test_stream_from_pulses );
 
     int result = UNITY_END ();
     mztest_teardown ();

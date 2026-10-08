@@ -117,7 +117,18 @@ void imgui_cmt_tape_set_block(int block_id, bool forced)
     imgui_cmt_tape_update_filelist();
 }
 
-void imgui_cmt_tape_speed_changed(const TapeFileEntry_t &entry, en_CMTSPEED cmtspeed)
+/**
+ * @brief Změní rychlost bloku pásky z výběru v seznamu bloků.
+ *
+ * Právě přehrávaný blok se nemění. Je-li blok připravený (aktuální),
+ * otevře se znovu, aby se stream přegeneroval.
+ *
+ * @param entry Řádek seznamu bloků.
+ * @param cmtspeed Nová rychlost: CMTSPEED_NONE = výchozí rychlost Virtual CMT,
+ *        poměr, nebo CMTSPEED_CUSTOM (pak je pulses povinné).
+ * @param pulses Vlastní délky pulzů pro CMTSPEED_CUSTOM (jinak nullptr).
+ */
+void imgui_cmt_tape_speed_changed(const TapeFileEntry_t &entry, en_CMTSPEED cmtspeed, const st_MZTAPE_PULSES_LENGTH *pulses = nullptr)
 {
     // TODO: prozatim nic nezamykame, takze tady se radeji pokusime alespon zjistit aktualni stav prehravani
     bool is_ready = (entry.id == cmtext_block_get_block_id(g_cmt.ext->block)) ? true : false;
@@ -125,7 +136,15 @@ void imgui_cmt_tape_speed_changed(const TapeFileEntry_t &entry, en_CMTSPEED cmts
     if (!(is_ready && CMT_TEST_PLAY))
     {
         st_CMTEXT_CONTAINER *container = cmtext_get_container(g_cmt.ext);
-        
+
+        if (cmtspeed_is_custom(cmtspeed))
+        {
+            if ((!pulses) || (EXIT_SUCCESS != cmtext_container_set_block_pulses(container, entry.id, pulses)))
+            {
+                return;
+            };
+        };
+
         if (entry.cmtspeed_type == CMT_SPEED_TYPE_MZ)
         {
             en_CMTEXT_BLOCK_SPEED blspeed = (cmtspeed == CMTSPEED_NONE) ? CMTEXT_BLOCK_SPEED_DEFAULT : CMTEXT_BLOCK_SPEED_SET;
@@ -183,8 +202,15 @@ void imgui_cmt_tape_create_speed_combo(const TapeFileEntry_t &entry)
 
             if (ImGui::Selectable(speed_list[n].label_txt.c_str(), is_selected))
             {
-                // g_print("Selected speed: %s\n", speed_list[n].cmtspeed_txt.c_str());
-                imgui_cmt_tape_speed_changed(entry, speed_list[n].cmtspeed);
+                if (cmtspeed_is_custom(speed_list[n].cmtspeed))
+                {
+                    /* délky se zadají v editoru (výchozí jsou současné pulzy bloku) */
+                    ImGuiCmt::openPulsesEditor("cmt_tape_index", entry.id, (entry.has_pulses) ? &entry.pulses : &g_cmt.mz_custom_pulses);
+                }
+                else
+                {
+                    imgui_cmt_tape_speed_changed(entry, speed_list[n].cmtspeed);
+                };
             };
 
             if (is_selected)
@@ -329,9 +355,14 @@ void imgui_cmt_tape_index_window(bool *p_open)
             float row_max_x = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
             ImVec2 row_max = ImVec2(row_max_x, row_min.y + row_height);
 
-            // Zjistíme, jestli je kurzor nad celou řádkou
+            // Zjistíme, jestli je kurzor nad celou řádkou. Jen když myš
+            // patří tomuto oknu - ne pod modálním popupem ani pod jiným
+            // oknem, které seznam překrývá (samotná poloha myši to nepozná).
+            // NoPopupHierarchy: editor pulzů se otevírá z tohoto okna a ImGui
+            // by jinak myš nad ním počítal jako myš nad seznamem.
             ImVec2 mouse = ImGui::GetMousePos();
-            bool is_hovered = mouse.y >= row_min.y && mouse.y <= row_max.y &&
+            bool is_hovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows | ImGuiHoveredFlags_NoPopupHierarchy) &&
+                              mouse.y >= row_min.y && mouse.y <= row_max.y &&
                               mouse.x >= row_min.x && mouse.x <= row_max.x;
 
             ImVec4 current_color = is_hovered ? green_hover : green;
@@ -448,6 +479,23 @@ void imgui_cmt_tape_index_window(bool *p_open)
 
         ImGui::EndTable();
     }
+
+    /* editor vlastních pulzů bloku (otevírá ho výběr "Custom pulses..." v combu) */
+    int owner;
+    st_MZTAPE_PULSES_LENGTH pulses;
+    if (ImGuiCmt::drawPulsesEditor("cmt_tape_index", &owner, &pulses))
+    {
+        for (const auto &entry : g_tapeFileList)
+        {
+            if (entry.id == owner)
+            {
+                /* kopie - speed_changed seznam bloků přestaví */
+                const TapeFileEntry_t changed = entry;
+                imgui_cmt_tape_speed_changed(changed, CMTSPEED_CUSTOM, &pulses);
+                break;
+            };
+        };
+    };
 
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && ImGui::IsKeyPressed(ImGuiKey_Escape))
     {

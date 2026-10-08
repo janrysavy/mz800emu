@@ -66,7 +66,7 @@ Set via `emu_cmt_set_*`, all reflected in `emulator://periph/cmt`:
 
 | Tool | Resource field | Notes |
 |--|--|--|
-| `emu_cmt_set_speed(speed)` | `cmtspeed` | Default speed ratio. See speed table below. |
+| `emu_cmt_set_speed(speed)` or `emu_cmt_set_speed(pulses_us=[...])` | `cmtspeed`, `default_pulses_us`, `custom_pulses_us` | Default speed: a ratio (table below) or custom pulse lengths. |
 | `emu_cmt_set_polarity(inverted)` | `polarity_inverted` | Rear DIP switch signal polarity. |
 | `emu_cmt_set_cpu_boost(enabled)` | `cpu_boost` | Run at max speed while the tape runs (PLAY or RECORD, not paused). A user preference, not machine state: snapshots store it (for older emulator versions) but `emu_snapshot_load` does not restore it - the current value stays, and MAX SPEED is re-applied against the restored deck state. Turns off only the MAX SPEED it turned on - MAX SPEED set via `emu_set_speed(mode="max")` stays. If the user turns MAX SPEED off during a boost, the boost turns it on again at the next pause/resume or option change. While recording, the boost switches MAX SPEED off after 5 s without tape writes and back on when writing resumes. |
 | `emu_cmt_set_mzfsize_check(enabled)` | `mzfsize_check` | Reject MZF where body size != header size. |
@@ -87,6 +87,40 @@ the raw integer.
 | `8:3` | 7 | CP/M cmt.com |
 | `9:7` | 8 | |
 | `25:14` | 9 | |
+| `custom` | 10 | custom pulse lengths (see below) |
+
+### Custom pulse lengths and UniCMT speed headers
+
+Besides the ratios the virtual cassette can play exact pulse lengths:
+`pulses_us = [long_high, long_low, short_high, short_low]` in
+microseconds (long pulse = bit 1, short pulse = bit 0), each in
+(0, 65535]. The order is the same as in the CMTSPEED header of the
+UniCMT cassette replacement:
+
+| UniCMT header file | `pulses_us` |
+|--|--|
+| `1xspeed.mzf` | `[470, 494, 240, 278]` |
+| `2xspeed.mzf` | `[235, 247, 120, 139]` |
+| `3xspeed.mzf` | `[156, 164, 80, 92]` |
+
+- `emu_cmt_set_speed(pulses_us=[...])` stores the lengths and makes them
+  the default speed (`cmtspeed` 10); `emu_cmt_set_speed("custom")` later
+  switches back to the stored lengths. They are saved in the
+  configuration.
+- `emu_cmt_tape_set_block_speed(block_id, pulses_us=[...])` sets them for
+  one block.
+- An .mzt tape may contain CMTSPEED headers (a 128-byte MZF header of type
+  00h named `CMTSPEED` with no body) between its parts. The emulator does
+  not play such a header and does not list it as a block; every following
+  block plays with the header's pulse lengths (`block_speed` "set",
+  `cmt_speed` 10) until the next header. Blocks before the first header
+  use the default speed. A header with a zero length is ignored. The real
+  UniCMT does not play a tape whose first block is a CMTSPEED header; the
+  emulator applies it anyway.
+- The pulses are generated with the resolution of the GDG clock, so a
+  fast loader sees the lengths from the header, not a rounded ratio. The
+  ROM loader samples each bit at a fixed time and expects 1:1 timing
+  (UniCMT 1x); faster parts are meant for programs with their own loader.
 
 ## Tape blocks (multi-file tapes)
 
@@ -96,15 +130,19 @@ SINGLE containers (a plain .mzf) hold one block.
 - List blocks: `emulator://periph/cmt/tape` returns `available`,
   `container_type` (0=SINGLE, 1=SIMPLE_TAPE), `current_block`, and a
   `blocks` array (block_id, name, cmt_speed, type, is_current, playable,
-  recordable). `type` is 0=WAV, 1=MZF, 2=TAPHEADER, 3=TAPDATA.
+  recordable, block_speed, pulses_us). `type` is 0=WAV, 1=MZF,
+  2=TAPHEADER, 3=TAPDATA. `block_speed` is "default" (follows the
+  default speed), "set" (own `cmt_speed`) or "none"; `pulses_us` are the
+  effective pulse lengths of an MZ block in microseconds.
 - Seek: `emu_cmt_tape_seek(block_id)` positions at a block (0-based).
   Only SIMPLE_TAPE containers support it; on a SINGLE container (plain
   .mzf or .wav) it fails even for block 0. To replay a SINGLE tape from
   the beginning, use `emu_cmt_stop` + `emu_cmt_play` (play from STOP
   always starts at the beginning).
-- Per-block speed: `emu_cmt_tape_set_block_speed(block_id, speed)`. Only
-  the cmt speed ratio is adjustable per block; there are no other
-  per-block parameters.
+- Per-block speed: `emu_cmt_tape_set_block_speed(block_id, speed)` or
+  `emu_cmt_tape_set_block_speed(block_id, pulses_us=[...])`. Only the cmt
+  speed is adjustable per block; there are no other per-block
+  parameters.
 
 When no tape is loaded the tape resource returns
 `{"available": false, "blocks": []}`.

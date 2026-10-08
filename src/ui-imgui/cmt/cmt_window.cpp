@@ -442,15 +442,27 @@ void imgui_cmt_row4_combo_mzspeed(void)
     // Nastavení maximální dostupné šířky pro Combo box
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
 
-    if (ImGui::BeginCombo("##SpeedSelect", speed_list[ui_speed_id].label_txt.c_str(), 0))
+    /* u vlastních pulzů ukáže náhled konkrétní délky */
+    std::string preview = (cmtspeed_is_custom(g_cmt.mz_cmtspeed)) ? UiCmt::getPulsesTxt(&g_cmt.mz_custom_pulses)
+                                                                  : speed_list[ui_speed_id].label_txt;
+
+    if (ImGui::BeginCombo("##SpeedSelect", preview.c_str(), 0))
     {
         for (size_t n = 0; n < speed_list.size(); n++)
         {
             const bool is_selected = (ui_speed_id == static_cast<int>(n));
             if (ImGui::Selectable(speed_list[n].label_txt.c_str(), is_selected))
             {
-                ui_speed_id = n;
-                cmt_change_speed(speed_list[n].cmtspeed);
+                if (cmtspeed_is_custom(speed_list[n].cmtspeed))
+                {
+                    /* délky se zadají v editoru, rychlost se změní až po OK */
+                    ImGuiCmt::openPulsesEditor("cmt_default_speed", 0, &g_cmt.mz_custom_pulses);
+                }
+                else
+                {
+                    ui_speed_id = n;
+                    cmt_change_speed(speed_list[n].cmtspeed);
+                };
             };
 
             if (is_selected)
@@ -462,6 +474,13 @@ void imgui_cmt_row4_combo_mzspeed(void)
     if (is_dissabled)
     {
         ImGui::EndDisabled();
+    };
+
+    int owner;
+    st_MZTAPE_PULSES_LENGTH pulses;
+    if (ImGuiCmt::drawPulsesEditor("cmt_default_speed", &owner, &pulses))
+    {
+        cmt_change_custom_pulses(&pulses);
     };
 }
 
