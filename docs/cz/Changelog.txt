@@ -1,4 +1,6 @@
 
+	- BUGFIX: Klávesnice - při výběru neexistujícího sloupce klávesnice (hodnota 10 až 15 v bitech 0-3 portu A obvodu 8255) vracel port B nesmyslnou hodnotu (typicky 00h, tedy jako by byly stisknuté všechny klávesy). Skutečný MZ-800 v tomto případě nevybere žádný sloupec a vrací FFh (ověřeno na HW). Programy, které čekají na uvolnění kláves a procházejí i tyto hodnoty, se zasekly (např. Antiriad ve verzi S. Hechta zůstal na titulní obrazovce).
+
 	- BUGFIX: Kazeta - soubory MZF a MZT se přehrávaly s délkami pulzů zaokrouhlenými na vzorky 44,1 kHz. Při rychlosti 3:1 se tím zkreslil krátký pulz (high 90,7 µs místo 81,9 µs) a programy s vlastním rychlým zavaděčem se nenačetly nebo načítaly nespolehlivě (např. Interkarate, díly 2 a 3). Pulzy se nyní generují s přesností taktu GDG.
 
 	- Dialog pro výběr souboru si pamatuje poslední adresář zvlášť pro každý druh souborů (kazeta, diskety, Quick Disk, ROM, snapshoty, debugger, ...) i po restartu emulátoru, tak jako tomu bylo ve verzích 1.0.x (uloženo v konfiguraci, sekce [FILECHOOSER]). V panelu Places přibyla skupina Recent s posledními adresáři a skupina Bookmarks pro vlastní záložky (tlačítka + a -); rozbalení skupin Bookmarks, Recent a Devices se pamatuje.

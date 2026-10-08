@@ -230,9 +230,9 @@ void pio8255_write(int addr, uint8_t value)
         // printf("%s():%d - addr: %d (PORT_A), value: 0x%02x, PC = 0x%04x\n", __FUNCTION__, __LINE__, addr, value, g_mzarch_main.instruction_addr);
         g_pio8255.signal_PA = value;
 
-        // TODO: overit na skutecnem HW
-
         // 0. - 3. bit vzorkovani klavesnice - aktivni pri H
+        // 10 - 15: 74LS145 nevybere zadny sloupec -> index 10 (Port B cte 0xFF,
+        // overeno na HW MZ-800, KBDCOL 2026-10-08)
         int pahalf = value & 0x0f;
         g_pio8255.signal_PA_keybord_column = (pahalf <= 9) ? pahalf : 10;
 
@@ -582,6 +582,23 @@ int pio8255_autotype_get_matrix(char c, uint8_t *ret, bool *ret_shift)
     return key[i].col;
 }
 
+/**
+ * @brief Čtení z 8255 (CPU cesta, IN 0D0h-0D3h / čtení 0E000h-0E003h).
+ *
+ * @param addr Port 8255: DEF_PIO8255_PORTA (výstupní latch PA; pro
+ *             PA0-3 > 9 vrací 0xFF), DEF_PIO8255_PORTB (klávesnice),
+ *             DEF_PIO8255_PORTC (VBLNK, kurzor, CMT, PC0-3).
+ * @return Hodnota portu. Port B: řádky vybraného sloupce, 0 = stisknuto
+ *         (`keyboard_matrix[col] & vkbd_matrix[col]`, případně autotype);
+ *         pro PA0-3 = 10-15 0xFF (74LS145 nevybere žádný sloupec, ověřeno
+ *         na HW MZ-800). Nepodporovaná adresa (control port): 0x00.
+ *
+ * Vedlejší efekty: čtení Port B zpracuje čekající události klávesnice
+ * hostitele, posouvá autotype a vyhodnocuje vkbd probe (viz
+ * st_PIO8255_VKBD_PROBE).
+ *
+ * Volá se z emulačního vlákna.
+ */
 uint8_t pio8255_read(int addr)
 {
 
@@ -660,6 +677,15 @@ uint8_t pio8255_read(int addr)
         };
 
         iface_keyboard_pool_keyboard_events();
+
+        /* PA0-3 = 10-15: 74LS145 nevybere žádný sloupec, řádky drží
+         * pull-up -> 0xFF. Ověřeno na HW MZ-800 (KBDCOL, 2026-10-08).
+         * Index 10 je mimo keyboard_matrix[] i vkbd_matrix[]. */
+        if (g_pio8255.signal_PA_keybord_column >= 10)
+        {
+            return 0xff;
+        };
+
         // g_pio8255.keyboard_matrix [ 2 ] &= 0xdf;
         uint8_t retval = g_pio8255.keyboard_matrix[g_pio8255.signal_PA_keybord_column] & g_pio8255.vkbd_matrix[g_pio8255.signal_PA_keybord_column];
 

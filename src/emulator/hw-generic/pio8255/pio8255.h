@@ -85,7 +85,7 @@ extern "C" {
         uint64_t vkbd_autotype_ku_ticks; // key up ticks
         uint64_t vkbd_autotype_start_ticks;
         unsigned signal_PA; /* Vystupni port A */
-        unsigned signal_PA_keybord_column; /* vzorkovani klavesnice: 0. - 3. bit (0 - 9) */
+        unsigned signal_PA_keybord_column; /* vzorkovani klavesnice: 0. - 3. bit (0 - 9), 10 = zadny sloupec (PA0-3 = 10 - 15) */
         unsigned signal_PA_joy1_enabled; /* vzorkovani JOY1: 4. bit (L) - jen u MZ-800 a MZ-1500 */
         unsigned signal_PA_joy2_enabled; /* vzorkovani JOY2: 5. bit (L) - jen u MZ-800 a MZ-1500 */
         unsigned signal_PC; /* Port C: 0 - 3 je vystup, 4 - 7 je vstup */

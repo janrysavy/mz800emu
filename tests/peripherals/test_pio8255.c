@@ -169,6 +169,50 @@ void test_pio_port_b_keyboard_read(void)
     pio8255_keyboard_matrix_reset();
 }
 
+/* PIO — PA0-3 = 0Ah-0Fh nevybere žádný sloupec, Port B vrací 0xFF
+ *
+ * PA0-3 vedou přes 74LS145 (BCD -> 1 z 10, sm800 str. 28); hodnoty 10-15
+ * neaktivují žádný sloupec. Ověřeno na HW MZ-800 testem KBDCOL
+ * (emu-experiments/kbd-col-alias, 2026-10-08): PB = 0xFF v klidu i se
+ * stisknutými klávesami sloupců 0-5, bez ohledu na PA4-7.
+ *
+ * Regrese: čtení Port B indexovalo keyboard_matrix[10] a vkbd_matrix[10]
+ * mimo meze a vracelo 0x00 (hra Antiriad / S. Hecht visela na titulce). */
+void test_pio_port_b_column_0a_0f_no_select(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    static const uint8_t high[] = { 0x00, 0xF0 };
+
+    pio8255_keyboard_matrix_reset();
+    memset(g_pio8255.vkbd_matrix, 0xFF, 10);
+
+    /* v klidu */
+    for (unsigned h = 0; h < sizeof(high); h++) {
+        for (uint8_t col = 0x0A; col <= 0x0F; col++) {
+            pio8255_write(0, (uint8_t)(high[h] | col));
+            TEST_ASSERT_EQUAL_HEX8(0xFF, pio8255_read(1));
+        }
+    }
+
+    /* všechny klávesy všech sloupců stisknuté (reálná i virtuální matice) */
+    memset(g_pio8255.keyboard_matrix, 0x00, 10);
+    memset(g_pio8255.vkbd_matrix, 0x00, 10);
+    for (unsigned h = 0; h < sizeof(high); h++) {
+        for (uint8_t col = 0x0A; col <= 0x0F; col++) {
+            pio8255_write(0, (uint8_t)(high[h] | col));
+            TEST_ASSERT_EQUAL_HEX8(0xFF, pio8255_read(1));
+        }
+    }
+
+    /* platné sloupce stisky dál vidí */
+    pio8255_write(0, 0x05);
+    TEST_ASSERT_EQUAL_HEX8(0x00, pio8255_read(1));
+
+    pio8255_keyboard_matrix_reset();
+    memset(g_pio8255.vkbd_matrix, 0xFF, 10);
+}
+
 /* PIO — joystick enable signály */
 void test_pio_joystick_signals(void)
 {
@@ -284,6 +328,7 @@ int main(int argc, char *argv[])
     RUN_TEST(test_pio_port_a_write);
     RUN_TEST(test_pio_port_c_signals);
     RUN_TEST(test_pio_port_b_keyboard_read);
+    RUN_TEST(test_pio_port_b_column_0a_0f_no_select);
     RUN_TEST(test_pio_joystick_signals);
     RUN_TEST(test_pio_vkbd_probe_landing);
     RUN_TEST(test_pio_vkbd_probe_invalid_arm);
