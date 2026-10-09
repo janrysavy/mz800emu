@@ -9,6 +9,7 @@
 #include "snapshot/snapshot_mgr.h"
 #include "snapshot/snapshot_xml.h"
 #include "hw-generic/gdg/gdg.h"
+#include "hw-generic/gdg/video.h"
 
 static en_SNAPSHOT_RESULT snap_gdg_save(st_SNAPSHOT_CONTEXT *ctx)
 {
@@ -25,6 +26,15 @@ static en_SNAPSHOT_RESULT snap_gdg_save(st_SNAPSHOT_CONTEXT *ctx)
 
     /* Pozice paprsku */
     snapshot_xml_write_uint(w, "beam_row", g_gdg.beam_row);
+
+#if MZARCH == 800
+    /* The pending GDG event belongs to this raster position. Keeping the
+     * event from the pre-load machine can render a canvas row in the border. */
+    snapshot_xml_open_element(w, "event");
+    snapshot_xml_write_int(w, "event_name", (int)g_gdg.event.event_name);
+    snapshot_xml_write_uint(w, "ticks", g_gdg.event.ticks);
+    snapshot_xml_close_element(w);
+#endif
 
     /* Registry */
     snapshot_xml_open_element(w, "registers");
@@ -137,6 +147,56 @@ static en_SNAPSHOT_RESULT snap_gdg_load(st_SNAPSHOT_CONTEXT *ctx)
 
     /* Pozice paprsku */
     snapshot_xml_read_uint(r, "beam_row", &g_gdg.beam_row);
+
+#if MZARCH == 800
+    /* Older snapshots omitted this state. Reconstruct their next GDG event
+     * from the saved raster, never from the machine being replaced. */
+    bool have_event = false;
+    if (snapshot_xml_enter_element(r, "event")) {
+        int event_name = -1;
+        unsigned ticks = 0;
+        have_event = snapshot_xml_read_int(r, "event_name", &event_name)
+                  && snapshot_xml_read_uint(r, "ticks", &ticks);
+        snapshot_xml_leave_element(r);
+        if (!have_event || event_name < MZEVENT_GDG_HBLN_END
+                        || event_name > MZEVENT_GDG_SCREEN_ROW_END) {
+            SNAP_ERR("gdg", "Invalid pending GDG event");
+            snapshot_xml_reader_free(r);
+            return SNAPSHOT_ERR_XML_PARSE;
+        }
+        const st_GDGEVENT *event = &g_gdgevent[event_name];
+        if (g_gdg.beam_row < event->start_row
+            || g_gdg.beam_row >= event->start_row + event->num_rows
+            || ticks != g_gdg.beam_row * VIDEO_SCREEN_WIDTH + event->event_column
+            || ticks <= g_gdg.total_elapsed.ticks) {
+            SNAP_ERR("gdg", "Pending GDG event does not match saved raster");
+            snapshot_xml_reader_free(r);
+            return SNAPSHOT_ERR_XML_PARSE;
+        }
+        g_gdg.event.event_name = (en_MZEVENT)event_name;
+        g_gdg.event.ticks = ticks;
+    }
+    if (!have_event) {
+        for (int index = MZEVENT_GDG_HBLN_END;
+             index <= MZEVENT_GDG_SCREEN_ROW_END; ++index) {
+            const st_GDGEVENT *event = &g_gdgevent[index];
+            unsigned ticks = g_gdg.beam_row * VIDEO_SCREEN_WIDTH + event->event_column;
+            if (g_gdg.beam_row >= event->start_row
+                && g_gdg.beam_row < event->start_row + event->num_rows
+                && ticks > g_gdg.total_elapsed.ticks) {
+                g_gdg.event.event_name = (en_MZEVENT)index;
+                g_gdg.event.ticks = ticks;
+                have_event = true;
+                break;
+            }
+        }
+        if (!have_event) {
+            SNAP_ERR("gdg", "Cannot reconstruct pending GDG event");
+            snapshot_xml_reader_free(r);
+            return SNAPSHOT_ERR_XML_PARSE;
+        }
+    }
+#endif
 
     /* Registry */
     if (snapshot_xml_enter_element(r, "registers")) {
