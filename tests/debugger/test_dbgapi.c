@@ -427,16 +427,18 @@ void test_cmd_set_reg_pc ( void ) {
 
 
 void test_cmd_set_reg_ir_special_handling ( void ) {
-    /* IR speciální handling: zapíše jen dolní bajt R (& 0x7F),
-     * I (vysoký bajt) a R bit 7 zachová. */
-    g_mzarch_main.cpu->i = 0xAA;
-    g_mzarch_main.cpu->r = 0x80; /* bit 7 nastaven */
-    st_DBGAPI_REG_PARAM p = { (uint8_t)Z80_REG_IR, 0x55BB };
-    bool ok = call_dispatch ( DBGAPI_CMD_SET_REG, &p, NULL );
-    TEST_ASSERT_TRUE ( ok );
-    /* I se nemění, R bit 7 zachován + dolních 7 bitů z value (0xBB & 0x7F = 0x3B). */
-    TEST_ASSERT_EQUAL_HEX8 ( 0xAA, g_mzarch_main.cpu->i );
-    TEST_ASSERT_EQUAL_HEX8 ( 0x80 | 0x3B, g_mzarch_main.cpu->r );
+    /* Maintained API restores the COMPLETE I:R pair for snapshots/fixtures.
+     * Both I and programmable R bit 7 must change in both directions. */
+    const uint16_t values[] = { 0x55BB, 0x127F, 0x3480, 0x5600 };
+    for (unsigned n = 0; n < sizeof(values)/sizeof(values[0]); n++) {
+        g_mzarch_main.cpu->i = 0xAA;
+        g_mzarch_main.cpu->r = 0x80;
+        st_DBGAPI_REG_PARAM p = { (uint8_t)Z80_REG_IR, values[n] };
+        TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_SET_REG, &p, NULL ) );
+        TEST_ASSERT_EQUAL_HEX8 ( values[n] >> 8, g_mzarch_main.cpu->i );
+        TEST_ASSERT_EQUAL_HEX8 ( values[n] & 0xFF, g_mzarch_main.cpu->r );
+        TEST_ASSERT_EQUAL_HEX16 ( values[n], z80_get_reg(g_mzarch_main.cpu, Z80_REG_IR) );
+    }
 }
 
 
