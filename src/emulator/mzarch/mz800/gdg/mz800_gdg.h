@@ -194,7 +194,9 @@ extern "C"
 
 #define gdg_compute_total_ticks(now_ticks) (now_ticks + ((uint64_t)g_gdg.total_elapsed.screens * VIDEO_SCREEN_TICKS))
 #define gdg_get_total_ticks() gdg_compute_total_ticks(g_gdg.total_elapsed.ticks)
-#define gdg_get_insigeop_ticks() (g_gdg.total_elapsed.ticks + g_mzarch_main.instruction_insideop_sync_ticks)
+/* The inside-op synchronizer has already advanced total_elapsed to
+ * this bus callback. Adding its offset again dates writes in the future. */
+#define gdg_get_insigeop_ticks() (g_gdg.total_elapsed.ticks)
 #define gdg_proximate_clk1m1_event(now_ticks) (now_ticks + (GDGCLK_CTC0_DIVIDER - (gdg_compute_total_ticks(now_ticks) % GDGCLK_CTC0_DIVIDER)))
 #define gdg_get_event_pointer() (&g_gdg.event)
 #define gdg_get_regct53g7() (g_gdg.regct53g7)
