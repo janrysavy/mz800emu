@@ -76,6 +76,7 @@
 #include "memory/memory.h"
 #if MZARCH == 800
 #include "mzarch/mz800/gdg/mz800_gdg.h"
+#include "mzarch/mz800/gdg/mz800_vramctrl.h"
 #elif MZARCH == 1500
 #include "mzarch/mz1500/gdg/mz1500_gdg.h"
 #elif MZARCH == 700
@@ -6150,6 +6151,14 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             p->has_border_reg = 1;
             p->has_pal_group  = 1;
             p->has_cksw       = 1;
+            /* Side-effect-free chip mirrors; WF/RF are write-only on the bus. */
+            p->has_vram_format = 1;
+            p->regWF = (uint8_t)((g_vramctrl.regWF_PLANE & 0x0f)
+                | ((g_vramctrl.regWF_MODE & 7) << 5)
+                | (g_vramctrl.regWFRF_VBANK ? 0x10 : 0));
+            p->regRF = (uint8_t)((g_vramctrl.regRF_PLANE & 0x0f)
+                | (g_vramctrl.regRF_SEARCH ? 0x80 : 0)
+                | (g_vramctrl.regWFRF_VBANK ? 0x10 : 0));
             p->regBOR    = (uint8_t)( g_gdg.regBOR & 0xFFu );
             p->regPALGRP = (uint8_t)( g_gdg.regPALGRP & 0xFFu );
             p->cksw      = (uint8_t)( g_gdg.cksw & 0x01u );

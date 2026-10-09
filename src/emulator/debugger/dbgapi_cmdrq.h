@@ -3789,6 +3789,9 @@ typedef struct st_DBGAPI_PERIPH_GDG_PARAM
     uint8_t  _pad[2];            /**< Zarovnání. */
     uint32_t tempo;              /**< OUT: tempo počítadlo (společné). */
     uint32_t tempo_divider;      /**< OUT: tempo_divider (společné). */
+    uint8_t has_vram_format;     /**< OUT: WF/RF mirrors are available (MZ-800 only). */
+    uint8_t regWF;               /**< OUT: write format, plane mask and shared bank bit. */
+    uint8_t regRF;               /**< OUT: read format, plane mask and shared bank bit. */
 } st_DBGAPI_PERIPH_GDG_PARAM;
 
 
