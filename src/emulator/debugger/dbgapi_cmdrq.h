@@ -680,7 +680,17 @@ typedef enum en_DBGAPI_CMD
     DBGAPI_CMD_HID_SCRIPT_START,     /* Spustit sekvenci vstupu - data_ptr: st_DBGAPI_HID_SCRIPT* (vlastník = volající, viz kontrakt struktury) */
     DBGAPI_CMD_HID_SCRIPT_CANCEL,    /* Zrušit běžící sekvenci (uvolní drženou klávesu/joystick) - data_ptr: st_DBGAPI_HID_SCRIPT* (zruší jen tuto sekvenci) */
 
+    DBGAPI_CMD_AUDIO_CAPTURE, /* Owner-thread passive audio observation. */
 } en_DBGAPI_CMD;
+
+typedef struct st_DBGAPI_AUDIO_CAPTURE_PARAM {
+    int action;
+    unsigned rate,max_frames,offset,limit;
+    bool physical_clock;
+    char *json; /* OUT glib-owned; dispatch frees after serialization. */
+} st_DBGAPI_AUDIO_CAPTURE_PARAM;
+
+
 
 /* ============================================================================
  * BLOCKING FLAG

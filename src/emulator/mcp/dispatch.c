@@ -473,6 +473,8 @@ static en_MCP_DISPATCH_RESULT _handle_trace_save(const st_JSONL_MESSAGE *req,
                                                  char **out_response);
 
 /* video-capture Task 15 - video záznam fwd decls */
+static en_MCP_DISPATCH_RESULT _handle_audio_capture(const st_JSONL_MESSAGE *req,
+                                                  char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_videorec_start(const st_JSONL_MESSAGE *req,
                                                      char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_videorec_stop(const st_JSONL_MESSAGE *req,
@@ -1087,6 +1089,7 @@ static const st_MCP_CMD_MAP_ENTRY g_cmd_map[] = {
     /* video-capture Task 15 - video záznam (všechny platformy). Přidáno na KONEC
      * tabulky kvůli stabilitě pozičního indexu v hello supported_commands. */
     { "videorec_start",          DBGAPI_CMD_VIDEOREC,                 _handle_videorec_start          },
+    { "audio_capture",          DBGAPI_CMD_AUDIO_CAPTURE,            _handle_audio_capture          },
     { "videorec_stop",           DBGAPI_CMD_VIDEOREC,                 _handle_videorec_stop           },
     { "videorec_pause",          DBGAPI_CMD_VIDEOREC,                 _handle_videorec_pause          },
     { "videorec_marker",         DBGAPI_CMD_VIDEOREC,                 _handle_videorec_marker         },
@@ -7249,6 +7252,65 @@ static int _videorec_member(JsonObject *obj, const char *key, GType type) {
     if (!n || json_node_is_null(n)) return 0;
     if (json_node_get_node_type(n) != JSON_NODE_VALUE) return -1;
     return (json_node_get_value_type(n) == type) ? 1 : -1;
+}
+
+/* Passive native sound observation. All capture state and chip access are
+ * serialized on the emulator owner thread, through the same debugger queue. */
+static en_MCP_DISPATCH_RESULT _handle_audio_capture(const st_JSONL_MESSAGE *req,char **out_response)
+{
+    int64_t id=jsonl_msg_get_req_id(req);
+    JsonObject *obj=_videorec_data_obj(req);
+    if (!obj || _videorec_member(obj,"action",G_TYPE_STRING)!=1)
+        return _err_response(id,"audio_capture requires action",MCP_DISPATCH_INVALID_PARAMS,out_response);
+    GList *keys=json_object_get_members(obj);
+    for (GList *k=keys;k;k=k->next) {
+        const char *name=(const char*)k->data;
+        if (strcmp(name,"action") && strcmp(name,"section") && strcmp(name,"sample_rate") &&
+            strcmp(name,"max_frames") && strcmp(name,"physical_clock") && strcmp(name,"offset") && strcmp(name,"limit")) {
+            g_list_free(keys);return _err_response(id,"Unknown audio_capture parameter",MCP_DISPATCH_INVALID_PARAMS,out_response);
+        }
+    }
+    g_list_free(keys);
+    st_DBGAPI_AUDIO_CAPTURE_PARAM p={0};p.rate=48000;p.max_frames=480000;p.limit=2048;p.physical_clock=true;
+    const char *action=json_object_get_string_member(obj,"action");
+    if (!strcmp(action,"start")) p.action=0;
+    else if (!strcmp(action,"stop")) p.action=1;
+    else if (!strcmp(action,"status")) p.action=2;
+    else if (!strcmp(action,"read")) {
+        if (_videorec_member(obj,"section",G_TYPE_STRING)!=1)
+            return _err_response(id,"audio read requires section",MCP_DISPATCH_INVALID_PARAMS,out_response);
+        const char *section=json_object_get_string_member(obj,"section");
+        if (!strcmp(section,"raw_pcm"))p.action=3;
+        else if (!strcmp(section,"filtered_pcm"))p.action=4;
+        else if (!strcmp(section,"events"))p.action=5;
+        else if (!strcmp(section,"writes"))p.action=6;
+        else return _err_response(id,"Unknown audio section",MCP_DISPATCH_INVALID_PARAMS,out_response);
+    } else return _err_response(id,"Unknown audio action",MCP_DISPATCH_INVALID_PARAMS,out_response);
+    const char *numeric[]={"sample_rate","max_frames","offset","limit"};
+    unsigned *values[]={&p.rate,&p.max_frames,&p.offset,&p.limit};
+    for (unsigned i=0;i<4;i++) {
+        int present=_videorec_member(obj,numeric[i],G_TYPE_INT64);
+        if (present<0)return _err_response(id,"Audio numeric parameter must be integer",MCP_DISPATCH_INVALID_PARAMS,out_response);
+        if (present) {
+            gint64 n=json_object_get_int_member(obj,numeric[i]);
+            if (n<0 || n>1920000)return _err_response(id,"Audio parameter outside bounds",MCP_DISPATCH_INVALID_PARAMS,out_response);
+            *values[i]=(unsigned)n;
+        }
+    }
+    int has_clock=_videorec_member(obj,"physical_clock",G_TYPE_BOOLEAN);
+    if (has_clock<0)return _err_response(id,"physical_clock must be boolean",MCP_DISPATCH_INVALID_PARAMS,out_response);
+    if (has_clock)p.physical_clock=json_object_get_boolean_member(obj,"physical_clock");
+    if (!p.limit || p.limit>4096)
+        return _err_response(id,"Audio page limit must be 1..4096",MCP_DISPATCH_INVALID_PARAMS,out_response);
+    if (!_submit_dbgapi(DBGAPI_CMD_AUDIO_CAPTURE,&p,NULL)) {
+        g_free(p.json);return _err_response(id,"Audio capture unavailable, invalid or emulator not paused",MCP_DISPATCH_EMU_ERROR,out_response);
+    }
+    JsonParser *parser=json_parser_new();
+    if (!p.json || !json_parser_load_from_data(parser,p.json,-1,NULL)) {
+        g_free(p.json);g_object_unref(parser);return _err_response(id,"Audio capture serialization failed",MCP_DISPATCH_EMU_ERROR,out_response);
+    }
+    JsonObject *result=json_object_ref(json_node_get_object(json_parser_get_root(parser)));
+    g_free(p.json);g_object_unref(parser);return _ok_response(id,result,out_response);
 }
 
 /**

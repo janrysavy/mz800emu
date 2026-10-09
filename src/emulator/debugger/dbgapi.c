@@ -67,6 +67,7 @@
 #include "snapshot/snapshot.h"
 #include "videorec/videorec.h"
 #include "iface/iface_audio.h"
+#include "audio.h"
 #include "symbols/sym_db.h"
 #include "mzarch/mzarch.h"
 #include "mzarch/mzarch_platform.h"
@@ -827,6 +828,7 @@ const char *dbgapi_cmd_to_str(en_DBGAPI_CMD cmd)
         case DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE:  return "debugger_state_recompute";
         /* video-capture Task 15 - video záznam */
         case DBGAPI_CMD_VIDEOREC:                  return "videorec";
+        case DBGAPI_CMD_AUDIO_CAPTURE:             return "audio_capture";
         /* ui-thread-writes T1 - historie a aktivita I/O */
         case DBGAPI_CMD_IO_HISTORY_SET_CAPACITY:   return "io_history_set_capacity";
         case DBGAPI_CMD_IO_HISTORY_CLEAR:          return "io_history_clear";
@@ -4124,6 +4126,17 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
 
         /* --- Video záznam (video-capture Task 15) ---
          * Logika v dbgapi_videorec_execute(); handler jen validuje param. */
+        case DBGAPI_CMD_AUDIO_CAPTURE:
+        {
+            st_DBGAPI_AUDIO_CAPTURE_PARAM *p=(st_DBGAPI_AUDIO_CAPTURE_PARAM*)rq->data_ptr;
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+            rq->success=p && EMULATOR_TEST_PAUSED && audio_capture_request(p->action,p->rate,p->max_frames,
+                                                    p->physical_clock,p->offset,p->limit,&p->json);
+#else
+            (void)p;rq->success=false;
+#endif
+            break;
+        }
         case DBGAPI_CMD_VIDEOREC:
         {
             st_DBGAPI_VIDEOREC_PARAM *p = (st_DBGAPI_VIDEOREC_PARAM *) rq->data_ptr;
