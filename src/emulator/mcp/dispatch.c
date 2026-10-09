@@ -12137,6 +12137,11 @@ static en_MCP_DISPATCH_RESULT _handle_get_periph_gdg(
     json_object_set_boolean_member(resp, "has_pal_group",  param.has_pal_group ? TRUE : FALSE);
     json_object_set_boolean_member(resp, "has_cksw",       param.has_cksw ? TRUE : FALSE);
     json_object_set_int_member(resp,    "regDMD",       (gint64)param.regDMD);
+    json_object_set_boolean_member(resp, "has_vram_format", param.has_vram_format ? TRUE : FALSE);
+    if (param.has_vram_format) {
+        json_object_set_int_member(resp, "regWF", (gint64)param.regWF);
+        json_object_set_int_member(resp, "regRF", (gint64)param.regRF);
+    }
     json_object_set_int_member(resp,    "regBOR",       (gint64)param.regBOR);
     json_object_set_int_member(resp,    "regPALGRP",    (gint64)param.regPALGRP);
     json_object_set_int_member(resp,    "regct53g7",    (gint64)param.regct53g7);
