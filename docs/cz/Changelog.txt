@@ -1,4 +1,6 @@
 
+	- OPRAVA DOKUMENTACE: MCP - popis bankování paměti (emulator://docs/memory_layout) tvrdil, že IORQ OUT na MZ-800 nemění mapování CG-ROM; ve skutečnosti OUT (0E0h) odpojí i CG-ROM (VRAM zůstane) a OUT (0E4h) ji v režimu MZ-800 připojí spolu s VRAM, v režimu MZ-700 ji odpojí spolu s CG-RAM. Dvojice IN A,(0E0h) + OUT (0E0h),A tedy dá RAM na 0000h-1FFFh a zároveň VRAM. Emulátor se tak choval i předtím.
+
 	- BUGFIX: MCP - emu_input_send_key, emu_input_send_keys, emu_input_send_keys_with_delays a emu_input_send_joystick nedržely vstup zadaný počet snímků emulace: při MAX SPEED proběhly stovky snímků místo zadaného počtu, při normální rychlosti na nehybné obrazovce zhruba trojnásobek. Délky držení a mezer jsou nyní přesné ve snímcích emulace při jakékoli rychlosti; emulátor v pauze odehraje přesně délku sekvence a znovu se pauzne, běžící emulátor běží dál. Odpověď nově obsahuje emu_frames, complete a interrupted.
 
 	- BUGFIX: MCP - emu_run_until_addr na běžícím emulátoru odpověděl running: true, ale emulaci jen pauzl mimo cílovou adresu. Nyní vrátí chybu "Emulator is running" a emulace běží dál beze změny.
