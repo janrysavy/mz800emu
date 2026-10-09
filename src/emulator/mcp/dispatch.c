@@ -12640,11 +12640,57 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot_raw(
  *   pokud available=false:
  *   {"available": false, "reason": str}
  */
+/* Shared PNG options for base64 and server-side file output. */
+static bool _png_options(const st_JSONL_MESSAGE *req, st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM *p) {
+    JsonNode *node = (JsonNode *)jsonl_msg_get_data_node(req);
+    if (!node) return true;
+    if (json_node_get_node_type(node) != JSON_NODE_OBJECT) return false;
+    JsonObject *obj = json_node_get_object(node);
+    if (json_object_has_member(obj, "projection")) {
+        JsonNode *v = json_object_get_member(obj, "projection");
+        if (json_node_get_value_type(v) != G_TYPE_STRING) return false;
+        const char *s = json_node_get_string(v);
+        if (strcmp(s, "native") == 0) p->native_pixels = 1;
+        else if (strcmp(s, "framebuffer") != 0) return false;
+    }
+    if (json_object_has_member(obj, "crop")) {
+        JsonNode *v = json_object_get_member(obj, "crop");
+        if (!p->native_pixels || json_node_get_node_type(v) != JSON_NODE_OBJECT) return false;
+        JsonObject *c = json_node_get_object(v);
+        const char *keys[] = {"x", "y", "width", "height"};
+        uint32_t *values[] = {&p->crop_x, &p->crop_y, &p->crop_width, &p->crop_height};
+        if (json_object_get_size(c) != 4) return false;
+        for (int i=0; i<4; i++) {
+            if (!json_object_has_member(c, keys[i])) return false;
+            JsonNode *n = json_object_get_member(c, keys[i]);
+            if (json_node_get_value_type(n) != G_TYPE_INT64) return false;
+            gint64 value = json_node_get_int(n);
+            if (value < 0 || value > UINT32_MAX) return false;
+            *values[i] = (uint32_t)value;
+        }
+        p->crop_requested = 1;
+    }
+    return true;
+}
+
+static void _png_metadata(JsonObject *resp, const st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM *p) {
+    json_object_set_string_member(resp, "projection", p->native_pixels ? "native" : "framebuffer");
+    json_object_set_string_member(resp, "source", p->fallback_source == SCREENSHOT_SRC_GDG_LIVE ? "gdg_live" : "sdl_snapshot");
+    json_object_set_int_member(resp, "source_screen_id", p->source_screen_id);
+    json_object_set_int_member(resp, "horizontal_samples_per_pixel", p->horizontal_step);
+    json_object_set_int_member(resp, "crop_x", p->crop_x);
+    json_object_set_int_member(resp, "crop_y", p->crop_y);
+    json_object_set_string_member(resp, "palette", "emulator_display_rgb");
+}
+
 static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot(
     const st_JSONL_MESSAGE *req, char **out_response) {
     int64_t req_id = jsonl_msg_get_req_id(req);
     st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM param;
     memset(&param, 0, sizeof(param));
+    if (!_png_options(req, &param)) {
+        return _err_response(req_id, "Invalid PNG projection/crop", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
     if (!_submit_dbgapi(DBGAPI_CMD_GET_FRAME_SCREENSHOT_PNG, &param, NULL)) {
         return _err_response(req_id, "get_frame_screenshot failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
@@ -12665,6 +12711,7 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot(
     json_object_set_int_member(resp,     "height",    (gint64)param.height);
     json_object_set_int_member(resp,     "byte_size", (gint64)param.buffer_size);
     json_object_set_string_member(resp,  "data_b64",  b64 ? b64 : "");
+    _png_metadata(resp, &param);
     g_free(b64);
     return _ok_response(req_id, resp, out_response);
 }
@@ -12724,6 +12771,10 @@ static en_MCP_DISPATCH_RESULT _handle_screenshot_save_to_file(
     /* PNG capture - stejná emu-thread cesta jako get_frame_screenshot. */
     st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM param;
     memset(&param, 0, sizeof(param));
+    if (!_png_options(req, &param)) {
+        g_free(path);
+        return _err_response(req_id, "Invalid PNG projection/crop", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
     if (!_submit_dbgapi(DBGAPI_CMD_GET_FRAME_SCREENSHOT_PNG, &param, NULL)) {
         g_free(path);
         return _err_response(req_id, "get_frame_screenshot failed",
@@ -12762,6 +12813,7 @@ static en_MCP_DISPATCH_RESULT _handle_screenshot_save_to_file(
     json_object_set_int_member(resp,     "width",     (gint64)param.width);
     json_object_set_int_member(resp,     "height",    (gint64)param.height);
     json_object_set_int_member(resp,     "byte_size", (gint64)param.buffer_size);
+    _png_metadata(resp, &param);
     g_free(path);
     return _ok_response(req_id, resp, out_response);
 }

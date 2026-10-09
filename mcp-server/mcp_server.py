@@ -7155,7 +7155,9 @@ async def resource_frame_screenshot() -> str:
 
 
 @mcp.tool()
-async def emu_screenshot_save_to_file(path: str, format: str = "png") -> str:
+async def emu_screenshot_save_to_file(path: str, format: str = "png",
+                                      projection: str = "framebuffer",
+                                      crop: dict[str, int] | None = None) -> str:
     """Render the current frame as PNG and save it directly to a file on the server host.
 
     This is the robust, self-service path for visual verification. Unlike the
@@ -7170,6 +7172,12 @@ async def emu_screenshot_save_to_file(path: str, format: str = "png") -> str:
             working directory.
         format: image format, currently only ``png`` (default). Any other
             value is rejected with an error.
+        projection: ``framebuffer`` preserves the full raster. ``native``
+            exports the MZ-800 graphics canvas at 320x200 or 640x200,
+            retaining actual display RGB and removing only equal duplicate
+            horizontal samples. Use a paused machine after complete frames.
+        crop: optional native canvas rectangle with x, y, width and height.
+            For the Spectrum-compatible viewport use 0, 0, 256, 192.
 
     Returns:
         ``{"available": true, "path": str, "format": "png", "width": int,
@@ -7181,7 +7189,9 @@ async def emu_screenshot_save_to_file(path: str, format: str = "png") -> str:
         Path access is unrestricted under the V0 ``wild`` security profile;
         path whitelisting lands in V1.A.
     """
-    data: dict[str, Any] = {"path": path}
+    data: dict[str, Any] = {"path": path, "projection": projection}
+    if crop is not None:
+        data["crop"] = crop
     if format:
         data["format"] = format
     resp = await _send_request("screenshot_save_to_file", data)

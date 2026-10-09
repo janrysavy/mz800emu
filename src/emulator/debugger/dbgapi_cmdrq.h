@@ -4140,6 +4140,12 @@ typedef struct st_DBGAPI_FRAME_SCREENSHOT_RAW_PARAM
  */
 typedef struct st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM
 {
+    uint8_t  native_pixels;       /**< IN: export canvas at native resolution, without border. */
+    uint8_t  crop_requested;      /**< IN: explicit rectangle in native canvas coordinates. */
+    uint32_t crop_x, crop_y, crop_width, crop_height;
+    uint32_t source_screen_id;    /**< OUT: published framebuffer identity. */
+    uint8_t  fallback_source;     /**< OUT: SCREENSHOT_SRC_* */
+    uint8_t  horizontal_step;     /**< OUT: framebuffer samples per exported pixel. */
     uint8_t  available;           /**< OUT: 1 = PNG stream zapsán, 0 = nedostupný. */
     uint8_t  _pad[3];
     uint32_t width;               /**< OUT: šířka obrázku v pixelech. */

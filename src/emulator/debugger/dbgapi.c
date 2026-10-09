@@ -6829,10 +6829,47 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 rq->success = false;
                 break;
             };
+            /* Preserve request fields; this executor runs on the emulation thread. */
+            const uint8_t native = p->native_pixels, crop = p->crop_requested;
+            const uint32_t cx = p->crop_x, cy = p->crop_y;
+            const uint32_t cw = p->crop_width, ch = p->crop_height;
             memset ( p, 0, sizeof ( *p ) );
+            p->native_pixels = native;
+            p->crop_requested = crop;
+            p->crop_x = cx; p->crop_y = cy;
 
             uint32_t w = (uint32_t) VIDEO_DISPLAY_WIDTH;
             uint32_t h = (uint32_t) VIDEO_DISPLAY_HEIGHT;
+            uint32_t origin_x = 0, origin_y = 0, step_x = 1;
+            if ( native )
+            {
+#if MZARCH == 800
+                if ( GDG_MZ800_DMD_TEST_MZ700 )
+                {
+                    strcpy ( p->reason, "Native export requires MZ-800 graphics mode" );
+                    rq->success = true;
+                    break;
+                }
+                step_x = GDG_MZ800_DMD_TEST_SCRW640 ? 1 : 2;
+                w = VIDEO_CANVAS_WIDTH / step_x;
+                h = VIDEO_CANVAS_HEIGHT;
+                if ( crop && ( !cw || !ch || cx >= w || cy >= h || cw > w-cx || ch > h-cy ) )
+                {
+                    strcpy ( p->reason, "Crop outside native canvas" );
+                    rq->success = true;
+                    break;
+                }
+                origin_x = VIDEO_BORDER_LEFT_WIDTH + ( crop ? cx*step_x : 0 );
+                origin_y = VIDEO_BORDER_TOP_HEIGHT + ( crop ? cy : 0 );
+                if ( crop ) { w = cw; h = ch; }
+#else
+                strcpy ( p->reason, "Native export requires MZ-800 graphics mode" );
+                rq->success = true;
+                break;
+#endif
+            }
+            p->crop_width = w; p->crop_height = h;
+            p->horizontal_step = (uint8_t)step_x;
             uint32_t *g_video_colormap = display_get_default_color_schema();
             if ( !g_video_colormap )
             {
@@ -6870,15 +6907,19 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 break;
             };
 
-            /* RGBA8888 scratch buffer - expand INDEX8 -> RGBA. */
+            p->source_screen_id = g_iface_video->fbsnapshot_screen_id;
+            p->fallback_source = sdl_locked ? SCREENSHOT_SRC_SDL_SNAPSHOT : SCREENSHOT_SRC_GDG_LIVE;
+            /* Retain the raster's colours. No filtering or palette substitution. */
             uint8_t *rgba = (uint8_t *) g_malloc ( (gsize) w * h * 4 );
             uint8_t *dst = rgba;
+            bool pairs_equal = true;
             for ( uint32_t y = 0; y < h; y++ )
             {
-                const uint8_t *src_row = src + (size_t) y * w;
+                const uint8_t *src_row = src + (size_t)(origin_y+y)*VIDEO_DISPLAY_WIDTH + origin_x;
                 for ( uint32_t x = 0; x < w; x++ )
                 {
-                    uint8_t pix_idx = src_row[ x ] & 0x0Fu;
+                    uint8_t pix_idx = src_row[ x*step_x ] & 0x0Fu;
+                    if ( step_x == 2 && pix_idx != (src_row[x*step_x+1] & 0x0Fu) ) pairs_equal = false;
                     uint32_t rgb = g_video_colormap[ pix_idx ];
                     dst[ 0 ] = (uint8_t) ( ( rgb >> 16 ) & 0xFFu ); /* R */
                     dst[ 1 ] = (uint8_t) ( ( rgb >> 8 ) & 0xFFu );  /* G */
@@ -6891,6 +6932,13 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             {
                 APP_MUTEX_UNLOCK ( g_iface_video->fbsnapshot_pixels_mutex );
             };
+            if ( !pairs_equal )
+            {
+                g_free ( rgba );
+                strcpy ( p->reason, "Unequal horizontal samples; use framebuffer export" );
+                rq->success = true;
+                break;
+            }
 
             /* Enkód do PNG streamu (glib alokovaný buffer). */
             size_t png_len = 0;
