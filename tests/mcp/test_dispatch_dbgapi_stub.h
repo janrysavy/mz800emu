@@ -159,6 +159,9 @@ typedef struct st_DISPATCH_STUB_STATE {
      *
      * RUN_TO - zachycená target adresa:
      *   run_to_last_addr = z uint16_t* data_ptr.
+     *   run_to_result    = hodnota, kterou stub zapíše do int* result_ptr
+     *                      (DBGAPI_RUN_TO_STARTED = 0 default,
+     *                      DBGAPI_RUN_TO_PAUSED_ONLY = emulace běžela).
      */
     int                  bp_remove_last_id;
     int                  bp_set_enabled_last_id;
@@ -166,6 +169,7 @@ typedef struct st_DISPATCH_STUB_STATE {
     int                  step_into_calls;
     int                  step_over_calls;
     uint16_t             run_to_last_addr;
+    int                  run_to_result;
     /* Per-call fail control - pro step_n partial test:
      *   step_into_fail_after_n = pokud > 0, stub vrátí false na N+1. volání
      *   STEP_INTO. 0 = vždy success. Reset přes dispatch_stub_reset. */
@@ -189,8 +193,12 @@ typedef struct st_DISPATCH_STUB_STATE {
      *                                buffer přes g_malloc a vyplní pattern.
      *   snapshot_save_buf_pattern - pattern byte vyplněný do alokovaného
      *                                bufferu (default 0xAB). Test ho
-     *                                ověří přes base64 dekódování. */
+     *                                ověří přes base64 dekódování.
+     *   snapshot_load_fail_result - pokud != 0, LOAD_FILE / LOAD_BUFFER
+     *                                zapíše tuto hodnotu do param.result
+     *                                (en_SNAPSHOT_RESULT) a vrátí false. */
     char                *snapshot_last_filepath;
+    int                  snapshot_load_fail_result;
     char                *snapshot_last_description;
     size_t               snapshot_load_buf_size;
     uint8_t              snapshot_load_buf_first;

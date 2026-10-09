@@ -115,6 +115,25 @@ TCP_PORT: int = int(os.environ.get("MZ800EMU_TCP_PORT", "23800"))
 # 30 s je bezpečná horní mez pro startup hello + první příkaz.
 SEND_TIMEOUT_S: float = 30.0
 
+# HID nástroje s držením (send_key, send_keys, send_keys_with_delays,
+# send_joystick) odpoví až po odehrání celé sekvence, která se měří ve
+# snímcích EMULACE. Při normální rychlosti je snímek 20 ms (PAL), při
+# zpomalené emulaci (např. zapnuté CDL) víc. Rezerva na snímek proto
+# počítá s emulací až 3x pomalejší než reálný čas (60 ms/snímek).
+HID_FRAME_TIMEOUT_S: float = 0.06
+
+
+def _hid_timeout_s(total_frames: int) -> float:
+    """Timeout požadavku HID nástroje pro sekvenci dlouhou ``total_frames``.
+
+    Args:
+        total_frames: součet snímků držení a mezer celé sekvence.
+
+    Returns:
+        ``SEND_TIMEOUT_S`` + ``total_frames`` x ``HID_FRAME_TIMEOUT_S``.
+    """
+    return SEND_TIMEOUT_S + max(0, int(total_frames)) * HID_FRAME_TIMEOUT_S
+
 # Max délka jednoho JSONL řádku (TCP transport). asyncio.StreamReader má
 # default limit 64 KiB; region_read smí číst až 65536 bajtů, base64 z toho
 # je ~87.4 KB v jednom řádku -> přesáhne default limit a readline() vyhodí
@@ -951,7 +970,8 @@ async def _read_hello_with_filter(timeout_sec: float) -> dict[str, Any]:
 
 
 async def _send_request(cmd: str,
-                        data: Optional[dict] = None) -> dict[str, Any]:
+                        data: Optional[dict] = None,
+                        timeout_s: Optional[float] = None) -> dict[str, Any]:
     """Pošle JSONL REQUEST emu backendu a čeká na synchronní response.
 
     Pokud transport ještě není navázaný, lazy ho připojí přes
@@ -962,6 +982,9 @@ async def _send_request(cmd: str,
             ``src/emulator/mcp/dispatch.c``).
         data: volitelný payload (např. ``{"addr": 0xE800, "len": 16}``
             pro ``mem_read``).
+        timeout_s: limit čekání na response v sekundách; ``None`` =
+            ``SEND_TIMEOUT_S``. Delší limit potřebují příkazy, které
+            odpoví až po odehrání sekvence (HID, viz ``_hid_timeout_s``).
 
     Returns:
         Dict s wire formátem response: ``{"req_id": N, "success": bool,
@@ -1038,18 +1061,19 @@ async def _send_request(cmd: str,
         # (bug 0011). Stale response (req_id != náš) proto zahazujeme a
         # čekáme dál až do společného deadline - self-heal desyncu.
         loop = asyncio.get_event_loop()
-        deadline = loop.time() + SEND_TIMEOUT_S
+        limit_s = SEND_TIMEOUT_S if timeout_s is None else float(timeout_s)
+        deadline = loop.time() + limit_s
         while True:
             remaining = deadline - loop.time()
             if remaining <= 0:
                 raise RuntimeError(
-                    f"emu request timeout after {SEND_TIMEOUT_S}s (cmd={cmd})")
+                    f"emu request timeout after {limit_s:g}s (cmd={cmd})")
             try:
                 resp = await asyncio.wait_for(
                     _response_queue.get(), timeout=remaining)
             except asyncio.TimeoutError as e:
                 raise RuntimeError(
-                    f"emu request timeout after {SEND_TIMEOUT_S}s (cmd={cmd})"
+                    f"emu request timeout after {limit_s:g}s (cmd={cmd})"
                 ) from e
             if resp.get(_TRANSPORT_CLOSED_KEY):
                 # Backend skončil (pád procesu / zavřené TCP) - odpověď
@@ -1631,7 +1655,9 @@ async def emu_run_until_addr(addr: int, max_cycles: int = 10_000_000) -> str:
     ``max_cycles`` argument is reserved for future timeout support).
 
     The emulator must be paused before calling this tool. If it is
-    already running, the backend returns an error.
+    running, the call returns an error ("Emulator is running ...") and
+    the emulator keeps running unchanged; call ``emu_pause`` first.
+    (A freshly started emulator runs.)
 
     Args:
         addr: target Z80 PC address (0-65535).
@@ -1721,6 +1747,12 @@ async def emu_snapshot_save_buffer(description: str = "") -> str:
 async def emu_snapshot_load(path: str) -> str:
     """Restore emulator state from a .mzs snapshot file on disk.
 
+    The emulator must be paused (call ``emu_pause`` first; a freshly
+    started emulator runs). Otherwise the call returns the error
+    "snapshot_load failed: Emulator is not paused ..." and nothing is
+    loaded. Other failures name the reason too (e.g. I/O error,
+    incompatible architecture).
+
     After successful load the emulator stays paused at the snapshot's
     captured PC. Call ``emu_get_registers`` or ``emu_status`` to verify
     the post-load state.
@@ -1747,12 +1779,17 @@ async def emu_snapshot_load_buffer(bytes_b64: str) -> str:
     The buffer is typically produced by ``emu_snapshot_save_buffer`` in
     an earlier session.
 
+    The emulator must be paused (call ``emu_pause`` first), the same as
+    for ``emu_snapshot_load``; otherwise the error says "Emulator is not
+    paused".
+
     Args:
         bytes_b64: base64-encoded .mzs ZIP content.
 
     Returns:
         JSON ``{"size": <int>, "ok": true, "result_code": 0}`` on success
-        or ``{"error": "..."}`` if the buffer is invalid.
+        or ``{"error": "..."}`` naming the reason (buffer invalid,
+        emulator not paused, ...).
     """
     if not isinstance(bytes_b64, str) or bytes_b64 == "":
         return json.dumps({"error": "bytes_b64 must be a non-empty string"})
@@ -4451,9 +4488,13 @@ async def emu_periph_detach(kind: str) -> str:
 # WARNING token v každé description je nutný (= AI klient může spustit
 # nezamýšlené BASIC příkazy nebo přepsat BASIC program přes RUN+RETURN).
 #
-# Frame timing: 50 fps (PAL MZ-800). Default frames=3 (~60 ms) odpovídá
-# realistickému keyboard press délce. Pro precision timing použij
-# emu_input_send_keys_with_delays.
+# Frame timing: frames / frame_per_key / hold_frames / gap_frames jsou
+# snímky EMULACE (50 Hz PAL), nezávisle na rychlosti emulace (normal, MAX
+# SPEED, zpomalení s CDL). Stisky a uvolnění provádí emu vlákno na
+# hranicích snímků (backend hid_script.c). Default frames=3 (60 ms emulace)
+# odpovídá realistické délce stisku. Pro precision timing použij
+# emu_input_send_keys_with_delays. Timeout requestu roste s délkou
+# sekvence (_hid_timeout_s).
 
 
 @mcp.tool()
@@ -4478,13 +4519,24 @@ async def emu_input_send_key(key: str, frames: int = 3) -> str:
             ASCII fallback: single-char string ("A", "1", "?") or
             explicit "ASCII:<char>" prefix. An unknown name returns
             "Unknown key '<name>'. Closest valid names: ...".
-        frames: Number of frames to hold the key (default 3, ~60 ms
-            at 50 fps PAL). Maximum 600 frames (~12 sec).
+        frames: Number of EMULATED frames to hold the key (default 3 =
+            60 ms of emulated time at 50 Hz PAL). Maximum 600 frames.
+
+    Timing: ``frames`` counts emulated frames, independent of the
+    emulation speed (normal, ``emu_set_speed(mode="max")``, or slower
+    than real time e.g. with CDL). The emulator itself presses and
+    releases the key on frame boundaries. If the emulator is paused, it
+    runs exactly ``frames`` frames and pauses again; if it is running, it
+    keeps running. The call returns after the key was released.
 
     Returns:
         JSON ``{"key": str, "col": int, "bit": int, "shift": bool,
-        "frames": int, "sent": true, "landing_verified": bool}`` or
-        ``{"error": "..."}``.
+        "frames": int, "sent": true, "landing_verified": bool,
+        "emu_frames": int, "complete": bool, "interrupted": bool}`` or
+        ``{"error": "..."}``. ``emu_frames`` = emulated frames that
+        actually elapsed between press and release. ``interrupted:
+        true`` = the hold was cut short (breakpoint hit, ``emu_pause``,
+        GUI pause, reset or a stuck emulation); the key was released.
 
         NOTE: ``sent: true`` only means the host-side key injection was
         performed; it is NOT a guarantee the guest read the key.
@@ -4503,7 +4555,8 @@ async def emu_input_send_key(key: str, frames: int = 3) -> str:
     if frames < 0 or frames > 600:
         return json.dumps({"error": "frames must be 0..600"})
     resp = await _send_request(
-        "input_send_key", {"key": key, "frames": frames})
+        "input_send_key", {"key": key, "frames": frames},
+        timeout_s=_hid_timeout_s(frames))
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "input_send_key failed")})
     return json.dumps(_data_or_error(resp))
@@ -4524,12 +4577,25 @@ async def emu_input_send_keys(
             e.g. ``'["SHIFT","CURSOR_RIGHT","RETURN"]'``; same names
             as emu_input_send_key / emu_input_press_key, an unknown name
             fails the whole call before any key is sent).
-        frame_per_key: Frames to hold each key (default 3).
+        frame_per_key: EMULATED frames to hold each key (default 3).
+            Consecutive keys are separated by 1 frame with no key
+            pressed, so that repeated keys (e.g. "LL") register as two
+            presses.
+
+    Timing: frames are emulated frames, independent of the emulation
+    speed; the emulator presses and releases the keys on frame
+    boundaries. A paused emulator runs exactly the length of the
+    sequence and pauses again; a running one keeps running.
 
     Returns:
         JSON ``{"keys_sent": int, "keys_landed": int,
         "total_frames": int, "encoding": str,
-        "landing_verified": bool}`` or ``{"error": "..."}``.
+        "landing_verified": bool, "emu_frames": int,
+        "complete": bool, "interrupted": bool}`` or
+        ``{"error": "..."}``. ``emu_frames`` = emulated frames that
+        actually elapsed; ``interrupted: true`` = the sequence was cut
+        short (breakpoint, pause, reset); ``keys_sent`` then counts only
+        the keys that were fully pressed and released.
 
         NOTE: ``keys_sent`` counts host-side key injections into the
         virtual matrix, NOT keys the guest actually read.
@@ -4549,10 +4615,14 @@ async def emu_input_send_keys(
         return json.dumps({"error": f"Invalid encoding: {encoding}"})
     if frame_per_key < 0 or frame_per_key > 600:
         return json.dumps({"error": "frame_per_key must be 0..600"})
+    # Horní odhad počtu kláves: backend bere nejvýš 256 kláves a žádná
+    # klávesa nemá méně než jeden znak textu (platí i pro key_names).
+    max_keys = min(len(text), 256)
     resp = await _send_request(
         "input_send_keys",
         {"text": text, "encoding": encoding,
-         "frame_per_key": frame_per_key})
+         "frame_per_key": frame_per_key},
+        timeout_s=_hid_timeout_s(max_keys * (frame_per_key + 1)))
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "input_send_keys failed")})
@@ -4622,11 +4692,14 @@ async def emu_input_send_joystick(
         port: Joystick port (0 or 1).
         state: 8-bit bitmask (0 = no input, 0x01 = UP only,
             0x11 = UP + FIRE1).
-        frames: Hold duration in frames (default 3, max 600).
+        frames: Hold duration in EMULATED frames (default 3, max 600),
+            independent of the emulation speed (see emu_input_send_key).
 
     Returns:
         JSON ``{"port": int, "state": int, "frames": int,
-        "sent": true}`` or ``{"error": "..."}``.
+        "sent": true, "emu_frames": int, "complete": bool,
+        "interrupted": bool}`` or ``{"error": "..."}``. An error is
+        also returned by a platform without joystick (MZ-700).
     """
     if port not in (0, 1):
         return json.dumps({"error": "port must be 0 or 1"})
@@ -4636,7 +4709,8 @@ async def emu_input_send_joystick(
         return json.dumps({"error": "frames must be 0..600"})
     resp = await _send_request(
         "input_send_joystick",
-        {"port": port, "state": state, "frames": frames})
+        {"port": port, "state": state, "frames": frames},
+        timeout_s=_hid_timeout_s(frames))
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "input_send_joystick failed")})
@@ -4652,24 +4726,45 @@ async def emu_input_send_keys_with_delays(events: list) -> str:
 
     Each event in the list is a dict:
     - ``key`` (str): key identifier (see emu_input_send_key)
-    - ``hold_frames`` (int): how long to hold (default 3)
+    - ``hold_frames`` (int): how long to hold (default 3, max 600)
     - ``gap_frames`` (int): frames between this release and next
-      press (default 0)
+      press (default 0, max 600); the gap after the last event is
+      waited too
+
+    Timing: all frames are EMULATED frames, exact and independent of the
+    emulation speed (normal, MAX SPEED, slowed down by CDL). The emulator
+    itself presses and releases the keys on frame boundaries. A paused
+    emulator runs exactly the length of the sequence and pauses again; a
+    running one keeps running. The call returns when the sequence ends
+    (its timeout grows with the sequence length).
 
     Args:
         events: List of event dicts (max 256 events).
 
     Returns:
-        JSON ``{"events_processed": int, "total_frames": int}``
-        or ``{"error": "..."}``.
+        JSON ``{"events_processed": int, "total_frames": int,
+        "emu_frames": int, "complete": bool, "interrupted": bool}``
+        or ``{"error": "..."}``. ``total_frames`` = sum of hold+gap of
+        the processed events, ``emu_frames`` = emulated frames that
+        actually elapsed (equal when complete). ``interrupted: true`` =
+        cut short by a breakpoint, pause or reset; the held key was
+        released and ``events_processed`` counts finished events only.
     """
     if not isinstance(events, list) or not events:
         return json.dumps(
             {"error": "events must be a non-empty list"})
     if len(events) > 256:
         return json.dumps({"error": "max 256 events per call"})
+    total = 0
+    for ev in events:
+        if isinstance(ev, dict):
+            for name, default in (("hold_frames", 3), ("gap_frames", 0)):
+                v = ev.get(name, default)
+                if isinstance(v, int):
+                    total += min(max(v, 0), 600)
     resp = await _send_request(
-        "input_send_keys_with_delays", {"events": events})
+        "input_send_keys_with_delays", {"events": events},
+        timeout_s=_hid_timeout_s(total))
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "input_send_keys_with_delays failed")})

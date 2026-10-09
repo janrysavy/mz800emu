@@ -423,7 +423,10 @@ permanent BP first). Arguments:
   in T-states; the client can poll `emu_status` and pause itself
   if the run takes too long.
 
-Requires paused state.
+Requires paused state. On a running emulator the call returns the
+error `Emulator is running: run_until_addr needs a paused emulator ...`
+and the emulator keeps running unchanged (a freshly started emulator
+runs, so call `emu_pause` first).
 
 ### `emu_snapshot_save` (sensitive - overwrites a file)
 
@@ -456,6 +459,11 @@ captured PC. Argument:
 
 - `path` (string) - filesystem path to the .mzs file
 
+Requires paused state (a freshly started emulator runs, so call
+`emu_pause` first). An error names the reason, e.g.
+`snapshot_load failed: Emulator is not paused (pause it first, e.g. emu_pause)`
+or `snapshot_load failed: I/O error (result_code 1)`.
+
 Response: `{"path": <str>, "ok": true, "result_code": 0}`.
 
 ### `emu_snapshot_load_buffer` (sensitive)
@@ -464,6 +472,8 @@ Loads a snapshot from an inline base64 buffer (typically produced by a
 prior `emu_snapshot_save_buffer`). Argument:
 
 - `bytes_b64` (string) - base64-encoded .mzs ZIP
+
+Requires paused state, same as `emu_snapshot_load` (same error texts).
 
 Response: `{"size": <int>, "ok": true, "result_code": 0}`.
 
@@ -1452,17 +1462,22 @@ The MCP interface uses an **active-HIGH** mask (0x01 = UP pressed).
 The native HW state byte is active-LOW (0xFE = UP pressed). Bridge
 conversion happens automatically.
 
-Frame timing default = 3 frames (~60 ms at 50 fps PAL). Maximum
-600 frames (~12 s) as a safety against AI-induced freezes.
+Frame timing default = 3 frames (60 ms of emulated time at 50 Hz PAL).
+Maximum 600 frames per hold or gap as a safety against AI-induced freezes.
 
-**Deterministic frames semantics:** Between press and release the
-backend waits for **N real video frames** (= watches the
-`fbsnapshot_screen_id` counter incremented by the emu thread), not
-a wallclock sleep. If emulation was paused, the helper briefly
-unpauses for the wait and restores. This guarantees that the ISR
-scan (= keyboard matrix read in PIO INT) captures the virtual press
-bit exactly N times - no race condition between async unpause and
-press timing.
+**Emulated frames semantics:** `frames`, `frame_per_key`, `hold_frames`
+and `gap_frames` count **emulated frames**, exact at any emulation speed
+(normal, MAX SPEED, slower than real time e.g. with CDL). The whole
+press / hold / release / gap sequence is handed to the emulator thread,
+which presses and releases the keys itself on frame boundaries. A paused
+emulator runs exactly the length of the sequence and pauses again (like
+`emu_run(frames=N)`); a running one keeps running. `emu_input_send_keys`
+leaves 1 frame with no key pressed between consecutive keys (a repeated
+key registers as two presses). The reply carries
+`emu_frames` (emulated frames that actually elapsed), `complete` and
+`interrupted` (`true` = cut short by a breakpoint, a pause or a reset;
+the held key was released). At normal speed a sequence takes real time
+(50 frames = 1 s).
 
 All HID tools carry a **WARNING** token in their description - user
 simulation can trigger unintended behavior (= RUN+RETURN, BASIC
@@ -1523,16 +1538,18 @@ emu.call('input_send_joystick', port=0, state=0x11, frames=5)
 **Timing-controlled sequence** (= speedrun-style):
 
 ```python
+# RIGHT held 30 frames, 5 frames nothing, SPACE held 2 frames
 events = [
-    {"type": "key_press", "key": "RIGHT"},
-    {"type": "wait_frames", "frames": 30},
-    {"type": "key_release", "key": "RIGHT"},
-    {"type": "key_press", "key": "SPACE"},
-    {"type": "wait_frames", "frames": 2},
-    {"type": "key_release", "key": "SPACE"},
+    {"key": "RIGHT", "hold_frames": 30, "gap_frames": 5},
+    {"key": "SPACE", "hold_frames": 2},
 ]
 emu.call('input_send_keys_with_delays', events=events)
+# -> {"events_processed": 2, "total_frames": 37, "emu_frames": 37,
+#     "complete": true, "interrupted": false}
 ```
+
+Each event is `{"key", "hold_frames" (default 3), "gap_frames" (default 0)}`;
+an event without `key` is skipped.
 
 ### Reverse lookup of keys
 

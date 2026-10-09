@@ -70,11 +70,12 @@ Every successful `emu_videorec_*` reply also contains the full status.
      also in headless mode). To get through long parts faster use
      `emu_set_speed(mode="max")` - MAX SPEED does not change the video (it
      records emulated frames).
-   - For an exact number of frames per move prefer
-     `emu_input_press_key` + `emu_run(frames=N)` + `emu_input_release_key`.
-     `emu_input_send_keys` waits in real time, so with MAX SPEED it may let
-     more frames pass than `frame_per_key` (observed: about 66 frames for
-     one key with `frame_per_key=5`).
+   - `frame_per_key` (and `frames` / `hold_frames` / `gap_frames` of the
+     other key tools) are emulated frames, exact at any speed including
+     MAX SPEED. From a paused emulator the key tools run exactly the
+     length of the sequence and pause again, like `emu_run(frames=N)`.
+     `emu_input_press_key` + `emu_run(frames=N)` + `emu_input_release_key`
+     works as well for held keys.
 4. **Chapters.** `emu_videorec_marker(label="Level 2")` at the start of
    each part worth a chapter. YouTube wants at least 3 chapters, each at
    least 10 s long [unverified].

@@ -135,6 +135,24 @@ extern "C"
      */
     void emulator_max_speed_boost(bool value);
 
+    /**
+     * @brief Pozastaví nebo rozběhne emulaci.
+     *
+     * Při shodě s aktuálním stavem nic nedělá. Jinak nastaví
+     * g_emulator.paused a provede vedlejší efekty:
+     * - pauza: reset měření časování snímků, událost
+     *   MZEVENT_BREAK_EMULATION_PAUSED, zrušení dočasného breakpointu
+     *   (bptmap_reset_temporary_event - Run to cursor, Step over, MCP
+     *   run_until_addr / step_out platí jen do příští pauzy, nezávisle na
+     *   otevřeném okně debuggeru);
+     * - rozběh: zruší g_debugger.run_to_temporary_breakpoint a s otevřeným
+     *   debuggerem přepne fokus na hlavní okno;
+     * - oba směry: segment MAX SPEED benchmarku a pauza/obnovení zvuku.
+     *
+     * Důvod pauzy (g_emulator.pause_reason) nenastavuje - to dělá volající.
+     *
+     * @param value true = pauza, false = běh
+     */
     void emulator_pause(bool value);
     void emulator_switch_to_normal_speed(void);
     void emulator_switch_to_custom_speed(void);

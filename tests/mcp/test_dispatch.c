@@ -37,6 +37,7 @@
 #include "emulator/mcp/jsonl_io.h"
 #include "emulator/mcp/cooperation.h"
 #include "emulator/debugger/dbgapi_cmdrq.h"
+#include "emulator/snapshot/snapshot.h"
 /* Pozn.: NEvkládáme dbgapi_ui.h zde - ten taháno main.h ->
  * mzarch_config.h a v testovacím režimu by způsobil redefinition
  * warning na MZ800EMU_CFG_MCP_SERVER_ENABLED. Stub poskytuje signaturu
@@ -2091,6 +2092,79 @@ void test_snapshot_load_buffer_invalid_b64(void) {
     TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
     TEST_ASSERT_EQUAL_INT(0, g_stub_state.call_count);
 
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/**
+ * @brief run_until_addr: když dbgapi RUN_TO hlásí, že emulace běžela a jen
+ *        se pauzla (DBGAPI_RUN_TO_PAUSED_ONLY), odpověď je chyba, ne
+ *        `running: true` (mcp-inbox-fixes; dřív klient čekající na pauzu
+ *        považoval zastavení mimo cíl za dosažení cíle).
+ */
+void test_run_until_addr_running_is_error(void) {
+    dispatch_stub_reset();
+    g_stub_state.run_to_result = DBGAPI_RUN_TO_PAUSED_ONLY;
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"req_id\":614,\"cmd\":\"run_until_addr\","
+        "\"data\":{\"addr\":388}}");
+    char *resp = NULL;
+
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, rc);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_RUN_TO, g_stub_state.last_cmd);
+    TEST_ASSERT_NOT_NULL(resp);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "Emulator was running"));
+    TEST_ASSERT_NULL(strstr(resp, "\"running\":true"));
+
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/**
+ * @brief snapshot_load / snapshot_load_buffer: chyba z běžícího emulátoru
+ *        uvádí důvod (SNAPSHOT_ERR_NOT_PAUSED) a radu pauznout, ne jen
+ *        obecné "failed" (mcp-inbox-fixes).
+ */
+void test_snapshot_load_not_paused_reason(void) {
+    dispatch_stub_reset();
+    g_stub_state.snapshot_load_fail_result = SNAPSHOT_ERR_NOT_PAUSED;
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"req_id\":705,\"cmd\":\"snapshot_load\","
+        "\"data\":{\"path\":\"x.mzs\"}}");
+    char *resp = NULL;
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, rc);
+    TEST_ASSERT_NOT_NULL(resp);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "snapshot_load failed: Emulator is not paused"));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "emu_pause"));
+    free(resp);
+    jsonl_msg_free(req);
+
+    /* "AAAA" = base64 tří nulových bajtů (neprázdný payload). */
+    req = _make_request(
+        "{\"type\":\"request\",\"req_id\":706,\"cmd\":\"snapshot_load_buffer\","
+        "\"data\":{\"bytes_b64\":\"AAAA\"}}");
+    resp = NULL;
+    rc = mcp_dispatch_request(req, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, rc);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "snapshot_load_buffer failed: Emulator is not paused"));
+    free(resp);
+    jsonl_msg_free(req);
+
+    /* Jiný kód: důvod + result_code. */
+    dispatch_stub_reset();
+    g_stub_state.snapshot_load_fail_result = SNAPSHOT_ERR_IO;
+    req = _make_request(
+        "{\"type\":\"request\",\"req_id\":707,\"cmd\":\"snapshot_load\","
+        "\"data\":{\"path\":\"x.mzs\"}}");
+    resp = NULL;
+    rc = mcp_dispatch_request(req, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, rc);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "result_code 1"));
     free(resp);
     jsonl_msg_free(req);
 }
@@ -4472,9 +4546,9 @@ void test_periph_attach_invalid_kind(void) {
  * @brief Ověří kompletní press-hold-release flow pro input_send_key.
  *
  * Klávesa "A" by se měla rozpoznat (col 4 / bit 7 / shift=false v naší
- * test ASCII tabulce). Stub zachytí dvě submit volání - jedno press,
- * jedno release. Frames se v test buildu neusypí (_hid_sleep_frames
- * je no-op).
+ * test ASCII tabulce). Handler pošle jednu sekvenci vstupu
+ * (DBGAPI_CMD_HID_SCRIPT_START), kterou stub vykoná synchronně: jeden
+ * press, jeden release. Odpověď nese emu_frames = frames a complete.
  */
 void test_input_send_key_lifecycle(void) {
     dispatch_stub_reset();
@@ -4489,6 +4563,16 @@ void test_input_send_key_lifecycle(void) {
     TEST_ASSERT_EQUAL_INT(1, g_stub_state.hid_release_calls);
     TEST_ASSERT_EQUAL_INT(4, g_stub_state.hid_last_col);
     TEST_ASSERT_EQUAL_INT(7, g_stub_state.hid_last_bit);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_HID_SCRIPT_START, g_stub_state.last_cmd);
+    JsonParser *p = NULL;
+    JsonObject *o = _parse_response_object(resp, &p);
+    JsonObject *d = json_object_get_object_member(o, "data");
+    TEST_ASSERT_NOT_NULL(d);
+    TEST_ASSERT_EQUAL_INT(3, (int)json_object_get_int_member(d, "frames"));
+    TEST_ASSERT_EQUAL_INT(3, (int)json_object_get_int_member(d, "emu_frames"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(d, "complete"));
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(d, "interrupted"));
+    g_object_unref(p);
     free(resp);
     jsonl_msg_free(req);
 }
@@ -4580,6 +4664,14 @@ void test_input_send_keys_ascii_mapping(void) {
     /* R + U + N + CR = 4 znaky */
     TEST_ASSERT_EQUAL_INT(4, g_stub_state.hid_press_calls);
     TEST_ASSERT_EQUAL_INT(4, g_stub_state.hid_release_calls);
+    /* 4 x 1 snímek držení + 3 mezery po 1 snímku mezi klávesami. */
+    JsonParser *p = NULL;
+    JsonObject *o = _parse_response_object(resp, &p);
+    JsonObject *d = json_object_get_object_member(o, "data");
+    TEST_ASSERT_NOT_NULL(d);
+    TEST_ASSERT_EQUAL_INT(7, (int)json_object_get_int_member(d, "total_frames"));
+    TEST_ASSERT_EQUAL_INT(7, (int)json_object_get_int_member(d, "emu_frames"));
+    g_object_unref(p);
     free(resp);
     jsonl_msg_free(req);
 }
@@ -4880,6 +4972,40 @@ void test_input_send_keys_with_delays_event_list(void) {
     TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
     TEST_ASSERT_EQUAL_INT(2, g_stub_state.hid_press_calls);
     TEST_ASSERT_EQUAL_INT(2, g_stub_state.hid_release_calls);
+    /* Jedna sekvence pro celé pole, ne press/release po jednom. */
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_HID_SCRIPT_START, g_stub_state.last_cmd);
+    JsonParser *p = NULL;
+    JsonObject *o = _parse_response_object(resp, &p);
+    JsonObject *d = json_object_get_object_member(o, "data");
+    TEST_ASSERT_NOT_NULL(d);
+    TEST_ASSERT_EQUAL_INT(2, (int)json_object_get_int_member(d, "events_processed"));
+    /* (2 + 1) + (2 + 0) */
+    TEST_ASSERT_EQUAL_INT(5, (int)json_object_get_int_member(d, "total_frames"));
+    TEST_ASSERT_EQUAL_INT(5, (int)json_object_get_int_member(d, "emu_frames"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(d, "complete"));
+    g_object_unref(p);
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
+/**
+ * @brief send_keys_with_delays: neznámá klávesa kdekoli v poli = 422
+ *        s nápovědou a nic se neodešle (ani klávesy před ní).
+ */
+void test_input_send_keys_with_delays_unknown_key_sends_nothing(void) {
+    dispatch_stub_reset();
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"id\":2032,"
+        "\"cmd\":\"input_send_keys_with_delays\","
+        "\"data\":{\"events\":["
+            "{\"key\":\"A\",\"hold_frames\":2},"
+            "{\"key\":\"CURSOR_RIGT\",\"hold_frames\":2}]}}");
+    char *resp = NULL;
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.hid_press_calls);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "Unknown key"));
     free(resp);
     jsonl_msg_free(req);
 }
@@ -6704,6 +6830,8 @@ int main(void) {
     RUN_TEST(test_snapshot_save_buffer_returns_b64);
     RUN_TEST(test_snapshot_load_buffer_roundtrip);
     RUN_TEST(test_snapshot_load_buffer_invalid_b64);
+    RUN_TEST(test_run_until_addr_running_is_error);
+    RUN_TEST(test_snapshot_load_not_paused_reason);
     RUN_TEST(test_cooperation_hint_set_modes);
 
     /* V1.A.2 - Symbol management Tools */
@@ -6834,6 +6962,7 @@ int main(void) {
     RUN_TEST(test_input_press_key_unknown_suggests);
     RUN_TEST(test_input_send_keys_key_names_alias_and_unknown);
     RUN_TEST(test_input_send_keys_with_delays_event_list);
+    RUN_TEST(test_input_send_keys_with_delays_unknown_key_sends_nothing);
     RUN_TEST(test_input_send_keys_with_delays_empty_rejected);
 
     /* V1.D.1 - Core + CPU extras Resource backings (9 testů) */

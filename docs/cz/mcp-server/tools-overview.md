@@ -418,7 +418,10 @@ permanentní BP). Argumenty:
   timeout v T-states; klient může pollovat `emu_status` a sám
   zapauzovat, pokud doběhnutí trvá dlouho.
 
-Vyžaduje pause stav.
+Vyžaduje pause stav. Na běžícím emulátoru vrátí chybu
+`Emulator is running: run_until_addr needs a paused emulator ...`
+a emulátor běží dál beze změny (čerstvě spuštěný emulátor běží, proto
+nejdřív `emu_pause`).
 
 ### `emu_snapshot_save` (sensitive - přepíše soubor)
 
@@ -450,6 +453,11 @@ zachyceném ve snapshotu. Argument:
 
 - `path` (string) - filesystem cesta k .mzs souboru
 
+Vyžaduje pause stav (čerstvě spuštěný emulátor běží, proto nejdřív
+`emu_pause`). Chyba uvádí důvod, např.
+`snapshot_load failed: Emulator is not paused (pause it first, e.g. emu_pause)`
+nebo `snapshot_load failed: I/O error (result_code 1)`.
+
 Odpověď: `{"path": <str>, "ok": true, "result_code": 0}`.
 
 ### `emu_snapshot_load_buffer` (sensitive)
@@ -458,6 +466,8 @@ Načte snapshot z inline base64 bufferu (typicky vyrobeného předchozím
 `emu_snapshot_save_buffer`). Argument:
 
 - `bytes_b64` (string) - base64-encoded .mzs ZIP
+
+Vyžaduje pause stav, stejně jako `emu_snapshot_load` (stejné texty chyb).
 
 Odpověď: `{"size": <int>, "ok": true, "result_code": 0}`.
 
@@ -1417,16 +1427,22 @@ MCP interface používá **active-HIGH** masku (0x01 = UP stisknuto).
 Native HW state byte je active-LOW (0xFE = UP stisknuto). Bridge
 konverze probíhá automaticky.
 
-Frame timing default = 3 framy (~60 ms při 50 fps PAL). Maximum
-600 framů (~12 s) jako safety proti AI freezi.
+Frame timing default = 3 snímky (60 ms emulovaného času při 50 Hz PAL).
+Maximum 600 snímků na jedno držení nebo mezeru jako safety proti AI freezi.
 
-**Deterministická sémantika frames:** Mezi press a release backend
-čeká na **N skutečných video framů** (= sleduje `fbsnapshot_screen_id`
-counter inkrementovaný emu vláknem), ne wallclock sleep. Pokud byla
-emulace pausnutá, helper ji krátce unpausne na dobu wait a restoruje.
-Tím je garantováno, že ISR scan (= klávesová matrix čtení v PIO INT)
-přesně N krát zachytí virtual press bit - žádný race condition mezi
-async unpause a press timing.
+**Sémantika snímků emulace:** `frames`, `frame_per_key`, `hold_frames`
+a `gap_frames` jsou **snímky emulace**, přesné při jakékoli rychlosti
+emulace (normal, MAX SPEED, pomaleji než reálný čas např. se zapnutým
+CDL). Celou sekvenci stisk / držení / uvolnění / mezera dostane vlákno
+emulace a klávesy samo mačká a pouští na hranicích snímků. Emulátor
+v pauze odehraje přesně délku sekvence a znovu se pauzne (jako
+`emu_run(frames=N)`); běžící emulátor běží dál. `emu_input_send_keys`
+nechává mezi klávesami 1 snímek bez stisku (opakovaná klávesa se tak
+zaregistruje dvakrát). Odpověď nese
+`emu_frames` (skutečně uplynulé snímky emulace), `complete`
+a `interrupted` (`true` = sekvenci ukončil breakpoint, pauza nebo
+reset; držená klávesa byla uvolněna). Při normální rychlosti trvá
+sekvence reálný čas (50 snímků = 1 s).
 
 Všechny HID tools nesou **WARNING** token v description - user
 simulation může vyvolat nezamýšlené chování (= RUN+RETURN, BASIC
@@ -1486,16 +1502,18 @@ emu.call('input_send_joystick', port=0, state=0x11, frames=5)
 **Timing-controlled sekvence** (= speedrun-style):
 
 ```python
+# RIGHT drženo 30 snímků, 5 snímků nic, SPACE drženo 2 snímky
 events = [
-    {"type": "key_press", "key": "RIGHT"},
-    {"type": "wait_frames", "frames": 30},
-    {"type": "key_release", "key": "RIGHT"},
-    {"type": "key_press", "key": "SPACE"},
-    {"type": "wait_frames", "frames": 2},
-    {"type": "key_release", "key": "SPACE"},
+    {"key": "RIGHT", "hold_frames": 30, "gap_frames": 5},
+    {"key": "SPACE", "hold_frames": 2},
 ]
 emu.call('input_send_keys_with_delays', events=events)
+# -> {"events_processed": 2, "total_frames": 37, "emu_frames": 37,
+#     "complete": true, "interrupted": false}
 ```
+
+Každý event je `{"key", "hold_frames" (default 3), "gap_frames" (default 0)}`;
+event bez `key` se přeskočí.
 
 ### Reverse lookup tabulka kláves
 

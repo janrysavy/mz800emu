@@ -1,4 +1,14 @@
 
+	- BUGFIX: MCP - emu_input_send_key, emu_input_send_keys, emu_input_send_keys_with_delays a emu_input_send_joystick nedržely vstup zadaný počet snímků emulace: při MAX SPEED proběhly stovky snímků místo zadaného počtu, při normální rychlosti na nehybné obrazovce zhruba trojnásobek. Délky držení a mezer jsou nyní přesné ve snímcích emulace při jakékoli rychlosti; emulátor v pauze odehraje přesně délku sekvence a znovu se pauzne, běžící emulátor běží dál. Odpověď nově obsahuje emu_frames, complete a interrupted.
+
+	- BUGFIX: MCP - emu_run_until_addr na běžícím emulátoru odpověděl running: true, ale emulaci jen pauzl mimo cílovou adresu. Nyní vrátí chybu "Emulator is running" a emulace běží dál beze změny.
+
+	- BUGFIX: MCP - po emu_run_until_addr (a emu_step_out) zůstal bez otevřeného okna debuggeru dočasný breakpoint na cílové adrese aktivní, takže další emu_run se na ní znovu zastavil. Dočasný breakpoint nyní platí jen do nejbližší pauzy, stejně jako s otevřeným debuggerem.
+
+	- BUGFIX: MCP - emu_snapshot_load a emu_snapshot_load_buffer při chybě vracely jen "snapshot_load failed" bez důvodu (typicky emulátor nebyl v pauze). Chyba nyní uvádí důvod.
+
+	- OPRAVA DOKUMENTACE: MCP - příklad emu_input_send_keys_with_delays používal formát událostí, který emulátor nezná; události mají tvar key, hold_frames, gap_frames.
+
 	- Kazeta - podpora hlaviček CMTSPEED zařízení UniCMT v páskách MZT. Hlavička vložená mezi díly pásky (např. 2xspeed.mzf, 3xspeed.mzf) nastaví délky pulzů všech dalších dílů až do další hlavičky; sama se nepřehrává a v seznamu bloků není. Pulzy se přehrají přesně podle hlavičky, ne zaokrouhlené na nejbližší poměr rychlosti.
 
 	- Kazeta - Virtual CMT umí vlastní délky pulzů jako výchozí rychlost i jako rychlost jednotlivého bloku (položka Custom pulses... ve výběru rychlosti: čtyři délky v µs, předvolby UniCMT 1x, 2x a 3x). Výchozí vlastní pulzy se ukládají do konfigurace. MCP: parametr pulses_us u emu_cmt_set_speed a emu_cmt_tape_set_block_speed, výpis pásky a stav kazety hlásí délky pulzů.

@@ -57,6 +57,7 @@
 #ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
 #include <json-glib/json-glib.h>
 #include "mcp/event_bus.h"
+#include "mcp/hid_script.h"
 #endif
 #endif
 
@@ -297,6 +298,18 @@ static void mzarch_main_dbgapi_drain(void)
 static void mzarch_main_frame_done_debugger_hooks(void)
 {
     s_mzarch_frame_done_hooks_due = false;
+
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+    /* Sekvence vstupu MCP (hid_script.c): stisky a uvolnění na hranici
+     * snímku emulace, nezávisle na vykreslení a rychlosti emulace. Před
+     * drainem, aby sekvence spuštěná v tomto drainu začala počítat až od
+     * dalšího snímku a zrušení z drainu vidělo stav po kroku. Bez běžící
+     * sekvence jedno čtení ukazatele. */
+    if (g_hid_script_active)
+    {
+        hid_script_on_frame();
+    };
+#endif
 
     mzarch_main_dbgapi_drain();
 
@@ -1141,6 +1154,11 @@ static void mzarch_main_reset(void)
      * Bezpečné je run-bounded operaci zrušit - klient dostane zastavený stav
      * přes fallback v dispatch vrstvě. */
     g_debugger.run_frames_active = 0;
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+    /* Sekvence vstupu MCP má cíle vázané na předreset screens - zrušit
+     * (uvolní drženou klávesu, dispatch dostane cancelled). */
+    hid_script_on_reset();
+#endif
     /* D.3 - HW event BP hook (reset). */
     if ( g_bp_event_active[ BP_EVENT_CPU_RESET ] ) {
         bp_event_fire ( BP_EVENT_CPU_RESET, 0 );

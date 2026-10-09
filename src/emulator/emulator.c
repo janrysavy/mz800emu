@@ -355,14 +355,19 @@ void emulator_pause(bool value)
     iface_audio_pause_emulation(g_emulator.paused);
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* Zastavili jsme: dočasný breakpoint (Run to cursor, Step over,
+     * MCP run_until_addr / step_out) platí jen do příští pauzy, ať ji
+     * způsobil on sám, jiný breakpoint nebo uživatel. Dřív se mazal jen
+     * s otevřeným oknem debuggeru, takže v headless MCP nebo se zavřeným
+     * debuggerem zůstal v bpmap a každý další průchod adresou emulaci
+     * znovu zastavil (mcp-inbox-fixes). */
+    if (g_emulator.paused)
+    {
+        bptmap_reset_temporary_event();
+    };
     if (TEST_DEBUGGER_ACTIVE)
     {
-        if (g_emulator.paused)
-        {
-            // zastavili jsme
-            bptmap_reset_temporary_event();
-        }
-        else
+        if (!g_emulator.paused)
         {
             if (g_iface_video_callbacks->set_window_focus)
             {

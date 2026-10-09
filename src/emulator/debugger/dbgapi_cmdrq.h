@@ -57,7 +57,7 @@ typedef enum en_DBGAPI_CMD
     DBGAPI_CMD_IS_RUNNING,          /* Dotaz na stav emulace — result_ptr: bool* */
     DBGAPI_CMD_STEP_INTO,           /* Jeden krok (Step Into) */
     DBGAPI_CMD_STEP_OVER,           /* Step Over (přes CALL, blokové instrukce) */
-    DBGAPI_CMD_RUN_TO,              /* Běh do adresy — data_ptr: uint16_t* (cílová adresa) */
+    DBGAPI_CMD_RUN_TO,              /* Běh do adresy — data_ptr: uint16_t* (cílová adresa), result_ptr: int* DBGAPI_RUN_TO_* nebo NULL */
     DBGAPI_CMD_RESET,               /* Reset CPU */
 
     /* --- CPU registry --- */
@@ -666,6 +666,19 @@ typedef enum en_DBGAPI_CMD
      * o start programu v definovaném stavu, ne o load do běžícího stroje.
      * Přidáno na KONEC enumu kvůli stabilitě číselných hodnot. */
     DBGAPI_CMD_MEDIA_RUN_MZF,        /* Reset + bootstrap --run-mzf - data_ptr: st_DBGAPI_MEDIA_PARAM* (filepath povinný) */
+
+    /* === mcp-inbox-fixes: sekvence vstupu odměřená snímky emulace ===
+     *
+     * Klávesové a joystickové nástroje MCP (input_send_key, input_send_keys,
+     * input_send_keys_with_delays, input_send_joystick) dřív mezi stiskem
+     * a uvolněním čekaly v MCP vlákně na čítač VYKRESLENÝCH snímků. Ten při
+     * MAX SPEED roste nejvýš jednou za 20 ms reálného času a na statické
+     * obrazovce vůbec, takže "frames" neodpovídaly snímkům emulace. Nově
+     * dostane celou sekvenci emu vlákno (hid_script.c) a stisky/uvolnění
+     * provádí samo na hranicích snímků. Přidáno na KONEC enumu kvůli
+     * stabilitě číselných hodnot. */
+    DBGAPI_CMD_HID_SCRIPT_START,     /* Spustit sekvenci vstupu - data_ptr: st_DBGAPI_HID_SCRIPT* (vlastník = volající, viz kontrakt struktury) */
+    DBGAPI_CMD_HID_SCRIPT_CANCEL,    /* Zrušit běžící sekvenci (uvolní drženou klávesu/joystick) - data_ptr: st_DBGAPI_HID_SCRIPT* (zruší jen tuto sekvenci) */
 
 } en_DBGAPI_CMD;
 
@@ -3097,6 +3110,87 @@ typedef struct st_DBGAPI_HID_JOY_PARAM
     int     port;     /* IN: 0..1. */
     uint8_t mcp_mask; /* IN: aktivní-HIGH 8-bit maska (jen bity 0..5). */
 } st_DBGAPI_HID_JOY_PARAM;
+
+
+/**
+ * @brief Výsledek DBGAPI_CMD_RUN_TO (volitelný int* result_ptr): běh k cílové
+ *        adrese spuštěn (emulace byla v pauze).
+ */
+#define DBGAPI_RUN_TO_STARTED 0
+
+/**
+ * @brief Výsledek DBGAPI_CMD_RUN_TO: emulace běžela, příkaz ji jen pauzl
+ *        (UX "Run to cursor" v GUI: první klik zastaví) a běh k cíli
+ *        NESPUSTIL. rq->success je i tak true.
+ */
+#define DBGAPI_RUN_TO_PAUSED_ONLY 1
+
+
+/**
+ * @brief Druh události sekvence vstupu (st_DBGAPI_HID_SCRIPT_EVENT).
+ */
+typedef enum en_DBGAPI_HID_EVENT_TYPE
+{
+    DBGAPI_HID_EVENT_KEY = 0, /**< Klávesa: stisk `key`, držení, uvolnění `key`. */
+    DBGAPI_HID_EVENT_JOY,     /**< Joystick: nastavení `joy` (maska), držení, uvolnění celého portu. */
+} en_DBGAPI_HID_EVENT_TYPE;
+
+
+/**
+ * @brief Jedna událost sekvence vstupu: stisk, držení, uvolnění, mezera.
+ *
+ * Časování je v celých snímcích emulace (g_gdg.total_elapsed.screens),
+ * nezávisle na rychlosti emulace a na tom, zda se snímek vykreslil.
+ * Stisk i uvolnění proběhnou na hranici snímku (per-frame bod emu vlákna).
+ *
+ * @invariant hold_frames >= 0, gap_frames >= 0. Hodnota 0 = uvolnění
+ *            (resp. další stisk) ve stejném bodě jako předchozí krok.
+ */
+typedef struct st_DBGAPI_HID_SCRIPT_EVENT
+{
+    en_DBGAPI_HID_EVENT_TYPE type; /**< IN: druh události. */
+    st_DBGAPI_HID_KEY_PARAM  key;  /**< IN: klávesa (jen DBGAPI_HID_EVENT_KEY), col 0..9, bit 0..7. */
+    st_DBGAPI_HID_JOY_PARAM  joy;  /**< IN: port a maska při držení (jen DBGAPI_HID_EVENT_JOY). */
+    int  hold_frames;              /**< IN: počet snímků mezi stiskem a uvolněním. */
+    int  gap_frames;               /**< IN: počet snímků mezi uvolněním a další událostí (u poslední události se také odčeká). */
+    bool probe;                    /**< IN: true = sledovat dosednutí klávesy (sonda PIO 8255, jen KEY). */
+    bool landed;                   /**< OUT: true = guest během držení naskenoval sloupec klávesy (platné jen s probe). */
+} st_DBGAPI_HID_SCRIPT_EVENT;
+
+
+/**
+ * @brief Sekvence vstupu pro DBGAPI_CMD_HID_SCRIPT_START / _CANCEL.
+ *
+ * Volající (MCP dispatch) strukturu i pole `events` alokuje a vyplní IN
+ * pole. Emu vlákno při START provede první stisk a pak sekvenci krokuje
+ * na hranicích snímků (hid_script_on_frame); po dokončení nebo zrušení
+ * zapíše OUT pole a nakonec atomicky nastaví `done` = 1.
+ *
+ * Vlastnictví a životnost: struktura musí žít, dokud emu vlákno na sekvenci
+ * drží ukazatel, tj. od úspěšného START do `done` == 1 (čteno přes
+ * g_atomic_int_get), nebo do návratu úspěšného DBGAPI_CMD_HID_SCRIPT_CANCEL
+ * s touto strukturou. Pokud se ani jedno nepodaří (emu vlákno končí),
+ * volající strukturu NESMÍ uvolnit (raději únik paměti než zápis do
+ * uvolněné paměti).
+ *
+ * Synchronizace: OUT pole zapisuje jen emu vlákno, a to PŘED nastavením
+ * `done` (g_atomic_int_set = plná bariéra); volající je čte až po
+ * g_atomic_int_get(&done) == 1.
+ *
+ * @invariant 1 <= count. Najednou může běžet nejvýš jedna sekvence
+ *            (START při běžící sekvenci vrátí success=false).
+ */
+typedef struct st_DBGAPI_HID_SCRIPT
+{
+    st_DBGAPI_HID_SCRIPT_EVENT *events; /**< IN: pole událostí (vlastník = volající). */
+    int      count;               /**< IN: počet událostí (>= 1). */
+    int      done;                /**< OUT (atomicky): 1 = sekvence skončila (dokončena nebo zrušena), emu vlákno už strukturu nepoužívá. */
+    int      events_done;         /**< OUT: počet provedených událostí: vstup stisknut, držen a uvolněn (při řádném doběhu i s mezerou; při zrušení v mezeře se událost počítá, i když mezera nedoběhla). */
+    bool     cancelled;           /**< OUT: true = sekvence zrušena (DBGAPI_CMD_HID_SCRIPT_CANCEL, reset emulátoru). */
+    bool     pause_at_end;        /**< OUT: true = při START byla emulace v pauze; START ji rozběhl a po dokončení se emu sám pauzne na hranici snímku. */
+    uint32_t start_screens;       /**< OUT: g_gdg.total_elapsed.screens v okamžiku prvního stisku. */
+    uint32_t end_screens;         /**< OUT: g_gdg.total_elapsed.screens v okamžiku dokončení/zrušení. */
+} st_DBGAPI_HID_SCRIPT;
 
 
 /* ============================================================================

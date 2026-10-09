@@ -320,6 +320,26 @@ if(Python3_FOUND)
     message(STATUS "  tests/mcp: registered mcp_media_run_mzf "
                    "(Python ${Python3_VERSION})")
 
+    # HID nástroje počítají snímky emulace (input_send_key ze stavu pauzy
+    # posune čítač snímků přesně o frames, při normal i MAX SPEED; za běhu
+    # emu_frames = požadavek), run_until_addr a snapshot_load za běhu
+    # vrací chybu s důvodem a emulaci nepauznou. Pipe, bez TCP. Bez
+    # binárek 77 (SKIP).
+    add_test(
+        NAME    mcp_hid_frames
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_hid_frames.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_hid_frames PROPERTIES
+        LABELS  "e2e;mcp;pipe"
+        TIMEOUT 200
+        RUN_SERIAL TRUE
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_hid_frames "
+                   "(Python ${Python3_VERSION})")
+
     # -----------------------------------------------------------
     # Test 7d: CMT + snapshot pořízený během přehrávání (pipe)
     # -----------------------------------------------------------

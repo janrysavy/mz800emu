@@ -127,6 +127,8 @@
 #include "mcp/event_bus.h"
 /* V1.C.1 - HID Tools: VKBD matrix press/release + joystick state. */
 #include "mcp/hid_keymap.h"
+/* mcp-inbox-fixes: sekvence vstupu odměřená snímky emulace. */
+#include "mcp/hid_script.h"
 /* V1.D.1 - Core + CPU extras Resources: čte memext + memory + z80 state. */
 #include "hw-generic/memory/memext.h"
 /* V1.D.4 - Input + Frame Resources: joystick, framebuffer, VRAM read. */
@@ -874,6 +876,8 @@ const char *dbgapi_cmd_to_str(en_DBGAPI_CMD cmd)
         case DBGAPI_CMD_INPUT_RELEASE_ALL:         return "input_release_all";
         case DBGAPI_CMD_INPUT_JOY_SET:             return "input_joy_set";
         case DBGAPI_CMD_INPUT_JOY_CLEAR:           return "input_joy_clear";
+        case DBGAPI_CMD_HID_SCRIPT_START:          return "hid_script_start";
+        case DBGAPI_CMD_HID_SCRIPT_CANCEL:         return "hid_script_cancel";
         /* V1.D.1 - Core + CPU extras Resources */
         case DBGAPI_CMD_GET_CPU_IM2_VECTOR:        return "get_cpu_im2_vector";
         case DBGAPI_CMD_GET_CPU_INTERRUPT_BUS:     return "get_cpu_interrupt_bus";
@@ -1597,7 +1601,12 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
              * cílovou adresu a spustí emulaci přes
              * mzarch_run_to_temporary_breakpoint(). Cílová adresa v
              * data_ptr (= uint16_t*). Pokud emu běží, pause + return
-             * (= UX z dbg_iconbar.cpp::dbg_do_run_to_cursor). */
+             * (= UX z dbg_iconbar.cpp::dbg_do_run_to_cursor).
+             *
+             * result_ptr (volitelný int*, mcp-inbox-fixes): co se stalo -
+             * DBGAPI_RUN_TO_STARTED, nebo DBGAPI_RUN_TO_PAUSED_ONLY (emu
+             * běžel, jen se pauzl). MCP podle něj pozná, že cíl nespustil,
+             * i když emu mezi jeho kontrolou pauzy a drainem někdo rozběhl. */
             if ( !rq->data_ptr )
             {
                 rq->success = false;
@@ -1606,8 +1615,16 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             if ( !EMULATOR_TEST_PAUSED )
             {
                 emulator_pause ( true );
+                if ( rq->result_ptr )
+                {
+                    *((int *)rq->result_ptr) = DBGAPI_RUN_TO_PAUSED_ONLY;
+                };
                 rq->success = true;
                 break;
+            };
+            if ( rq->result_ptr )
+            {
+                *((int *)rq->result_ptr) = DBGAPI_RUN_TO_STARTED;
             };
             {
                 uint16_t target = *((uint16_t *)rq->data_ptr);
@@ -5384,6 +5401,28 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 break;
             };
             rq->success = hid_keymap_joystick_clear ( p->port );
+            break;
+        }
+
+        case DBGAPI_CMD_HID_SCRIPT_START:
+        {
+            /* Sekvence vstupu odměřená snímky emulace (mcp-inbox-fixes).
+             * hid_script_start() provede první stisk a sekvenci si
+             * zapamatuje; další kroky dělá per-frame bod hlavní smyčky
+             * (hid_script_on_frame). Byla-li emulace v pauze, rozběhne ji
+             * a po poslední události se emu sám pauzne na hranici snímku.
+             * success=false = neplatná sekvence nebo už běží jiná. */
+            rq->success = hid_script_start (
+                (st_DBGAPI_HID_SCRIPT *) rq->data_ptr );
+            break;
+        }
+
+        case DBGAPI_CMD_HID_SCRIPT_CANCEL:
+        {
+            /* Zrušení sekvence (uvolní drženou klávesu / joystick). Funguje
+             * i v pauze - paused smyčka frontu dbgapi také vybírá. */
+            rq->success = hid_script_cancel (
+                (st_DBGAPI_HID_SCRIPT *) rq->data_ptr );
             break;
         }
 

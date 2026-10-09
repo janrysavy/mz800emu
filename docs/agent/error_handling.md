@@ -69,6 +69,18 @@ compatibility and does **not** mean the ID is unknown.
   breakpoint / pause stops the emulator (up to ~40 s for 1000 frames);
   its `stopped_by` field says why. Keep your own client timeout at
   least 30 s (the bundled Python wrapper uses 30 s per request).
+- The key and joystick tools with a hold (`emu_input_send_key`,
+  `emu_input_send_keys`, `emu_input_send_keys_with_delays`,
+  `emu_input_send_joystick`) block until the whole sequence has been
+  played in emulated frames (at normal speed 50 frames = 1 s, longer
+  when the emulation runs slower). The bundled Python wrapper extends
+  its timeout with the sequence length. `interrupted: true` in the
+  reply means a breakpoint, a pause or a reset cut the sequence short.
+- `emu_run_until_addr`, `emu_snapshot_load` and
+  `emu_snapshot_load_buffer` need a paused emulator. On a running one
+  they return an error saying so (`Emulator is running ...` /
+  `... Emulator is not paused ...`) and change nothing; call
+  `emu_pause` and repeat.
 - Send the next request only after the previous response arrived.
 - Bundled Python wrapper: any tool result may carry `restarted: true`
   and `restart_reason` (a failed call: error text ending with

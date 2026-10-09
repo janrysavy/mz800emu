@@ -42,6 +42,7 @@
  * proto níže shim. Header poskytuje typy en_BPT_TYPE / en_BP_ZONE a
  * je self-contained (jen stdint/stdbool/glib/dbgapi_cmdrq.h/bp_event.h). */
 #include "emulator/debugger/breakpoints.h"
+#include "emulator/snapshot/snapshot.h"
 
 #include "test_dispatch_dbgapi_stub.h"
 
@@ -512,6 +513,11 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
             if (data_ptr) {
                 g_stub_state.run_to_last_addr = *(uint16_t *)data_ptr;
             }
+            /* mcp-inbox-fixes: volitelný int* výsledek (spuštěno / emulace
+             * běžela a jen se pauzla). */
+            if (result_ptr) {
+                *(int *)result_ptr = g_stub_state.run_to_result;
+            }
             break;
 
         case DBGAPI_CMD_SNAPSHOT_SAVE_FILE:
@@ -535,6 +541,11 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                         p->description ? g_strdup(p->description) : NULL;
                 }
                 p->result = 0;
+                if (cmd == DBGAPI_CMD_SNAPSHOT_LOAD_FILE
+                    && g_stub_state.snapshot_load_fail_result != 0) {
+                    p->result = g_stub_state.snapshot_load_fail_result;
+                    return false;
+                }
             }
             break;
 
@@ -569,6 +580,10 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                 g_stub_state.snapshot_load_buf_first =
                     (p->buffer && p->buffer_size > 0) ? p->buffer[0] : 0;
                 p->result = 0;
+                if (g_stub_state.snapshot_load_fail_result != 0) {
+                    p->result = g_stub_state.snapshot_load_fail_result;
+                    return false;
+                }
             }
             break;
 
@@ -1242,6 +1257,49 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                     return false;
                 }
             }
+            break;
+
+        case DBGAPI_CMD_HID_SCRIPT_START:
+            /* mcp-inbox-fixes: sekvence vstupu. Reálné emu vlákno ji
+             * krokuje po snímcích (hid_script.c); stub ji vykoná celou
+             * synchronně přes hid_keymap stuby (počty press/release
+             * a joystick set/clear sedí s dřívějšími přímými příkazy)
+             * a hned nastaví done, takže dispatch nečeká. Čas = součet
+             * hold+gap, sonda dosednutí v testu není (landed false). */
+            {
+                if (!data_ptr) return false;
+                st_DBGAPI_HID_SCRIPT *s = (st_DBGAPI_HID_SCRIPT *)data_ptr;
+                if (!s->events || s->count < 1) return false;
+                uint32_t frames = 0;
+                for (int i = 0; i < s->count; i++) {
+                    st_DBGAPI_HID_SCRIPT_EVENT *ev = &s->events[i];
+                    if (ev->type == DBGAPI_HID_EVENT_KEY) {
+                        hid_keymap_press(ev->key.col, ev->key.bit,
+                                         ev->key.needs_shift);
+                        hid_keymap_release(ev->key.col, ev->key.bit,
+                                           ev->key.needs_shift);
+                    } else {
+                        if (!hid_keymap_joystick_set(ev->joy.port,
+                                                     ev->joy.mcp_mask)) {
+                            return false;
+                        }
+                        (void)hid_keymap_joystick_clear(ev->joy.port);
+                    }
+                    ev->landed = false;
+                    frames += (uint32_t)(ev->hold_frames + ev->gap_frames);
+                }
+                s->events_done = s->count;
+                s->cancelled = false;
+                s->pause_at_end = false;
+                s->start_screens = 0;
+                s->end_screens = frames;
+                s->done = 1;
+            }
+            break;
+
+        case DBGAPI_CMD_HID_SCRIPT_CANCEL:
+            /* Stub sekvence dokončuje synchronně - není co rušit. */
+            if (!data_ptr) return false;
             break;
 
         case DBGAPI_CMD_GET_CPU_IM2_VECTOR:
@@ -2332,4 +2390,28 @@ bool bp_event_trigger_from_string ( const char *s, en_BP_EVENT_TRIGGER *out )
     if ( strcmp ( s, "low" ) == 0 )     { *out = BP_EVT_TRIG_LOW;     return true; }
     if ( strcmp ( s, "high" ) == 0 )    { *out = BP_EVT_TRIG_HIGH;    return true; }
     return false;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* mcp-inbox-fixes: snapshot_result_to_string stub                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @brief Stub snapshot_result_to_string() (reálná je v snapshot_mgr.c,
+ *        který test nelinkuje).
+ *
+ * Text pro SNAPSHOT_ERR_NOT_PAUSED je shodný s reálnou funkcí, aby test
+ * mohl ověřit zprávu odpovědi; ostatní kódy vrací obecný text.
+ *
+ * @param[in] result kód výsledku snapshot operace
+ * @return statický řetězec (nikdy NULL)
+ */
+const char *snapshot_result_to_string(en_SNAPSHOT_RESULT result)
+{
+    switch (result) {
+        case SNAPSHOT_OK:             return "OK";
+        case SNAPSHOT_ERR_NOT_PAUSED: return "Emulator is not paused";
+        default:                      return "stub snapshot error";
+    }
 }
