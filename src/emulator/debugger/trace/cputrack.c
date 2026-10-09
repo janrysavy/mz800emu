@@ -55,6 +55,56 @@ static unsigned s_ini_pc_range_hi = 0xFFFF;
 static st_TLOG_WRITER s_writer;
 static int s_writer_open = 0;
 
+/* Native per-PC costs, before self-loop collapse. Keep the legacy 12-byte
+ * instruction stream intact; export exact 64-bit aggregates alongside it.
+ * These counters run only inside the existing active-trace cold hook. */
+typedef struct { uint64_t count, tstates, wait_tstates; } st_PC_COST;
+static st_PC_COST s_pc_cost[65536];
+static uint32_t s_profile_begin_clock;
+
+static void write_pc_profile ( void )
+{
+    JsonBuilder *b = json_builder_new ( );
+    json_builder_begin_object ( b );
+#define COST_INT(name, value) do { json_builder_set_member_name(b, name); \
+    json_builder_add_int_value(b, (gint64)(value)); } while (0)
+    COST_INT("version", 1);
+    COST_INT("begin_clock", s_profile_begin_clock);
+    COST_INT("end_clock", g_mzarch_main.cpu->total_cycles);
+    COST_INT("counter_tstates", (uint32_t)(g_mzarch_main.cpu->total_cycles - s_profile_begin_clock));
+    COST_INT("pc_range_lo", g_cputrack_config.pc_range_lo);
+    COST_INT("pc_range_hi", g_cputrack_config.pc_range_hi);
+    json_builder_set_member_name(b, "records");
+    json_builder_begin_array(b);
+    for (unsigned pc = 0; pc < 65536; pc++) {
+        const st_PC_COST *cost = &s_pc_cost[pc];
+        if (!cost->count) continue;
+        json_builder_begin_object(b);
+        COST_INT("pc", pc);
+        COST_INT("count", cost->count);
+        COST_INT("tstates", cost->tstates);
+        COST_INT("wait_tstates", cost->wait_tstates);
+        json_builder_end_object(b);
+    }
+    json_builder_end_array(b);
+    json_builder_end_object(b);
+#undef COST_INT
+    JsonNode *root = json_builder_get_root(b);
+    JsonGenerator *gen = json_generator_new();
+    json_generator_set_root(gen, root);
+    gchar *data = json_generator_to_data(gen, NULL);
+    char *dir = sdlapp_paths_resolve_work(g_sdlapp->paths, g_cputrack_config.dir);
+    char *name = g_strdup_printf("%s_pc_profile.json", g_cputrack_config.name);
+    char *path = g_build_filename(dir, name, NULL);
+    GError *error = NULL;
+    if (!g_file_set_contents(path, data, -1, &error)) {
+        fprintf(stderr, "[trace-suite] PC profile export failed: %s\n", error->message);
+        g_error_free(error);
+    }
+    g_free(path); g_free(name); g_free(dir); g_free(data);
+    g_object_unref(gen); json_node_free(root); g_object_unref(b);
+}
+
 /* HALT/self-loop collapse state */
 static uint16_t s_prev_pc = 0xFFFF;     /**< PC před poslední vykonanou instr */
 static int s_prev_pc_valid = 0;         /**< Inicializace flagu */
@@ -167,6 +217,12 @@ void cputrack_hot_path_hook ( uint16_t pc,
     if ( pc < g_cputrack_config.pc_range_lo ||
          pc > g_cputrack_config.pc_range_hi ) {
         return;
+    }
+
+    if (s_writer_open) {
+        s_pc_cost[pc].count++;
+        s_pc_cost[pc].tstates += insn_tstates;
+        s_pc_cost[pc].wait_tstates += wait_extra_tstates;
     }
 
     /* insn_tstates po z80_step zahrnuje i pridane WAIT cycles. Pro cputrack
@@ -390,6 +446,10 @@ static char *build_subsys_header_json ( void )
     json_builder_set_member_name ( b, "event_record_size" );
     json_builder_add_int_value ( b, 12 );
 
+    g_snprintf(fname_buf, sizeof(fname_buf), "%s_pc_profile.json", g_cputrack_config.name);
+    json_builder_set_member_name(b, "pc_profile_file");
+    json_builder_add_string_value(b, fname_buf);
+
     json_builder_end_object ( b );
 
     JsonGenerator *gen = json_generator_new ( );
@@ -439,6 +499,8 @@ int cputrack_start ( void )
     }
     s_writer_open = 1;
     cputrack_reset_collapse_state ( );
+    memset(s_pc_cost, 0, sizeof(s_pc_cost));
+    s_profile_begin_clock = g_mzarch_main.cpu->total_cycles;
 
     /* Memory dumps + meta.json initial. */
     write_initial_memory_dumps ( resolved_dir, g_cputrack_config.name );
@@ -468,6 +530,7 @@ void cputrack_stop ( void )
     uint64_t now_px = tlog_common_get_pxclk_total ( );
     uint64_t now_cpu = tlog_common_get_cpuclk_total ( );
     uint32_t now_sc = tlog_common_get_screens_total ( );
+    write_pc_profile();
     tlog_writer_close ( &s_writer, now_px, now_cpu, now_sc );
 
     /* Refresh meta s subsys_header (final). Pozn.: writer je už closed,
