@@ -1692,12 +1692,11 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 {
                     if ((z80_reg_t)p->reg_id == Z80_REG_IR)
                     {
-                        /* Specialni handling: nastavit jen dolni bajt R,
-                         * I (vysoky bajt) zachovat - shodne s
-                         * debugger_change_z80_register(). */
-                        g_mzarch_main.cpu->r =
-                            (uint8_t)(p->value & 0x7F) |
-                            (g_mzarch_main.cpu->r & 0x80);
+                        /* The API exposes IR as the complete I:R pair.
+                         * Restore both bytes, including programmable R bit7.
+                         * Preserving the UI's refresh-only edit semantics here
+                         * prevents faithful snapshot/CPU-state restoration. */
+                        z80_set_reg ( g_mzarch_main.cpu, Z80_REG_IR, p->value );
                     }
                     else
                     {
@@ -2238,10 +2237,9 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 };
                 if (p->update_mask & DBGAPI_CPU_FLAGS_UM_R)
                 {
-                    /* R registr ma vrchni bit (bit 7) nemenne reservovany
-                     * po RETI/N (zachovava ho i LD A,R). Zapisujeme jen
-                     * dolnich 7 bitu + zachovavame bit 7 z cpu->r,
-                     * shodne s logikou v DBGAPI_CMD_SET_REG pro Z80_REG_IR. */
+                    /* Legacy flags-tool semantics: edit the low seven refresh
+                     * bits, preserving programmed bit7. Use SET_REG IR for a
+                     * complete I:R restoration, including bit7. */
                     cpu->r = (uint8_t)(p->r_reg & 0x7F)
                            | (cpu->r & 0x80);
                 };
