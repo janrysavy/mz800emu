@@ -44,6 +44,137 @@
 
 st_AUDIO g_audio;
 
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+#include "videorec/videorec_audio.h"
+typedef struct { uint64_t ticks; unsigned channel; uint8_t value; } st_CAPTURE_EVENT;
+static struct {
+    bool active, initialized;
+    uint64_t origin, requested_end, safe_horizon, clock_hz, dropped;
+    unsigned rate,max_frames;
+    uint8_t initial[AUDIO_SRC_CHANNELS_COUNT];
+    GArray *events,*writes,*raw_pcm,*filtered_pcm;
+    st_VIDEOREC_AUDIO raw,filtered;
+} g_audio_capture;
+
+static void audio_capture_tap(unsigned channel,uint8_t value,uint64_t ticks)
+{
+    if (!g_audio_capture.active || g_audio_capture.dropped) return;
+    if (g_audio_capture.events->len >= 200000) { g_audio_capture.dropped++;return; }
+    st_CAPTURE_EVENT e={ticks,channel,value};g_array_append_val(g_audio_capture.events,e);
+    if (videorec_audio_event(&g_audio_capture.raw,channel,value,ticks) ||
+        videorec_audio_event(&g_audio_capture.filtered,channel,value,ticks)) g_audio_capture.dropped++;
+}
+void audio_capture_psg_write(uint64_t ticks,unsigned chip_mask,uint8_t value)
+{
+    if (!g_audio_capture.active || g_audio_capture.dropped) return;
+    if (g_audio_capture.writes->len >= 200000) { g_audio_capture.dropped++;return; }
+    st_CAPTURE_EVENT e={ticks,chip_mask,value};g_array_append_val(g_audio_capture.writes,e);
+}
+static void audio_capture_render(void)
+{
+    if (!g_audio_capture.initialized || g_audio_capture.dropped) return;
+    uint64_t horizon=g_audio_capture.safe_horizon;
+    int16_t raw[8192],filtered[8192];
+    for (;;) {
+        unsigned remaining=g_audio_capture.max_frames-g_audio_capture.raw_pcm->len/2;
+        if (!remaining) {
+            uint64_t elapsed=horizon>g_audio_capture.origin?horizon-g_audio_capture.origin:0;
+            if (elapsed*g_audio_capture.rate/g_audio_capture.clock_hz > g_audio_capture.max_frames) g_audio_capture.dropped++;
+            break;
+        }
+        unsigned capacity=remaining<4096?remaining:4096;
+        size_t n=videorec_audio_render(&g_audio_capture.raw,horizon,raw,capacity);
+        size_t nf=videorec_audio_render(&g_audio_capture.filtered,horizon,filtered,capacity);
+        if (n!=nf) { g_audio_capture.dropped++;break; }
+        g_array_append_vals(g_audio_capture.raw_pcm,raw,2*n);
+        g_array_append_vals(g_audio_capture.filtered_pcm,filtered,2*n);
+        if (n<capacity) break;
+    }
+}
+bool audio_capture_request(int action,unsigned rate,unsigned max_frames,bool physical_clock,
+                            unsigned offset,unsigned limit,char **json)
+{
+    *json=NULL;
+    if (action==0) {
+        if (g_audio_capture.active || rate<8000 || rate>192000 || !max_frames || max_frames>1920000) return false;
+        if (g_audio_capture.initialized) {
+            videorec_audio_free(&g_audio_capture.raw);videorec_audio_free(&g_audio_capture.filtered);
+            g_array_unref(g_audio_capture.events);g_array_unref(g_audio_capture.writes);
+            g_array_unref(g_audio_capture.raw_pcm);g_array_unref(g_audio_capture.filtered_pcm);
+        }
+        memset(&g_audio_capture,0,sizeof(g_audio_capture));
+        g_audio_capture.origin=gdg_get_total_ticks();
+        g_audio_capture.safe_horizon=g_audio.log->last_psg_timestamp;
+        g_audio_capture.clock_hz=physical_clock?GDGCLK_REAL_BASE:GDGCLK_BASE;
+        g_audio_capture.rate=rate;g_audio_capture.max_frames=max_frames;
+        g_audio_capture.events=g_array_new(FALSE,FALSE,sizeof(st_CAPTURE_EVENT));
+        g_audio_capture.writes=g_array_new(FALSE,FALSE,sizeof(st_CAPTURE_EVENT));
+        g_audio_capture.raw_pcm=g_array_new(FALSE,FALSE,sizeof(int16_t));
+        g_audio_capture.filtered_pcm=g_array_new(FALSE,FALSE,sizeof(int16_t));
+        float levels[AUDIO_SRC_CHANNELS_COUNT][VIDEOREC_AUDIO_LEVELS]={0};
+        float ctc_gain=videorec_audio_sdl_ctc0_gain(IFACE_AUDIO_CTC5253_SAMPLE_RATE/VIDEO_SCREENS_PER_SEC,
+                                                    IFACE_AUDIO_SAMPLE_RATE/VIDEO_SCREENS_PER_SEC);
+        for (unsigned ch=0;ch<AUDIO_SRC_CHANNELS_COUNT;ch++) {
+            g_audio_capture.initial[ch]=(uint8_t)g_audio.log->src[ch]->last_value;
+            for (unsigned v=1;v<16;v++)
+                levels[ch][v]=ch==0?ctc_gain:powf(10.0f,-(float)(15-v)/10.0f)/4.0f;
+        }
+        /* Explicit unity gains: headless builds do not initialize SDL's
+         * volume table. Preserve its nominal attenuation/mix formula. */
+        videorec_audio_init(&g_audio_capture.raw,g_audio_capture.clock_hz,rate,AUDIO_SRC_CHANNELS_COUNT,
+                            levels,g_audio_capture.initial,g_audio_capture.origin,false);
+        videorec_audio_init(&g_audio_capture.filtered,g_audio_capture.clock_hz,rate,AUDIO_SRC_CHANNELS_COUNT,
+                            levels,g_audio_capture.initial,g_audio_capture.origin,true);
+        videorec_audio_set_stereo(&g_audio_capture.raw,g_psg_module.stereo);
+        videorec_audio_set_stereo(&g_audio_capture.filtered,g_psg_module.stereo);
+        g_audio_capture.active=g_audio_capture.initialized=true;
+    } else if (!g_audio_capture.initialized) return false;
+    if (action==1) {
+        if (!g_audio_capture.active) return false;
+        g_audio_capture.requested_end=gdg_get_total_ticks();
+        g_audio_capture.safe_horizon=g_audio.log->last_psg_timestamp;
+        g_audio_capture.active=false;audio_capture_render();
+    }
+    if (action<0 || action>6 || !limit || limit>4096) return false;
+    GString *s=g_string_new("{");
+    g_string_append_printf(s,"\"active\":%s,\"begin_clock\":%" G_GUINT64_FORMAT ",\"end_clock\":%" G_GUINT64_FORMAT
+        ",\"safe_horizon\":%" G_GUINT64_FORMAT ",\"clock_hz\":%" G_GUINT64_FORMAT
+        ",\"normalized_clock_hz\":%u,\"physical_clock_hz\":%u,\"sample_rate\":%u,\"channels\":2,\"source_channels\":%u"
+        ",\"pcm_frames\":%u,\"edge_records\":%u,\"write_records\":%u,\"dropped_records\":%" G_GUINT64_FORMAT
+        ",\"filter_history\":\"fresh at capture origin\",\"gain_policy\":\"unity source gains, native nominal attenuation and mix\",\"psg_quantum_ticks\":%u,\"initial_values\":[",
+        g_audio_capture.active?"true":"false",g_audio_capture.origin,
+        g_audio_capture.active?gdg_get_total_ticks():g_audio_capture.requested_end,
+        g_audio_capture.active?g_audio.log->last_psg_timestamp:g_audio_capture.safe_horizon,
+        g_audio_capture.clock_hz,(unsigned)GDGCLK_BASE,(unsigned)GDGCLK_REAL_BASE,g_audio_capture.rate,
+        (unsigned)AUDIO_SRC_CHANNELS_COUNT,g_audio_capture.raw_pcm->len/2,g_audio_capture.events->len,
+        g_audio_capture.writes->len,g_audio_capture.dropped,(unsigned)PSG_DIVIDER);
+    for (unsigned ch=0;ch<AUDIO_SRC_CHANNELS_COUNT;ch++)g_string_append_printf(s,"%s%u",ch?",":"",g_audio_capture.initial[ch]);
+    g_string_append(s,"]");
+    if (action>=3) {
+        if (g_audio_capture.active) {g_string_free(s,TRUE);return false;}
+        GArray *array=action==3?g_audio_capture.raw_pcm:action==4?g_audio_capture.filtered_pcm:action==5?g_audio_capture.events:g_audio_capture.writes;
+        unsigned total=action<=4?array->len/2:array->len;
+        unsigned count=offset>=total?0:MIN(limit,total-offset);
+        g_string_append_printf(s,",\"offset\":%u,\"total\":%u,\"next_offset\":%u",offset,total,offset+count);
+        if (action<=4) {
+            const guchar *bytes=count?(const guchar*)array->data+offset*4:(const guchar*)"";
+            gchar *data=g_base64_encode(bytes,count*4);
+            g_string_append_printf(s,",\"format\":\"s16le\",\"data_base64\":\"%s\"",data);g_free(data);
+        } else {
+            g_string_append(s,",\"records\":[");
+            for (unsigned i=0;i<count;i++) {
+                st_CAPTURE_EVENT *e=&g_array_index(array,st_CAPTURE_EVENT,offset+i);
+                g_string_append_printf(s,"%s{\"clock\":%" G_GUINT64_FORMAT ",\"channel\":%u,\"value\":%u}",i?",":"",e->ticks,e->channel,e->value);
+            }
+            g_string_append(s,"]");
+        }
+    }
+    g_string_append(s,"}");*json=g_string_free(s,FALSE);return true;
+}
+#else
+#define audio_capture_tap(channel,value,ticks) ((void)0)
+#endif
+
 #define MAX_UINT32 0xFFFFFFFFu // Maximální hodnota unsigned int (32bit)
 #define DEFAULT_VOLUME (1 * MAX_UINT32)
 
@@ -304,6 +435,7 @@ static inline void audio_changed(st_AUDIO_LOG *log, en_AUDIO_SOURCE audio_source
      * v audiolog_finish_20ms_frame() do nového logu už tapnuté byly. */
     if (log == g_audio.log && videorec_wants_emu_audio())
         videorec_audio_tap((unsigned)src_id, (uint8_t)value, total_event_ticks);
+    if (log == g_audio.log) audio_capture_tap((unsigned)src_id,(uint8_t)value,total_event_ticks);
 }
 
 void audio_ctc0_changed(bool ctc0_state, uint64_t total_event_ticks)

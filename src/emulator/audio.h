@@ -131,6 +131,12 @@ extern "C"
     extern void audio_log_destroy(st_AUDIO_LOG *audio_log);
     extern void audio_reset_log(uint64_t new_timestamp);
     extern void audio_exit(void);
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+    /* Owner-thread observation. Never steps the CPU or PSG. */
+    extern bool audio_capture_request(int action, unsigned rate, unsigned max_frames,
+                                      bool physical_clock, unsigned offset, unsigned limit, char **json);
+    extern void audio_capture_psg_write(uint64_t ticks, unsigned chip_mask, uint8_t value);
+#endif
 
 #ifdef __cplusplus
 }

@@ -302,6 +302,9 @@ void psg_write_byte(unsigned channel, uint8_t value)
 {
     mzarch_main_insideop_iorq_psg_write();
     uint64_t total_ticks = gdg_compute_total_ticks(g_gdg.total_elapsed.ticks);
+#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
+    audio_capture_psg_write(total_ticks,g_psg_module.stereo?channel:PSG_CH_LEFT,value);
+#endif
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
     /* trace-suite hwlog: zaznamenat write do PSG datového portu.

@@ -88,7 +88,7 @@
  * mcp-run-mzf-bootstrap doplnil media_run_mzf (reset + bootstrap jako
  * --run-mzf, přidán na KONEC cmd_map[]) = 168 + 1 = 169.
  */
-#define MCP_EXPECTED_CMD_COUNT 169
+#define MCP_EXPECTED_CMD_COUNT 170
 
 
 /* ====================================================================== */
