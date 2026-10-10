@@ -4,6 +4,7 @@
 #include "libs/imgui/imgui.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
+#include <cstring>
 
 // Lokalizace
 #include "i18n.h"
@@ -205,13 +206,19 @@ static void ShowFullScreenImageEmulatorWindow(GLuint texture)
 
     // obsluha klávesnice pro PIO8255 podle zaznamenanych klavesovych udalosti
     static gboolean pvevious_MainWindowHasFocus = FALSE;
-    if (!g_gui->MainWindowHasFocus && pvevious_MainWindowHasFocus)
+    /* Opt-in presentation replay: SDL keyboard and focus changes cannot
+     * overwrite the matrix owned by JSON-RPC. Normal interactive UI is unchanged. */
+    static const bool rpcOwnsKeyboard = []() {
+        const char *value = SDL_getenv("MZ800_RPC_INPUT_ONLY");
+        return value && strcmp(value, "1") == 0;
+    }();
+    if (!rpcOwnsKeyboard && !g_gui->MainWindowHasFocus && pvevious_MainWindowHasFocus)
     {
         g_gui->haveKeyboardEvents = FALSE;
         pio8255_keyboard_matrix_reset();
     };
     pvevious_MainWindowHasFocus = g_gui->MainWindowHasFocus;
-    if (g_gui->haveKeyboardEvents)
+    if (!rpcOwnsKeyboard && g_gui->haveKeyboardEvents)
     {
         int numkeys = 0;
         const bool *keyboard_matrix = SDL_GetKeyboardState(&numkeys);
@@ -219,6 +226,7 @@ static void ShowFullScreenImageEmulatorWindow(GLuint texture)
         iface_keyboard_full_scan(keyboard_matrix, kmod, numkeys);
         g_gui->haveKeyboardEvents = FALSE;
     };
+    if (rpcOwnsKeyboard) g_gui->haveKeyboardEvents = FALSE;
 
     // Detekce pravého kliknutí -> otevření popup menu
     if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
@@ -241,7 +249,7 @@ static void ShowFullScreenImageEmulatorWindow(GLuint texture)
     // Zjistíme, zda má okno focus (bez popupu)
     // bool hasFocus = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !isPopupOpen;
 
-    if (g_gui->MainWindowHasFocus && !g_gui->showOverlay)
+    if (!rpcOwnsKeyboard && g_gui->MainWindowHasFocus && !g_gui->showOverlay)
     {
         imgui_global_shortcuts();
     }
