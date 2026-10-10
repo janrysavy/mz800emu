@@ -4039,6 +4039,30 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             break;
         }
 
+        case DBGAPI_CMD_PC_COVERAGE:
+        {
+            st_DBGAPI_PC_COVERAGE_PARAM *p = rq->data_ptr;
+            z80_t *cpu = g_mzarch_main.cpu;
+            /* No transport thread may race the CPU or take an unstable map.
+             * status is serialized here while running; all other ops require
+             * an existing pause and never request one implicitly. */
+            if (!p || !cpu || p->action < 0 || p->action > 4 ||
+                (p->action != 3 && !EMULATOR_TEST_PAUSED)) {
+                rq->success = false; break;
+            }
+            if (p->action == 2 || (p->action == 0 && p->reset)) {
+                memset(cpu->coverage_bitmap, 0, sizeof(cpu->coverage_bitmap));
+                cpu->coverage_unique = 0; cpu->coverage_units = 0;
+            }
+            if (p->action == 0) cpu->coverage_enabled = true;
+            if (p->action == 1) cpu->coverage_enabled = false;
+            p->enabled = cpu->coverage_enabled;
+            p->unique = cpu->coverage_unique; p->units = cpu->coverage_units;
+            p->clock_cycles = cpu->total_cycles;
+            if (p->action == 4) memcpy(p->bitmap, cpu->coverage_bitmap, sizeof(p->bitmap));
+            rq->success = true; break;
+        }
+
         case DBGAPI_CMD_CDL_START:
         {
             /* Spustit CDL recording (= Memory Heatmap v ALWAYS módu).
