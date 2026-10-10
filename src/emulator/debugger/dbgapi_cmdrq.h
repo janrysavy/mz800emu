@@ -681,7 +681,16 @@ typedef enum en_DBGAPI_CMD
     DBGAPI_CMD_HID_SCRIPT_CANCEL,    /* Zrušit běžící sekvenci (uvolní drženou klávesu/joystick) - data_ptr: st_DBGAPI_HID_SCRIPT* (zruší jen tuto sekvenci) */
 
     DBGAPI_CMD_AUDIO_CAPTURE, /* Owner-thread passive audio observation. */
+    DBGAPI_CMD_PC_COVERAGE, /* Passive PC bitmap; st_DBGAPI_PC_COVERAGE_PARAM. */
 } en_DBGAPI_CMD;
+
+typedef struct st_DBGAPI_PC_COVERAGE_PARAM {
+    int action; /* 0 start, 1 stop, 2 reset, 3 status, 4 read */
+    bool reset, enabled;
+    uint32_t unique, clock_cycles;
+    uint64_t units;
+    uint8_t bitmap[8192];
+} st_DBGAPI_PC_COVERAGE_PARAM;
 
 typedef struct st_DBGAPI_AUDIO_CAPTURE_PARAM {
     int action;

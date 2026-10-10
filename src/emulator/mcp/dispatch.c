@@ -453,6 +453,8 @@ static en_MCP_DISPATCH_RESULT _handle_watch_eval(const st_JSONL_MESSAGE *req,
                                                   char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_callstack_get(const st_JSONL_MESSAGE *req,
                                                      char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_pc_coverage(const st_JSONL_MESSAGE *req,
+                                                char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_cdl_start(const st_JSONL_MESSAGE *req,
                                                  char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_cdl_stop(const st_JSONL_MESSAGE *req,
@@ -930,6 +932,11 @@ static const st_MCP_CMD_MAP_ENTRY g_cmd_map[] = {
     { "watch_list",             DBGAPI_CMD_WATCH_LIST,           _handle_watch_list           },
     { "watch_eval",             DBGAPI_CMD_WATCH_EVAL,           _handle_watch_eval           },
     { "callstack_get",          DBGAPI_CMD_GET_CALLSTACK,        _handle_callstack_get        },
+    { "coverage.start",         DBGAPI_CMD_PC_COVERAGE,          _handle_pc_coverage          },
+    { "coverage.stop",          DBGAPI_CMD_PC_COVERAGE,          _handle_pc_coverage          },
+    { "coverage.reset",         DBGAPI_CMD_PC_COVERAGE,          _handle_pc_coverage          },
+    { "coverage.status",        DBGAPI_CMD_PC_COVERAGE,          _handle_pc_coverage          },
+    { "coverage.read",          DBGAPI_CMD_PC_COVERAGE,          _handle_pc_coverage          },
     { "cdl_start",              DBGAPI_CMD_CDL_START,            _handle_cdl_start            },
     { "cdl_stop",               DBGAPI_CMD_CDL_STOP,             _handle_cdl_stop             },
     { "cdl_reset",              DBGAPI_CMD_CDL_RESET,            _handle_cdl_reset            },
@@ -6808,6 +6815,63 @@ static en_MCP_DISPATCH_RESULT _handle_cdl_start(const st_JSONL_MESSAGE *req,
  *
  * Response: `{"stopped": true, "mode": "off"}`.
  */
+static en_MCP_DISPATCH_RESULT _handle_pc_coverage(const st_JSONL_MESSAGE *req,
+                                                 char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    const char *cmd = jsonl_msg_get_cmd(req);
+    int action = strcmp(cmd, "coverage.start") == 0 ? 0 :
+                 strcmp(cmd, "coverage.stop") == 0 ? 1 :
+                 strcmp(cmd, "coverage.reset") == 0 ? 2 :
+                 strcmp(cmd, "coverage.status") == 0 ? 3 : 4;
+    JsonNode *node = (JsonNode *)jsonl_msg_get_data_node(req);
+    JsonObject *obj = NULL;
+    if (node && json_node_get_node_type(node) != JSON_NODE_NULL) {
+        if (json_node_get_node_type(node) != JSON_NODE_OBJECT)
+            return _err_response(req_id, "params must be an object", MCP_DISPATCH_INVALID_PARAMS, out_response);
+        obj = json_node_get_object(node);
+    }
+    bool reset = true;
+    if (obj) {
+        GList *members = json_object_get_members(obj);
+        bool valid = true;
+        for (GList *it = members; it; it = it->next) {
+            const char *key = it->data;
+            JsonNode *value = json_object_get_member(obj, key);
+            if (action == 0 && strcmp(key, "reset") == 0 &&
+                JSON_NODE_HOLDS_VALUE(value) && json_node_get_value_type(value) == G_TYPE_BOOLEAN)
+                reset = json_node_get_boolean(value);
+            else if (action == 0 && strcmp(key, "mode") == 0 &&
+                     JSON_NODE_HOLDS_VALUE(value) && json_node_get_value_type(value) == G_TYPE_STRING &&
+                     strcmp(json_node_get_string(value), "pc") == 0) { }
+            else valid = false;
+        }
+        g_list_free(members);
+        if (!valid) return _err_response(req_id, "invalid coverage parameters", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    st_DBGAPI_PC_COVERAGE_PARAM *p = g_new0(st_DBGAPI_PC_COVERAGE_PARAM, 1);
+    p->action = action; p->reset = reset;
+    if (!_submit_dbgapi(DBGAPI_CMD_PC_COVERAGE, p, NULL)) {
+        g_free(p);
+        return _err_response(req_id, "coverage command requires a paused emulator (except status)", MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    JsonObject *data = json_object_new();
+    json_object_set_string_member(data, "mode", "pc");
+    json_object_set_string_member(data, "format", "pc-bitset-lsb0");
+    json_object_set_boolean_member(data, "enabled", p->enabled);
+    json_object_set_int_member(data, "map_bytes", 8192);
+    json_object_set_int_member(data, "unique_pcs", p->unique);
+    json_object_set_int_member(data, "dispatch_units", (gint64)p->units);
+    json_object_set_int_member(data, "clock_cycles", p->clock_cycles);
+    json_object_set_int_member(data, "clock_bits", 32);
+    if (action == 4) {
+        char *encoded = g_base64_encode(p->bitmap, sizeof(p->bitmap));
+        json_object_set_string_member(data, "bitmap_base64", encoded);
+        g_free(encoded);
+    }
+    g_free(p);
+    return _ok_response(req_id, data, out_response);
+}
+
 static en_MCP_DISPATCH_RESULT _handle_cdl_stop(const st_JSONL_MESSAGE *req,
                                                 char **out_response) {
     int64_t req_id = jsonl_msg_get_req_id(req);

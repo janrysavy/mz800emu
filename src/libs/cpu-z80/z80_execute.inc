@@ -497,6 +497,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 
     /* Dispatch makra pro computed goto */
 #define DISPATCH() do { \
+    z80_coverage_record(cpu, rPC); \
     rQ = (rF != savedF) ? rF : 0; \
     savedF = rF; \
     cpu->op_tstate = 0; \
@@ -1801,6 +1802,7 @@ check_interrupts:
 #if !USE_COMPUTED_GOTO
 dispatch_switch:
     {
+        z80_coverage_record(cpu, rPC);
         INC_R();
         uint8_t op = M1_FETCH();
         /* Fallback switch - same labels ale přes switch */
