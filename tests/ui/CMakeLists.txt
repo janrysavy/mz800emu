@@ -22,6 +22,15 @@ mz_add_test(video-textures
     LABELS "standalone;ui;software"
 )
 
+# Final ImGui pixels at small/large/4K sizes, resize-back and debugger overlay.
+# This target uses only the hidden SDL software renderer, never OpenGL.
+mz_add_test(sdl-geometry
+    TYPE STANDALONE
+    SOURCES test_sdl_geometry.cpp
+    LIBS mzlib_imgui
+    LABELS "standalone;ui;software"
+)
+
 # Funkční testy UI logiky - video záznam (menu, dialog nastavení, REC indikátor,
 # notifikace událostí, okno dálkového ovládání a tabulka zkratek). Linkuje UI
 # zdroje přímo; notifikace stubuje test.

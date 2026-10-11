@@ -59,6 +59,7 @@ struct ImGui_ImplSDLRenderer3_Data
 {
     SDL_Renderer*           Renderer;       // Main viewport's renderer
     ImVector<SDL_FColor>    ColorBuffer;
+    ImVector<SDL_Vertex>    SoftwareVertices; // Local SDL software-stride workaround
 
     ImGui_ImplSDLRenderer3_Data()   { memset((void*)this, 0, sizeof(*this)); }
 };
@@ -122,8 +123,31 @@ void ImGui_ImplSDLRenderer3_NewFrame()
 }
 
 // https://github.com/libsdl-org/SDL/issues/9009
-static int SDL_RenderGeometryRaw8BitColor(SDL_Renderer* renderer, ImVector<SDL_FColor>& colors_out, SDL_Texture* texture, const float* xy, int xy_stride, const SDL_Color* color, int color_stride, const float* uv, int uv_stride, int num_vertices, const void* indices, int num_indices, int size_indices)
+static int SDL_RenderGeometryRaw8BitColor(SDL_Renderer* renderer, ImVector<SDL_FColor>& colors_out, ImVector<SDL_Vertex>& vertices_out, bool software, SDL_Texture* texture, const float* xy, int xy_stride, const SDL_Color* color, int color_stride, const float* uv, int uv_stride, int num_vertices, const void* indices, int num_indices, int size_indices)
 {
+    // mz800emu local modification: SDL software quad detection reads UVs
+    // with color_stride (SDL_render.c), rather than uv_stride. Interleaved
+    // SDL_Vertex data gives all three fields the same valid stride, so SDL
+    // recognizes the rectangle and uses its own texture-copy path. Avoids
+    // large-image triangle area overflow without changing indices or meshes.
+    if (software)
+    {
+        vertices_out.resize(num_vertices);
+        for (int i = 0; i < num_vertices; ++i)
+        {
+            const float* pos = (const float*)((const char*)xy + i * xy_stride);
+            const float* tex = (const float*)((const char*)uv + i * uv_stride);
+            const SDL_Color* col = (const SDL_Color*)((const char*)color + i * color_stride);
+            SDL_Vertex& v = vertices_out[i];
+            v.position = { pos[0], pos[1] };
+            v.tex_coord = { tex[0], tex[1] };
+            v.color = { col->r / 255.0f, col->g / 255.0f, col->b / 255.0f, col->a / 255.0f };
+        }
+        const SDL_Vertex* v = vertices_out.Data;
+        return SDL_RenderGeometryRaw(renderer, texture, &v->position.x, sizeof(*v),
+            &v->color, sizeof(*v), &v->tex_coord.x, sizeof(*v), num_vertices,
+            indices, num_indices, size_indices);
+    }
     const Uint8* color2 = (const Uint8*)color;
     colors_out.resize(num_vertices);
     SDL_FColor* color3 = colors_out.Data;
@@ -142,6 +166,7 @@ static int SDL_RenderGeometryRaw8BitColor(SDL_Renderer* renderer, ImVector<SDL_F
 void ImGui_ImplSDLRenderer3_RenderDrawData(ImDrawData* draw_data, SDL_Renderer* renderer)
 {
     ImGui_ImplSDLRenderer3_Data* bd = ImGui_ImplSDLRenderer3_GetBackendData();
+    const bool software = SDL_strcmp(SDL_GetRendererName(renderer), "software") == 0;
 
     // If there's a scale factor set by the user, use that instead
     // If the user has specified a scale factor to SDL_Renderer already via SDL_RenderSetScale(), SDL will scale whatever we pass
@@ -232,7 +257,7 @@ void ImGui_ImplSDLRenderer3_RenderDrawData(ImDrawData* draw_data, SDL_Renderer* 
 
                 // Bind texture, Draw
                 SDL_Texture* tex = (SDL_Texture*)pcmd->GetTexID();
-                SDL_RenderGeometryRaw8BitColor(renderer, bd->ColorBuffer, tex,
+                SDL_RenderGeometryRaw8BitColor(renderer, bd->ColorBuffer, bd->SoftwareVertices, software, tex,
                     xy, (int)sizeof(ImDrawVert),
                     color, (int)sizeof(ImDrawVert),
                     uv, (int)sizeof(ImDrawVert),
