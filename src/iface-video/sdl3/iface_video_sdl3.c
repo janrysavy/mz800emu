@@ -324,27 +324,19 @@ void video_sdl3_render_surface_as_background(SDL_Surface *surface, SDL_Renderer 
     int win_width, win_height;
     SDL_GetCurrentRenderOutputSize(renderer, &win_width, &win_height);
 
-    int scaled_width = win_width;
-    int scaled_height = (int)(win_width / aspect_ratio);
-
-    if (scaled_height > win_height)
-    {
-        scaled_height = win_height;
-        scaled_width = (int)(win_height * aspect_ratio);
-    }
-
-    SDL_FRect dest_rect = {
-        ((float)win_width - scaled_width) / 2,
-        ((float)win_height - scaled_height) / 2,
-        (float)scaled_width,
-        (float)scaled_height};
+    (void)aspect_ratio;
 
     // Vyčištění rendereru a vykreslení textury jako pozadí
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
-    SDL_FRect source_rect = { VIDEO_UI_CROP_LEFT, VIDEO_UI_CROP_TOP,
-                             VIDEO_UI_DISPLAY_WIDTH, VIDEO_UI_DISPLAY_HEIGHT };
-    SDL_RenderTexture(renderer, texture, &source_rect, &dest_rect);
+    VideoUiSegment segments[9];
+    int count=video_ui_segments(win_width,win_height,1,1,segments);
+    for(int i=0;i<count;i++) {
+        VideoUiSegment *s=&segments[i];
+        SDL_FRect source_rect={s->u0*surface->w,s->v0*surface->h,(s->u1-s->u0)*surface->w,(s->v1-s->v0)*surface->h};
+        SDL_FRect target_rect={s->x0,s->y0,s->x1-s->x0,s->y1-s->y0};
+        SDL_RenderTexture(renderer,texture,&source_rect,&target_rect);
+    }
 }
 
 void video_sdl3_set_render_vsync(bool enabled)
