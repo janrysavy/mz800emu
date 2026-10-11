@@ -50,6 +50,7 @@
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "ui-imgui/auto_layout.h"
 #include "debugger/breakpoints.h"
+#include "debugger/debugger.h"
 #include "ui-imgui/debugger/dbgapi_helpers.h"  /* V1.7+ BP CRUD via dbgapi */
 #include "mzarch/mzarch.h"     /* V1.7 fix: g_mzarch_main.cpu->pc pro highlight expiry detekci */
 #include "emulator/emulator.h"  /* EMULATOR_TEST_PAUSED */

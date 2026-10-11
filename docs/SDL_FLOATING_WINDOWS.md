@@ -55,6 +55,9 @@ initializing message until that flag is set. This also avoids racing the
 emulator's `bpt_state_init`. It does not establish general concurrent BP CRUD
 or shutdown safety. Failed checks and both debugger traces are retained in
 the port workspace before rerunning the same early-panel test.
+The first guard build failed because the new readiness declaration was not
+included by the panel; add its explicit debugger header and retain that build
+failure separately.
 
 Implementation does not prove long UI/host stability or physical hardware.
 Interactive multi-monitor, DPI, native drag/focus and menu-dialog behavior need
