@@ -49,3 +49,11 @@ mz_add_test(cpu_z80_r_register
     LIBS     mzlib_cpu_z80
     LABELS   "standalone;libs"
 )
+
+# Per-step cycle deltas must stay defined across both signed and uint32 wrap.
+mz_add_test(cpu_z80_cycle_delta
+    TYPE     STANDALONE
+    SOURCES  test_cycle_delta.c
+    LIBS     mzlib_cpu_z80
+    LABELS   "standalone;libs"
+)
