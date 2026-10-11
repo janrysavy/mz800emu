@@ -6,6 +6,7 @@
 #include "emulator/display.h"
 #include "libs/sdlapp/sdlapp.h"
 #include "iface_video_sdl3.h"
+#include "iface-video/display_crop.h"
 
 static SDL_Renderer *texture_renderer;
 static bool texture_opengl;
@@ -341,7 +342,9 @@ void video_sdl3_render_surface_as_background(SDL_Surface *surface, SDL_Renderer 
     // Vyčištění rendereru a vykreslení textury jako pozadí
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
-    SDL_RenderTexture(renderer, texture, NULL, &dest_rect);
+    SDL_FRect source_rect = { VIDEO_UI_CROP_LEFT, VIDEO_UI_CROP_TOP,
+                             VIDEO_UI_DISPLAY_WIDTH, VIDEO_UI_DISPLAY_HEIGHT };
+    SDL_RenderTexture(renderer, texture, &source_rect, &dest_rect);
 }
 
 void video_sdl3_set_render_vsync(bool enabled)

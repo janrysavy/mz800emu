@@ -47,6 +47,11 @@ mz_add_test(ui-functional
 
 # Hidden native platform windows; explicit SDL software, never OpenGL.
 if(WIN32)
+    mz_add_test(sdl-border TYPE STANDALONE SOURCES test_sdl_border.cpp
+        LIBS mzlib_imgui LABELS "standalone;ui;software;native-windows")
+    target_compile_definitions(test_sdl-border PRIVATE MZARCH=800)
+    set_tests_properties(sdl-border PROPERTIES
+        ENVIRONMENT "SDL_VIDEO_DRIVER=windows;SDL_RENDER_DRIVER=software")
     mz_add_test(sdl-viewports TYPE STANDALONE SOURCES test_sdl_viewports.cpp
         LIBS mzlib_imgui LABELS "standalone;ui;software;native-windows")
     # SDL dummy has no native viewports; all Windows remain explicitly hidden.

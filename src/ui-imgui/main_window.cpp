@@ -5,6 +5,7 @@
 #include "ui-imgui/debugger_workspace.h"
 #include <SDL3/SDL.h>
 #include "iface-video/sdl3/iface_video_sdl3.h"
+#include "iface-video/display_crop.h"
 #include <cstring>
 
 // Lokalizace
@@ -235,7 +236,8 @@ static void ShowFullScreenImageEmulatorWindow(VideoTexture texture)
         ImGui::OpenPopup("EmulatorPopupMenu");
     };
 
-    ImGui::Image(texture, ImVec2(viewport->Size.x, viewport->Size.y));
+    ImGui::Image(texture, ImVec2(viewport->Size.x, viewport->Size.y),
+                 ImVec2(VIDEO_UI_U0, VIDEO_UI_V0), ImVec2(VIDEO_UI_U1, VIDEO_UI_V1));
     /* REC indikátor v pravém horním rohu obrazu (jen UI, do nahrávky se nedostane) */
     imgui_videorec_overlay();
     ImGui::PopStyleVar(2);

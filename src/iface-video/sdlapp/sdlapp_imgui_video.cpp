@@ -12,6 +12,7 @@
 #include "iface/iface_video.h"
 #include "emulator/display.h"
 #include "iface-video/sdl3/iface_video_sdl3.h"
+#include "iface-video/display_crop.h"
 #include "iface-video/sdl3/iface_sdl3_events.h"
 #include "ui-imgui/imgui_windows.h"
 #include "emulator/cfgmain.h"
@@ -35,8 +36,8 @@
 //#define IFACE_WINDOW_SCALE DISPLAY_DEFAULT_SCALE
 #define IFACE_WINDOW_SCALE 1.0f
 
-#define IFACE_WINDOW_WIDTH VIDEO_DISPLAY_WIDTH
-#define IFACE_WINDOW_HEIGHT (VIDEO_DISPLAY_HEIGHT * 2)
+#define IFACE_WINDOW_WIDTH VIDEO_UI_DISPLAY_WIDTH
+#define IFACE_WINDOW_HEIGHT (VIDEO_UI_DISPLAY_HEIGHT * 2)
 #define IFACE_SCREEN_ASPECT_RATIO ((float)IFACE_WINDOW_WIDTH / IFACE_WINDOW_HEIGHT)
 
 typedef struct SdlappMyImGuiVideo_t
@@ -325,6 +326,9 @@ static gboolean sdlapp_myimgui_video_init(void)
     video_sdl3_texture_backend(win->sdl_renderer, opengl);
     g_print("UI renderer: requested=%s actual=%s WARP=%s SDL=%d\n", requested,
             opengl ? "opengl" : SDL_GetRendererName(win->sdl_renderer), warp ? "enabled" : "disabled", SDL_GetVersion());
+    g_print("UI display crop: source=%dx%d origin=%d,%d visible=%dx%d canvas=%dx%d\n",
+            VIDEO_DISPLAY_WIDTH, VIDEO_DISPLAY_HEIGHT, VIDEO_UI_CROP_LEFT, VIDEO_UI_CROP_TOP,
+            VIDEO_UI_DISPLAY_WIDTH, VIDEO_UI_DISPLAY_HEIGHT, VIDEO_CANVAS_WIDTH, VIDEO_CANVAS_HEIGHT);
 
     g_iface_video->last_wsizeX = IFACE_WINDOW_WIDTH;
     g_iface_video->last_wsizeY = IFACE_WINDOW_HEIGHT;
