@@ -193,6 +193,10 @@ static gboolean ui_test_exit_cb(guint timer_id, gpointer user_data)
 {
     (void)timer_id; (void)user_data;
     g_print("UI timed shutdown requested\n");
+    if (g_sdlapp_myimgui_video && g_sdlapp_myimgui_video->test_render_timer) {
+        sdlapp_remove_timer(g_sdlapp, g_sdlapp_myimgui_video->test_render_timer);
+        g_sdlapp_myimgui_video->test_render_timer = 0;
+    }
     sdlapp_quit(g_sdlapp);
     return FALSE;
 }
@@ -396,7 +400,7 @@ static gboolean sdlapp_myimgui_video_init(void)
         video->test_exit_timer = sdlapp_add_timer(g_sdlapp,
             (guint)g_ascii_strtoull(sdlapp_option_value("--ui-exit-after-ms"), NULL, 10), ui_test_exit_cb, NULL);
     if (sdlapp_option_present("--ui-hidden"))
-        video->test_render_timer = sdlapp_add_timer(g_sdlapp, 16, ui_test_render_cb, NULL);
+        video->test_render_timer = sdlapp_add_timer(g_sdlapp, 100, ui_test_render_cb, NULL);
     video->images_loaded = imgui_images_load_all();
     return video->images_loaded;
 }
