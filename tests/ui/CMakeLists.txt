@@ -12,6 +12,16 @@ mz_add_test(ui-smoke
 # Memory Browser V0 hex MVP - membrowser mutant
 add_subdirectory(membrowser)
 
+# Production upload/format/alpha checks use dummy software rendering only.
+# Unlike ui-smoke this target never creates an OpenGL context.
+mz_add_test(video-textures
+    TYPE STANDALONE
+    SOURCES test_video_textures.c
+            ${CMAKE_SOURCE_DIR}/src/iface-video/sdl3/iface_video_sdl3.c
+    LIBS mz::sdl3 mz::glib OpenGL::GL
+    LABELS "standalone;ui;software"
+)
+
 # Funkční testy UI logiky - video záznam (menu, dialog nastavení, REC indikátor,
 # notifikace událostí, okno dálkového ovládání a tabulka zkratek). Linkuje UI
 # zdroje přímo; notifikace stubuje test.

@@ -31,9 +31,20 @@ VideoTexture video_sdl3_texture_create(SDL_Surface *surface)
     if (!texture_renderer) return 0;
     SDL_Surface *rgba = texture_rgba(surface);
     if (!rgba) return 0;
-    SDL_Texture *texture = SDL_CreateTextureFromSurface(texture_renderer, rgba);
+    /* CreateTextureFromSurface may choose RGB/BGRA internally. Updates below
+     * supply RGBA32, so pin the texture format instead of assuming that choice. */
+    SDL_Texture *texture = SDL_CreateTexture(texture_renderer, SDL_PIXELFORMAT_RGBA32,
+                                            SDL_TEXTUREACCESS_STREAMING, rgba->w, rgba->h);
+    if (texture && !SDL_UpdateTexture(texture, NULL, rgba->pixels, rgba->pitch)) {
+        SDL_DestroyTexture(texture);
+        texture = NULL;
+    }
     SDL_DestroySurface(rgba);
-    if (texture) SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_LINEAR);
+    if (texture) {
+        SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_LINEAR);
+        SDL_SetTextureBlendMode(texture, surface->format == SDL_PIXELFORMAT_INDEX8
+                               ? SDL_BLENDMODE_NONE : SDL_BLENDMODE_BLEND);
+    }
     return (VideoTexture)texture;
 }
 
