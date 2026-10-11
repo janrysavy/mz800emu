@@ -169,6 +169,11 @@ void cmthack_result(en_LOADRET result)
  */
 void cmthack_load_file(void)
 {
+    /* This virtual OUT service changes guest state even on cancel/error.
+     * Calls outside a CPU dispatch (bootstrap/debugger) are deliberately
+     * ignored by the observer; they are not fabricated instructions. */
+    zic_semantic_override(g_mzarch_main.cpu->instruction_coverage,
+                          ZIC_SEMANTIC_CMTHACK_FILE);
     if (!baseui_filechooser_can_wait())
     {
         /* Headless: dialog by nikdo nezavřel a EMU vlákno by stálo navždy. */
@@ -216,6 +221,10 @@ void cmthack_load_file(void)
 
 void cmthack_load_mzf_filename(const char *filename)
 {
+    /* Also cover direct service entry; a nested file request sets the same
+     * provenance bit and is counted once when the dispatch finishes. */
+    zic_semantic_override(g_mzarch_main.cpu->instruction_coverage,
+                          ZIC_SEMANTIC_CMTHACK_FILE);
 
     unsigned reg_hl;
 
@@ -304,6 +313,8 @@ void cmthack_load_mzf_filename(const char *filename)
  */
 void cmthack_read_mzf_body(void)
 {
+    zic_semantic_override(g_mzarch_main.cpu->instruction_coverage,
+                          ZIC_SEMANTIC_CMTHACK_BODY);
     unsigned reg_hl;
     unsigned reg_bc;
 

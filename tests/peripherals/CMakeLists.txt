@@ -68,3 +68,10 @@ mz_add_test(cmt_unicmt
     SOURCES  test_cmt_unicmt.c
     LABELS   "emu;peripherals;cmt"
 )
+
+# Synthetic actual-OUT CMT shortcut provenance and v2 API noninterference.
+mz_add_test(instruction_coverage_cmthack
+    TYPE     EMU
+    SOURCES  test_instruction_coverage_cmthack.c
+    LABELS   "emu;peripherals;cmt;coverage;debugger"
+)

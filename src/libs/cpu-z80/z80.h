@@ -31,6 +31,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "instruction_coverage.h"
 
 /** @name Flagy Z80
  * @{ */
@@ -498,7 +499,23 @@ typedef struct z80_s {
     bool ram_fp_enabled;
     /** @} */
 #endif
+    /* Passive logical-PC coverage; CPU owner thread only. Kept across CPU
+     * reset, cleared explicitly by the coverage API. Never guest memory. */
+    bool coverage_enabled;
+    uint32_t coverage_unique;
+    uint64_t coverage_units;
+    uint8_t coverage_bitmap[8192];
+    zic_state *instruction_coverage; /* Host-owned passive evidence, never guest RAM. */
 } z80_t;
+
+static inline void z80_coverage_record(z80_t *cpu, uint16_t pc) {
+    if (cpu->coverage_enabled) {
+        uint8_t mask = (uint8_t)(1u << (pc & 7));
+        uint8_t *slot = &cpu->coverage_bitmap[pc >> 3];
+        if (!(*slot & mask)) { *slot |= mask; cpu->coverage_unique++; }
+        cpu->coverage_units++;
+    }
+}
 
 /**
  * @brief Enum pro přístup k registrům přes z80_get_reg/z80_set_reg.
