@@ -37,8 +37,9 @@
 #define IFACE_WINDOW_SCALE 1.0f
 
 #define IFACE_WINDOW_WIDTH VIDEO_UI_DISPLAY_WIDTH
-#define IFACE_WINDOW_HEIGHT (VIDEO_UI_DISPLAY_HEIGHT * 2)
-#define IFACE_SCREEN_ASPECT_RATIO ((float)IFACE_WINDOW_WIDTH / IFACE_WINDOW_HEIGHT)
+#define IFACE_WINDOW_HEIGHT VIDEO_UI_DISPLAY_HEIGHT
+#define IFACE_SCREEN_ASPECT_RATIO ((float)VIDEO_UI_CANVAS_WIDTH / VIDEO_UI_CANVAS_HEIGHT)
+#define IFACE_BORDER_TOTAL (VIDEO_UI_BORDER_PIXELS * 2)
 
 typedef struct SdlappMyImGuiVideo_t
 {
@@ -326,9 +327,11 @@ static gboolean sdlapp_myimgui_video_init(void)
     video_sdl3_texture_backend(win->sdl_renderer, opengl);
     g_print("UI renderer: requested=%s actual=%s WARP=%s SDL=%d\n", requested,
             opengl ? "opengl" : SDL_GetRendererName(win->sdl_renderer), warp ? "enabled" : "disabled", SDL_GetVersion());
-    g_print("UI display crop: source=%dx%d origin=%d,%d visible=%dx%d canvas=%dx%d\n",
-            VIDEO_DISPLAY_WIDTH, VIDEO_DISPLAY_HEIGHT, VIDEO_UI_CROP_LEFT, VIDEO_UI_CROP_TOP,
-            VIDEO_UI_DISPLAY_WIDTH, VIDEO_UI_DISPLAY_HEIGHT, VIDEO_CANVAS_WIDTH, VIDEO_CANVAS_HEIGHT);
+    g_print("UI fixed border: pixels=%d source=%dx%d canvas=%dx%d\n",
+            VIDEO_UI_BORDER_PIXELS, VIDEO_DISPLAY_WIDTH, VIDEO_DISPLAY_HEIGHT, VIDEO_CANVAS_WIDTH, VIDEO_CANVAS_HEIGHT);
+#if MZARCH == 800
+    SDL_SetWindowMinimumSize(win->sdl_window, VIDEO_UI_BORDER_PIXELS*2+320, VIDEO_UI_BORDER_PIXELS*2+200);
+#endif
 
     g_iface_video->last_wsizeX = IFACE_WINDOW_WIDTH;
     g_iface_video->last_wsizeY = IFACE_WINDOW_HEIGHT;
@@ -525,29 +528,29 @@ void iface_sdl3_video_window_resize_event_handler(SdlAppWindow *win, SDL_Event *
         return;
     };
 
-    float aspect_ratio = (float)wsizeX / (float)wsizeY;
+    float aspect_ratio = (float)(wsizeX-IFACE_BORDER_TOTAL) / (float)(wsizeY-IFACE_BORDER_TOTAL);
 
     if (aspect_ratio != IFACE_SCREEN_ASPECT_RATIO)
     {
         if ((wsizeX < g_iface_video->last_wsizeX) &&
             (wsizeY == g_iface_video->last_wsizeY))
         {
-            wsizeY = (1.f / IFACE_SCREEN_ASPECT_RATIO) * wsizeX;
+            wsizeY = (1.f / IFACE_SCREEN_ASPECT_RATIO) * (wsizeX-IFACE_BORDER_TOTAL) + IFACE_BORDER_TOTAL;
         }
         else if ((wsizeY < g_iface_video->last_wsizeY) &&
                  (wsizeX == g_iface_video->last_wsizeX))
         {
-            wsizeX = IFACE_SCREEN_ASPECT_RATIO * wsizeY;
+            wsizeX = IFACE_SCREEN_ASPECT_RATIO * (wsizeY-IFACE_BORDER_TOTAL) + IFACE_BORDER_TOTAL;
         }
         else
         {
             if (aspect_ratio > IFACE_SCREEN_ASPECT_RATIO)
             {
-                wsizeY = (1.f / IFACE_SCREEN_ASPECT_RATIO) * wsizeX;
+                wsizeY = (1.f / IFACE_SCREEN_ASPECT_RATIO) * (wsizeX-IFACE_BORDER_TOTAL) + IFACE_BORDER_TOTAL;
             }
             else
             {
-                wsizeX = IFACE_SCREEN_ASPECT_RATIO * wsizeY;
+                wsizeX = IFACE_SCREEN_ASPECT_RATIO * (wsizeY-IFACE_BORDER_TOTAL) + IFACE_BORDER_TOTAL;
             };
         };
 
@@ -624,11 +627,11 @@ static void sdlapp_fix_window_aspect_ratio(SDL_Window *sdl_window, char correcti
 
     if (correction_by == 'W')
     {
-        wsizeY = (1.f / IFACE_SCREEN_ASPECT_RATIO) * wsizeX;
+        wsizeY = (1.f / IFACE_SCREEN_ASPECT_RATIO) * (wsizeX-IFACE_BORDER_TOTAL) + IFACE_BORDER_TOTAL;
     }
     else
     {
-        wsizeX = IFACE_SCREEN_ASPECT_RATIO * wsizeY;
+        wsizeX = IFACE_SCREEN_ASPECT_RATIO * (wsizeY-IFACE_BORDER_TOTAL) + IFACE_BORDER_TOTAL;
     };
 
     g_iface_video->last_wsizeX = wsizeX;
@@ -814,8 +817,8 @@ static void sdlapp_set_window_size_by_scale(SDL_Window *sdl_window, float scale)
 #endif
     };
 
-    int32_t w = IFACE_WINDOW_WIDTH * scale;
-    int32_t h = IFACE_WINDOW_HEIGHT * scale;
+    int32_t w = VIDEO_UI_CANVAS_WIDTH * scale + IFACE_BORDER_TOTAL;
+    int32_t h = VIDEO_UI_CANVAS_HEIGHT * scale + IFACE_BORDER_TOTAL;
 
     g_print("Setting window size to %d x %d, by scale: %f\n", w, h, scale);
 
