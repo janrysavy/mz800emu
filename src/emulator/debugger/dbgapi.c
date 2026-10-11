@@ -4039,6 +4039,56 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             break;
         }
 
+        case DBGAPI_CMD_INSTRUCTION_COVERAGE:
+        {
+            st_DBGAPI_INSTRUCTION_COVERAGE_PARAM *p = rq->data_ptr;
+            z80_t *cpu = g_mzarch_main.cpu;
+            if (!p || !cpu || p->action < 0 || p->action > 4 ||
+                (p->action != 3 && !EMULATOR_TEST_PAUSED)) { rq->success=false; break; }
+            zic_state *s=cpu->instruction_coverage;
+            if (p->action==0) {
+                uint32_t capacity=p->capacity ? p->capacity : (s ? s->capacity : 131072);
+                if (capacity < 256 || capacity > 1048576 || (capacity & (capacity-1)) ||
+                    (s && capacity != s->capacity && !p->reset)) { rq->success=false; break; }
+                if (!s || capacity != s->capacity) {
+                    zic_state *fresh=zic_create(capacity);
+                    if (!fresh) { rq->success=false; break; }
+                    zic_destroy(s); s=fresh; cpu->instruction_coverage=s;
+                }
+                if (p->reset) zic_reset(s);
+                s->enabled=1;
+            }
+            if (p->action==1 && s) s->enabled=0;
+            if (p->action==2 && s) zic_reset(s);
+            uint32_t unique=s ? s->unique : 0;
+            if (p->action==4 && (!p->limit || p->limit>1024 || p->offset>unique)) { rq->success=false; break; }
+            GString *out=g_string_new(NULL);
+            g_string_append_printf(out,"{\"schema\":1,\"format\":\"z80-dispatch-fetched-v1\","
+                "\"enabled\":%s,\"complete\":%s,\"capacity\":%u,\"unique_tuples\":%u,"
+                "\"dispatch_units\":%" G_GUINT64_FORMAT ",\"dropped_units\":%" G_GUINT64_FORMAT ","
+                "\"capacity_failures\":%" G_GUINT64_FORMAT ",\"fetch_failures\":%" G_GUINT64_FORMAT ","
+                "\"decision_failures\":%" G_GUINT64_FORMAT ",\"clock_cycles\":%u,\"clock_bits\":32,"
+                "\"max_fetch_bytes\":16,\"physical_mapping_certified\":false",
+                s && s->enabled ? "true":"false",zic_complete(s) ? "true":"false",
+                s ? s->capacity:0,unique,s ? s->units:0,s ? s->dropped:0,
+                s ? s->capacity_failures:0,s ? s->fetch_failures:0,s ? s->decision_failures:0,cpu->total_cycles);
+            if (p->action==4) {
+                uint32_t end=p->offset+p->limit;if (end>unique) end=unique;
+                g_string_append_printf(out,",\"offset\":%u,\"next_offset\":%u,\"entries\":[",p->offset,end);
+                for(uint32_t i=p->offset;i<end;i++) {
+                    const zic_row *r=&s->rows[i];char hex[2*ZIC_MAX_FETCH+1];
+                    for(unsigned b=0;b<r->key.length;b++) g_snprintf(hex+2*b,3,"%02x",r->key.bytes[b]);
+                    g_string_append_printf(out,"%s{\"id\":%u,\"pc\":%u,\"next_pc\":%u,\"bytes\":\"%s\","
+                        "\"m1_mask\":%u,\"flags\":%u,\"outcome\":%d,\"count\":%" G_GUINT64_FORMAT ","
+                        "\"first_dispatch\":%" G_GUINT64_FORMAT ",\"last_dispatch\":%" G_GUINT64_FORMAT "}",
+                        i==p->offset ? "":",",i,r->key.pc,r->key.next_pc,hex,r->key.m1_mask,r->key.flags,
+                        (int)r->key.outcome,r->count,r->first_dispatch,r->last_dispatch);
+                }
+                g_string_append(out,"]");
+            }
+            g_string_append(out,"}");p->json=g_string_free(out,FALSE);rq->success=true;break;
+        }
+
         case DBGAPI_CMD_PC_COVERAGE:
         {
             st_DBGAPI_PC_COVERAGE_PARAM *p = rq->data_ptr;

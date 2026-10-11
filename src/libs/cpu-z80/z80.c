@@ -638,6 +638,7 @@ z80_t *z80_create(
 }
 
 void z80_destroy(z80_t *cpu) {
+    if (cpu) zic_destroy(cpu->instruction_coverage);
     free(cpu);
 }
 

@@ -143,17 +143,22 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 #ifdef MZ800EMU_CFG_RAM_FASTPATH
 #define RD(addr)        (cpu->op_tstate += 3, z80_fp_read(cpu, (addr), 0))
 #define WR(addr, val)   do { cpu->op_tstate += 3; z80_fp_write(cpu, (addr), (val)); } while(0)
-#define M1_FETCH()      (cpu->op_tstate += 4, z80_fp_read(cpu, rPC++, 1))
-#define FETCH()         (cpu->op_tstate += 3, z80_fp_read(cpu, rPC++, 0))
+#define M1_FETCH()      (cpu->op_tstate += 4, DETAIL_FETCH(1, z80_fp_read(cpu, _ic_addr, 1)))
+#define FETCH()         (cpu->op_tstate += 3, DETAIL_FETCH(0, z80_fp_read(cpu, _ic_addr, 0)))
 #else
 #define RD(addr)        (cpu->op_tstate += 3, _mrd(cpu, (addr), 0, _mrd_d))
 #define WR(addr, val)   do { cpu->op_tstate += 3; _mwr(cpu, (addr), (val), _mwr_d); } while(0)
     /* M1 fetch z PC (opkódový cyklus, 4 T-stavy, m1_state=1) - jen v DISPATCH a prefix handlerech */
-#define M1_FETCH() (cpu->op_tstate += 4, _mrd(cpu, rPC++, 1, _mrd_d))
+#define M1_FETCH() (cpu->op_tstate += 4, DETAIL_FETCH(1, _mrd(cpu, _ic_addr, 1, _mrd_d)))
     /* Operandový fetch z PC (3 T-stavy, m1_state=0) - pro čtení operandu v instrukcích */
-#define FETCH() (cpu->op_tstate += 3, _mrd(cpu, rPC++, 0, _mrd_d))
+#define FETCH() (cpu->op_tstate += 3, DETAIL_FETCH(0, _mrd(cpu, _ic_addr, 0, _mrd_d)))
 #endif
 
+#define DETAIL_FETCH(m1, read_expr) ({ \
+    uint16_t _ic_addr = rPC++; \
+    uint8_t _ic_value = (read_expr); \
+    zic_fetch(cpu->instruction_coverage, _ic_addr, _ic_value, (m1)); \
+})
 #define IO_RD(port)     (cpu->op_tstate += 4, _prd(cpu, (port), _prd_d))
 #define IO_WR(port, val) do { cpu->op_tstate += 4; _pwr(cpu, (port), (val), _pwr_d); } while(0)
 #define RD16(addr)      ((uint16_t)(RD(addr) | (RD((uint16_t)((addr) + 1)) << 8)))
@@ -498,6 +503,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
     /* Dispatch makra pro computed goto */
 #define DISPATCH() do { \
     z80_coverage_record(cpu, rPC); \
+    zic_begin(cpu->instruction_coverage, rPC); \
     rQ = (rF != savedF) ? rF : 0; \
     savedF = rF; \
     cpu->op_tstate = 0; \
@@ -511,6 +517,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
      * Interrupt handling a post_step jsou ve slow path (check_interrupts label).
      */
 #define NEXT(c) do { \
+    zic_finish(cpu->instruction_coverage, rPC); \
     cycles_executed += (c) + cpu->wait_cycles; \
     cpu->wait_cycles = 0; \
     if (__builtin_expect(cycles_executed >= target_cycles, 0)) { \
@@ -524,6 +531,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 
     /* NEXT_SLOW: pro instrukce co mění interrupt stav (EI, DI, HALT, RETI, RETN) */
 #define NEXT_SLOW(c) do { \
+    zic_finish(cpu->instruction_coverage, rPC); \
     cycles_executed += (c) + cpu->wait_cycles; \
     cpu->wait_cycles = 0; \
     cpu->cycles += cycles_executed - last_sync; \
@@ -536,6 +544,7 @@ HOT int Z80_EXEC_FN(z80_t *cpu, int target_cycles) {
 
 #define DISPATCH() do { cpu->op_tstate = 0; goto dispatch_switch; } while(0)
 #define NEXT(c) do { \
+    zic_finish(cpu->instruction_coverage, rPC); \
     cycles_executed += (c) + cpu->wait_cycles; \
     cpu->wait_cycles = 0; \
     if (cycles_executed >= target_cycles) { \
@@ -710,7 +719,7 @@ check_interrupts:
     op_0F: { uint8_t c = rA & 1; rA = (rA >> 1) | (c << 7); rF = (rF & (SF|ZF|PF)) | (rA & (F3|F5)) | c; NEXT(4); }
 
     /* DJNZ */
-    op_10: { int8_t d = (int8_t)FETCH(); rB--; if (rB != 0) { rPC += d; rWZ = rPC; NEXT(13); } else { NEXT(8); } }
+    op_10: { int8_t d = (int8_t)FETCH(); rB--; if (zic_decision(cpu->instruction_coverage, rB != 0)) { rPC += d; rWZ = rPC; NEXT(13); } else { NEXT(8); } }
 
     /* LD DE, nn */
     op_11: rE = FETCH(); rD = FETCH(); NEXT(10);
@@ -758,7 +767,7 @@ check_interrupts:
     op_1F: { uint8_t c = rA & 1; rA = (rA >> 1) | ((rF & CF) << 7); rF = (rF & (SF|ZF|PF)) | (rA & (F3|F5)) | c; NEXT(4); }
 
     /* JR NZ, d */
-    op_20: { int8_t d = (int8_t)FETCH(); if (!(rF & ZF)) { rPC += d; rWZ = rPC; NEXT(12); } else { NEXT(7); } }
+    op_20: { int8_t d = (int8_t)FETCH(); if (zic_decision(cpu->instruction_coverage, !(rF & ZF))) { rPC += d; rWZ = rPC; NEXT(12); } else { NEXT(7); } }
 
     /* LD HL, nn */
     op_21: rL = FETCH(); rH = FETCH(); NEXT(10);
@@ -788,7 +797,7 @@ check_interrupts:
     }
 
     /* JR Z, d */
-    op_28: { int8_t d = (int8_t)FETCH(); if (rF & ZF) { rPC += d; rWZ = rPC; NEXT(12); } else { NEXT(7); } }
+    op_28: { int8_t d = (int8_t)FETCH(); if (zic_decision(cpu->instruction_coverage, rF & ZF)) { rPC += d; rWZ = rPC; NEXT(12); } else { NEXT(7); } }
 
     /* ADD HL, HL */
     op_29: rWZ = HL_VAL + 1; ADD16(rH, rL, HL_VAL); NEXT(11);
@@ -812,7 +821,7 @@ check_interrupts:
     op_2F: rA = ~rA; rF = (rF & (SF|ZF|PF|CF)) | (rA & (F3|F5)) | NF | HF; NEXT(4);
 
     /* JR NC, d */
-    op_30: { int8_t d = (int8_t)FETCH(); if (!(rF & CF)) { rPC += d; rWZ = rPC; NEXT(12); } else { NEXT(7); } }
+    op_30: { int8_t d = (int8_t)FETCH(); if (zic_decision(cpu->instruction_coverage, !(rF & CF))) { rPC += d; rWZ = rPC; NEXT(12); } else { NEXT(7); } }
 
     /* LD SP, nn */
     op_31: rSP = FETCH16(); NEXT(10);
@@ -836,7 +845,7 @@ check_interrupts:
     op_37: rF = (rF & (SF|ZF|PF)) | ((rA | rQ) & (F3|F5)) | CF; NEXT(4);
 
     /* JR C, d */
-    op_38: { int8_t d = (int8_t)FETCH(); if (rF & CF) { rPC += d; rWZ = rPC; NEXT(12); } else { NEXT(7); } }
+    op_38: { int8_t d = (int8_t)FETCH(); if (zic_decision(cpu->instruction_coverage, rF & CF)) { rPC += d; rWZ = rPC; NEXT(12); } else { NEXT(7); } }
 
     /* ADD HL, SP */
     op_39: rWZ = HL_VAL + 1; ADD16(rH, rL, rSP); NEXT(11);
@@ -1030,14 +1039,14 @@ check_interrupts:
     op_BF: CP8(rA); NEXT(4);
 
     /* RET NZ/Z/NC/C/PO/PE/P/M (fire ret_cb jen v taken-větvi) */
-    op_C0: if (!(rF & ZF)) { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
-    op_C8: if (rF & ZF)    { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
-    op_D0: if (!(rF & CF)) { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
-    op_D8: if (rF & CF)    { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
-    op_E0: if (!(rF & PF)) { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
-    op_E8: if (rF & PF)    { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
-    op_F0: if (!(rF & SF)) { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
-    op_F8: if (rF & SF)    { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
+    op_C0: if (zic_decision(cpu->instruction_coverage, !(rF & ZF))) { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
+    op_C8: if (zic_decision(cpu->instruction_coverage, rF & ZF))    { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
+    op_D0: if (zic_decision(cpu->instruction_coverage, !(rF & CF))) { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
+    op_D8: if (zic_decision(cpu->instruction_coverage, rF & CF))    { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
+    op_E0: if (zic_decision(cpu->instruction_coverage, !(rF & PF))) { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
+    op_E8: if (zic_decision(cpu->instruction_coverage, rF & PF))    { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
+    op_F0: if (zic_decision(cpu->instruction_coverage, !(rF & SF))) { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
+    op_F8: if (zic_decision(cpu->instruction_coverage, rF & SF))    { FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(11); } else { NEXT(5); }
 
     /* RET */
     op_C9: FIRE_RET(); rPC = POP(); rWZ = rPC; NEXT(10);
@@ -1055,27 +1064,27 @@ check_interrupts:
     op_F5: PUSH(AF_VAL); NEXT(11);
 
     /* JP cc, nn */
-    op_C2: { uint16_t addr = FETCH16(); rWZ = addr; if (!(rF & ZF)) rPC = addr; NEXT(10); }
-    op_CA: { uint16_t addr = FETCH16(); rWZ = addr; if (rF & ZF)    rPC = addr; NEXT(10); }
-    op_D2: { uint16_t addr = FETCH16(); rWZ = addr; if (!(rF & CF)) rPC = addr; NEXT(10); }
-    op_DA: { uint16_t addr = FETCH16(); rWZ = addr; if (rF & CF)    rPC = addr; NEXT(10); }
-    op_E2: { uint16_t addr = FETCH16(); rWZ = addr; if (!(rF & PF)) rPC = addr; NEXT(10); }
-    op_EA: { uint16_t addr = FETCH16(); rWZ = addr; if (rF & PF)    rPC = addr; NEXT(10); }
-    op_F2: { uint16_t addr = FETCH16(); rWZ = addr; if (!(rF & SF)) rPC = addr; NEXT(10); }
-    op_FA: { uint16_t addr = FETCH16(); rWZ = addr; if (rF & SF)    rPC = addr; NEXT(10); }
+    op_C2: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, !(rF & ZF))) rPC = addr; NEXT(10); }
+    op_CA: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, rF & ZF))    rPC = addr; NEXT(10); }
+    op_D2: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, !(rF & CF))) rPC = addr; NEXT(10); }
+    op_DA: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, rF & CF))    rPC = addr; NEXT(10); }
+    op_E2: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, !(rF & PF))) rPC = addr; NEXT(10); }
+    op_EA: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, rF & PF))    rPC = addr; NEXT(10); }
+    op_F2: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, !(rF & SF))) rPC = addr; NEXT(10); }
+    op_FA: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, rF & SF))    rPC = addr; NEXT(10); }
 
     /* JP nn */
     op_C3: { uint16_t addr = FETCH16(); rWZ = addr; rPC = addr; NEXT(10); }
 
     /* CALL cc, nn (fire call_cb jen v taken-větvi) */
-    op_C4: { uint16_t addr = FETCH16(); rWZ = addr; if (!(rF & ZF)) { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
-    op_CC: { uint16_t addr = FETCH16(); rWZ = addr; if (rF & ZF)    { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
-    op_D4: { uint16_t addr = FETCH16(); rWZ = addr; if (!(rF & CF)) { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
-    op_DC: { uint16_t addr = FETCH16(); rWZ = addr; if (rF & CF)    { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
-    op_E4: { uint16_t addr = FETCH16(); rWZ = addr; if (!(rF & PF)) { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
-    op_EC: { uint16_t addr = FETCH16(); rWZ = addr; if (rF & PF)    { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
-    op_F4: { uint16_t addr = FETCH16(); rWZ = addr; if (!(rF & SF)) { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
-    op_FC: { uint16_t addr = FETCH16(); rWZ = addr; if (rF & SF)    { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
+    op_C4: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, !(rF & ZF))) { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
+    op_CC: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, rF & ZF))    { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
+    op_D4: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, !(rF & CF))) { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
+    op_DC: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, rF & CF))    { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
+    op_E4: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, !(rF & PF))) { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
+    op_EC: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, rF & PF))    { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
+    op_F4: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, !(rF & SF))) { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
+    op_FC: { uint16_t addr = FETCH16(); rWZ = addr; if (zic_decision(cpu->instruction_coverage, rF & SF))    { FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); } else { NEXT(10); } }
 
     /* CALL nn */
     op_CD: { uint16_t addr = FETCH16(); rWZ = addr; FIRE_CALL(addr); PUSH(rPC); rPC = addr; NEXT(17); }
@@ -1488,7 +1497,7 @@ check_interrupts:
                 uint16_t bc = BC_VAL - 1; SET_BC(bc);
                 uint8_t n = val + rA;
                 rF = (rF & (SF|ZF|CF)) | (bc != 0 ? PF : 0) | (n & F3) | ((n & 0x02) ? F5 : 0);
-                if (bc != 0) { rPC -= 2; rWZ = rPC + 1; NEXT(21); }
+                if (zic_decision(cpu->instruction_coverage, bc != 0)) { rPC -= 2; rWZ = rPC + 1; NEXT(21); }
                 NEXT(16);
             }
 
@@ -1502,7 +1511,7 @@ check_interrupts:
                 uint8_t n = res - (nhf ? 1 : 0);
                 rF = (rF & CF) | NF | (bc != 0 ? PF : 0) | sz53_table[res & 0xFF] | nhf;
                 rF = (rF & ~(F3|F5)) | (n & F3) | ((n & 0x02) ? F5 : 0);
-                if (bc != 0 && !(rF & ZF)) { rPC -= 2; rWZ = rPC + 1; NEXT(21); }
+                if (zic_decision(cpu->instruction_coverage, bc != 0 && !(rF & ZF))) { rPC -= 2; rWZ = rPC + 1; NEXT(21); }
                 rWZ++;
                 NEXT(16);
             }
@@ -1519,7 +1528,7 @@ check_interrupts:
                    | ((val & 0x80) ? NF : 0)
                    | (k > 255 ? (HF|CF) : 0)
                    | (parity_table[(uint8_t)((k & 7) ^ rB)] ? PF : 0);
-                if (rB != 0) { rPC -= 2; NEXT(21); }
+                if (zic_decision(cpu->instruction_coverage, rB != 0)) { rPC -= 2; NEXT(21); }
                 NEXT(16);
             }
 
@@ -1535,7 +1544,7 @@ check_interrupts:
                    | ((val & 0x80) ? NF : 0)
                    | (k > 255 ? (HF|CF) : 0)
                    | (parity_table[(uint8_t)((k & 7) ^ rB)] ? PF : 0);
-                if (rB != 0) { rPC -= 2; NEXT(21); }
+                if (zic_decision(cpu->instruction_coverage, rB != 0)) { rPC -= 2; NEXT(21); }
                 NEXT(16);
             }
 
@@ -1548,7 +1557,7 @@ check_interrupts:
                 uint16_t bc = BC_VAL - 1; SET_BC(bc);
                 uint8_t n = val + rA;
                 rF = (rF & (SF|ZF|CF)) | (bc != 0 ? PF : 0) | (n & F3) | ((n & 0x02) ? F5 : 0);
-                if (bc != 0) { rPC -= 2; rWZ = rPC + 1; NEXT(21); }
+                if (zic_decision(cpu->instruction_coverage, bc != 0)) { rPC -= 2; rWZ = rPC + 1; NEXT(21); }
                 NEXT(16);
             }
 
@@ -1562,7 +1571,7 @@ check_interrupts:
                 uint8_t n = res - (nhf ? 1 : 0);
                 rF = (rF & CF) | NF | (bc != 0 ? PF : 0) | sz53_table[res & 0xFF] | nhf;
                 rF = (rF & ~(F3|F5)) | (n & F3) | ((n & 0x02) ? F5 : 0);
-                if (bc != 0 && !(rF & ZF)) { rPC -= 2; rWZ = rPC + 1; NEXT(21); }
+                if (zic_decision(cpu->instruction_coverage, bc != 0 && !(rF & ZF))) { rPC -= 2; rWZ = rPC + 1; NEXT(21); }
                 rWZ--;
                 NEXT(16);
             }
@@ -1579,7 +1588,7 @@ check_interrupts:
                    | ((val & 0x80) ? NF : 0)
                    | (k > 255 ? (HF|CF) : 0)
                    | (parity_table[(uint8_t)((k & 7) ^ rB)] ? PF : 0);
-                if (rB != 0) { rPC -= 2; NEXT(21); }
+                if (zic_decision(cpu->instruction_coverage, rB != 0)) { rPC -= 2; NEXT(21); }
                 NEXT(16);
             }
 
@@ -1595,7 +1604,7 @@ check_interrupts:
                    | ((val & 0x80) ? NF : 0)
                    | (k > 255 ? (HF|CF) : 0)
                    | (parity_table[(uint8_t)((k & 7) ^ rB)] ? PF : 0);
-                if (rB != 0) { rPC -= 2; NEXT(21); }
+                if (zic_decision(cpu->instruction_coverage, rB != 0)) { rPC -= 2; NEXT(21); }
                 NEXT(16);
             }
 
@@ -1789,7 +1798,7 @@ check_interrupts:
         /* LD SP, IX/IY */ \
         case 0xF9: rSP = (IDX_W); NEXT(10); \
         /* Nerozpoznaný opcode - provést jako normální (prefix se ignoruje) */ \
-        default: rPC--; NEXT(4); \
+        default: zic_flag(cpu->instruction_coverage, ZIC_FRAGMENT); rPC--; NEXT(4); \
     } \
 } while(0)
 
@@ -1803,6 +1812,7 @@ check_interrupts:
 dispatch_switch:
     {
         z80_coverage_record(cpu, rPC);
+          zic_begin(cpu->instruction_coverage, rPC);
         INC_R();
         uint8_t op = M1_FETCH();
         /* Fallback switch - same labels ale přes switch */
@@ -1841,6 +1851,7 @@ done:
 #undef SET_WZL
 #undef M1_FETCH
 #undef FETCH
+#undef DETAIL_FETCH
 #undef FETCH16
 #undef INC_R
 #undef PUSH

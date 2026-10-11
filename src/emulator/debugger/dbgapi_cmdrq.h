@@ -682,6 +682,7 @@ typedef enum en_DBGAPI_CMD
 
     DBGAPI_CMD_AUDIO_CAPTURE, /* Owner-thread passive audio observation. */
     DBGAPI_CMD_PC_COVERAGE, /* Passive PC bitmap; st_DBGAPI_PC_COVERAGE_PARAM. */
+    DBGAPI_CMD_INSTRUCTION_COVERAGE, /* Bounded fetched-unit/outcome evidence. */
 } en_DBGAPI_CMD;
 
 typedef struct st_DBGAPI_PC_COVERAGE_PARAM {
@@ -691,6 +692,13 @@ typedef struct st_DBGAPI_PC_COVERAGE_PARAM {
     uint64_t units;
     uint8_t bitmap[8192];
 } st_DBGAPI_PC_COVERAGE_PARAM;
+
+typedef struct st_DBGAPI_INSTRUCTION_COVERAGE_PARAM {
+    int action; /* 0 start, 1 stop, 2 reset, 3 status, 4 read */
+    bool reset;
+    uint32_t capacity, offset, limit;
+    char *json; /* OUT glib-owned; transport frees after serialization. */
+} st_DBGAPI_INSTRUCTION_COVERAGE_PARAM;
 
 typedef struct st_DBGAPI_AUDIO_CAPTURE_PARAM {
     int action;
