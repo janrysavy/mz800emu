@@ -154,6 +154,14 @@ static void hwscroll_regs_changed(void)
 void hwscroll_set_reg(unsigned addr, uint8_t value)
 {
 
+    /* Commit elapsed scanout with the OLD address mapping. Flushing only in
+     * hwscroll_regs_changed() retroactively applies the new mapping to pixels
+     * already passed by the beam (including enable/disable transitions). */
+    if (!GDG_MZ800_DMD_TEST_MZ700 && addr >= 1 && addr <= 5)
+    {
+        framebuffer_MZ800_screen_changed();
+    }
+
     // printf ( "addr: 0x%02x, value: 0x%02x, PC: 0x%04x\n", addr, value, z80ex_get_reg ( g_mz800_main.cpu, regPC ) );
 
     switch (addr)
@@ -214,24 +222,28 @@ unsigned hwscroll_get_sof(void)
 
 void hwscroll_set_ssa(unsigned value)
 {
+    if (!GDG_MZ800_DMD_TEST_MZ700) framebuffer_MZ800_screen_changed();
     g_hwscroll.regSSA = value & 0x7f;
     hwscroll_regs_changed();
 }
 
 void hwscroll_set_sea(unsigned value)
 {
+    if (!GDG_MZ800_DMD_TEST_MZ700) framebuffer_MZ800_screen_changed();
     g_hwscroll.regSEA = (value & 0x7f) << 6;
     hwscroll_regs_changed();
 }
 
 void hwscroll_set_sw(unsigned value)
 {
+    if (!GDG_MZ800_DMD_TEST_MZ700) framebuffer_MZ800_screen_changed();
     g_hwscroll.regSW = (value & 0x7f) << 6;
     hwscroll_regs_changed();
 }
 
 void hwscroll_set_sof(unsigned value)
 {
+    if (!GDG_MZ800_DMD_TEST_MZ700) framebuffer_MZ800_screen_changed();
     g_hwscroll.regSOF = (value & 0x3ff) << 3;
     hwscroll_regs_changed();
 }
