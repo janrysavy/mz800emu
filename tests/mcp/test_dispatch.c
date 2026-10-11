@@ -88,7 +88,8 @@
  * mcp-run-mzf-bootstrap doplnil media_run_mzf (reset + bootstrap jako
  * --run-mzf, přidán na KONEC cmd_map[]) = 168 + 1 = 169.
  */
-#define MCP_EXPECTED_CMD_COUNT 170
+/* Fork adds five PC-map and five fetched-detail coverage commands. */
+#define MCP_EXPECTED_CMD_COUNT 180
 
 
 /* ====================================================================== */
@@ -1295,25 +1296,36 @@ void test_supported_commands_list(void) {
     /* V1.A.6 - Watch + Callstack + CDL Tools. */
     TEST_ASSERT_EQUAL_STRING("watch_add",     cmds[41]);
     TEST_ASSERT_EQUAL_STRING("callstack_get", cmds[45]);
-    TEST_ASSERT_EQUAL_STRING("cdl_export",    cmds[49]);
+    TEST_ASSERT_EQUAL_STRING("cdl_export",    cmds[59]);
+    /* Five PC-map and five fetched-detail commands follow callstack_get. */
+    TEST_ASSERT_EQUAL_STRING("coverage.start", cmds[46]);
+    TEST_ASSERT_EQUAL_STRING("coverage.stop", cmds[47]);
+    TEST_ASSERT_EQUAL_STRING("coverage.reset", cmds[48]);
+    TEST_ASSERT_EQUAL_STRING("coverage.status", cmds[49]);
+    TEST_ASSERT_EQUAL_STRING("coverage.read", cmds[50]);
+    TEST_ASSERT_EQUAL_STRING("coverage.detail.start", cmds[51]);
+    TEST_ASSERT_EQUAL_STRING("coverage.detail.stop", cmds[52]);
+    TEST_ASSERT_EQUAL_STRING("coverage.detail.reset", cmds[53]);
+    TEST_ASSERT_EQUAL_STRING("coverage.detail.status", cmds[54]);
+    TEST_ASSERT_EQUAL_STRING("coverage.detail.read", cmds[55]);
     /* V1.A.7 - Profiler Tools. */
-    TEST_ASSERT_EQUAL_STRING("profiler_start", cmds[50]);
-    TEST_ASSERT_EQUAL_STRING("profiler_get",   cmds[54]);
+    TEST_ASSERT_EQUAL_STRING("profiler_start", cmds[60]);
+    TEST_ASSERT_EQUAL_STRING("profiler_get",   cmds[64]);
     /* V1.B.1 - Media Tools. */
-    TEST_ASSERT_EQUAL_STRING("media_load_mzf", cmds[55]);
-    TEST_ASSERT_EQUAL_STRING("media_state",    cmds[59]);
+    TEST_ASSERT_EQUAL_STRING("media_load_mzf", cmds[65]);
+    TEST_ASSERT_EQUAL_STRING("media_state",    cmds[69]);
     /* V1.B.2 - Platform + Config Tools. */
-    TEST_ASSERT_EQUAL_STRING("settings_set",  cmds[60]);
-    TEST_ASSERT_EQUAL_STRING("periph_detach", cmds[64]);
+    TEST_ASSERT_EQUAL_STRING("settings_set",  cmds[70]);
+    TEST_ASSERT_EQUAL_STRING("periph_detach", cmds[74]);
     /* V1.B.3 - hot-swap (pipe-only). */
-    TEST_ASSERT_EQUAL_STRING("emu_stop",      cmds[65]);
+    TEST_ASSERT_EQUAL_STRING("emu_stop",      cmds[75]);
     /* V1.C.1 - HID Tools. */
-    TEST_ASSERT_EQUAL_STRING("input_send_key",              cmds[66]);
-    TEST_ASSERT_EQUAL_STRING("input_send_keys",             cmds[67]);
-    TEST_ASSERT_EQUAL_STRING("input_press_key",             cmds[68]);
-    TEST_ASSERT_EQUAL_STRING("input_release_key",           cmds[69]);
-    TEST_ASSERT_EQUAL_STRING("input_send_joystick",         cmds[70]);
-    TEST_ASSERT_EQUAL_STRING("input_send_keys_with_delays", cmds[71]);
+    TEST_ASSERT_EQUAL_STRING("input_send_key",              cmds[76]);
+    TEST_ASSERT_EQUAL_STRING("input_send_keys",             cmds[77]);
+    TEST_ASSERT_EQUAL_STRING("input_press_key",             cmds[78]);
+    TEST_ASSERT_EQUAL_STRING("input_release_key",           cmds[79]);
+    TEST_ASSERT_EQUAL_STRING("input_send_joystick",         cmds[80]);
+    TEST_ASSERT_EQUAL_STRING("input_send_keys_with_delays", cmds[81]);
 }
 
 
