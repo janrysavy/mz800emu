@@ -23,6 +23,7 @@
 #include "ui-imgui/filechooser/res/CustomFont.h"
 
 #include "main.h"  /* g_sdlapp */
+#include "iface-video/sdl3/iface_video_sdl3.h"
 extern "C" void imgui_filechooser_settings_init(void);
 
 #include "mzarch/mzarch_config.h"
@@ -658,6 +659,8 @@ void myimgui_destroy_cb(SdlAppWindow *win, gpointer user_data)
     };
 
     ImGui::SetCurrentContext(ctx);
+    if (win->name && strcmp(win->name, "main_window") == 0)
+        video_sdlapp_release_ui_textures();
 
     if (win->renderer_type == SDLAPP_RENDERER_SDL)
     {

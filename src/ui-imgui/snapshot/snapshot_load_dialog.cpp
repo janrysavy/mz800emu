@@ -87,6 +87,11 @@ static void snapshot_load_clear_preview(void)
     s_preview_height = 0;
 }
 
+extern "C" void snapshot_load_release_preview(void)
+{
+    snapshot_load_clear_preview();
+}
+
 
 static void snapshot_load_update_preview(const std::string &fullPath)
 {

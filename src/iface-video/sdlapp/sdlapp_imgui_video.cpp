@@ -43,6 +43,7 @@ typedef struct SdlappMyImGuiVideo_t
 {
     SDL_Surface *surface;
     VideoTexture image_texture;
+    bool images_loaded;
     guint update_title_timer; /**< sdlapp timer id periodické aktualizace titulku okna (0 = neběží, headless) */
     Uint64 lastPictureTime;
     int TARGET_FPS;
@@ -262,7 +263,7 @@ static gboolean sdlapp_myimgui_video_init(void)
     if (!requested) requested = "software";
     bool opengl = strcmp(requested, "opengl") == 0;
     bool warp = strcmp(requested, "warp") == 0;
-    if (!opengl && !strcmp(requested, "direct3d11") || warp) {
+    if ((!opengl && !strcmp(requested, "direct3d11")) || warp) {
 #ifndef _WIN32
         SDLAPP_ERROR("Direct3D11 renderers require Windows");
         return false;
@@ -276,8 +277,8 @@ static gboolean sdlapp_myimgui_video_init(void)
         SDL_SetHintWithPriority(SDL_HINT_RENDER_DRIVER, warp ? "direct3d11" : requested, SDL_HINT_OVERRIDE);
         /* Override inherited WARP hints in both directions. */
         SDL_SetHintWithPriority("SDL_RENDER_DIRECT3D11_WARP", warp ? "1" : "0", SDL_HINT_OVERRIDE);
-        sdl3_backend_video_init();
-    } else sdl3_backend_video_opengl_init();
+        if (!sdl3_backend_video_init()) return false;
+    } else if (!sdl3_backend_video_opengl_init()) return false;
 
     SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | (opengl ? SDL_WINDOW_OPENGL : 0);
     SdlAppRendererType renderer = opengl ? SDLAPP_RENDERER_OPENGL : SDLAPP_RENDERER_SDL;
@@ -363,7 +364,23 @@ static gboolean sdlapp_myimgui_video_init(void)
 
     sdlapp_myimgui_video_reset_fps_timer();
 
-    return imgui_images_load_all();
+    video->images_loaded = imgui_images_load_all();
+    return video->images_loaded;
+}
+
+extern "C" void snapshot_load_release_preview(void);
+
+extern "C" void video_sdlapp_release_ui_textures(void)
+{
+    if (!g_sdlapp_myimgui_video) return;
+    snapshot_load_release_preview();
+    video_sdl3_texture_destroy(g_sdlapp_myimgui_video->image_texture);
+    g_sdlapp_myimgui_video->image_texture = 0;
+    if (g_sdlapp_myimgui_video->images_loaded) {
+        imgui_images_destroy_all();
+        g_sdlapp_myimgui_video->images_loaded = false;
+    }
+    video_sdl3_texture_backend(NULL, false);
 }
 
 static void sdlapp_myimgui_video_exit(void)
@@ -373,6 +390,7 @@ static void sdlapp_myimgui_video_exit(void)
      * @c imgui_images_destroy_all (= hlásilo by "Images not loaded"). */
     gboolean headless = sdlapp_option_present("--headless");
 
+    if (!headless) video_sdlapp_release_ui_textures();
     if (g_sdlapp_myimgui_video)
     {
         if (g_sdlapp_myimgui_video->update_title_timer)
@@ -396,9 +414,7 @@ static void sdlapp_myimgui_video_exit(void)
         g_free(g_gui);
     };
     g_gui = NULL;
-    if (!headless) imgui_images_destroy_all();
-    video_sdl3_texture_backend(NULL, false);
-    sdl3_backend_video_quit();
+    /* sdlapp_destroy shuts down ImGui/window renderers before SDL video. */
 }
 
 static SDL_Window *getSDL_Window_by_name(const char *name)
@@ -854,9 +870,11 @@ static void sdlapp_imgui_video_center_main_window_request(void)
 
 static void sdlapp_imgui_video_send_gl_swapinterval_cb(SdlAppWindow *win, SDL_Event *event)
 {
-    (void)win;
     int value = GPOINTER_TO_INT(event->user.data2);
-    video_sdl3_set_GL_swap_interval(value);
+    if (win->renderer_type == SDLAPP_RENDERER_OPENGL)
+        video_sdl3_set_GL_swap_interval(value);
+    else if (!SDL_SetRenderVSync(win->sdl_renderer, value))
+        SDLAPP_ERROR("SDL renderer VSync setting failed: %s", SDL_GetError());
 }
 
 static void sdlapp_imgui_video_send_gl_swapinterval_request(int value)

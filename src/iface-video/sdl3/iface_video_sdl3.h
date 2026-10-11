@@ -21,6 +21,7 @@ extern "C"
     VideoTexture video_sdl3_texture_create(SDL_Surface *surface);
     bool video_sdl3_texture_update(VideoTexture texture, SDL_Surface *surface);
     void video_sdl3_texture_destroy(VideoTexture texture);
+    void video_sdlapp_release_ui_textures(void);
     SDL_Surface *ConvertIndexedSurfaceToRGBA(SDL_Surface *surface);
     void video_sdl3_set_render_vsync(bool enabled);
     void video_sdl3_set_GL_swap_interval(int value);

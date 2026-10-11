@@ -176,12 +176,12 @@ SDL_Surface *ConvertIndexedSurfaceToRGBA(SDL_Surface *surface)
 
     Uint8 *srcPixels = (Uint8 *)surface->pixels;
     Uint32 *dstPixels = (Uint32 *)converted->pixels;
-    int pixelCount = surface->w * surface->h;
-
-    // Kopírujeme a převádíme indexované pixely na RGBA
-    for (int i = 0; i < pixelCount; i++)
+    // Respect row pitch, including odd-width indexed UI/component surfaces.
+    for (int y = 0; y < surface->h; y++)
+    for (int x = 0; x < surface->w; x++)
     {
-        Uint8 index = srcPixels[i];               // Index v paletě
+        int i = y * (converted->pitch / 4) + x;
+        Uint8 index = srcPixels[y * surface->pitch + x];               // Index v paletě
         SDL_Color color = palette->colors[index]; // Skutečná barva
         dstPixels[i] = SDL_MapRGBA(SDL_GetPixelFormatDetails(SDL_PIXELFORMAT_RGBA32), NULL, color.r, color.g, color.b, 255);
 #if 0
