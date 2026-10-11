@@ -18,7 +18,7 @@ mz_add_test(video-textures
     TYPE STANDALONE
     SOURCES test_video_textures.c
             ${CMAKE_SOURCE_DIR}/src/iface-video/sdl3/iface_video_sdl3.c
-    LIBS mz::sdl3 mz::glib OpenGL::GL
+    LIBS mz::sdl3 mz::glib mz::opengl
     LABELS "standalone;ui;software"
 )
 
