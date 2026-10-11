@@ -1,135 +1,49 @@
+> Historical issue report for `26afdb3`. The current fork replaces its optional-event serialization with the upstream implementation [ce1be1d](https://github.com/michalhucik/mz800emu/commit/ce1be1d6ccc56a2fa3b99497e78b37866cf160fd), which derives the pending event from the restored raster and keeps the snapshot format unchanged. See [upstream issue #6](https://github.com/michalhucik/mz800emu/issues/6). The reproducer remains asset-free.
+
 # Snapshot restore leaves a stale GDG event and crashes mz800emu
 
-Created by **GPT-6.1 Sol** on 2026-10-09. Human reviewer: **Jan Rysavy**;
-review is pending. This report has not been submitted as an upstream issue or PR.
+Loading a snapshot restores the GDG raster position but leaves the pending `g_gdg.event` from the machine being replaced. Resuming can process a screen-row event in the top border, causing an out-of-bounds VRAM read and a host access violation (`0xC0000005`).
 
-## Summary
+Reproduced on clean upstream [`95ca032ca789d24dffcd39827da1ef8cbbbe135a`](https://github.com/michalhucik/mz800emu/tree/95ca032ca789d24dffcd39827da1ef8cbbbe135a): Windows x64, MSYS2 UCRT64 GCC/CMake Release build, headless MCP pipe transport.
 
-Loading a valid snapshot restores the GDG beam position but leaves
-`g_gdg.event` from the machine being replaced. Resuming can consequently process
-`MZEVENT_GDG_AFTER_LAST_SCREEN_PIXEL` while the beam is in the top border.
-The framebuffer then subtracts the canvas origin from an unsigned row number
-and reads far beyond the VRAM allocation. On Windows this produces an access
-violation, `0xC0000005`.
+## Reproduction
 
-This reproduces with a tiny, independently written JP/NOP program in documented
-320×200 four-colour mode. No game code, sprites, sound samples, ROM payload,
-proprietary source or external application code is supplied by the test.
-An ordinary emulator installation supplies its own dependencies/firmware;
-none are included with this report. Generated snapshots are local test artifacts
-and must not be attached to the public report.
-
-## Affected source and environment
-
-- Repository: <https://github.com/michalhucik/mz800emu>.
-- Reproduced on a clean build of upstream `95ca032ca789d24dffcd39827da1ef8cbbbe135a`.
-- Also reproduced with our earlier native inspection build based on
-  `3cbaddc8f1fa6dfb2bbdd90bab3d159c56ab446d`, with and without our callback-clock correction.
-- Windows x64; MSYS2 UCRT64 GCC/CMake Release build; MCP pipe transport,
-  headless, maximum host speed. Physical guest clocks are unchanged.
-- Relevant snapshot and framebuffer source files are identical between those
-  upstream revisions. No defect in our renderer is required to reproduce it.
-
-## Minimal reproduction
-
-Use the standalone, MIT-licensed Python script
-`tests/snapshot/repro_gdg_event.py` in the fix branch. It uses only the Python
-standard library and the emulator's existing JSONL/MCP API.
+Save the standalone, MIT-licensed [repro_gdg_event.py](../../tests/snapshot/repro_gdg_event.py) and run it against an unmodified upstream executable. It needs only Python's standard library and the emulator's existing JSONL/MCP API.
 
 ```powershell
-python -X utf8 tests/snapshot/repro_gdg_event.py `
+python -X utf8 repro_gdg_event.py `
   --exe C:/path/to/mz800emu.exe `
   --output C:/temp/mz800-snapshot-repro-1
 ```
 
-The output directory must be new. If dependency DLLs are not beside the executable,
-add `--dependency-dir C:/path/to/dependencies`. Optional `--cdb C:/path/to/cdb.exe`
-captures a host-only exception/register/stack log; it does not create a memory dump.
+Use a new output directory. If DLLs are elsewhere, add `--dependency-dir C:/path/to/dependencies`.
 
-The script:
+The script supplies an independently written JP/NOP program in ordinary RAM, with interrupts disabled and `DMD=00h` (320×200, four colours). It:
 
-1. Starts `--mcp-pipe --no-save-ini --no-first-run-windows` and pauses.
-2. Selects documented graphics mode `DMD=00h`, maps RAM for the test and disables
-   maskable interrupts. Supplies `JP $3000` at `$3000` and NOP bytes at `$3100`.
-3. Saves a native snapshot near the beginning of a frame.
-4. Executes only those test bytes until a visible scanline at horizontal tick
-   790–793, where the next emulator GDG event is `AFTER_LAST_SCREEN_PIXEL`.
-5. Restores the saved snapshot, writes the same documented DMD value, and runs one frame.
+1. Saves a native snapshot near the start of a frame.
+2. Runs to a visible scanline with `AFTER_LAST_SCREEN_PIXEL` pending.
+3. Restores the snapshot, writes the same DMD value and runs one frame.
 
-The JSON report records every request/response, executable/script SHA-256,
-raster positions, clock configuration and spontaneous process exit before cleanup.
-No snapshot fields or guest state are repaired to produce the crash.
+In the recorded failing run, the snapshot was saved at **frame 1, row 0, column 193**, after which execution reached **frame 2, row 103, column 793**. Restoring returned to the saved raster position, but the next run disconnected and the process exited with **3221225477 / 0xC0000005**.
 
-### Observed and expected
+**Expected:** the restored machine runs normally with the pending GDG event appropriate to its saved raster position.
 
-One clean upstream run saved **frame 1, row 0, column 193**, advanced to
-**frame 2, row 103, column 793**, then restored **frame 1, row 0, column 193**.
-The next bounded `run` lost the connection; the process exited spontaneously
-with decimal **3221225477**, Windows **0xC0000005**.
+The script supplies no game or ROM payload and does not edit the snapshot in the crash reproduction. Generated snapshot archives may contain installed firmware and should not be attached to the issue.
 
-Expected: restoring the snapshot also restores its pending GDG event, so a
-one-frame run completes normally. A snapshot without the new event element
-should reconstruct the next event from its saved raster rather than retaining
-an unrelated event from the current machine.
+## Cause
 
-## Cause and debugger evidence
+`snap_gdg.c` saves `beam_row` and `total_elapsed` but omits the pending GDG event name and timestamp. The event restored by `snap_mzarch.c` belongs to the separate main scheduler.
 
-`src/emulator/snapshot/handlers/snap_gdg.c` serializes `beam_row` and
-`total_elapsed`, but originally omitted `g_gdg.event.event_name` and
-`g_gdg.event.ticks`. `snap_mzarch.c` restores the separate main scheduler event;
-that does not restore the GDG scheduler's pending event.
+Source inspection traces the stale `MZEVENT_GDG_AFTER_LAST_SCREEN_PIXEL` through `gdg_process_events` to `framebuffer_MZ800_current_screen_row_fill` and `framebuffer_MZ800_screen_row_fill`. At row 0, `(beam_row - 46) * 40` wraps to **0xfffff8d0**, an invalid index into an 8192-byte VRAM plane.
 
-The stale screen-row event eventually calls:
+CDB independently confirms an access violation at `movzx esi,byte ptr [rbx+rdx]` with **RDX=00000000fffff8d0**. Its Release-build stack contains module offsets; the function names above come from source inspection.
 
-```text
-gdg_process_events
-  -> framebuffer_MZ800_current_screen_row_fill
-    -> framebuffer_MZ800_screen_row_fill
-      -> g_memoryVRAM_I[real_vram_addr]
-```
+## Fix and checks
 
-With `beam_row=0` and canvas origin 46, the calculation
-`(beam_row - 46) * 40` wraps to **0xfffff8d0**. CDB captured that value in `RDX`
-at the failing byte read. The real VRAM plane has 8192 bytes; this index is
-4,294,965,456. The separate missing-window message in headless logs is not the
-cause demonstrated by this stack.
+The fix in this commit saves, validates and restores the pending event. For older snapshots without the optional element, it reconstructs the next event from the saved raster. It does not change CPU clocks, palettes, WAIT behaviour or raster timing.
 
-## Hardware documentation check
+The focused fixed build passes **13 cases**: new and synthetic legacy-format snapshots at rows **0, 45, 46, 245, 246 and 311**, plus one `DMD=02h` case. The legacy fixture removes only the optional event element and updates the archive checksum. All **five existing snapshot CTest suites** also pass.
 
-This does not depend on an undocumented graphics mode:
+The fixture's display mode is documented: [GDG graphics modes](https://www.ordoz.com/gdg-documented/10-mz800-video-system.html) lists `DMD=00h` as 320×200, four colours without expanded VRAM; the [Sharp Service Manual, printed page 20 / PDF page 21](https://www.idealine.info/sharpmz/mz-800/download/sm800.pdf#page=21) defines the display-mode register at CEh. Snapshot event restoration itself is an emulator operation.
 
-- [GDG graphics modes](https://www.ordoz.com/gdg-documented/10-mz800-video-system.html)
-  identifies `DMD=00h` as 320×200, four colours, planes I/II, without expanded VRAM.
-  `DMD=02h` is also documented but requires expanded VRAM; the crash reproduces
-  in both modes.
-- [Sharp Service Manual, printed page 20 / PDF page 21](https://www.idealine.info/sharpmz/mz-800/download/sm800.pdf#page=21)
-  defines the display-mode register at port CEh and the corresponding bit settings.
-- [GDG memory mapping](https://www.ordoz.com/gdg-documented/06-memory-mapping.html)
-  describes the RAM mapping operations used by the fixture. Code executes in
-  ordinary RAM at `$3000`.
-- [GDG video timing](https://www.ordoz.com/gdg-documented/02-video-timing.html)
-  and [DMD propagation](https://www.ordoz.com/gdg-documented/19-dmd-propagation.html)
-  describe hardware raster behaviour. Native snapshot loading and its host-side
-  event queue are emulator operations, not hardware programming requirements.
-
-The numbers 46, 790 and 794 above describe this emulator's existing PAL event
-coordinates; they are not proposed changes to hardware timing. The fix changes
-saved-state restoration only, with no CPU-clock, palette, WAIT or raster-timing changes.
-
-## Fix and validation
-
-The focused patch saves/restores the pending GDG event for MZ-800 snapshots,
-validates its index/raster timestamp, and reconstructs the next event for older
-snapshots that lack the optional element. It does not merely suppress the
-out-of-bounds read or skip display work.
-
-Initial isolated validation: the reproduction crashes before the fix and
-completes after it. New and explicitly constructed legacy-format snapshots
-pass at saved rows **0, 45, 46, 245, 246 and 311**, covering the canvas boundaries
-and the frame end. The compatibility fixture removes only the new optional
-element and recalculates the archive checksum; it is separate from the unmodified
-crash reproduction.
-
-Current-upstream fix-build results and a permanent fix-commit link will be added
-after that build has been checked. These tests do not certify every snapshot
-subsystem, audio waveform parity or real-hardware behaviour.
+Created by **GPT-6.1 Sol**, 2026-10-09. Reviewed by **Jan Rysavy**.
