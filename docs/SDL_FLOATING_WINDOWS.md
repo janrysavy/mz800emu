@@ -10,9 +10,15 @@ belong to a particular renderer.
 
 ## Local extension
 
-Enable ImGui platform viewports and NoAutoMerge for the SDL frontend, so panels
-remain independent native windows even over the game. The full-screen game
-window explicitly stays on the main viewport. Docking remains disabled.
+Enable ImGui platform viewports for the SDL frontend. The user selected one
+separate debugger workspace containing all debugger panels. Only this host
+uses NoAutoMerge; debugger panels dock inside it and preserve rearrangement
+within its dock tree. Registers, memory map and breakpoints start in separate
+split regions; other panels use the central region with tabs. Each debugger
+Begin routes through one common helper, including secondary browser/disassembly
+and hardware inspectors. Closing the host clears its panel requests; reopening
+a panel reopens the workspace. The full-screen game stays on the main viewport.
+The SDL frontend enables docking for this host; OpenGL keeps its existing layout.
 The existing SDL platform backend owns window creation, movement, resizing,
 focus and close events. New renderer callbacks create one explicitly selected
 SDL renderer per viewport and destroy textures before their owning renderer.
@@ -41,7 +47,7 @@ resize-through4K remains passing. No OpenGL execution.
 The bounded actual-emulator check `--ui-test-floating-windows` requires
 `--ui-hidden` plus `--ui-exit-after-ms`; headless and OpenGL modes are rejected.
 It opens the real CPU-register, breakpoint and memory-map widgets, hides all
-platform windows and writes their final surfaces at UI frame20 in cfg-dir.
+platform windows and writes the single workspace surface at UI frame20 in cfg-dir.
 Normal visible launches do not open debugger panels automatically.
 
 The first real-widget tests exposed a pre-existing startup race: software and

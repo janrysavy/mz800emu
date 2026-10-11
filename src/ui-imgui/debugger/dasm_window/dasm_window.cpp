@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file dasm_window.cpp
  * @brief Disassembler V1 - implementace samostatného range-based okna.
@@ -1141,7 +1142,7 @@ void dasm_window_render(void)
      */
     ImGui::SetNextWindowSize(ImVec2(1024, 480), ImGuiCond_FirstUseEver);
 
-    if (ImGui::Begin(_("Disassembler###dasm_window"),
+    if (ImGui::Begin(debugger_workspace_panel(_("Disassembler###dasm_window")),
                      &g_gui->showDisassemblerWindow,
                      ImGuiWindowFlags_NoCollapse))
     {

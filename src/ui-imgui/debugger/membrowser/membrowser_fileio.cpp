@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file membrowser_fileio.cpp
  * @brief Load BIN / Save BIN file dialog handlery - implementace.
@@ -533,7 +534,7 @@ static void render_save_error ( void )
 {
     if ( s_save_error[0] == '\0' ) return;
 
-    if ( ImGui::Begin ( _L ( "Save error###mb_save_err" ) ) ) {
+    if ( ImGui::Begin (debugger_workspace_panel(_L ( "Save error###mb_save_err" ))) ) {
         ImGui::PushStyleColor ( ImGuiCol_Text,
                                  ImVec4 ( 1.0f, 0.3f, 0.3f, 1.0f ) );
         ImGui::TextWrapped ( "%s", s_save_error );
@@ -718,7 +719,7 @@ static void render_load_error ( void )
 {
     if ( s_load_error[0] == '\0' ) return;
 
-    if ( ImGui::Begin ( _L ( "Load result###mb_load_err" ) ) ) {
+    if ( ImGui::Begin (debugger_workspace_panel(_L ( "Load result###mb_load_err" ))) ) {
         ImGui::PushStyleColor ( ImGuiCol_Text,
                                  ImVec4 ( 1.0f, 0.6f, 0.3f, 1.0f ) );
         ImGui::TextWrapped ( "%s", s_load_error );

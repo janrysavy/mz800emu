@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * bpt_window.cpp — Hlavní okno Breakpoints (ImGui)
  *
@@ -1621,7 +1622,7 @@ void imgui_breakpoints_window ( bool *p_open ) {
      * Výška 480 pokryje menu bar + tab bar + list BP + bottom row (Add
      * input + Save tlačítko). Jen initial velikost (FirstUseEver). */
     auto_layout_first_use_portrait ( bpt_title, 825.0f, 480.0f );
-    if ( !ImGui::Begin ( bpt_title, p_open, flags ) ) {
+    if ( !ImGui::Begin (debugger_workspace_panel(bpt_title), p_open, flags ) ) {
         ImGui::End ( );
         return;
     };

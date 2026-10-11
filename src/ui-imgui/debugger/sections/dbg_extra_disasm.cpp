@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * dbg_extra_disasm.cpp - Sekundární Disassembly okna #2 - #5
  *
@@ -259,7 +260,7 @@ static void render_one_slot(int idx)
         ImGui::SetNextWindowFocus();
     s_focus_pending[idx] = false;
 
-    if (ImGui::Begin(title, p_open, ImGuiWindowFlags_NoCollapse))
+    if (ImGui::Begin(debugger_workspace_panel(title), p_open, ImGuiWindowFlags_NoCollapse))
     {
         /* V9.3 dual-step bring-to-front (krok 2 ze 2): po Begin víme,
          * do kterého platform viewportu okno patří. Pokud separate

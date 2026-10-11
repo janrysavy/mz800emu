@@ -212,15 +212,10 @@ static gboolean myimgui_init_for_sdl3_sdlrenderer(SdlAppWindow *win, gpointer us
     io.IniFilename = nullptr;                             // We don't want to save settings
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
-    /* Docking ZÁMĚRNĚ VYPNUTO - okna debuggeru/HW panelů nejsou
-     * navržena pro docking ergonomii (= různé sizing constraints, layout
-     * persistence per-window, multi-viewport mode plovoucí okna). Pokud
-     * by se v budoucnu chtělo docking opt-in pro vybrané okno, dělá se
-     * to per-window přes ImGuiWindowFlags_None místo NoDocking. */
-    // io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    // Local SDL renderer extension keeps debugger panels as native windows.
+    // The user-selected SDL layout groups debugger panels in one native host.
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
-    io.ConfigViewportsNoAutoMerge = true;
+    io.ConfigViewportsNoAutoMerge = false;
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
     ImGui::GetStyle().WindowRounding = 0.0f;

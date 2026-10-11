@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * watch_window.cpp - Watch panel UI (Phase A = L0 + Phase B = L1 typy
  *                                     + Phase C = L2 expression + Save/Load
@@ -1644,7 +1645,7 @@ void watch_window_render ( bool *p_open )
                                             ImVec2 ( FLT_MAX, FLT_MAX ) );
 
     /* ###watch_panel = stabilni ID i pri zmene titulu (lokalizace). */
-    if ( !ImGui::Begin ( _L ( "Watch###watch_panel" ), p_open,
+    if ( !ImGui::Begin (debugger_workspace_panel(_L ( "Watch###watch_panel" )), p_open,
                           ImGuiWindowFlags_NoCollapse ) ) {
         ImGui::End ( );
         return;

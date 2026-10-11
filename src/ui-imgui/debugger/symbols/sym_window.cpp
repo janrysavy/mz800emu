@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * sym_window.cpp - Symbol Browser panel (D.8.6 + V1.5.D rework dle
  * Variables vzoru, Michal feedback 2026-05-06).
@@ -1153,7 +1154,7 @@ void sym_window_render ( bool *p_open )
     /* Auto-layout při fresh open. Stabilní ID přes ###. */
     const char *sym_title = _L("Symbols###sym_main");
     auto_layout_first_use_portrait ( sym_title, 400.0f, 500.0f );
-    if ( !ImGui::Begin ( sym_title, p_open,
+    if ( !ImGui::Begin (debugger_workspace_panel(sym_title), p_open,
                           ImGuiWindowFlags_NoCollapse |
                           ImGuiWindowFlags_HorizontalScrollbar ) ) {
         ImGui::End ( );

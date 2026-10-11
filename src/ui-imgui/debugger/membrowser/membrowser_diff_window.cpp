@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file membrowser_diff_window.cpp
  * @brief Memory Diff okno - implementace (V5).
@@ -566,7 +567,7 @@ static void render_export_dialog ( void )
     }
 
     if ( s_diff.export_error[0] != '\0' ) {
-        if ( ImGui::Begin ( _L ( "Export error###mb_diff_export_err" ) ) ) {
+        if ( ImGui::Begin (debugger_workspace_panel(_L ( "Export error###mb_diff_export_err" ))) ) {
             ImGui::PushStyleColor ( ImGuiCol_Text,
                                      ImVec4 ( 1.0f, 0.3f, 0.3f, 1.0f ) );
             ImGui::TextWrapped ( "%s", s_diff.export_error );
@@ -848,7 +849,7 @@ extern "C" void membrowser_diff_window_render ( bool *p_open )
     std::snprintf ( title, sizeof ( title ), "%s###mb_diff_main",
                     _( "Memory Diff" ) );
 
-    if ( !ImGui::Begin ( title, p_open, ImGuiWindowFlags_NoCollapse ) ) {
+    if ( !ImGui::Begin (debugger_workspace_panel(title), p_open, ImGuiWindowFlags_NoCollapse ) ) {
         ImGui::End ( );
         return;
     }

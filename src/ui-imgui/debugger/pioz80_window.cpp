@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file pioz80_window.cpp
  * @brief Debugger: Z80 PIO chip state inspector window (per-chip-panels F4).
@@ -386,7 +387,7 @@ void imgui_pioz80_state_window(bool *p_open)
 {
     ImGui::SetNextWindowSize(ImVec2(460, 640), ImGuiCond_FirstUseEver);
 
-    if (!ImGui::Begin(_L("Z80 PIO State###PIOZ80State"), p_open,
+    if (!ImGui::Begin(debugger_workspace_panel(_L("Z80 PIO State###PIOZ80State")), p_open,
                       ImGuiWindowFlags_NoCollapse))
     {
         ImGui::End();

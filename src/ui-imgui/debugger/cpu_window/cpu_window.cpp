@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * cpu_window.cpp - CPU Registers v samostatném plovoucím okně (Variant B).
  *
@@ -87,7 +88,7 @@ extern "C" void cpu_window_render ( bool *p_open ) {
      */
     const char *cpu_title = _L ( "CPU Registers###cpu_window" );
     auto_layout_first_use_portrait ( cpu_title, 320.0f, 480.0f );
-    if ( !ImGui::Begin ( cpu_title, p_open, wflags ) ) {
+    if ( !ImGui::Begin (debugger_workspace_panel(cpu_title), p_open, wflags ) ) {
         ImGui::End ( );
         return;
     };

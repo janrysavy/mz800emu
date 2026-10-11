@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file ctc_window.cpp
  * @brief Debugger: CTC 8253 chip state inspector window (per-chip-panels F2).
@@ -367,7 +368,7 @@ void imgui_ctc_state_window(bool *p_open)
 
     /* Stable ID "###CTCState" (tři hashe) drží layout přes různé title
      * variants (paused/running atd. v budoucnu). */
-    if (!ImGui::Begin(_L("CTC 8253 State###CTCState"), p_open,
+    if (!ImGui::Begin(debugger_workspace_panel(_L("CTC 8253 State###CTCState")), p_open,
                       ImGuiWindowFlags_NoCollapse))
     {
         ImGui::End();

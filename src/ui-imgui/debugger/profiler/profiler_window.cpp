@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * profiler_window.cpp - CPU Profiler okno wrapper (mutant profiler V1, fáze F3).
  *
@@ -103,7 +104,7 @@ extern "C" void profiler_window_render ( bool *p_open ) {
     /* Stabilní ID přes ###. */
     const char *title = _L ( "CPU Profiler###profiler_window" );
     auto_layout_first_use_portrait ( title, 1280.0f, 560.0f );
-    if ( !ImGui::Begin ( title, p_open, wflags ) ) {
+    if ( !ImGui::Begin (debugger_workspace_panel(title), p_open, wflags ) ) {
         ImGui::End ( );
         /* Sync cache i v case sbalit/min, aby shutdown ulozil aktualni stav.
          * *p_open mohlo byt zmeneno krizem v titulbaru ImGui pred Beginem. */

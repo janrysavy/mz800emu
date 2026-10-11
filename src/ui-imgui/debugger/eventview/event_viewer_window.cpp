@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * File:   event_viewer_window.cpp
  *
@@ -4445,7 +4446,7 @@ extern "C" void event_viewer_window_render ( bool *p_open )
     /* Stable ID s ###suffix (= dynamic title ready, viz memory note
      * "ImGui stable ID je ###suffix"). Window title je překládán přes
      * _L() na úrovni ID; ImGui interně ID hashuje z části za "###". */
-    if ( !ImGui::Begin ( _L("Events###event_viewer_window"), p_open, ImGuiWindowFlags_NoCollapse ) ) {
+    if ( !ImGui::Begin (debugger_workspace_panel(_L("Events###event_viewer_window")), p_open, ImGuiWindowFlags_NoCollapse ) ) {
         ImGui::End ( );
         /* X tlačítko v titlebaru mohlo nastavit *p_open = false i při
          * collapsed okně - lifecycle dolů. */

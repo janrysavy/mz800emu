@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * File:   memmap_window.cpp
  *
@@ -1134,7 +1135,7 @@ extern "C" void memmap_window_render ( bool *p_open )
         ImGui::SetNextWindowFocus ( );
         s_focus_pending = false;
     };
-    if ( !ImGui::Begin ( title, p_open, ImGuiWindowFlags_NoCollapse ) ) {
+    if ( !ImGui::Begin (debugger_workspace_panel(title), p_open, ImGuiWindowFlags_NoCollapse ) ) {
         ImGui::End ( );
         return;
     };

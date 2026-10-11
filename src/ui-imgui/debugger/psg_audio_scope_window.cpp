@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file psg_audio_scope_window.cpp
  * @brief Debugger: PSG Audio Scope F5 (ring buffer, scope, envelope, note events, piano roll, MIDI+CSV export).
@@ -3323,7 +3324,7 @@ void imgui_psg_audio_scope_window(bool *p_open)
      * persistuje user resize do imgui.ini. */
     ImGui::SetNextWindowSize(ImVec2(720, 720), ImGuiCond_FirstUseEver);
 
-    if (!ImGui::Begin(_L("PSG Audio Scope###PSGAudioScope"), p_open,
+    if (!ImGui::Begin(debugger_workspace_panel(_L("PSG Audio Scope###PSGAudioScope")), p_open,
                       ImGuiWindowFlags_NoCollapse))
     {
         ImGui::End();

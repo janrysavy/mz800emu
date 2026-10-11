@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * callstack_window.cpp - Callstack okno wrapper (mutant callstack Fáze 2C).
  *
@@ -62,7 +63,7 @@ extern "C" void callstack_window_render ( bool *p_open ) {
     /* Stabilni ID pres ###. */
     const char *title = _L ( "Callstack (experimental)###callstack_window" );
     auto_layout_first_use_portrait ( title, 880.0f, 560.0f );
-    if ( !ImGui::Begin ( title, p_open, wflags ) ) {
+    if ( !ImGui::Begin (debugger_workspace_panel(title), p_open, wflags ) ) {
         ImGui::End ( );
         return;
     };
