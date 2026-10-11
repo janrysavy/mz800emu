@@ -1,0 +1,2 @@
+/* Process DPI policy before SDL creates main or debugger windows. */
+1 24 "dpi_awareness.manifest"
