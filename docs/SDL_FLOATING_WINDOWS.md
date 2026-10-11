@@ -18,6 +18,8 @@ split regions; other panels use the central region with tabs. Each debugger
 Begin routes through one common helper, including secondary browser/disassembly
 and hardware inspectors. Closing the host clears its panel requests; reopening
 a panel reopens the workspace. The full-screen game stays on the main viewport.
+If the main debugger was open, closing the host uses its existing emulator-thread
+state recompute request as well, so hidden windows do not leave tracing active.
 The SDL frontend enables docking for this host; OpenGL keeps its existing layout.
 The existing SDL platform backend owns window creation, movement, resizing,
 focus and close events. New renderer callbacks create one explicitly selected
