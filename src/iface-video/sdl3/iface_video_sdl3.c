@@ -5,6 +5,77 @@
 #include "iface/iface_video.h"
 #include "emulator/display.h"
 #include "libs/sdlapp/sdlapp.h"
+#include "iface_video_sdl3.h"
+
+static SDL_Renderer *texture_renderer;
+static bool texture_opengl;
+
+void video_sdl3_texture_backend(SDL_Renderer *renderer, bool opengl)
+{
+    texture_renderer = renderer;
+    texture_opengl = opengl;
+}
+
+static SDL_Surface *texture_rgba(SDL_Surface *surface)
+{
+    if (!surface) return NULL;
+    /* Emulator palettes intentionally have alpha zero; screen pixels are opaque. */
+    return surface->format == SDL_PIXELFORMAT_INDEX8
+        ? ConvertIndexedSurfaceToRGBA(surface)
+        : SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
+}
+
+VideoTexture video_sdl3_texture_create(SDL_Surface *surface)
+{
+    if (texture_opengl) return SDL_SurfaceToTexture(surface);
+    if (!texture_renderer) return 0;
+    SDL_Surface *rgba = texture_rgba(surface);
+    if (!rgba) return 0;
+    /* CreateTextureFromSurface may choose RGB/BGRA internally. Updates below
+     * supply RGBA32, so pin the texture format instead of assuming that choice. */
+    SDL_Texture *texture = SDL_CreateTexture(texture_renderer, SDL_PIXELFORMAT_RGBA32,
+                                            SDL_TEXTUREACCESS_STREAMING, rgba->w, rgba->h);
+    if (texture && !SDL_UpdateTexture(texture, NULL, rgba->pixels, rgba->pitch)) {
+        SDL_DestroyTexture(texture);
+        texture = NULL;
+    }
+    SDL_DestroySurface(rgba);
+    if (texture) {
+        SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_LINEAR);
+        SDL_SetTextureBlendMode(texture, surface->format == SDL_PIXELFORMAT_INDEX8
+                               ? SDL_BLENDMODE_NONE : SDL_BLENDMODE_BLEND);
+    }
+    return (VideoTexture)texture;
+}
+
+bool video_sdl3_texture_update(VideoTexture texture, SDL_Surface *surface)
+{
+    if (!texture || !surface) return false;
+    SDL_Surface *rgba = texture_rgba(surface);
+    if (!rgba) return false;
+    bool result = true;
+    if (texture_opengl) {
+        glBindTexture(GL_TEXTURE_2D, (GLuint)texture);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rgba->w, rgba->h,
+                       GL_RGBA, GL_UNSIGNED_BYTE, rgba->pixels);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    } else {
+        result = SDL_UpdateTexture((SDL_Texture *)texture, NULL, rgba->pixels, rgba->pitch);
+    }
+    SDL_DestroySurface(rgba);
+    return result;
+}
+
+void video_sdl3_texture_destroy(VideoTexture texture)
+{
+    if (!texture) return;
+    if (texture_opengl) {
+        GLuint name = (GLuint)texture;
+        glDeleteTextures(1, &name);
+    } else {
+        SDL_DestroyTexture((SDL_Texture *)texture);
+    }
+}
 
 #define SURFACE_COLORS_COUNT 256
 
@@ -116,12 +187,12 @@ SDL_Surface *ConvertIndexedSurfaceToRGBA(SDL_Surface *surface)
 
     Uint8 *srcPixels = (Uint8 *)surface->pixels;
     Uint32 *dstPixels = (Uint32 *)converted->pixels;
-    int pixelCount = surface->w * surface->h;
-
-    // Kopírujeme a převádíme indexované pixely na RGBA
-    for (int i = 0; i < pixelCount; i++)
+    // Respect row pitch, including odd-width indexed UI/component surfaces.
+    for (int y = 0; y < surface->h; y++)
+    for (int x = 0; x < surface->w; x++)
     {
-        Uint8 index = srcPixels[i];               // Index v paletě
+        int i = y * (converted->pitch / 4) + x;
+        Uint8 index = srcPixels[y * surface->pitch + x];               // Index v paletě
         SDL_Color color = palette->colors[index]; // Skutečná barva
         dstPixels[i] = SDL_MapRGBA(SDL_GetPixelFormatDetails(SDL_PIXELFORMAT_RGBA32), NULL, color.r, color.g, color.b, 255);
 #if 0

@@ -75,7 +75,7 @@ static Uint32 sdlapp_timer_sdl_callback(void *param, SDL_TimerID id, Uint32 inte
 static void sdlapp_process_timer_event(SdlApp *app, SDL_Event *event)
 {
     SdlAppTimer *timer = (SdlAppTimer *)event->user.data1;
-    if (!timer || !timer->callback)
+    if (!timer)
         return;
 
     /* ověříme, že timer stále existuje v seznamu */
@@ -89,7 +89,9 @@ static void sdlapp_process_timer_event(SdlApp *app, SDL_Event *event)
         }
     }
 
-    if (!found)
+    /* Removed timers can still have queued events. Do not dereference their
+     * freed data; the ID also protects against allocator pointer reuse. */
+    if (!found || timer->id != (guint)event->user.code || !timer->callback)
         return;
 
     if (!timer->callback(timer->id, timer->user_data))

@@ -539,6 +539,19 @@ void test_timer_remove_nonexistent(void)
     sdlapp_remove_timer(g_app, 999);
 }
 
+/** Queued timer data can outlive its allocation. It must not be dereferenced. */
+void test_timer_stale_event(void)
+{
+    SDL_Event event;
+    SDL_zero(event);
+    event.type = g_app->timer_event_type;
+    event.user.code = 999;
+    event.user.data1 = (void *)(uintptr_t)1;
+    TEST_ASSERT_TRUE(SDL_PushEvent(&event));
+    sdlapp_iteration(g_app);
+    TEST_ASSERT_NULL(g_app->timers);
+}
+
 /* ========================================================================
  * REGRESNÍ TESTY — opravené bugy
  * ======================================================================== */
@@ -679,6 +692,7 @@ int main(void)
     RUN_TEST(test_timer_add_remove);
     RUN_TEST(test_timer_zero_interval);
     RUN_TEST(test_timer_remove_nonexistent);
+    RUN_TEST(test_timer_stale_event);
 
     /* regresní */
     RUN_TEST(test_bug1_activate);

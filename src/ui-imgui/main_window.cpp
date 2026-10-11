@@ -3,7 +3,7 @@
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "libs/imgui/imgui.h"
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_opengl.h>
+#include "iface-video/sdl3/iface_video_sdl3.h"
 #include <cstring>
 
 // Lokalizace
@@ -59,7 +59,7 @@
 
 extern "C"
 {
-    void imgui_main_window(GLuint texture);
+    void imgui_main_window(VideoTexture texture);
 
     /* Snapshot dialogy */
     void imgui_snapshot_save_dialog(void);
@@ -173,7 +173,7 @@ static void ShowOverlayWindow(void)
     ImGui::PopStyleVar(2);
 }
 
-static void ShowFullScreenImageEmulatorWindow(GLuint texture)
+static void ShowFullScreenImageEmulatorWindow(VideoTexture texture)
 {
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->Pos);
@@ -268,7 +268,7 @@ static void ShowFullScreenImageEmulatorWindow(GLuint texture)
     }
 }
 
-void imgui_main_window(GLuint texture)
+void imgui_main_window(VideoTexture texture)
 {
     // hlavni okno + scanovani klavesnice pro pio8255 + overlay
     ShowFullScreenImageEmulatorWindow(texture);

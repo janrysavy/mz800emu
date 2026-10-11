@@ -11,7 +11,7 @@
 #include <glib.h>
 
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_opengl.h>
+#include "iface-video/sdl3/iface_video_sdl3.h"
 #include <SDL3_image/SDL_image.h>
 
 #include "libs/imgui/imgui.h"
@@ -40,7 +40,7 @@ extern "C" void snapshot_notification_show(const char *message, bool is_error);
 
 /* Kešovaný náhled */
 static std::string s_cached_preview_path;
-static GLuint s_preview_texture = 0;
+static VideoTexture s_preview_texture = 0;
 static int s_preview_width = 0;
 static int s_preview_height = 0;
 static st_SNAPSHOT_METADATA s_cached_metadata;
@@ -49,7 +49,7 @@ static bool s_metadata_valid = false;
 static bool s_file_dialog_open = false;
 
 /* Forward deklarace pro konverzi SDL_Surface na GL texturu */
-extern "C" GLuint SDL_SurfaceToTexture(SDL_Surface *surface);
+/* Backend-neutral texture helpers are declared in iface_video_sdl3.h. */
 
 
 static void snapshot_load_restore_emulation(bool load_succeeded)
@@ -78,13 +78,18 @@ static void snapshot_load_restore_emulation(bool load_succeeded)
 static void snapshot_load_clear_preview(void)
 {
     if (s_preview_texture) {
-        glDeleteTextures(1, &s_preview_texture);
+        video_sdl3_texture_destroy(s_preview_texture);
         s_preview_texture = 0;
     }
     s_cached_preview_path.clear();
     s_metadata_valid = false;
     s_preview_width = 0;
     s_preview_height = 0;
+}
+
+extern "C" void snapshot_load_release_preview(void)
+{
+    snapshot_load_clear_preview();
 }
 
 
@@ -113,7 +118,7 @@ static void snapshot_load_update_preview(const std::string &fullPath)
             if (surface) {
                 s_preview_width = surface->w;
                 s_preview_height = surface->h;
-                s_preview_texture = SDL_SurfaceToTexture(surface);
+                s_preview_texture = video_sdl3_texture_create(surface);
                 SDL_DestroySurface(surface);
             }
         }
