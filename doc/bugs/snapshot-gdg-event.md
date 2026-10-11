@@ -1,3 +1,5 @@
+> Historical issue report for `26afdb3`. The current fork replaces its optional-event serialization with the upstream implementation [ce1be1d](https://github.com/michalhucik/mz800emu/commit/ce1be1d6ccc56a2fa3b99497e78b37866cf160fd), which derives the pending event from the restored raster and keeps the snapshot format unchanged. See [upstream issue #6](https://github.com/michalhucik/mz800emu/issues/6). The reproducer remains asset-free.
+
 # Snapshot restore leaves a stale GDG event and crashes mz800emu
 
 Loading a snapshot restores the GDG raster position but leaves the pending `g_gdg.event` from the machine being replaced. Resuming can process a screen-row event in the top border, causing an out-of-bounds VRAM read and a host access violation (`0xC0000005`).
