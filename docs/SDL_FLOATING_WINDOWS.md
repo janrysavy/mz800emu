@@ -50,6 +50,14 @@ It opens the real CPU-register, breakpoint and memory-map widgets, hides all
 platform windows and writes the single workspace surface at UI frame20 in cfg-dir.
 Normal visible launches do not open debugger panels automatically.
 
+The final grouped feature passes all five focused CMake targets (SDL lifecycle,
+production video textures, geometry, native viewports, single workspace), and
+actual hidden software/Direct3D11/WARP native boot plus SPACE/N/P/O,16 guest
+frames and normal exit0. Each real-widget capture contains exactly one host
+with three docked panels. The labelled cadence-v2 Spectrum prefix passes105
+endpoints;221 complete paused CPU-panel response hashes match the pre-feature
+runtime. This covers bounded boot/input/display, not campaign or hardware proof.
+
 The first real-widget tests exposed a pre-existing startup race: software and
 WARP opened Breakpoints before emulator-thread debugger initialization. GDB
 resolved the null `g_breakpoints.breakpoints` access in
