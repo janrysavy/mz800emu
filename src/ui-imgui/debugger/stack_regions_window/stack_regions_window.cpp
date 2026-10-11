@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * stack_regions_window.cpp - V8 samostatne okno s tabulkou stack regionu.
  *
@@ -408,7 +409,7 @@ extern "C" void stack_regions_window_render ( bool *p_open ) {
     ImGuiWindowFlags wflags = ImGuiWindowFlags_NoCollapse;
 
     /* Stabilni ID pres ###. */
-    if ( !ImGui::Begin ( _L ( "Stack Regions###stack_regions_window" ),
+    if ( !ImGui::Begin (debugger_workspace_panel(_L ( "Stack Regions###stack_regions_window" )),
                           p_open, wflags ) ) {
         ImGui::End ( );
         return;

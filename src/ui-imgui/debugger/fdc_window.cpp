@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file fdc_window.cpp
  * @brief Debugger: FDC chip state inspector window.
@@ -184,7 +185,7 @@ void imgui_fdc_state_window(bool *p_open)
 #if CFG_HWEXT_HAVE_FDC
     ImGui::SetNextWindowSize(ImVec2(420, 600), ImGuiCond_FirstUseEver);
 
-    if (!ImGui::Begin(_L("FDC State"), p_open, ImGuiWindowFlags_NoCollapse))
+    if (!ImGui::Begin(debugger_workspace_panel(_L("FDC State")), p_open, ImGuiWindowFlags_NoCollapse))
     {
         ImGui::End();
         return;

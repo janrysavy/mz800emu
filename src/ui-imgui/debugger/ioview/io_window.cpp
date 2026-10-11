@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * io_window.cpp - I/O Ports panel (D.7 / V1.5 Sprint 1 redesign).
  *
@@ -2774,7 +2775,7 @@ void io_window_render ( bool *p_open )
     /* Auto-layout při fresh open - cache _L() do lokální proměnné. */
     const char *io_title = _L ( "I/O Ports###io_main" );
     auto_layout_first_use_portrait ( io_title, 1297.0f, 918.0f );
-    if ( !ImGui::Begin ( io_title, p_open,
+    if ( !ImGui::Begin (debugger_workspace_panel(io_title), p_open,
                           ImGuiWindowFlags_NoCollapse ) ) {
         ImGui::End ( );
         return;

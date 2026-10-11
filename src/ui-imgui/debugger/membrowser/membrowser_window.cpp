@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file membrowser_window.cpp
  * @brief Memory Browser hlavní okno (V0 + V1) - implementace.
@@ -2060,7 +2061,7 @@ extern "C" void membrowser_view_render ( MembrowserView *self, bool *p_open )
      * (Begin pak hlásí Mismatching PushID/PopID + duplikovaný window ID).
      * Lokalizace label části "Memory Browser" je TODO V1+ - vyžaduje
      * skládat title až v render-time z přeloženého _() prefixu + ###. */
-    if ( !ImGui::Begin ( self->title_id, p_open,
+    if ( !ImGui::Begin (debugger_workspace_panel(self->title_id), p_open,
                           ImGuiWindowFlags_NoCollapse ) ) {
         ImGui::End ( );
         return;

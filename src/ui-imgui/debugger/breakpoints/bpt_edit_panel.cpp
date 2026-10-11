@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * bpt_edit_panel.cpp - Nemodální dockable panel pro editaci BP/Group
  *
@@ -2857,7 +2858,7 @@ void bpt_edit_panel_render(void)
         ImGuiCond_FirstUseEver);
     /* Auto-layout poblíž kurzoru pro modální editor breakpointů. */
     auto_layout_first_use_near_mouse(title, 500.0f, 500.0f);
-    if (ImGui::Begin(title, &window_open, ImGuiWindowFlags_NoCollapse))
+    if (ImGui::Begin(debugger_workspace_panel(title), &window_open, ImGuiWindowFlags_NoCollapse))
     {
         /* Vyhrazený prostor na spodu pro Cancel/OK buttons (= mimo
          * scrollable content area). Inner BeginChild s height

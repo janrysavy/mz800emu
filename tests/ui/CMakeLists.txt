@@ -44,3 +44,17 @@ mz_add_test(ui-functional
     LIBS     mzlib_imgui mzlib_igfd mzlib_imwidgets
     LABELS   "ui;videorec"
 )
+
+# Hidden native platform windows; explicit SDL software, never OpenGL.
+if(WIN32)
+    mz_add_test(sdl-viewports TYPE STANDALONE SOURCES test_sdl_viewports.cpp
+        LIBS mzlib_imgui LABELS "standalone;ui;software;native-windows")
+    # SDL dummy has no native viewports; all Windows remain explicitly hidden.
+    set_tests_properties(sdl-viewports PROPERTIES
+        ENVIRONMENT "SDL_VIDEO_DRIVER=windows;SDL_RENDER_DRIVER=software")
+    mz_add_test(sdl-workspace TYPE STANDALONE SOURCES test_sdl_workspace.cpp
+        ${CMAKE_SOURCE_DIR}/src/ui-imgui/debugger_workspace.cpp
+        LIBS mzlib_imgui mz::glib LABELS "standalone;ui;software;native-windows")
+    set_tests_properties(sdl-workspace PROPERTIES
+        ENVIRONMENT "SDL_VIDEO_DRIVER=windows;SDL_RENDER_DRIVER=software")
+endif()

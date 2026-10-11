@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * debugger_window.cpp — Hlavní okno debuggeru (ImGui)
  *
@@ -443,7 +444,7 @@ void imgui_debugger_window(bool *p_open)
         ImGui::SetNextWindowFocus();
     s_focus_pending = false;
 
-    if (!ImGui::Begin(get_window_title(), p_open, flags))
+    if (!ImGui::Begin(debugger_workspace_panel(get_window_title()), p_open, flags))
     {
         ImGui::End();
         /* X tlačítko mohlo nastavit *p_open = false i při kolapsnutém okně */

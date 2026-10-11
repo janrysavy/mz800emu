@@ -2,6 +2,7 @@
 #include "libs/sdlapp/sdlapp.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "libs/imgui/imgui.h"
+#include "ui-imgui/debugger_workspace.h"
 #include <SDL3/SDL.h>
 #include "iface-video/sdl3/iface_video_sdl3.h"
 #include <cstring>
@@ -272,6 +273,7 @@ void imgui_main_window(VideoTexture texture)
 {
     // hlavni okno + scanovani klavesnice pro pio8255 + overlay
     ShowFullScreenImageEmulatorWindow(texture);
+    debugger_workspace_begin_frame();
 
     if (VERSION_CHECK_TEST_THREAD_DONE)
     {
@@ -615,4 +617,5 @@ void imgui_main_window(VideoTexture texture)
     imgui_message_window();
     imgui_unicard_runtime_mismatch_dialog();
     imgui_unicard_reinit_choice_dialog();
+    debugger_workspace_end_frame();
 }

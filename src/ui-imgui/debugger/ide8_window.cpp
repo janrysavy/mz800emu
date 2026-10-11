@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file ide8_window.cpp
  * @brief Debugger: IDE8 State inspector window.
@@ -120,7 +121,7 @@ void imgui_ide8_state_window(bool *p_open)
 #if CFG_HWEXT_HAVE_IDE8
     ImGui::SetNextWindowSize(ImVec2(440, 560), ImGuiCond_FirstUseEver);
 
-    if (!ImGui::Begin(_L("IDE8 State"), p_open, ImGuiWindowFlags_NoCollapse))
+    if (!ImGui::Begin(debugger_workspace_panel(_L("IDE8 State")), p_open, ImGuiWindowFlags_NoCollapse))
     {
         ImGui::End();
         return;

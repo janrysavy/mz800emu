@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file qdisk_window.cpp
  * @brief Debugger: QDisk chip state inspector window.
@@ -144,7 +145,7 @@ void imgui_qdisk_state_window(bool *p_open)
 #if CFG_HWEXT_HAVE_QDISK
     ImGui::SetNextWindowSize(ImVec2(420, 600), ImGuiCond_FirstUseEver);
 
-    if (!ImGui::Begin(_L("QDisk State"), p_open, ImGuiWindowFlags_NoCollapse))
+    if (!ImGui::Begin(debugger_workspace_panel(_L("QDisk State")), p_open, ImGuiWindowFlags_NoCollapse))
     {
         ImGui::End();
         return;

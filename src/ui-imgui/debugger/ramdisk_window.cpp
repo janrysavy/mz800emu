@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file ramdisk_window.cpp
  * @brief Debugger: Memory Disk State inspector window.
@@ -136,7 +137,7 @@ void imgui_ramdisk_state_window(bool *p_open)
 #if CFG_HWEXT_HAVE_RAMDISK
     ImGui::SetNextWindowSize(ImVec2(440, 420), ImGuiCond_FirstUseEver);
 
-    if (!ImGui::Begin(_L("Memory Disk State"), p_open, ImGuiWindowFlags_NoCollapse))
+    if (!ImGui::Begin(debugger_workspace_panel(_L("Memory Disk State")), p_open, ImGuiWindowFlags_NoCollapse))
     {
         ImGui::End();
         return;

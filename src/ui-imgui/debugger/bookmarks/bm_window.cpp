@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * bm_window.cpp - Bookmarks panel pro pojmenované adresové záložky.
  *
@@ -937,7 +938,7 @@ extern "C" void bm_window_render ( bool *p_open ) {
     /* Stabilní ID přes ###. Auto-layout při fresh open - cache _L(). */
     const char *bm_title = _L ( "Bookmarks###bm_window" );
     auto_layout_first_use_portrait ( bm_title, 705.0f, 531.0f );
-    if ( !ImGui::Begin ( bm_title, p_open, ImGuiWindowFlags_NoCollapse ) ) {
+    if ( !ImGui::Begin (debugger_workspace_panel(bm_title), p_open, ImGuiWindowFlags_NoCollapse ) ) {
         ImGui::End ( );
         return;
     };

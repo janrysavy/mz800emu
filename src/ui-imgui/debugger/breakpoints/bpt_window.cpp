@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * bpt_window.cpp — Hlavní okno Breakpoints (ImGui)
  *
@@ -50,6 +51,7 @@
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "ui-imgui/auto_layout.h"
 #include "debugger/breakpoints.h"
+#include "debugger/debugger.h"
 #include "ui-imgui/debugger/dbgapi_helpers.h"  /* V1.7+ BP CRUD via dbgapi */
 #include "mzarch/mzarch.h"     /* V1.7 fix: g_mzarch_main.cpu->pc pro highlight expiry detekci */
 #include "emulator/emulator.h"  /* EMULATOR_TEST_PAUSED */
@@ -1612,11 +1614,6 @@ extern "C" void bpt_window_register_persistence ( void *cmod_void ) {
 void imgui_breakpoints_window ( bool *p_open ) {
     if ( !*p_open ) return;
 
-    /* Inicializace při prvním otevření */
-    if ( !g_bpt_ui.initialized ) {
-        bpt_state_init ( );
-    };
-
     ImGuiWindowFlags flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoCollapse;
 
     const char *bpt_title = _L ( "Breakpoints##bpt_main" );
@@ -1625,10 +1622,20 @@ void imgui_breakpoints_window ( bool *p_open ) {
      * Výška 480 pokryje menu bar + tab bar + list BP + bottom row (Add
      * input + Save tlačítko). Jen initial velikost (FirstUseEver). */
     auto_layout_first_use_portrait ( bpt_title, 825.0f, 480.0f );
-    if ( !ImGui::Begin ( bpt_title, p_open, flags ) ) {
+    if ( !ImGui::Begin (debugger_workspace_panel(bpt_title), p_open, flags ) ) {
         ImGui::End ( );
         return;
     };
+
+    /* The UI loop can run before emulator-thread debugger initialization.
+     * Keep the open request, but do not read partially initialized arrays
+     * or race bpt_state_init() until initialization is published. */
+    if ( !debugger_is_initialized ( ) ) {
+        ImGui::TextDisabled ( _L ( "Debugger is initializing..." ) );
+        ImGui::End ( );
+        return;
+    }
+    if ( !g_bpt_ui.initialized ) bpt_state_init ( );
 
     /* Alt+B v okně breakpointů zavírá okno */
     if ( ImGui::IsWindowFocused ( ImGuiFocusedFlags_RootAndChildWindows ) ) {

@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file membrowser_pcg.cpp
  * @brief PCG glyph editor - implementace.
@@ -193,7 +194,7 @@ extern "C" void membrowser_pcg_window_render ( bool *p_open )
     std::snprintf ( title, sizeof ( title ),
                     "%s###mb_pcg_editor", _( "PCG editor (MZ-1500)" ) );
 
-    if ( !ImGui::Begin ( title, p_open, ImGuiWindowFlags_NoCollapse ) ) {
+    if ( !ImGui::Begin (debugger_workspace_panel(title), p_open, ImGuiWindowFlags_NoCollapse ) ) {
         ImGui::End ( );
         return;
     }

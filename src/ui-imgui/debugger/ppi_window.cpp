@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file ppi_window.cpp
  * @brief Debugger: PPI 8255 chip state inspector window (per-chip-panels F3).
@@ -213,7 +214,7 @@ void imgui_ppi_state_window(bool *p_open)
 
     /* Stable ID "###PPIState" (tři hashe) drží layout přes různé title
      * variants (paused/running, atd. v budoucnu). */
-    if (!ImGui::Begin(_L("PPI 8255 State###PPIState"), p_open,
+    if (!ImGui::Begin(debugger_workspace_panel(_L("PPI 8255 State###PPIState")), p_open,
                       ImGuiWindowFlags_NoCollapse))
     {
         ImGui::End();

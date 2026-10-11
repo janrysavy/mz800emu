@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file psg_window.cpp
  * @brief Debugger: PSG SN76489 chip state inspector window (per-chip-panels F5).
@@ -608,7 +609,7 @@ void imgui_psg_state_window(bool *p_open)
 {
     ImGui::SetNextWindowSize(ImVec2(460, 620), ImGuiCond_FirstUseEver);
 
-    if (!ImGui::Begin(_L("PSG SN76489 State###PSGState"), p_open,
+    if (!ImGui::Begin(debugger_workspace_panel(_L("PSG SN76489 State###PSGState")), p_open,
                       ImGuiWindowFlags_NoCollapse))
     {
         ImGui::End();

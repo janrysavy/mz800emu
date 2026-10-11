@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * stack_window.cpp - Stack Monitor v samostatnem plovoucim okne.
  *
@@ -124,7 +125,7 @@ extern "C" void stack_window_render ( bool *p_open ) {
     /* Stabilni ID pres ###. Title bez arch suffixu - shoda s cpu_window. */
     const char *stack_title = _L ( "Stack Monitor###stack_window" );
     auto_layout_first_use_portrait ( stack_title, 525.0f, 834.0f );
-    if ( !ImGui::Begin ( stack_title, p_open, wflags ) ) {
+    if ( !ImGui::Begin (debugger_workspace_panel(stack_title), p_open, wflags ) ) {
         ImGui::End ( );
         return;
     };

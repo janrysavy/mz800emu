@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file membrowser_char_inserter.cpp
  * @brief Char Inserter okno - implementace.
@@ -306,7 +307,7 @@ extern "C" void membrowser_char_inserter_render ( void )
 
     bool *p_open = &g_gui->showMembrowserCharInserter;
     /* ### stable ID nezávisí na lokalizovaném prefixu (dynamic title). */
-    if ( !ImGui::Begin ( _L ( "Char Inserter###mb_char_inserter" ),
+    if ( !ImGui::Begin (debugger_workspace_panel(_L ( "Char Inserter###mb_char_inserter" )),
                           p_open, ImGuiWindowFlags_NoCollapse ) ) {
         ImGui::End ( );
         return;

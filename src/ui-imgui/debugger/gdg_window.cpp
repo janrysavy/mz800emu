@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /**
  * @file gdg_window.cpp
  * @brief Debugger: GDG state inspector window - arch-independent shell
@@ -187,7 +188,7 @@ void imgui_gdg_state_window(bool *p_open)
 
     /* Stable ID "###GDGState" je anglický a unique - umožňuje runtime změnu
      * titulku (např. překlad "GDG State") bez resetování ImGui pozice/velikosti. */
-    if (!ImGui::Begin(_L("GDG State###GDGState"), p_open,
+    if (!ImGui::Begin(debugger_workspace_panel(_L("GDG State###GDGState")), p_open,
                       ImGuiWindowFlags_NoCollapse))
     {
         ImGui::End();

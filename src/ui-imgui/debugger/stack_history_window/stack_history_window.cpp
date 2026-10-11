@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * stack_history_window.cpp - V9 samostatne okno s SP history sparkline.
  *
@@ -119,7 +120,7 @@ extern "C" void stack_history_window_render ( bool *p_open ) {
     ImGuiWindowFlags wflags = ImGuiWindowFlags_NoCollapse;
 
     /* Stabilni ID pres ###. */
-    if ( !ImGui::Begin ( _L ( "Stack History###stack_history_window" ),
+    if ( !ImGui::Begin (debugger_workspace_panel(_L ( "Stack History###stack_history_window" )),
                           p_open, wflags ) ) {
         ImGui::End ( );
         return;

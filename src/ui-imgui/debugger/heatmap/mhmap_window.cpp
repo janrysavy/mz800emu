@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * mhmap_window.cpp - Memory Heatmap GUI okno.
  *
@@ -1606,7 +1607,7 @@ void mhmap_window_render ( bool *p_open )
     /* Auto-layout při fresh open - cache _L() do lokální proměnné. */
     const char *mhmap_title = _L( "Memory Heatmap##mhmap_main" );
     auto_layout_first_use_portrait ( mhmap_title, 1202.0f, 850.0f );
-    if ( !ImGui::Begin ( mhmap_title, p_open, flags ) )
+    if ( !ImGui::Begin (debugger_workspace_panel(mhmap_title), p_open, flags ) )
     {
         ImGui::End ( );
         return;

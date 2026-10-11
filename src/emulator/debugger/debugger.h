@@ -264,6 +264,8 @@ extern int g_eventlog_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS
     extern void debugger_step_call(unsigned value);
     extern void debugger_reset_history(void);
     extern void debugger_init(void);
+    /* UI readiness only; does not change guest execution or clocks. */
+    extern int debugger_is_initialized(void);
     extern void debugger_exit(void);
     /*
      * Show/hide hlavního okna debuggeru - DVĚ sady podle vlákna:

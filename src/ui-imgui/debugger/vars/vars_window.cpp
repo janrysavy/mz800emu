@@ -1,3 +1,4 @@
+#include "ui-imgui/debugger_workspace.h"
 /*
  * vars_window.cpp - Live $vars panel pro user-defined proměnné smart BP.
  *
@@ -1451,7 +1452,7 @@ void vars_window_render ( bool *p_open )
     ImGui::SetNextWindowSizeConstraints ( ImVec2 ( 760, 300 ),
                                             ImVec2 ( FLT_MAX, FLT_MAX ) );
 
-    if ( !ImGui::Begin ( _L ( "Variables###bpt_vars_panel" ), p_open,
+    if ( !ImGui::Begin (debugger_workspace_panel(_L ( "Variables###bpt_vars_panel" )), p_open,
                           ImGuiWindowFlags_NoCollapse |
                           ImGuiWindowFlags_HorizontalScrollbar ) ) {
         ImGui::End ( );
