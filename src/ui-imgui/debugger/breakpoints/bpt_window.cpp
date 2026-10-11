@@ -1612,11 +1612,6 @@ extern "C" void bpt_window_register_persistence ( void *cmod_void ) {
 void imgui_breakpoints_window ( bool *p_open ) {
     if ( !*p_open ) return;
 
-    /* Inicializace při prvním otevření */
-    if ( !g_bpt_ui.initialized ) {
-        bpt_state_init ( );
-    };
-
     ImGuiWindowFlags flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoCollapse;
 
     const char *bpt_title = _L ( "Breakpoints##bpt_main" );
@@ -1629,6 +1624,16 @@ void imgui_breakpoints_window ( bool *p_open ) {
         ImGui::End ( );
         return;
     };
+
+    /* The UI loop can run before emulator-thread debugger initialization.
+     * Keep the open request, but do not read partially initialized arrays
+     * or race bpt_state_init() until initialization is published. */
+    if ( !debugger_is_initialized ( ) ) {
+        ImGui::TextDisabled ( _L ( "Debugger is initializing..." ) );
+        ImGui::End ( );
+        return;
+    }
+    if ( !g_bpt_ui.initialized ) bpt_state_init ( );
 
     /* Alt+B v okně breakpointů zavírá okno */
     if ( ImGui::IsWindowFocused ( ImGuiFocusedFlags_RootAndChildWindows ) ) {

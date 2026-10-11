@@ -221,11 +221,10 @@ static gboolean myimgui_init_for_sdl3_sdlrenderer(SdlAppWindow *win, gpointer us
     // Local SDL renderer extension keeps debugger panels as native windows.
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
     io.ConfigViewportsNoAutoMerge = true;
-    ImGui::GetStyle().WindowRounding = 0.0f;
-    ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w = 1.0f;
-
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
+    ImGui::GetStyle().WindowRounding = 0.0f;
+    ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w = 1.0f;
     // ImGui::StyleColorsLight();
 
     if (!ImGui_ImplSDL3_InitForSDLRenderer(sdl_window, sdl_renderer))

@@ -44,6 +44,18 @@ It opens the real CPU-register, breakpoint and memory-map widgets, hides all
 platform windows and writes their final surfaces at UI frame20 in cfg-dir.
 Normal visible launches do not open debugger panels automatically.
 
+The first real-widget tests exposed a pre-existing startup race: software and
+WARP opened Breakpoints before emulator-thread debugger initialization. GDB
+resolved the null `g_breakpoints.breakpoints` access in
+`bpt_render_events_for_parent`; DbgEngMCP independently captured c0000005 at
+`mz800emu+0x2624d`, `mov eax,[rdx+8]` with RDX=0. Direct3D11 happened to pass.
+Publish debugger initialization with a GLib atomic flag after initialization
+finishes. The breakpoint panel keeps its open request and displays an
+initializing message until that flag is set. This also avoids racing the
+emulator's `bpt_state_init`. It does not establish general concurrent BP CRUD
+or shutdown safety. Failed checks and both debugger traces are retained in
+the port workspace before rerunning the same early-panel test.
+
 Implementation does not prove long UI/host stability or physical hardware.
 Interactive multi-monitor, DPI, native drag/focus and menu-dialog behavior need
 bounded manual review; automated movement/resize/pixels/close cover named scope.
