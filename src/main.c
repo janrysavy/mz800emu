@@ -222,6 +222,8 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
     { "--renderer", SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING, NULL, "<software|direct3d11|warp|opengl>",
       "Select UI renderer (default: software). warp is Direct3D11 CPU rendering, "
       "requiring Windows and SDL 3.4+. No renderer fallback." },
+    { "--ui-test-floating-windows", SDLAPP_OPTION_FLAG, SDLAPP_OPTVAL_NONE, NULL, NULL,
+      "Open real debugger panels and capture detached surfaces for bounded hidden UI checks." },
     { "--ui-hidden", SDLAPP_OPTION_FLAG, SDLAPP_OPTVAL_NONE, NULL, NULL,
       "Create a hidden UI window for scripted renderer checks." },
     { "--ui-exit-after-ms", SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_UINT, NULL, "<1..60000>",
@@ -347,6 +349,12 @@ int main(int argc, char *argv[])
     }
     if (sdlapp_option_present("--ui-hidden") && ui_renderer && !strcmp(ui_renderer, "opengl")) {
         fprintf(stderr, "Hidden renderer checks do not support OpenGL\n");
+        return EXIT_FAILURE;
+    }
+    if (sdlapp_option_present("--ui-test-floating-windows") &&
+        (!sdlapp_option_present("--ui-hidden") || !sdlapp_option_present("--ui-exit-after-ms") ||
+         sdlapp_option_present("--headless"))) {
+        fprintf(stderr, "Floating UI check requires hidden UI and a bounded shutdown timer\n");
         return EXIT_FAILURE;
     }
     if (sdlapp_option_present("--ui-exit-after-ms")) {

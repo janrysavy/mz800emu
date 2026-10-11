@@ -218,7 +218,11 @@ static gboolean myimgui_init_for_sdl3_sdlrenderer(SdlAppWindow *win, gpointer us
      * by se v budoucnu chtělo docking opt-in pro vybrané okno, dělá se
      * to per-window přes ImGuiWindowFlags_None místo NoDocking. */
     // io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    // Multi-Viewport - není podporováno
+    // Local SDL renderer extension keeps debugger panels as native windows.
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+    io.ConfigViewportsNoAutoMerge = true;
+    ImGui::GetStyle().WindowRounding = 0.0f;
+    ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w = 1.0f;
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -236,6 +240,28 @@ static gboolean myimgui_init_for_sdl3_sdlrenderer(SdlAppWindow *win, gpointer us
         return false;
     };
 
+    if (sdlapp_option_present("--ui-hidden"))
+        ImGui::GetPlatformIO().Platform_ShowWindow = [](ImGuiViewport*) {};
+    if (sdlapp_option_present("--ui-test-floating-windows"))
+        ImGui::GetPlatformIO().Renderer_SwapBuffers = [](ImGuiViewport* viewport, void*) {
+            SDL_Window* child = SDL_GetWindowFromID((SDL_WindowID)(intptr_t)viewport->PlatformHandle);
+            SDL_Renderer* renderer = child ? SDL_GetRenderer(child) : nullptr;
+            if (!renderer) return;
+            if (ImGui::GetFrameCount() == 20) {
+                SDL_Surface* surface = SDL_RenderReadPixels(renderer, nullptr);
+                if (surface) {
+                    char name[80]; g_snprintf(name, sizeof(name), "floating-%u.bmp", viewport->ID);
+                    char* path = sdlapp_paths_resolve_cfg(g_sdlapp->paths, name);
+                    bool saved = SDL_SaveBMP(surface, path);
+                    SDL_Log("Floating UI capture: viewport=%u backend=%s size=%dx%d saved=%d path=%s",
+                        viewport->ID, SDL_GetRendererName(renderer), surface->w, surface->h, saved, path);
+                    g_free(path); SDL_DestroySurface(surface);
+                }
+            }
+            SDL_RenderPresent(renderer);
+        };
+    SDL_Log("ImGui floating windows: %s",
+        (io.BackendFlags & ImGuiBackendFlags_RendererHasViewports) ? "enabled" : "platform unavailable");
     myimgui_set_fonts(io);
 
     return TRUE;
@@ -529,6 +555,11 @@ static void myimgui_rendering_sdl3_sdlrenderer(SdlAppWindow *win, gpointer user_
     };
 
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), sdl_renderer);
+    if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    {
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+    }
     SDL_RenderPresent(sdl_renderer);
 }
 
@@ -608,6 +639,14 @@ void myimgui_render_cb(SdlAppWindow *win, gpointer user_data)
 
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
+
+    // Hidden bounded qualification uses the real debugger widgets.
+    if (sdlapp_option_present("--ui-test-floating-windows"))
+    {
+        gui->showCpuWindow = true;
+        gui->showBreakpointsWindow = true;
+        gui->showMemoryMapWindow = true;
+    }
 
     // zacatek kresleni ImGui
     if (gui->render_cb)
