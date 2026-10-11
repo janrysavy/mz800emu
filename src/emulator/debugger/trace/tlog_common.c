@@ -374,8 +374,9 @@ int tlog_writer_update_meta ( st_TLOG_WRITER *w, const char *header_extra )
     json_builder_end_object ( b );
 
     JsonGenerator *gen = json_generator_new ( );
-    /* json_builder_get_root() vrací JsonNode vlastněný builderem - NEsmí
-     * se volat json_node_free(), uvolní se s g_object_unref(builder). */
+    /* json_builder_get_root() transfers ownership of a root reference to the
+     * caller. Release it after the generator; unref(builder) alone leaks the
+     * complete metadata tree on every flush (quadratic in chunk count). */
     JsonNode *root = json_builder_get_root ( b );
     json_generator_set_root ( gen, root );
     json_generator_set_pretty ( gen, TRUE );
@@ -407,6 +408,7 @@ int tlog_writer_update_meta ( st_TLOG_WRITER *w, const char *header_extra )
     g_free ( out );
     g_free ( path );
     g_object_unref ( gen );
+    json_node_free ( root );
     g_object_unref ( b );
     return rc;
 }
