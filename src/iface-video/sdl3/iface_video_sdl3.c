@@ -5,6 +5,66 @@
 #include "iface/iface_video.h"
 #include "emulator/display.h"
 #include "libs/sdlapp/sdlapp.h"
+#include "iface_video_sdl3.h"
+
+static SDL_Renderer *texture_renderer;
+static bool texture_opengl;
+
+void video_sdl3_texture_backend(SDL_Renderer *renderer, bool opengl)
+{
+    texture_renderer = renderer;
+    texture_opengl = opengl;
+}
+
+static SDL_Surface *texture_rgba(SDL_Surface *surface)
+{
+    if (!surface) return NULL;
+    /* Emulator palettes intentionally have alpha zero; screen pixels are opaque. */
+    return surface->format == SDL_PIXELFORMAT_INDEX8
+        ? ConvertIndexedSurfaceToRGBA(surface)
+        : SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
+}
+
+VideoTexture video_sdl3_texture_create(SDL_Surface *surface)
+{
+    if (texture_opengl) return SDL_SurfaceToTexture(surface);
+    if (!texture_renderer) return 0;
+    SDL_Surface *rgba = texture_rgba(surface);
+    if (!rgba) return 0;
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(texture_renderer, rgba);
+    SDL_DestroySurface(rgba);
+    if (texture) SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_LINEAR);
+    return (VideoTexture)texture;
+}
+
+bool video_sdl3_texture_update(VideoTexture texture, SDL_Surface *surface)
+{
+    if (!texture || !surface) return false;
+    SDL_Surface *rgba = texture_rgba(surface);
+    if (!rgba) return false;
+    bool result = true;
+    if (texture_opengl) {
+        glBindTexture(GL_TEXTURE_2D, (GLuint)texture);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rgba->w, rgba->h,
+                       GL_RGBA, GL_UNSIGNED_BYTE, rgba->pixels);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    } else {
+        result = SDL_UpdateTexture((SDL_Texture *)texture, NULL, rgba->pixels, rgba->pitch);
+    }
+    SDL_DestroySurface(rgba);
+    return result;
+}
+
+void video_sdl3_texture_destroy(VideoTexture texture)
+{
+    if (!texture) return;
+    if (texture_opengl) {
+        GLuint name = (GLuint)texture;
+        glDeleteTextures(1, &name);
+    } else {
+        SDL_DestroyTexture((SDL_Texture *)texture);
+    }
+}
 
 #define SURFACE_COLORS_COUNT 256
 

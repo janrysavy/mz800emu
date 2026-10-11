@@ -115,7 +115,7 @@ static gboolean create_renderer(SdlAppWindow *win, SdlAppRendererType type)
     switch (type)
     {
     case SDLAPP_RENDERER_SDL:
-        win->sdl_renderer = SDL_CreateRenderer(win->sdl_window, NULL);
+        win->sdl_renderer = SDL_CreateRenderer(win->sdl_window, SDL_GetHint(SDL_HINT_RENDER_DRIVER));
         if (!win->sdl_renderer)
         {
             result = FALSE;

@@ -2,13 +2,13 @@
 #ifndef IMGUI_IMAGES_H
 #define IMGUI_IMAGES_H
 
-#include <SDL3/SDL_opengl.h>
+#include "iface-video/sdl3/iface_video_sdl3.h"
 #include <stdbool.h>
 
 typedef struct ui_glimage_t
 {
     char *name;
-    GLuint texture;
+    VideoTexture texture;
     int width;
     int height;
 } ui_glimage_t;

@@ -42,6 +42,7 @@
 typedef struct SdlappMyImGuiVideo_t
 {
     SDL_Surface *surface;
+    VideoTexture image_texture;
     guint update_title_timer; /**< sdlapp timer id periodické aktualizace titulku okna (0 = neběží, headless) */
     Uint64 lastPictureTime;
     int TARGET_FPS;
@@ -122,16 +123,13 @@ static void video_sdlapp_imgui_render_cb(SdlAppWindow *win, gpointer user_data)
     video_sdl3_render_surface_as_background(surface, renderer, IFACE_SCREEN_ASPECT_RATIO, have_new_screen);
 #endif
 
-    static GLuint imageTexture = 0;
-    if ((have_new_screen) || (DISPLAY_TEST_FORCED_FULL_SCREEN_REDRAWING))
-    {
-        // g_print("Redrawing screen fb: %u, ren_id: %u\n", g_iface_video->fbsnapshot_screen_id, g_iface_video->renderer_screen_id);
-        if (imageTexture)
-            glDeleteTextures(1, &imageTexture);
-        imageTexture = SDL_SurfaceToTexture(surface);
-    };
-
-    imgui_main_window(imageTexture);
+    VideoTexture *texture = &g_sdlapp_myimgui_video->image_texture;
+    if (!*texture) *texture = video_sdl3_texture_create(surface);
+    else if (have_new_screen || DISPLAY_TEST_FORCED_FULL_SCREEN_REDRAWING) {
+        if (!video_sdl3_texture_update(*texture, surface))
+            SDLAPP_ERROR("Screen texture update failed: %s", SDL_GetError());
+    }
+    imgui_main_window(*texture);
 
     // TODO: chtelo by to merit presneji a az po vyrenderovani obrazu
     // Pokud je nastaveno Custom FPS, tak pockame pozadovanou dobu
@@ -260,12 +258,29 @@ static gboolean sdlapp_myimgui_video_init(void)
         return true;
     };
 
-    // sdl3_backend_video_init();
-    sdl3_backend_video_opengl_init();
+    const char *requested = sdlapp_option_value("--renderer");
+    if (!requested) requested = "software";
+    bool opengl = strcmp(requested, "opengl") == 0;
+    bool warp = strcmp(requested, "warp") == 0;
+    if (!opengl && !strcmp(requested, "direct3d11") || warp) {
+#ifndef _WIN32
+        SDLAPP_ERROR("Direct3D11 renderers require Windows");
+        return false;
+#endif
+    }
+    if (warp && SDL_GetVersion() < SDL_VERSIONNUM(3, 4, 0)) {
+        SDLAPP_ERROR("WARP requires SDL 3.4 or newer");
+        return false;
+    }
+    if (!opengl) {
+        SDL_SetHintWithPriority(SDL_HINT_RENDER_DRIVER, warp ? "direct3d11" : requested, SDL_HINT_OVERRIDE);
+        /* Override inherited WARP hints in both directions. */
+        SDL_SetHintWithPriority("SDL_RENDER_DIRECT3D11_WARP", warp ? "1" : "0", SDL_HINT_OVERRIDE);
+        sdl3_backend_video_init();
+    } else sdl3_backend_video_opengl_init();
 
-    SDL_WindowFlags flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
-    // SdlAppRendererType renderer = SDLAPP_RENDERER_SDL;
-    SdlAppRendererType renderer = SDLAPP_RENDERER_OPENGL;
+    SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | (opengl ? SDL_WINDOW_OPENGL : 0);
+    SdlAppRendererType renderer = opengl ? SDLAPP_RENDERER_OPENGL : SDLAPP_RENDERER_SDL;
 
     SdlAppWindow *win = sdlapp_window_create(g_sdlapp->manager, "main_window", "Main window", IFACE_WINDOW_WIDTH, IFACE_WINDOW_HEIGHT, flags, renderer, myimgui_init_cb, NULL);
     if (!win)
@@ -273,6 +288,10 @@ static gboolean sdlapp_myimgui_video_init(void)
         SDLAPP_ERROR("Failed to create window: %s", SDL_GetError());
         return false;
     };
+
+    video_sdl3_texture_backend(win->sdl_renderer, opengl);
+    g_print("UI renderer: requested=%s actual=%s WARP=%s SDL=%d\n", requested,
+            opengl ? "opengl" : SDL_GetRendererName(win->sdl_renderer), warp ? "enabled" : "disabled", SDL_GetVersion());
 
     g_iface_video->last_wsizeX = IFACE_WINDOW_WIDTH;
     g_iface_video->last_wsizeY = IFACE_WINDOW_HEIGHT;
@@ -361,6 +380,7 @@ static void sdlapp_myimgui_video_exit(void)
             sdlapp_remove_timer(g_sdlapp, g_sdlapp_myimgui_video->update_title_timer);
         };
 
+        video_sdl3_texture_destroy(g_sdlapp_myimgui_video->image_texture);
         if (g_sdlapp_myimgui_video->surface)
         {
             SDL_DestroySurface(g_sdlapp_myimgui_video->surface);
@@ -376,11 +396,9 @@ static void sdlapp_myimgui_video_exit(void)
         g_free(g_gui);
     };
     g_gui = NULL;
+    if (!headless) imgui_images_destroy_all();
+    video_sdl3_texture_backend(NULL, false);
     sdl3_backend_video_quit();
-    if (!headless)
-    {
-        imgui_images_destroy_all();
-    };
 }
 
 static SDL_Window *getSDL_Window_by_name(const char *name)

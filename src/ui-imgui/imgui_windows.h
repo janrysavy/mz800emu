@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <SDL3/SDL_opengl.h>
+#include "iface-video/sdl3/iface_video_sdl3.h"
 
 #include "cmt/imgui_cmt.h"
 #include "version_check/imgui_version_check.h"
@@ -12,7 +12,7 @@
 extern "C"
 {
 #endif
-    void imgui_main_window(GLuint texture);
+    void imgui_main_window(VideoTexture texture);
     void imgui_ShowAboutWindow(bool *p_open);
     void imgui_fps_measurement(bool *p_open);
     void imgui_measuring_frame_timing(bool *p_open);

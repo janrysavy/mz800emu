@@ -100,7 +100,7 @@ ui_glimage_t *imgui_images_append(const char *name, const char *fullpath)
 
     int width = surface->w;
     int height = surface->h;
-    GLuint texture = SDL_SurfaceToTexture(surface);
+    VideoTexture texture = video_sdl3_texture_create(surface);
     SDL_DestroySurface(surface);
     if (texture == 0)
     {
@@ -113,7 +113,7 @@ ui_glimage_t *imgui_images_append(const char *name, const char *fullpath)
     if (!img)
     {
         SDLAPP_ERROR("Failed to allocate memory for image: %s\n", name);
-        glDeleteTextures(1, &texture);
+        video_sdl3_texture_destroy(texture);
         return NULL;
     };
 
@@ -188,7 +188,7 @@ void imgui_images_destroy_all(void)
         if (img)
         {
             g_free(img->name);
-            glDeleteTextures(1, &img->texture);
+            video_sdl3_texture_destroy(img->texture);
             g_free(img);
         };
     };
