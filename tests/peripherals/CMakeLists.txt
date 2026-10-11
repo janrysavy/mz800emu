@@ -34,6 +34,13 @@ mz_add_test(gdg_mirror
     LABELS   "emu;peripherals"
 )
 
+# Actual native raster prefix must retain the mapping before a register write.
+mz_add_test(gdg_scroll_causality
+    TYPE     EMU
+    SOURCES  test_gdg_scroll_causality.c
+    LABELS   "emu;peripherals;gdg"
+)
+
 # Bootstrap --run-mzf (MZ-800 mód) nastavuje DMD cestou OUT CEh
 # (GATE0 CTC0, latch MZ-700), ne přímým zápisem g_gdg.regDMD.
 mz_add_test(mz800_bootstrap_dmd
