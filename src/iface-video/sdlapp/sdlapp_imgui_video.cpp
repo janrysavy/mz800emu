@@ -294,11 +294,9 @@ static gboolean sdlapp_myimgui_video_init(void)
 
     const char *requested = sdlapp_option_value("--renderer");
     if (!requested) {
-#ifdef _WIN32
-        requested = "direct3d11";
-#else
+        /* Hardware D3D11 can hang affected Windows GPU/driver combinations.
+         * Keep GPU backends explicitly selected; no automatic GPU fallback. */
         requested = "software";
-#endif
     }
     bool opengl = strcmp(requested, "opengl") == 0;
     bool warp = strcmp(requested, "warp") == 0;
