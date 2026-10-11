@@ -44,6 +44,9 @@ typedef struct SdlappMyImGuiVideo_t
     SDL_Surface *surface;
     VideoTexture image_texture;
     bool images_loaded;
+    guint test_exit_timer;
+    guint test_render_timer;
+    guint test_render_frames;
     guint update_title_timer; /**< sdlapp timer id periodické aktualizace titulku okna (0 = neběží, headless) */
     Uint64 lastPictureTime;
     int TARGET_FPS;
@@ -186,6 +189,30 @@ static gboolean sdlapp_mygui_video_update_status_line(guint timer_id, gpointer u
     return TRUE;
 }
 
+static gboolean ui_test_exit_cb(guint timer_id, gpointer user_data)
+{
+    (void)timer_id; (void)user_data;
+    g_print("UI timed shutdown requested\n");
+    sdlapp_quit(g_sdlapp);
+    return FALSE;
+}
+
+/* Hidden windows are normally skipped by the window manager. Explicit test
+ * pumping exercises the real ImGui backend on the main thread without showing
+ * a window or changing guest cadence. */
+static gboolean ui_test_render_cb(guint timer_id, gpointer user_data)
+{
+    (void)timer_id; (void)user_data;
+    SdlAppWindow *win = sdlapp_winmanager_get_window_by_name(g_sdlapp->manager, "main_window");
+    if (!win || !g_sdlapp_myimgui_video) return FALSE;
+    myimgui_render_cb(win, NULL);
+    guint frame = ++g_sdlapp_myimgui_video->test_render_frames;
+    if (frame == 1 || frame == 10)
+        g_print("UI hidden frame: %u texture=%s\n", frame,
+                g_sdlapp_myimgui_video->image_texture ? "ready" : "missing");
+    return TRUE;
+}
+
 static gboolean sdlapp_myimgui_video_init(void)
 {
     /* Persistence viditelnosti okna dálkového ovládání nahrávání - registrace
@@ -280,7 +307,8 @@ static gboolean sdlapp_myimgui_video_init(void)
         if (!sdl3_backend_video_init()) return false;
     } else if (!sdl3_backend_video_opengl_init()) return false;
 
-    SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | (opengl ? SDL_WINDOW_OPENGL : 0);
+    SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | (opengl ? SDL_WINDOW_OPENGL : 0)
+        | (sdlapp_option_present("--ui-hidden") ? SDL_WINDOW_HIDDEN : 0);
     SdlAppRendererType renderer = opengl ? SDLAPP_RENDERER_OPENGL : SDLAPP_RENDERER_SDL;
 
     SdlAppWindow *win = sdlapp_window_create(g_sdlapp->manager, "main_window", "Main window", IFACE_WINDOW_WIDTH, IFACE_WINDOW_HEIGHT, flags, renderer, myimgui_init_cb, NULL);
@@ -351,7 +379,7 @@ static gboolean sdlapp_myimgui_video_init(void)
     };
 
     video->surface = surface;
-    video->raise_pending_frames = 3;
+    video->raise_pending_frames = sdlapp_option_present("--ui-hidden") ? 0 : 3;
     g_sdlapp_myimgui_video = video;
     sdlapp_myimgui_video_set_colormap(g_display_predef_colors);
     // Odložíme raise okna - provedeme po vykreslení prvních framů
@@ -364,6 +392,11 @@ static gboolean sdlapp_myimgui_video_init(void)
 
     sdlapp_myimgui_video_reset_fps_timer();
 
+    if (sdlapp_option_present("--ui-exit-after-ms"))
+        video->test_exit_timer = sdlapp_add_timer(g_sdlapp,
+            (guint)g_ascii_strtoull(sdlapp_option_value("--ui-exit-after-ms"), NULL, 10), ui_test_exit_cb, NULL);
+    if (sdlapp_option_present("--ui-hidden"))
+        video->test_render_timer = sdlapp_add_timer(g_sdlapp, 16, ui_test_render_cb, NULL);
     video->images_loaded = imgui_images_load_all();
     return video->images_loaded;
 }
@@ -398,6 +431,10 @@ static void sdlapp_myimgui_video_exit(void)
             sdlapp_remove_timer(g_sdlapp, g_sdlapp_myimgui_video->update_title_timer);
         };
 
+        if (g_sdlapp_myimgui_video->test_exit_timer)
+            sdlapp_remove_timer(g_sdlapp, g_sdlapp_myimgui_video->test_exit_timer);
+        if (g_sdlapp_myimgui_video->test_render_timer)
+            sdlapp_remove_timer(g_sdlapp, g_sdlapp_myimgui_video->test_render_timer);
         video_sdl3_texture_destroy(g_sdlapp_myimgui_video->image_texture);
         if (g_sdlapp_myimgui_video->surface)
         {

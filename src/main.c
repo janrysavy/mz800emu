@@ -222,6 +222,10 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
     { "--renderer", SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING, NULL, "<software|direct3d11|warp|opengl>",
       "Select UI renderer (default: software). warp is Direct3D11 CPU rendering, "
       "requiring Windows and SDL 3.4+. No renderer fallback." },
+    { "--ui-hidden", SDLAPP_OPTION_FLAG, SDLAPP_OPTVAL_NONE, NULL, NULL,
+      "Create a hidden UI window for scripted renderer checks." },
+    { "--ui-exit-after-ms", SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_UINT, NULL, "<1..60000>",
+      "Request normal UI shutdown after a bounded wall-clock interval (testing only)." },
     { "--headless",         SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
       "Run the emulator without GUI window and audio output. SDL3 video/audio "
       "subsystems run in no-op mode (no SDL window, no audio device opened). "
@@ -340,6 +344,17 @@ int main(int argc, char *argv[])
         && strcmp(ui_renderer, "warp") && strcmp(ui_renderer, "opengl")) {
         fprintf(stderr, "Invalid --renderer: %s\n", ui_renderer);
         return EXIT_FAILURE;
+    }
+    if (sdlapp_option_present("--ui-hidden") && ui_renderer && !strcmp(ui_renderer, "opengl")) {
+        fprintf(stderr, "Hidden renderer checks do not support OpenGL\n");
+        return EXIT_FAILURE;
+    }
+    if (sdlapp_option_present("--ui-exit-after-ms")) {
+        guint64 interval = g_ascii_strtoull(sdlapp_option_value("--ui-exit-after-ms"), NULL, 10);
+        if (interval < 1 || interval > 60000) {
+            fprintf(stderr, "--ui-exit-after-ms must be 1..60000\n");
+            return EXIT_FAILURE;
+        }
     }
 
     /* --mode-switch: hodnota se ověří hned (neplatná = chyba a konec),
