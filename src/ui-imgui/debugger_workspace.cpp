@@ -1,5 +1,6 @@
 #include "debugger_workspace.h"
 #include "bootstrap/myimgui.h"
+#include "emulator/debugger/debugger.h"
 #include "libs/imgui/imgui.h"
 #include "libs/imgui/imgui_internal.h"
 #include <cstdio>
@@ -74,7 +75,12 @@ void debugger_workspace_begin_frame()
     }
     ImGui::DockSpace(s_root);
     ImGui::End();ImGui::PopStyleVar();
-    if(!open) {requested(true);return;}
+    if(!open) {
+        // Match the primary debugger's own close path: deactivate tracing
+        // through its existing emulator-thread recompute request.
+        if(g_gui->showDebuggerWindow)debugger_hide_main_window_request();
+        requested(true);return;
+    }
     s_active=true;
 }
 

@@ -10,6 +10,8 @@
 #include <cstring>
 
 MyImGui* g_gui;
+static int debugger_closes;
+extern "C" void debugger_hide_main_window_request() {debugger_closes++;g_gui->showDebuggerWindow=false;}
 
 int main(int argc,char** argv)
 {
@@ -24,6 +26,7 @@ int main(int argc,char** argv)
     ImGui_ImplSDL3_InitForSDLRenderer(window,renderer);ImGui_ImplSDLRenderer3_Init(renderer);
     ImGui::GetPlatformIO().Platform_ShowWindow=[](ImGuiViewport*){};
     MyImGui gui={};g_gui=&gui;
+    gui.showDebuggerWindow=true;
     bool* panels[]={&gui.showCpuWindow,&gui.showBreakpointsWindow,&gui.showMemoryMapWindow};
     const char* names[]={"CPU Registers###cpu_window","Breakpoints##bpt_main","Memory Map###memmap_window"};
     for(auto* panel:panels)*panel=true;
@@ -77,6 +80,7 @@ int main(int argc,char** argv)
         printf("Workspace frame%d native_hosts=%d failures=%d\n",frame,children,failures);
     }
     for(auto* panel:panels)if(*panel)failures++;
+    if(gui.showDebuggerWindow||debugger_closes!=1)failures++;
     ImGui_ImplSDLRenderer3_Shutdown();ImGui_ImplSDL3_Shutdown();ImGui::DestroyContext();
     int count=0;auto** windows=SDL_GetWindows(&count);SDL_free(windows);if(count!=1)failures++;
     SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);SDL_Quit();
