@@ -1050,7 +1050,15 @@ static inline void mzzarch_main_do_emulator_paused(void)
          * v Memory Browseru (zápis přes frontu po každém bajtu) a u
          * vícekrokových MCP handlerů se to sčítalo. Návratová hodnota je
          * nepodstatná, drain proběhne na začátku další iterace. */
-        (void)dbgapi_emu_wait_for_cmd(&g_dbgapi_cmdrq_queue, 20);
+        /* The drain above may have handled Run or Step. In that case the
+         * emulation thread must leave this loop immediately: waiting on an
+         * empty queue would add the full 20 ms timeout to every debugger
+         * resume. Keep the condition-variable wait for genuinely paused idle
+         * iterations; this does not change guest CPU/device timing. */
+        if (EMULATOR_TEST_PAUSED && (!TEST_DEBUGGER_STEP_CALL))
+        {
+            (void)dbgapi_emu_wait_for_cmd(&g_dbgapi_cmdrq_queue, 20);
+        }
     };
 
     /* Po opuštění pause smyčky (= unpause přes F5/F4/F7/F8 nebo Run To
