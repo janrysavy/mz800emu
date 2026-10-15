@@ -64,8 +64,11 @@ static uint32_t pp_now ( void )
 static void pp_restart_timing ( void )
 {
     s_pp.last_total = pp_now ( );
-    s_pp.prev_halted = false;
-    s_pp.prev_pc = 0;
+    /* Collection can begin while HALT is already idle. Its next refresh is
+     * not a new instruction execution. Preserve this boundary observation;
+     * starting before the HALT opcode still counts that opcode normally. */
+    s_pp.prev_halted = g_mzarch_main.cpu && g_mzarch_main.cpu->halted;
+    s_pp.prev_pc = g_mzarch_main.cpu ? g_mzarch_main.cpu->pc : 0;
 }
 
 

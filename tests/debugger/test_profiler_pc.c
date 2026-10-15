@@ -215,6 +215,24 @@ void test_profiler_pc_export_csv ( void )
 }
 
 
+/** Starting or resetting inside HALT must count only refresh idle time. */
+void test_profiler_pc_start_inside_halt ( void )
+{
+    profiler_pc_set_active ( false );
+    g_mzarch_main.cpu->pc = 0x1201;
+    g_mzarch_main.cpu->halted = true;
+    profiler_pc_reset ( );
+    profiler_pc_set_active ( true );
+    for ( unsigned i = 0; i < 3; i++ ) step ( 0x1201, 4, 0, 0, true );
+    st_PROFILER_PC_SUMMARY s;
+    profiler_pc_get_summary ( &s );
+    TEST_ASSERT_EQUAL_UINT64 ( 0, s.instructions );
+    TEST_ASSERT_EQUAL_UINT64 ( 0, s.tstates );
+    TEST_ASSERT_EQUAL_UINT64 ( 12, s.halt_idle );
+    TEST_ASSERT_EQUAL_UINT64 ( 12, s.elapsed_tstates );
+    TEST_ASSERT_EQUAL_UINT ( 0, s.unique_pcs );
+}
+
 int main ( int argc, char *argv[] )
 {
     mztest_parse_args ( argc, argv );
@@ -226,6 +244,7 @@ int main ( int argc, char *argv[] )
     RUN_TEST ( test_profiler_pc_halt_and_irq );
     RUN_TEST ( test_profiler_pc_discontinuity );
     RUN_TEST ( test_profiler_pc_start_stop );
+    RUN_TEST ( test_profiler_pc_start_inside_halt );
     RUN_TEST ( test_profiler_pc_rows_sort_range );
     RUN_TEST ( test_profiler_pc_export_csv );
 
