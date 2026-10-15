@@ -12320,6 +12320,17 @@ static en_MCP_DISPATCH_RESULT _handle_get_periph_gdg(
         json_object_set_int_member(resp, "regWF", (gint64)param.regWF);
         json_object_set_int_member(resp, "regRF", (gint64)param.regRF);
     }
+    json_object_set_boolean_member(resp, "has_hw_scroll", param.has_hw_scroll ? TRUE : FALSE);
+    if (param.has_hw_scroll) {
+        JsonObject *scroll = json_object_new();
+        json_object_set_int_member(scroll, "ssa", (gint64)param.hw_scroll_ssa);
+        json_object_set_int_member(scroll, "sea", (gint64)param.hw_scroll_sea);
+        json_object_set_int_member(scroll, "width", (gint64)param.hw_scroll_width);
+        json_object_set_int_member(scroll, "offset", (gint64)param.hw_scroll_offset);
+        json_object_set_boolean_member(scroll, "enabled", param.hw_scroll_enabled ? TRUE : FALSE);
+        json_object_set_string_member(scroll, "units", "plane-bytes");
+        json_object_set_object_member(resp, "hw_scroll", scroll);
+    }
     json_object_set_int_member(resp,    "regBOR",       (gint64)param.regBOR);
     json_object_set_int_member(resp,    "regPALGRP",    (gint64)param.regPALGRP);
     json_object_set_int_member(resp,    "regct53g7",    (gint64)param.regct53g7);

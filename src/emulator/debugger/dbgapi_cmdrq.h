@@ -3819,6 +3819,12 @@ typedef struct st_DBGAPI_PERIPH_GDG_PARAM
     uint8_t has_vram_format;     /**< OUT: WF/RF mirrors are available (MZ-800 only). */
     uint8_t regWF;               /**< OUT: write format, plane mask and shared bank bit. */
     uint8_t regRF;               /**< OUT: read format, plane mask and shared bank bit. */
+    uint8_t has_hw_scroll;       /**< OUT: MZ-800 hardware-scroll snapshot is available. */
+    uint8_t hw_scroll_enabled;   /**< OUT: actual cached enable state, not inferred by client. */
+    uint32_t hw_scroll_ssa;      /**< OUT: scroll start address in plane bytes. */
+    uint32_t hw_scroll_sea;      /**< OUT: scroll end address in plane bytes. */
+    uint32_t hw_scroll_width;    /**< OUT: scroll window width in plane bytes. */
+    uint32_t hw_scroll_offset;   /**< OUT: display address offset in plane bytes. */
 } st_DBGAPI_PERIPH_GDG_PARAM;
 
 
