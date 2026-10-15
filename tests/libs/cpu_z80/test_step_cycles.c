@@ -12,8 +12,6 @@
  * znaménkem (nedefinované chování v C). Běžný build vracel správné číslo
  * náhodou, proto tento test hlídá kontrakt (délka instrukce i stav čítače
  * po přetečení), ne samotné UB. UB ukáže jen build s -ftrapv.
- *
- * Nalezeno ve forku github.com/janrysavy/mz800emu (commit 9c84c6d).
  */
 
 #include "unity.h"

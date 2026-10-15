@@ -97,6 +97,18 @@ def test_all_files(exe):
         check(info["sdl_blocks"] == FRAMES,
               f"headless: sdl_blocks == frames (got {info['sdl_blocks']})")
         check(info["platform"] == "mz800", f"platform mz800 (got {info['platform']!r})")
+        # Absolutní časy: reference.wav pokrývá origin_ticks..end_ticks.
+        check(info["began"] is True, "capture.json began == true")
+        span = info["end_ticks"] - info["origin_ticks"]
+        expect = info["reference_samples"] * info["gdg_clk_hz"] / info["wav_rate"]
+        check(abs(span - expect) <= info["gdg_clk_hz"] / info["wav_rate"] * 2,
+              f"end_ticks - origin_ticks matches reference.wav length ({span} vs {expect:.0f})")
+        check(info["last_event_ticks"] is None or info["last_event_ticks"] >= info["origin_ticks"],
+              "last_event_ticks >= origin_ticks")
+        clocks = info["clocks"]
+        check(clocks["gdg_base_hz"] == info["gdg_clk_hz"], "clocks.gdg_base_hz == gdg_clk_hz")
+        check(clocks["gdg_real_base_hz"] == 17734475,
+              f"clocks.gdg_real_base_hz (got {clocks['gdg_real_base_hz']})")
         for name, key in (("reference.wav", "reference_samples"), ("sdl.wav", "sdl_samples")):
             size = (out / name).stat().st_size
             check(size == 44 + info[key] * 4, f"{name} size matches {key} ({size} bytes)")

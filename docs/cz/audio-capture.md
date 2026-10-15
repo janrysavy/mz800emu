@@ -76,7 +76,24 @@ zařízením při MAX SPEED zvukový výstup snímky vynechává - capture.json 
 
 **capture.json** - platforma, `gdg_clk_hz`, `frames_per_sec`, `wav_rate`,
 názvy kanálů, počty (`frames`, `events`, `psg_writes`, `reference_samples`,
-`sdl_blocks`, `sdl_samples`) a `stop_reason`.
+`sdl_blocks`, `sdl_samples`) a `stop_reason`. Dále časy v taktech GDG od
+spuštění emulace (stejná časová osa jako `total_screens` *
+`screen_total_ticks_per_frame` + `total_ticks` v MCP `emulator://periph/gdg`):
+
+- `began` - zachycení opravdu začalo (`false`, když se zastavilo ještě
+  během čekání na konec snímku nebo na rozjezd zvukového výstupu),
+- `origin_ticks` - začátek zachycení = `ticks` 0 v CSV a první vzorek
+  reference.wav,
+- `end_ticks` - konec posledního dokončeného snímku = konec reference.wav,
+- `last_event_ticks` - čas posledního řádku CSV; po ručním zastavení mezi
+  snímky může ležet za `end_ticks` (k těmto událostem už reference.wav
+  zvuk nemá),
+
+(bez začátku nebo bez řádků CSV jsou hodnoty `null`) a `clocks` - hodiny
+platformy se stejnými názvy jako v MCP `emulator://platform/info`:
+`gdg_base_hz` (zaokrouhlená frekvence, na které běží emulovaný čas),
+`gdg_real_base_hz` (skutečný krystal), `cpu_divider`, `ctc0_divider`,
+`psg_divider` (bez PSG `null`) a `screen_total_ticks_per_frame`.
 
 ## Příklad
 

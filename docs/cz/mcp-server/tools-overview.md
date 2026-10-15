@@ -87,6 +87,7 @@ dokumentu [Resources overview](resources-overview.md).
 | `emu_profiler_pc_reset` | ne | Smaže data profileru podle PC |
 | `emu_profiler_pc_get` | ne | Nejvytíženější adresy instrukcí s nejbližším symbolem (řazení, limit, rozsah adres) |
 | `emu_profiler_pc_export` | ne | Všechny vykonané adresy do CSV souboru |
+| `emu_profiler_pc_bitmap` | ne | Vykonané adresy jako bitmapa 8 KiB v base64 (pokrytí kódu) |
 | `emu_audio_capture_start` | ano (vytváří soubory) | Zachycení zvuku do složky: změny úrovní kanálů, zápisy do PSG, reference.wav a sdl.wav (frames, výběr souborů) |
 | `emu_audio_capture_stop` | ne | Ukončí zachycení zvuku a dopíše soubory |
 | `emu_audio_capture_status` | ne | Stav zachycení zvuku (snímky, události, zápisy PSG, vzorky, bloky SDL, složka, důvod konce) |
@@ -1168,7 +1169,7 @@ emu_profiler_pc_get(limit=20)    # kam čas odešel
 emu_profiler_pc_stop()
 ```
 
-Všech pět nástrojů vrací souhrn `{"active", "instructions", "tstates",
+Všech šest nástrojů vrací souhrn `{"active", "instructions", "tstates",
 "wait", "halt_idle", "other_tstates", "elapsed_tstates", "unique_pcs"}`
 (plus položky uvedené níže).
 
@@ -1215,6 +1216,22 @@ UTF-8, konce řádků LF, desetinná tečka bez ohledu na locale; hlavička
 `pc,count,tstates,wait,tstates_pct`, `pc` jako 4 hex číslice. Přidá
 `path` a `rows`.
 
+### `emu_profiler_pc_bitmap`
+
+Vykonané adresy jako bitmapa 8 KiB - pokrytí kódu, které se dá číst
+často (třeba po každém kroku automatického průchodu) bez přenosu řádků.
+Bez argumentů. Přidá `format` (`pc-bitset-lsb0`), `map_bytes` (8192)
+a `bitmap_base64`.
+
+Bit `adresa & 7` (bit 0 = nejnižší) bajtu `adresa >> 3` je 1, když na
+adrese začala aspoň jedna vykonaná instrukce. Jsou to tytéž adresy jako
+řádky `emu_profiler_pc_get` a `emu_profiler_pc_export`, počet
+nastavených bitů je `unique_pcs`. Operandy bit nedostanou, nečinný HALT
+nic nepřidá, bloková instrukce označí svůj začátek; banky ani verze
+samomodifikovaného kódu na stejné adrese se nerozlišují. Funguje za
+běhu sběru i po `emu_profiler_pc_stop`, emulaci nepozastaví ani
+neposune.
+
 ## Zachycení zvuku
 
 Zachycení zvuku zapisuje do složky, co dělá zvukový hardware, v emulovaném
@@ -1228,7 +1245,7 @@ i v GUI (Tools -> Audio Capture, `Alt + Q`) a v příkazové řádce
 | `psg_writes.csv` | `ticks,time_us,frame,psg,byte,channel,reg,value` - každý zápis do PSG s dekódováním |
 | `reference.wav` | zvuk vyrenderovaný přesně v emulovaném čase (renderer video záznamu) |
 | `sdl.wav` | zvuk ze zvukové výstupní cesty emulátoru - to, co slyší uživatel |
-| `capture.json` | platforma, `gdg_clk_hz`, `frames_per_sec`, názvy kanálů, počty, důvod konce (zapisuje se na konci) |
+| `capture.json` | platforma, `gdg_clk_hz`, `frames_per_sec`, názvy kanálů, počty, důvod konce, absolutní časy `origin_ticks`, `end_ticks`, `last_event_ticks` a hodiny platformy `clocks` (zapisuje se na konci, viz audio-capture.md) |
 
 - `ticks` jsou takty GDG od začátku zachycení (`gdg_clk_hz` v
   capture.json), `time_us` totéž v mikrosekundách, `frame` zvukový snímek

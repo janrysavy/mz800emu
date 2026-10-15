@@ -5715,6 +5715,14 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                     else if ( !p->out_error[ 0 ] ) g_strlcpy ( p->out_error, "export failed", sizeof ( p->out_error ) );
                     break;
                 }
+                case DBGAPI_PROFILER_PC_OP_BITMAP:
+                    if ( !p->bitmap )
+                    {
+                        g_strlcpy ( p->out_error, "missing bitmap buffer", sizeof ( p->out_error ) );
+                        break;
+                    };
+                    p->out_written = profiler_pc_get_bitmap ( p->bitmap );
+                    break;
                 default:
                     g_strlcpy ( p->out_error, "unknown operation", sizeof ( p->out_error ) );
                     break;

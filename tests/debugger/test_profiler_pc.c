@@ -12,7 +12,9 @@
  * - čas mimo instrukce (přijetí přerušení) v other_tstates,
  * - nespojitost čítače (reset CPU) nezkreslí uplynulý čas,
  * - start uprostřed běhu neměří čas před startem,
- * - výběr řádků (řazení, rozsah, jen počet) a export CSV.
+ * - start nebo reset sběru uprostřed HALT nepočítá první fetch jako instrukci,
+ * - výběr řádků (řazení, rozsah, jen počet) a export CSV,
+ * - bitmapa vykonaných adres (bit na adresu, nečinný HALT bez dalšího bitu).
  *
  * @par Licence: GPLv3
  */
@@ -21,6 +23,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include <glib.h>
 #include <glib/gstdio.h>
@@ -160,6 +163,55 @@ void test_profiler_pc_start_stop ( void )
 }
 
 
+/**
+ * @brief Start sběru, když CPU už stojí v HALT: první opakovaný fetch HALT
+ *        je nečinnost, ne nová instrukce.
+ *
+ * Jádro během HALT drží PC = adresa HALT a hlavní smyčka předává háčku
+ * cpu->pc z doby před krokem, takže i první krok po startu dostane adresu
+ * HALT. Dřív začátek úseku nastavil prev_halted = false a první fetch se
+ * započetl jako instrukce (reprodukce přes MCP:
+ * DI; HALT; JR $ na 1200h, profiler_pc_start s reset, step_n 3).
+ */
+void test_profiler_pc_start_inside_halt ( void )
+{
+    profiler_pc_set_active ( false );
+    profiler_pc_reset ( );
+    g_mzarch_main.cpu->pc = 0x1200;     /* jádro drží PC = adresa HALT */
+    g_mzarch_main.cpu->halted = true;     /* HALT vykonán před startem */
+    profiler_pc_set_active ( true );
+
+    for ( int i = 0; i < 3; i++ ) step ( 0x1200, 4, 0, 0, true );
+
+    st_PROFILER_PC_SUMMARY s;
+    profiler_pc_get_summary ( &s );
+    TEST_ASSERT_EQUAL_UINT64 ( 0, s.instructions );
+    TEST_ASSERT_EQUAL_UINT64 ( 0, s.tstates );
+    TEST_ASSERT_EQUAL_UINT64 ( 12, s.halt_idle );
+    TEST_ASSERT_EQUAL_UINT64 ( 12, s.elapsed_tstates );
+    TEST_ASSERT_EQUAL_UINT ( 0, s.unique_pcs );
+}
+
+
+/** @brief Reset za běhu sběru uprostřed HALT: totéž jako start v HALT. */
+void test_profiler_pc_reset_active_inside_halt ( void )
+{
+    step ( 0x2000, 4, 0, 0, true );       /* HALT vykonán, CPU drží PC = 2000h */
+    g_mzarch_main.cpu->pc = 0x2000;
+    profiler_pc_reset ( );                /* sběr dál aktivní */
+
+    step ( 0x2000, 4, 0, 0, true );
+    step ( 0x2000, 4, 0, 0, true );
+
+    st_PROFILER_PC_SUMMARY s;
+    profiler_pc_get_summary ( &s );
+    TEST_ASSERT_TRUE ( s.active );
+    TEST_ASSERT_EQUAL_UINT64 ( 0, s.instructions );
+    TEST_ASSERT_EQUAL_UINT64 ( 8, s.halt_idle );
+    TEST_ASSERT_EQUAL_UINT ( 0, s.unique_pcs );
+}
+
+
 /** @brief Řazení, rozsah, kapacita a dotaz jen na počet. */
 void test_profiler_pc_rows_sort_range ( void )
 {
@@ -215,23 +267,41 @@ void test_profiler_pc_export_csv ( void )
 }
 
 
-/** Starting or resetting inside HALT must count only refresh idle time. */
-void test_profiler_pc_start_inside_halt ( void )
+/**
+ * @brief Bitmapa vykonaných adres: pořadí bitů (LSB = adresa & 7), krajní
+ *        adresy, počet = unique_pcs; nečinný HALT ani opakování nepřidá bit.
+ */
+void test_profiler_pc_bitmap ( void )
 {
-    profiler_pc_set_active ( false );
-    g_mzarch_main.cpu->pc = 0x1201;
-    g_mzarch_main.cpu->halted = true;
-    profiler_pc_reset ( );
-    profiler_pc_set_active ( true );
-    for ( unsigned i = 0; i < 3; i++ ) step ( 0x1201, 4, 0, 0, true );
+    step ( 0x0000, 4, 0, 0, false );
+    step ( 0x0007, 4, 0, 0, false );
+    step ( 0x1200, 21, 0, 0, false );    /* LDIR: dvakrát stejný začátek */
+    step ( 0x1200, 16, 0, 0, false );
+    step ( 0x1202, 4, 0, 0, true );      /* HALT */
+    step ( 0x1202, 4, 0, 0, true );      /* nečinný HALT */
+    step ( 0xFFFF, 4, 0, 0, false );
+
+    uint8_t bm[ PROFILER_PC_BITMAP_BYTES ];
+    memset ( bm, 0xAA, sizeof ( bm ) );  /* funkce musí přepsat celý buffer */
+    TEST_ASSERT_EQUAL_UINT ( 5, profiler_pc_get_bitmap ( bm ) );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x81, bm[ 0x0000 ] );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x05, bm[ 0x1200 >> 3 ] );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x80, bm[ 0x1FFF ] );
+    unsigned bits = 0;
+    for ( size_t i = 0; i < sizeof ( bm ); i++ ) {
+        for ( uint8_t v = bm[ i ]; v; v &= (uint8_t) ( v - 1 ) ) bits++;
+    };
+    TEST_ASSERT_EQUAL_UINT ( 5, bits );
+
     st_PROFILER_PC_SUMMARY s;
     profiler_pc_get_summary ( &s );
-    TEST_ASSERT_EQUAL_UINT64 ( 0, s.instructions );
-    TEST_ASSERT_EQUAL_UINT64 ( 0, s.tstates );
-    TEST_ASSERT_EQUAL_UINT64 ( 12, s.halt_idle );
-    TEST_ASSERT_EQUAL_UINT64 ( 12, s.elapsed_tstates );
-    TEST_ASSERT_EQUAL_UINT ( 0, s.unique_pcs );
+    TEST_ASSERT_EQUAL_UINT ( 5, s.unique_pcs );
+
+    profiler_pc_reset ( );
+    TEST_ASSERT_EQUAL_UINT ( 0, profiler_pc_get_bitmap ( bm ) );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x00, bm[ 0x0000 ] );
 }
+
 
 int main ( int argc, char *argv[] )
 {
@@ -245,8 +315,10 @@ int main ( int argc, char *argv[] )
     RUN_TEST ( test_profiler_pc_discontinuity );
     RUN_TEST ( test_profiler_pc_start_stop );
     RUN_TEST ( test_profiler_pc_start_inside_halt );
+    RUN_TEST ( test_profiler_pc_reset_active_inside_halt );
     RUN_TEST ( test_profiler_pc_rows_sort_range );
     RUN_TEST ( test_profiler_pc_export_csv );
+    RUN_TEST ( test_profiler_pc_bitmap );
 
     return UNITY_END ( );
 }

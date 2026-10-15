@@ -16,6 +16,7 @@
 - vytvoření kompletního overscreen menu
 - podpora TapeMZ a online převod z wav na mzf
 - podpora gdb
+- pokrytí kódu podle skutečně vykonaných instrukcí: načtené bajty instrukce (i u samomodifikujícího kódu) a rozhodnutí podmíněných skoků a opakovaných instrukcí (skočil / neskočil, počet opakování LDIR apod.)
 
 
 ## Emulace

@@ -561,8 +561,6 @@ static gboolean stale_count_cb(guint timer_id, gpointer user_data)
  * situaci vyrobí deterministicky: událost nese ID odebraného timeru A
  * (user.code), ale ukazatel živého timeru B (user.data1). Událost se smí
  * zpracovat, jen když sedí ukazatel i ID.
- *
- * Nalezeno ve forku janrysavy/mz800emu (297ca20), test napsán nezávisle.
  */
 void test_timer_stale_event_after_remove(void)
 {

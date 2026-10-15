@@ -2858,6 +2858,7 @@ typedef enum en_DBGAPI_PROFILER_PC_OP
     DBGAPI_PROFILER_PC_OP_RESET,     /**< profiler_pc_reset(). */
     DBGAPI_PROFILER_PC_OP_GET,       /**< Souhrn + nejvýše `rows_max` řádků do `rows`. */
     DBGAPI_PROFILER_PC_OP_EXPORT,    /**< profiler_pc_export_csv() do `path`. */
+    DBGAPI_PROFILER_PC_OP_BITMAP,    /**< profiler_pc_get_bitmap() do `bitmap`. */
 } en_DBGAPI_PROFILER_PC_OP;
 
 /** @brief Nejvíc řádků, které vrací jeden GET přes MCP. */
@@ -2884,7 +2885,8 @@ typedef struct st_DBGAPI_PROFILER_PC_ROW
  * Handler vždy vyplní `out_summary` (stav po operaci) a `out_error`.
  *
  * @par Vlastnictví
- * `rows` a `path` vlastní volající; handler do `rows` jen zapisuje.
+ * `rows`, `path` a `bitmap` vlastní volající; handler do `rows` a `bitmap`
+ * jen zapisuje.
  *
  * @invariant rq->success == false <=> out_error != "" nebo chybí parametr.
  */
@@ -2899,6 +2901,7 @@ typedef struct st_DBGAPI_PROFILER_PC_PARAM
     st_DBGAPI_PROFILER_PC_ROW *rows; /**< IN (GET): pole na řádky, nebo NULL. */
     size_t   rows_max;             /**< IN (GET): kapacita `rows`. */
     const char *path;              /**< IN (EXPORT): cílový CSV soubor. */
+    uint8_t *bitmap;               /**< IN (BITMAP): buffer PROFILER_PC_BITMAP_BYTES bajtů; NULL = chyba. */
     size_t   out_total;            /**< OUT (GET): adres s vykonáním v rozsahu. */
     size_t   out_written;          /**< OUT (GET): zapsaných řádků; (EXPORT): řádků v CSV. */
     st_PROFILER_PC_SUMMARY out_summary; /**< OUT: souhrn po operaci. */

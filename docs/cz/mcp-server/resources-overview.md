@@ -393,7 +393,11 @@ pro celý seznam slouží `emulator://watch`.
   jako PNG base64 (`format: "png"`, `data_b64`, `byte_size`). Enkód
   dělá vendorovaný `stb_image_write.h` (public domain) na emu vlákně =
   žádná runtime DLL závislost. Obsah je shodný se `screenshot.raw` při
-  downscale 1, jen PNG kontejner. `available=false` jen když frame ještě
+  downscale 1, jen PNG kontejner. Přímý příkaz JSONL `get_frame_screenshot`
+  (klient bez Python wrapperu) přijímá stejné volitelné parametry `area`,
+  `scale` a `crop` jako `emu_screenshot_save_to_file` a v odpovědi vrací
+  `area` a `scale`; neplatné volby jsou chyba parametrů. Resource sám
+  parametry nemá. `available=false` jen když frame ještě
   nebyl vyrenderován / display neinicializován / enkód selhal.
 - **screenshot.raw response size** - native MZ-800 framebuffer je
   928 x 288 x 4 = 1.07 MB raw, ~1.43 MB base64. Pokud transport

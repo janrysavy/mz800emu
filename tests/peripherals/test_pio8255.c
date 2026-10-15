@@ -169,6 +169,33 @@ void test_pio_port_b_keyboard_read(void)
     pio8255_keyboard_matrix_reset();
 }
 
+/* PIO — klávesa držená přes MCP (vkbd_matrix) přežije ztrátu fokusu okna
+ *
+ * Při ztrátě fokusu hlavního okna emulátoru (např. klik do okna debuggeru)
+ * main_window.cpp volá pio8255_keyboard_matrix_reset() - maže jen fyzickou
+ * matici. Klávesy držené přes MCP (hid_keymap -> vkbd_matrix) zůstanou
+ * stisknuté a fyzická klávesnice je přes AND v Port B nemůže uvolnit, jen
+ * přidat další stisk. Přehrávání vstupu přes MCP s viditelným debuggerem
+ * tak funguje i bez zvláštního přepínače.
+ */
+void test_pio_vkbd_survives_focus_loss_reset(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    pio8255_keyboard_matrix_reset();
+    memset(g_pio8255.vkbd_matrix, 0xFF, 10);
+    pio8255_write(0, 0x00);             /* sloupec 0 */
+
+    PIO8255_VKBDBIT_RESET(0, 2);        /* MCP drží klávesu col 0 bit 2 */
+    PIO8255_MZKEYBIT_RESET(0, 0);       /* fyzicky stisknutá col 0 bit 0 */
+    TEST_ASSERT_EQUAL_HEX8(0xFA, pio8255_read(1));
+
+    pio8255_keyboard_matrix_reset();    /* ztráta fokusu okna */
+    TEST_ASSERT_EQUAL_HEX8(0xFB, pio8255_read(1));
+
+    memset(g_pio8255.vkbd_matrix, 0xFF, 10);
+}
+
 /* PIO — PA0-3 = 0Ah-0Fh nevybere žádný sloupec, Port B vrací 0xFF
  *
  * PA0-3 vedou přes 74LS145 (BCD -> 1 z 10, sm800 str. 28); hodnoty 10-15
@@ -329,6 +356,7 @@ int main(int argc, char *argv[])
     RUN_TEST(test_pio_port_c_signals);
     RUN_TEST(test_pio_port_b_keyboard_read);
     RUN_TEST(test_pio_port_b_column_0a_0f_no_select);
+    RUN_TEST(test_pio_vkbd_survives_focus_loss_reset);
     RUN_TEST(test_pio_joystick_signals);
     RUN_TEST(test_pio_vkbd_probe_landing);
     RUN_TEST(test_pio_vkbd_probe_invalid_arm);

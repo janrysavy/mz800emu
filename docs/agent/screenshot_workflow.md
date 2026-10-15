@@ -8,7 +8,9 @@ animation (frame series).
 Use `emu_screenshot_save_to_file`. It writes a PNG straight to a file on
 the server host, so no large base64 payload goes through the context; read
 the written file afterwards. (`emulator://frame/screenshot` returns the
-whole framebuffer as a base64 PNG, only for small checks.)
+whole framebuffer as a base64 PNG, only for small checks. A client talking
+JSONL directly can pass the same `area`, `scale` and `crop` to the
+`get_frame_screenshot` command.)
 
 ## Geometry
 

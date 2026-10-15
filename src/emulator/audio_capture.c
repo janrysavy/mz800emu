@@ -71,6 +71,8 @@ typedef struct st_AC_WAV {
  * @brief Stav modulu (emu vlákno; sdl a sdl_samples/sdl_blocks pod sdl_mutex).
  *
  * @invariant active => (origin, frame, last_horizon) platí pro běžící zachycení.
+ * @invariant began => origin a last_horizon platí i po konci zachycení
+ *            (pro capture.json); has_last_event => last_event_ticks >= origin.
  * @invariant pending && active se nevylučují jen během audio_capture_on_frame().
  */
 static struct {
@@ -87,8 +89,11 @@ static struct {
     unsigned warmup_frames;          /**< Zbývající snímky rozjezdu SDL cesty před začátkem. */
     st_VIDEOREC_AUDIO renderer;      /**< Renderer reference.wav (platí jen při active && ref.fp). */
     bool renderer_init;              /**< renderer je inicializovaný (k uvolnění). */
-    uint64_t origin;                 /**< Čas začátku zachycení [takty GDG]. */
-    uint64_t last_horizon;           /**< Horizont posledního snímku. */
+    bool began;                      /**< Zachycení opravdu začalo (ac_begin), ne jen naplánováno. */
+    uint64_t origin;                 /**< Čas začátku zachycení [absolutní takty GDG] = čas 0 v CSV. */
+    uint64_t last_horizon;           /**< Horizont posledního snímku [absolutní takty GDG] = konec reference.wav. */
+    bool has_last_event;             /**< Zapsán aspoň jeden řádek CSV (events.csv nebo psg_writes.csv). */
+    uint64_t last_event_ticks;       /**< Absolutní čas posledního řádku CSV [takty GDG]. */
     uint64_t frame;                  /**< Pořadí aktuálního snímku od začátku (0 = první). */
     uint64_t n_events;               /**< Řádky events.csv. */
     uint64_t n_psg;                  /**< Řádky psg_writes.csv. */
@@ -264,6 +269,33 @@ static void ac_write_json(void)
     ac_json_str(fp, s_ac.started);
     fprintf(fp, ",\n  \"gdg_clk_hz\": %llu,\n  \"frames_per_sec\": %u,\n  \"wav_rate\": %u,\n",
             (unsigned long long) GDGCLK_BASE, (unsigned) VIDEO_SCREENS_PER_SEC, AUDIO_CAPTURE_WAV_RATE);
+    /* Absolutní časy v taktech GDG (stejná časová osa jako total_screens
+     * * screen_total_ticks_per_frame + total_ticks v emulator://periph/gdg);
+     * null, pokud zachycení nezačalo (stop během čekání na konec snímku)
+     * nebo nebyl zapsán žádný řádek CSV. */
+    fprintf(fp, "  \"began\": %s,\n", s_ac.began ? "true" : "false");
+    if (s_ac.began) {
+        fprintf(fp, "  \"origin_ticks\": %llu,\n  \"end_ticks\": %llu,\n",
+                (unsigned long long) s_ac.origin, (unsigned long long) s_ac.last_horizon);
+    } else {
+        fprintf(fp, "  \"origin_ticks\": null,\n  \"end_ticks\": null,\n");
+    }
+    if (s_ac.began && s_ac.has_last_event) {
+        fprintf(fp, "  \"last_event_ticks\": %llu,\n", (unsigned long long) s_ac.last_event_ticks);
+    } else {
+        fprintf(fp, "  \"last_event_ticks\": null,\n");
+    }
+    /* Hodiny platformy, stejné názvy a hodnoty jako emulator://platform/info. */
+    fprintf(fp, "  \"clocks\": {\"gdg_base_hz\": %llu, \"gdg_real_base_hz\": %llu, "
+                "\"cpu_divider\": %u, \"ctc0_divider\": %u, ",
+            (unsigned long long) GDGCLK_BASE, (unsigned long long) GDGCLK_REAL_BASE,
+            (unsigned) GDGCLK2CPU_DIVIDER, (unsigned) GDGCLK_CTC0_DIVIDER);
+#if HAVE_PSG
+    fprintf(fp, "\"psg_divider\": %u, ", (unsigned) PSG_DIVIDER);
+#else
+    fprintf(fp, "\"psg_divider\": null, ");
+#endif
+    fprintf(fp, "\"screen_total_ticks_per_frame\": %llu},\n", (unsigned long long) VIDEO_SCREEN_TICKS);
     fprintf(fp, "  \"channels\": [");
     for (unsigned i = 0; i < AUDIO_SRC_CHANNELS_COUNT; i++) {
         fprintf(fp, "%s", i ? ", " : "");
@@ -388,6 +420,8 @@ static bool ac_start(const st_AUDIO_CAPTURE_PARAMS *p, char *err, size_t err_siz
     s_ac.sdl_blocks = 0;
     s_ac.sdl_writing = false;
     s_ac.warmup_frames = sdl.fp ? AC_SDL_WARMUP_FRAMES : 0;
+    s_ac.began = false;
+    s_ac.has_last_event = false;
     s_ac.frame = 0;
     s_ac.n_events = 0;
     s_ac.n_psg = 0;
@@ -437,6 +471,16 @@ static void ac_get_status(st_AUDIO_CAPTURE_STATUS *out)
 }
 
 
+/** @brief Zaznamená absolutní čas právě zapsaného řádku CSV (pro last_event_ticks). */
+static void ac_note_event(uint64_t abs_ticks)
+{
+    if (!s_ac.has_last_event || abs_ticks > s_ac.last_event_ticks) {
+        s_ac.last_event_ticks = abs_ticks;
+    }
+    s_ac.has_last_event = true;
+}
+
+
 /** @brief Zapíše řádek events.csv. */
 static void ac_write_event(uint64_t rel, unsigned src_id, uint8_t value)
 {
@@ -446,6 +490,7 @@ static void ac_write_event(uint64_t rel, unsigned src_id, uint8_t value)
     fprintf(s_ac.events, "%llu,%s,%llu,%s,%u\n", (unsigned long long) rel, t,
             (unsigned long long) s_ac.frame, ac_channel_name(src_id), (unsigned) (value & 0x0F));
     s_ac.n_events++;
+    ac_note_event(s_ac.origin + rel);
 }
 
 
@@ -506,6 +551,7 @@ static void ac_on_psg_write(uint64_t ticks, unsigned mask, uint8_t value)
     fprintf(s_ac.psg, "%llu,%s,%llu,%u,%02X,%u,%s,%u\n", (unsigned long long) rel, t,
             (unsigned long long) s_ac.frame, mask, (unsigned) value, cs, reg, val);
     s_ac.n_psg++;
+    ac_note_event(ticks);
 #endif
 }
 
@@ -515,6 +561,7 @@ static void ac_begin(uint64_t horizon)
 {
     s_ac.pending = false;
     s_ac.active = true;
+    s_ac.began = true;
     s_ac.origin = horizon;
     s_ac.last_horizon = horizon;
     s_ac.frame = 0;

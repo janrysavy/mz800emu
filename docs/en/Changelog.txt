@@ -1,4 +1,12 @@
 
+	- MCP - emu_profiler_pc_bitmap returns the executed addresses of the per-PC profiler as an 8 KiB base64 bitmap (one bit per address, the same addresses as emu_profiler_pc_get and export) - code coverage that can be read often, for example after every step of an automated run. See mcp-server/tools-overview.md.
+
+	- Audio capture - capture.json now contains the absolute start and end of the capture in GDG clock ticks since the emulation started (origin_ticks = time 0 in the CSV files and the first sample of reference.wav, end_ticks = the end of reference.wav, last_event_ticks = the last CSV row, began) and the platform clocks (clocks: gdg_base_hz, the real crystal gdg_real_base_hz, the CPU, CTC0 and PSG dividers, ticks per frame), so the capture events can be matched exactly with the run of the program. See audio-capture.md.
+
+	- MCP - the direct JSONL command get_frame_screenshot (base64 PNG, resource emulator://frame/screenshot) accepts the same optional area, scale and crop parameters as emu_screenshot_save_to_file and returns area and scale in the response. It used to ignore them silently and always returned the whole picture; invalid options are now a parameter error.
+
+	- BUGFIX: Per-PC profiler (CPU Profiler window, Per PC tab, and MCP emu_profiler_pc_*) - when collection was started or reset while the CPU was sitting in a HALT instruction, the first wait in HALT was counted as an executed instruction at the HALT address (4 T-states missing from halt_idle).
+
 2026-10-14 - Released version 2.0.6
 
 	- BUGFIX: Sound - a PSG channel that changed exactly at the start of an audio frame was held at its previous level for the whole frame (20 ms, on the MZ-1500 16.7 ms) in the sound output, in music once every one to three seconds; usually not audible in music, clearly visible when comparing with the exact sound of the audio capture (reference.wav). The sound recorded into a video in emulated time did not have this defect.

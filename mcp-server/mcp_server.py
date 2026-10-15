@@ -7151,10 +7151,13 @@ async def resource_frame_screenshot() -> str:
     """Framebuffer snapshot as PNG (base64).
 
     Returns ``{"available": true, "format": "png", "width": int,
-    "height": int, "byte_size": int, "data_b64": str}`` where
+    "height": int, "byte_size": int, "area": "full",
+    "scale": "framebuffer", "data_b64": str}`` where
     ``data_b64`` is the base64-encoded PNG file stream. The image is the
     full framebuffer (= same content as ``emulator://frame/screenshot.raw``
     at downscale 1, just a PNG container instead of raw RGBA bytes).
+    For a cut-out or another scale use ``emu_screenshot_save_to_file``
+    (the underlying JSONL command accepts the same area/scale/crop).
 
     Returns ``{"available": false, "reason": str}`` only when the
     framebuffer has not yet been rendered, the display is not initialized,
@@ -7428,6 +7431,32 @@ async def emu_profiler_pc_export(path: str, sort: str = "addr") -> str:
         cannot be written.
     """
     resp = await _send_request("profiler_pc_export", {"path": path, "sort": sort})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_profiler_pc_bitmap() -> str:
+    """Get the executed instruction addresses of the per-PC profiler as a
+    compact 8 KiB bitmap - code coverage for frequent reads, e.g. after
+    every step of an automated run.
+
+    Bit ``(addr & 7)`` of byte ``(addr >> 3)`` is set when at least one
+    instruction starting at ``addr`` was executed - the same addresses as
+    the rows of ``emu_profiler_pc_get`` / ``emu_profiler_pc_export``, so
+    the number of set bits equals ``unique_pcs``. Operand bytes get no
+    bit, an idle HALT adds nothing, block instructions (LDIR, ...) mark
+    their start. The key is the logical PC: memory banks and versions of
+    self-modified code at one address are not told apart.
+
+    Works while the profiler runs and after ``emu_profiler_pc_stop``; it
+    neither pauses nor advances the emulation. Start collecting with
+    ``emu_profiler_pc_start``.
+
+    Returns:
+        Summary plus ``{"format": "pc-bitset-lsb0", "map_bytes": 8192,
+        "bitmap_base64": str}``.
+    """
+    resp = await _send_request("profiler_pc_bitmap", {})
     return json.dumps(_data_or_error(resp))
 
 

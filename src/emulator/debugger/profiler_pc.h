@@ -31,6 +31,9 @@
  * Klíčem je logické PC (bez rozlišení bankingu, stejně jako funkční
  * profiler). Při ladění kódu ve více bankách se čísla stejné adresy sčítají.
  *
+ * Pro pokrytí kódu se vykonané adresy dají číst i jako bitmapa 8 KiB
+ * (profiler_pc_get_bitmap) - bez dalších dat a bez dalšího háčku.
+ *
  * @par Vlákna
  * Data zapisuje emu vlákno (profiler_pc_on_instruction). Ostatní funkce
  * volat z emu vlákna (dbgapi handler), nebo když emu vlákno neběží.
@@ -146,6 +149,27 @@ size_t profiler_pc_get_rows(en_PROFILER_PC_SORT sort, uint16_t lo, uint16_t hi,
  * @return Počet zapsaných řádků, nebo -1 při chybě zápisu.
  */
 int profiler_pc_export_csv(const char *path, en_PROFILER_PC_SORT sort, char *err, size_t err_size);
+
+/** @brief Velikost bitmapy vykonaných adres [B]: jeden bit na adresu 0000h-FFFFh. */
+#define PROFILER_PC_BITMAP_BYTES ( 0x10000u / 8u )
+
+/**
+ * @brief Vyplní bitmapu adres, na kterých začala aspoň jedna vykonaná instrukce.
+ *
+ * Bit `(adresa & 7)` bajtu `(adresa >> 3)` je 1, právě když má adresa počet
+ * vykonání > 0 - tytéž adresy jako řádky profiler_pc_get_rows a export CSV,
+ * počet nastavených bitů je unique_pcs souhrnu. Platí stejná pravidla jako
+ * pro počítání: adresa = začátek instrukce, jak ho předává hlavní smyčka;
+ * nečinný HALT adresu znovu neoznačí (samotné vykonání HALT ano); opakovaná
+ * instrukce (LDIR, ...) označuje pořád svůj začátek. Banky ani verze
+ * samomodifikovaného kódu na stejné adrese se nerozlišují.
+ *
+ * @param out Výstup, alespoň PROFILER_PC_BITMAP_BYTES bajtů; celý se přepíše.
+ * @return Počet nastavených bitů.
+ * @pre out != NULL; emu vlákno (dbgapi handler), nebo emu vlákno neběží.
+ * @post Data profileru ani stav sběru se nemění.
+ */
+unsigned profiler_pc_get_bitmap(uint8_t *out);
 
 
 #ifdef __cplusplus

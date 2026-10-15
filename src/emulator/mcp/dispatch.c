@@ -507,6 +507,8 @@ static en_MCP_DISPATCH_RESULT _handle_profiler_pc_get(const st_JSONL_MESSAGE *re
                                                       char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_profiler_pc_export(const st_JSONL_MESSAGE *req,
                                                          char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_profiler_pc_bitmap(const st_JSONL_MESSAGE *req,
+                                                         char **out_response);
 /* audio-capture fwd decls */
 static en_MCP_DISPATCH_RESULT _handle_audio_capture_start(const st_JSONL_MESSAGE *req,
                                                           char **out_response);
@@ -689,6 +691,8 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot_raw(
     const st_JSONL_MESSAGE *req, char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot(
     const st_JSONL_MESSAGE *req, char **out_response);
+static bool _screenshot_opts_from_json(JsonObject *obj, st_SCREENSHOT_OPTS *opts,
+                                       char *err, size_t err_size);
 static en_MCP_DISPATCH_RESULT _handle_screenshot_save_to_file(
     const st_JSONL_MESSAGE *req, char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_get_video_text_dump(
@@ -1156,6 +1160,10 @@ static const st_MCP_CMD_MAP_ENTRY g_cmd_map[] = {
     { "audio_capture_start",      DBGAPI_CMD_AUDIO_CAPTURE,           _handle_audio_capture_start      },
     { "audio_capture_stop",       DBGAPI_CMD_AUDIO_CAPTURE,           _handle_audio_capture_stop       },
     { "audio_capture_status",     DBGAPI_CMD_AUDIO_CAPTURE,           _handle_audio_capture_status     },
+    /* Bitmapa vykonaných adres profileru podle PC (pokrytí kódu). Přidáno
+     * na KONEC tabulky kvůli stabilitě pozičního indexu v hello
+     * supported_commands. */
+    { "profiler_pc_bitmap",       DBGAPI_CMD_PROFILER_PC,             _handle_profiler_pc_bitmap       },
     /* sentinel */
     { NULL,              DBGAPI_CMD_NONE,              NULL                  },
 };
@@ -12816,24 +12824,49 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot_raw(
  *
  * PNG screenshot enkódovaný přes stb_image_write.h (viz
  * src/emulator/debugger/png_encode.{c,h}). Handler v emu vlákně
- * zenkóduje plný framebuffer (= stejný obsah jako screenshot.raw, jen
- * PNG kontejner) a vrátí glib-alokovaný PNG stream, který dispatch po
- * base64 enkódování uvolní přes g_free.
+ * zenkóduje obraz podle voleb a vrátí glib-alokovaný PNG stream, který
+ * dispatch po base64 enkódování uvolní přes g_free.
+ *
+ * Parametry (data, všechny volitelné, stejné jako screenshot_save_to_file):
+ *   - `area`  (string) - "full" (default) / "canvas"
+ *   - `scale` (string|int) - "framebuffer" (default), "native", 1..4
+ *   - `crop`  (objekt) - {x, y, width, height} ve výstupních pixelech,
+ *             jen se scale "framebuffer" nebo "native"
+ *   Bez voleb = celý framebuffer 1:1 (stejný obsah jako screenshot.raw).
+ *   Viz _screenshot_opts_from_json(); neplatné volby = INVALID_PARAMS
+ *   (dřív se volby tiše ignorovaly).
  *
  * Layout response (available=true):
  *   {"available": true, "format": "png", "width": N, "height": N,
- *    "byte_size": N, "data_b64": "<base64 PNG stream>"}
+ *    "byte_size": N, "area": str, "scale": str,
+ *    "hires": bool (jen scale "native"), "data_b64": "<base64 PNG stream>"}
  *   pokud available=false:
  *   {"available": false, "reason": str}
  */
 static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot(
     const st_JSONL_MESSAGE *req, char **out_response) {
     int64_t req_id = jsonl_msg_get_req_id(req);
+
+    /* Oblast, měřítko a ořez (výchozí = celý framebuffer 1:1). */
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    JsonObject *data_obj = (data_node && json_node_get_node_type(data_node) == JSON_NODE_OBJECT)
+                           ? json_node_get_object(data_node) : NULL;
+    st_SCREENSHOT_OPTS opts;
+    char opts_err[128];
+    if (!_screenshot_opts_from_json(data_obj, &opts, opts_err, sizeof(opts_err))) {
+        return _err_response(req_id, opts_err, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+
     st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM param;
     memset(&param, 0, sizeof(param));
+    param.opts = opts;
     if (!_submit_dbgapi(DBGAPI_CMD_GET_FRAME_SCREENSHOT_PNG, &param, NULL)) {
         return _err_response(req_id, "get_frame_screenshot failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    if (!param.available && param.bad_opts) {
+        /* Neplatné volby (např. ořez mimo obraz) - chyba parametrů. */
+        return _err_response(req_id, param.reason, MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
     JsonObject *resp = json_object_new();
     if (!param.available) {
@@ -12850,6 +12883,11 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot(
     json_object_set_int_member(resp,     "width",     (gint64)param.width);
     json_object_set_int_member(resp,     "height",    (gint64)param.height);
     json_object_set_int_member(resp,     "byte_size", (gint64)param.buffer_size);
+    json_object_set_string_member(resp,  "area",  screenshot_area_to_string(opts.area));
+    json_object_set_string_member(resp,  "scale", screenshot_scale_to_string(opts.scale_mode, opts.window_scale));
+    if (opts.scale_mode == SCREENSHOT_SCALE_NATIVE) {
+        json_object_set_boolean_member(resp, "hires", param.hires ? TRUE : FALSE);
+    }
     json_object_set_string_member(resp,  "data_b64",  b64 ? b64 : "");
     g_free(b64);
     return _ok_response(req_id, resp, out_response);
@@ -14478,6 +14516,36 @@ static en_MCP_DISPATCH_RESULT _handle_profiler_pc_export(const st_JSONL_MESSAGE 
     JsonObject *resp = _profiler_pc_summary_json(&p.out_summary);
     json_object_set_string_member(resp, "path", path);
     json_object_set_int_member(resp, "rows", (gint64) p.out_written);
+    return _ok_response(req_id, resp, out_response);
+}
+
+/**
+ * @brief `profiler_pc_bitmap` handler - vykonané adresy jako bitmapa 8 KiB.
+ *
+ * Bez parametrů; funguje za běhu sběru i po něm, emulaci nepozastaví ani
+ * neposune (čte se v emu vlákně mezi instrukcemi). Response: souhrn +
+ * `format` ("pc-bitset-lsb0": bit `adresa & 7` bajtu `adresa >> 3`),
+ * `map_bytes` (8192) a `bitmap_base64`. Počet nastavených bitů = `unique_pcs`.
+ */
+static en_MCP_DISPATCH_RESULT _handle_profiler_pc_bitmap(const st_JSONL_MESSAGE *req,
+                                                         char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    st_DBGAPI_PROFILER_PC_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_PROFILER_PC_OP_BITMAP;
+    p.bitmap = g_malloc0(PROFILER_PC_BITMAP_BYTES);
+    if (!_submit_dbgapi(DBGAPI_CMD_PROFILER_PC, &p, NULL)) {
+        g_free(p.bitmap);
+        return _err_response(req_id, p.out_error[0] ? p.out_error : "profiler_pc_bitmap failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    JsonObject *resp = _profiler_pc_summary_json(&p.out_summary);
+    json_object_set_string_member(resp, "format", "pc-bitset-lsb0");
+    json_object_set_int_member(resp, "map_bytes", (gint64) PROFILER_PC_BITMAP_BYTES);
+    gchar *b64 = g_base64_encode(p.bitmap, PROFILER_PC_BITMAP_BYTES);
+    json_object_set_string_member(resp, "bitmap_base64", b64);
+    g_free(b64);
+    g_free(p.bitmap);
     return _ok_response(req_id, resp, out_response);
 }
 

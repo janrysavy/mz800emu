@@ -418,4 +418,5 @@ Limits:
   after Stop the emulation is not slowed down.
 
 The same data is available over MCP (`emu_profiler_pc_*`, see
-mcp-server/tools-overview.md).
+mcp-server/tools-overview.md), the executed addresses also as a bitmap
+for code coverage (`emu_profiler_pc_bitmap`).

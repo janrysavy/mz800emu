@@ -14,9 +14,6 @@
  * řádku. VRAM plane I obsahuje vzor, ve kterém se barva bajtu mění po
  * 8 a 2048 bajtech, takže posun o SOF je v pixelech vidět.
  *
- * Nalezeno ve forku github.com/janrysavy/mz800emu (eea0208); test je
- * napsaný nezávisle.
- *
  * Licence: GPLv3
  */
 

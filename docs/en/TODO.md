@@ -16,6 +16,7 @@
 - complete overscreen menu
 - TapeMZ support and online conversion from wav to mzf
 - gdb support
+- code coverage by the instructions actually executed: the fetched instruction bytes (also for self-modifying code) and the decisions of conditional jumps and repeated instructions (taken / not taken, repeat count of LDIR etc.)
 
 
 ## Emulation

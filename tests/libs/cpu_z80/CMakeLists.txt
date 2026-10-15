@@ -51,8 +51,7 @@ mz_add_test(cpu_z80_r_register
 )
 
 # Pokriva navratovou hodnotu z80_step() na hranicich total_cycles 2^31 a 2^32
-# (puvodne odecet pres int = signed overflow, UB). Nalezeno ve forku
-# janrysavy/mz800emu. Viz emu-experiments/fork-bugs/.
+# (puvodne odecet pres int = signed overflow, UB).
 mz_add_test(cpu_z80_step_cycles
     TYPE     STANDALONE
     SOURCES  test_step_cycles.c

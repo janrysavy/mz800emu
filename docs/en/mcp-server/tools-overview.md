@@ -87,6 +87,7 @@ documented separately in [Resources overview](resources-overview.md).
 | `emu_profiler_pc_reset` | no | Clear the per-PC profiler data |
 | `emu_profiler_pc_get` | no | Busiest instruction addresses with the nearest symbol (sort, limit, address range) |
 | `emu_profiler_pc_export` | no | All executed addresses to a CSV file |
+| `emu_profiler_pc_bitmap` | no | Executed addresses as an 8 KiB base64 bitmap (code coverage) |
 | `emu_audio_capture_start` | yes (creates files) | Audio capture into a folder: channel level changes, PSG writes, reference.wav and sdl.wav (frames, file selection) |
 | `emu_audio_capture_stop` | no | Stop the audio capture and finish its files |
 | `emu_audio_capture_status` | no | Audio capture status (frames, events, PSG writes, samples, SDL blocks, folder, stop reason) |
@@ -1197,7 +1198,7 @@ emu_profiler_pc_get(limit=20)    # where the time went
 emu_profiler_pc_stop()
 ```
 
-All five tools return the summary `{"active", "instructions",
+All six tools return the summary `{"active", "instructions",
 "tstates", "wait", "halt_idle", "other_tstates", "elapsed_tstates",
 "unique_pcs"}` (plus the fields below).
 
@@ -1244,6 +1245,22 @@ UTF-8, LF line endings, decimal point regardless of the locale; header
 `pc,count,tstates,wait,tstates_pct`, `pc` as 4 hex digits. Adds `path`
 and `rows`.
 
+### `emu_profiler_pc_bitmap`
+
+The executed addresses as an 8 KiB bitmap - code coverage that can be
+read often (for example after every step of an automated run) without
+transferring rows. No arguments. Adds `format` (`pc-bitset-lsb0`),
+`map_bytes` (8192) and `bitmap_base64`.
+
+Bit `addr & 7` (bit 0 = lowest) of byte `addr >> 3` is 1 when at least
+one instruction starting at the address was executed. These are the same
+addresses as the rows of `emu_profiler_pc_get` and
+`emu_profiler_pc_export`; the number of set bits is `unique_pcs`.
+Operand bytes get no bit, an idle HALT adds nothing, a block instruction
+marks its start; memory banks and versions of self-modified code at one
+address are not told apart. Works while collecting and after
+`emu_profiler_pc_stop`; it neither pauses nor advances the emulation.
+
 ## Audio capture tools
 
 The audio capture writes what the sound hardware does into a folder, in
@@ -1258,7 +1275,7 @@ and on the command line (`--audio-capture`), see
 | `psg_writes.csv` | `ticks,time_us,frame,psg,byte,channel,reg,value` - every write to the PSG, decoded |
 | `reference.wav` | the sound rendered exactly in emulated time (the renderer of the video recording) |
 | `sdl.wav` | the sound produced by the emulator's audio output path - what the user hears |
-| `capture.json` | platform, `gdg_clk_hz`, `frames_per_sec`, channel names, counts, stop reason (written at the end) |
+| `capture.json` | platform, `gdg_clk_hz`, `frames_per_sec`, channel names, counts, stop reason, absolute times `origin_ticks`, `end_ticks`, `last_event_ticks` and the platform clocks `clocks` (written at the end, see audio-capture.md) |
 
 - `ticks` are GDG clock ticks since the start of the capture
   (`gdg_clk_hz` in capture.json), `time_us` the same in microseconds,

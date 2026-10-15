@@ -386,7 +386,8 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
 
         case DBGAPI_CMD_PROFILER_PC:
             /* Profiler podle PC: zapamatuje vstup, u GET vrátí 3 adresy
-             * (zapsané do kapacity rows_max), u EXPORT 3 řádky. */
+             * (zapsané do kapacity rows_max), u EXPORT 3 řádky, u BITMAP
+             * nastaví bity adres 1200h-1202h a FFFFh. */
             if (data_ptr) {
                 st_DBGAPI_PROFILER_PC_PARAM *p = (st_DBGAPI_PROFILER_PC_PARAM *)data_ptr;
                 g_stub_state.pc_calls++;
@@ -414,6 +415,11 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                     }
                 } else if (p->op == DBGAPI_PROFILER_PC_OP_EXPORT) {
                     p->out_written = 3;
+                } else if (p->op == DBGAPI_PROFILER_PC_OP_BITMAP && p->bitmap) {
+                    memset(p->bitmap, 0, PROFILER_PC_BITMAP_BYTES);
+                    p->bitmap[0x1200 >> 3] = 0x07;
+                    p->bitmap[0xFFFF >> 3] = 0x80;
+                    p->out_written = 4;
                 }
             }
             break;

@@ -78,7 +78,25 @@ capture.json then has `sdl_blocks` lower than `frames`.
 
 **capture.json** - platform, `gdg_clk_hz`, `frames_per_sec`, `wav_rate`,
 channel names, counts (`frames`, `events`, `psg_writes`, `reference_samples`,
-`sdl_blocks`, `sdl_samples`) and `stop_reason`.
+`sdl_blocks`, `sdl_samples`) and `stop_reason`. Further, times in GDG clock
+ticks since the emulation started (the same timeline as `total_screens` *
+`screen_total_ticks_per_frame` + `total_ticks` in MCP `emulator://periph/gdg`):
+
+- `began` - the capture really started (`false` when it was stopped while
+  still waiting for the end of a frame or for the audio output warm-up),
+- `origin_ticks` - the start of the capture = `ticks` 0 in the CSV files and
+  the first sample of reference.wav,
+- `end_ticks` - the end of the last completed frame = the end of
+  reference.wav,
+- `last_event_ticks` - the time of the last CSV row; after a manual stop
+  between frames it can lie after `end_ticks` (reference.wav has no sound
+  for those events),
+
+(without a start or without CSV rows the values are `null`) and `clocks` -
+the platform clocks with the same names as in MCP `emulator://platform/info`:
+`gdg_base_hz` (the rounded frequency the emulated time runs at),
+`gdg_real_base_hz` (the real crystal), `cpu_divider`, `ctc0_divider`,
+`psg_divider` (`null` without a PSG) and `screen_total_ticks_per_frame`.
 
 ## Example
 

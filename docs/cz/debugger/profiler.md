@@ -407,4 +407,5 @@ Omezení:
   Stop se emulace nezpomaluje.
 
 Stejná data jsou dostupná přes MCP (`emu_profiler_pc_*`, viz
-mcp-server/tools-overview.md).
+mcp-server/tools-overview.md), vykonané adresy i jako bitmapa pro
+pokrytí kódu (`emu_profiler_pc_bitmap`).

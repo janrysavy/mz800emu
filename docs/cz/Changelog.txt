@@ -1,4 +1,12 @@
 
+	- MCP - emu_profiler_pc_bitmap vrací vykonané adresy profileru podle PC jako bitmapu 8 KiB v base64 (bit na adresu, stejné adresy jako emu_profiler_pc_get a export) - pokrytí kódu, které jde číst často, třeba po každém kroku automatického průchodu. Viz mcp-server/tools-overview.md.
+
+	- Zachycení zvuku - capture.json nově obsahuje absolutní začátek a konec zachycení v taktech GDG od spuštění emulace (origin_ticks = čas 0 v CSV a první vzorek reference.wav, end_ticks = konec reference.wav, last_event_ticks = poslední řádek CSV, began) a hodiny platformy (clocks: gdg_base_hz, skutečný krystal gdg_real_base_hz, děličky CPU, CTC0 a PSG, takty na snímek), aby šly události zachycení přesně spárovat s během programu. Viz audio-capture.md.
+
+	- MCP - přímý příkaz JSONL get_frame_screenshot (PNG v base64, resource emulator://frame/screenshot) přijímá stejné volitelné parametry area, scale a crop jako emu_screenshot_save_to_file a v odpovědi vrací area a scale. Dříve je tiše ignoroval a vracel vždy celý obraz; neplatné volby jsou nyní chyba parametrů.
+
+	- BUGFIX: Profiler podle PC (okno CPU Profiler, záložka Per PC, i MCP emu_profiler_pc_*) - když se sběr spustil nebo vynuloval ve chvíli, kdy CPU stálo v instrukci HALT, započetlo se první čekání v HALT jako vykonaná instrukce na adrese HALT (o 4 T-stavy méně v halt_idle).
+
 2026-10-14 - Released version 2.0.6
 
 	- BUGFIX: Zvuk - kanál PSG, který se změnil přesně na začátku zvukového snímku, zůstal ve zvukovém výstupu celý snímek (20 ms, na MZ-1500 16,7 ms) na předchozí úrovni, v hudbě jednou za jednu až tři sekundy; v hudbě zpravidla neslyšitelné, jasně patrné při porovnání s přesným zvukem zachycení zvuku (reference.wav). Zvuk nahraný do videa v emulovaném čase touto vadou netrpěl.

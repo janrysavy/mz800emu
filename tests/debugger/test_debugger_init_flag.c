@@ -15,8 +15,6 @@
  * Nepokrývá: debugger_exit() (úklid dělá mztest_teardown) ani souběh vláken
  * samotný - ten v headless testu nevznikne.
  *
- * Nalezeno ve forku janrysavy/mz800emu (3631575), test napsán nezávisle.
- *
  * Licence: GPLv3
  */
 

@@ -406,7 +406,12 @@ URI; use `emulator://watch` for the full list.
   frame as PNG base64 (`format: "png"`, `data_b64`, `byte_size`).
   Encoding is done by the vendored `stb_image_write.h` (public domain)
   on the emulator thread = no runtime DLL dependency. Content matches
-  `screenshot.raw` at downscale 1, just a PNG container. `available=false`
+  `screenshot.raw` at downscale 1, just a PNG container. The direct JSONL
+  command `get_frame_screenshot` (a client without the Python wrapper)
+  accepts the same optional `area`, `scale` and `crop` parameters as
+  `emu_screenshot_save_to_file` and returns `area` and `scale` in the
+  response; invalid options are a parameter error. The resource itself
+  takes no parameters. `available=false`
   only when the frame has not been rendered yet / display not initialized
   / encode failed.
 - **screenshot.raw response size** - the native MZ-800 framebuffer is

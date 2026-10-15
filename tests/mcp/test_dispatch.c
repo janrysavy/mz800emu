@@ -96,9 +96,12 @@
  *
  * audio-capture doplnil audio_capture_start, _stop a _status (zachycení
  * zvuku do složky, na KONEC cmd_map[]) = 177 + 3 = 180.
+ *
+ * profiler-bitmap doplnil profiler_pc_bitmap (vykonané adresy jako
+ * bitmapa, na KONEC cmd_map[]) = 180 + 1 = 181.
  */
 /* Fork retains five PC-map and five fetched-version coverage commands. */
-#define MCP_EXPECTED_CMD_COUNT 190
+#define MCP_EXPECTED_CMD_COUNT 191
 
 
 /* ====================================================================== */
@@ -6681,6 +6684,57 @@ void test_screenshot_save_to_file_invalid_options(void) {
 }
 
 
+/** @brief Pomocník: get_frame_screenshot s daty `data_json`, vrátí kód výsledku. */
+static en_MCP_DISPATCH_RESULT _frame_screenshot_request(const char *data_json) {
+    char *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":915,"
+                                 "\"cmd\":\"get_frame_screenshot\",\"data\":%s}", data_json);
+    st_JSONL_MESSAGE *req = _make_request(line);
+    g_free(line);
+    char *resp = NULL;
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+    free(resp);
+    jsonl_msg_free(req);
+    return rc;
+}
+
+
+/**
+ * @brief get_frame_screenshot (base64 PNG): stejné volby area, scale a crop
+ *        jako screenshot_save_to_file; neplatné volby => INVALID_PARAMS.
+ *
+ * Dřív handler volby ignoroval a vracel vždy celý framebuffer.
+ */
+void test_get_frame_screenshot_options(void) {
+    dispatch_stub_reset();
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _frame_screenshot_request(
+        "{\"area\":\"canvas\",\"scale\":\"native\","
+        "\"crop\":{\"x\":32,\"y\":4,\"width\":256,\"height\":192}}"));
+    const st_SCREENSHOT_OPTS *o = &g_stub_state.frame_screenshot_png_last_opts;
+    TEST_ASSERT_EQUAL_INT(SCREENSHOT_AREA_CANVAS, o->area);
+    TEST_ASSERT_EQUAL_INT(SCREENSHOT_SCALE_NATIVE, o->scale_mode);
+    TEST_ASSERT_TRUE(o->crop);
+    TEST_ASSERT_EQUAL_UINT(256, o->crop_w);
+
+    /* Bez voleb = dřívější chování (celý framebuffer 1:1). */
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _frame_screenshot_request("{}"));
+    TEST_ASSERT_EQUAL_INT(SCREENSHOT_AREA_FULL, o->area);
+    TEST_ASSERT_EQUAL_INT(SCREENSHOT_SCALE_FRAMEBUFFER, o->scale_mode);
+    TEST_ASSERT_FALSE(o->crop);
+    TEST_ASSERT_EQUAL_INT(2, g_stub_state.frame_screenshot_png_calls);
+
+    /* Neplatné volby: chyba parametrů bez snímání. */
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _frame_screenshot_request("{\"area\":\"border\"}"));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _frame_screenshot_request("{\"scale\":5}"));
+    TEST_ASSERT_EQUAL_INT(2, g_stub_state.frame_screenshot_png_calls);
+
+    /* Ořez mimo obraz (bad_opts ze snímání) => INVALID_PARAMS. */
+    g_stub_state.frame_screenshot_png_fake_bad_opts = 1;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _frame_screenshot_request(
+        "{\"scale\":\"native\",\"crop\":{\"x\":300,\"y\":0,\"width\":100,\"height\":5}}"));
+    TEST_ASSERT_EQUAL_INT(3, g_stub_state.frame_screenshot_png_calls);
+}
+
+
 /** @brief Pomocník: request `cmd` s daty `data_json`; vrátí kód, odpověď do *out (free). */
 static en_MCP_DISPATCH_RESULT _ss_request(const char *cmd, const char *data_json, char **out) {
     char *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":914,\"cmd\":\"%s\",\"data\":%s}",
@@ -6848,6 +6902,34 @@ void test_profiler_pc_errors_export(void) {
     TEST_ASSERT_EQUAL_INT(PROFILER_PC_SORT_ADDR, g_stub_state.pc_last.sort);
     TEST_ASSERT_EQUAL_STRING("C:/tmp/pc.csv", g_stub_state.pc_last_path);
     TEST_ASSERT_NOT_NULL(strstr(resp, "\"rows\":3"));
+    free(resp);
+}
+
+
+/**
+ * @brief profiler_pc_bitmap: předá operaci s bufferem, odpověď = souhrn,
+ *        formát, velikost a bitmapa v base64 (8192 B, bity ze stubu).
+ */
+void test_profiler_pc_bitmap(void) {
+    dispatch_stub_reset();
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("profiler_pc_bitmap", "{}", &resp));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_PROFILER_PC_OP_BITMAP, g_stub_state.pc_last.op);
+    TEST_ASSERT_NOT_NULL(g_stub_state.pc_last.bitmap);
+    JsonParser *parser = NULL;
+    JsonObject *obj = _parse_response_object(resp, &parser);
+    JsonObject *data = json_object_get_object_member(obj, "data");
+    TEST_ASSERT_EQUAL_STRING("pc-bitset-lsb0", json_object_get_string_member(data, "format"));
+    TEST_ASSERT_EQUAL_INT64(8192, json_object_get_int_member(data, "map_bytes"));
+    TEST_ASSERT_EQUAL_INT64(3, json_object_get_int_member(data, "unique_pcs"));
+    gsize len = 0;
+    guchar *bm = g_base64_decode(json_object_get_string_member(data, "bitmap_base64"), &len);
+    TEST_ASSERT_EQUAL_UINT(8192, len);
+    TEST_ASSERT_EQUAL_HEX8(0x07, bm[0x1200 >> 3]);
+    TEST_ASSERT_EQUAL_HEX8(0x80, bm[0x1FFF]);
+    TEST_ASSERT_EQUAL_HEX8(0x00, bm[0]);
+    g_free(bm);
+    g_object_unref(parser);
     free(resp);
 }
 
@@ -7390,12 +7472,14 @@ int main(void) {
     RUN_TEST(test_screenshot_save_to_file_png_unavailable);
     RUN_TEST(test_screenshot_save_to_file_options_passed);
     RUN_TEST(test_screenshot_save_to_file_invalid_options);
+    RUN_TEST(test_get_frame_screenshot_options);
     RUN_TEST(test_screenshot_series_start_params);
     RUN_TEST(test_screenshot_series_errors);
     RUN_TEST(test_screenshot_series_status_stop);
     RUN_TEST(test_profiler_pc_lifecycle);
     RUN_TEST(test_profiler_pc_get_params);
     RUN_TEST(test_profiler_pc_errors_export);
+    RUN_TEST(test_profiler_pc_bitmap);
     RUN_TEST(test_audio_capture_start_params);
     RUN_TEST(test_audio_capture_errors);
     RUN_TEST(test_get_video_text_dump_available);

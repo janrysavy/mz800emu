@@ -11,7 +11,8 @@
  * - naplánovaný start začne až na konci snímku, rozjezd SDL cesty se sdl.wav,
  * - obsah events.csv a psg_writes.csv (relativní takty, snímek, dekódování),
  * - hlavičky WAV a počty vzorků, bloky SDL během rozjezdu se zahodí,
- * - konec po `frames`, při skoku času zpět a stopem; capture.json,
+ * - konec po `frames`, při skoku času zpět a stopem; capture.json
+ *   (absolutní začátek a konec v taktech GDG, hodiny platformy),
  * - chyby startu (už běží, žádný výstup, nelze vytvořit složku).
  *
  * @par Licence: GPLv3
@@ -154,6 +155,41 @@ void test_audio_capture_start_events_psg(void)
     char *js = read_file("capture.json", NULL);
     TEST_ASSERT_NOT_NULL(strstr(js, "\"stop_reason\": \"Stopped\""));
     TEST_ASSERT_NOT_NULL(strstr(js, "\"frames\": 1,"));
+    /* Absolutní časy (takty GDG): začátek = čas 0 v CSV, konec = horizont
+     * posledního dokončeného snímku (konec reference.wav), poslední řádek
+     * CSV po ručním stopu leží za ním. */
+    TEST_ASSERT_NOT_NULL(strstr(js, "\"began\": true,"));
+    g_snprintf(line, sizeof(line), "\"origin_ticks\": %llu,", (unsigned long long) T0);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(js, line), line);
+    g_snprintf(line, sizeof(line), "\"end_ticks\": %llu,", (unsigned long long) (T0 + T_FRAME));
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(js, line), line);
+    g_snprintf(line, sizeof(line), "\"last_event_ticks\": %llu,", (unsigned long long) (T0 + T_FRAME + 5));
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(js, line), line);
+    /* Hodiny platformy se stejnými názvy jako emulator://platform/info. */
+    g_snprintf(line, sizeof(line), "\"gdg_base_hz\": %llu,", (unsigned long long) GDGCLK_BASE);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(js, line), line);
+    g_snprintf(line, sizeof(line), "\"gdg_real_base_hz\": %llu,", (unsigned long long) GDGCLK_REAL_BASE);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(js, line), line);
+    TEST_ASSERT_NOT_NULL(strstr(js, "\"cpu_divider\": "));
+    TEST_ASSERT_NOT_NULL(strstr(js, "\"ctc0_divider\": "));
+    TEST_ASSERT_NOT_NULL(strstr(js, "\"psg_divider\": "));
+    TEST_ASSERT_NOT_NULL(strstr(js, "\"screen_total_ticks_per_frame\": "));
+    g_free(js);
+}
+
+
+/** @brief Stop před začátkem (start naplánovaný na konec snímku): bez časů. */
+void test_audio_capture_stop_while_pending(void)
+{
+    st_AUDIO_CAPTURE_PARAMS p = params(false, 0);
+    TEST_ASSERT_TRUE(audio_capture_start(&p, NULL, 0));
+    TEST_ASSERT_TRUE(audio_capture_stop());
+
+    char *js = read_file("capture.json", NULL);
+    TEST_ASSERT_NOT_NULL(strstr(js, "\"began\": false,"));
+    TEST_ASSERT_NOT_NULL(strstr(js, "\"origin_ticks\": null,"));
+    TEST_ASSERT_NOT_NULL(strstr(js, "\"end_ticks\": null,"));
+    TEST_ASSERT_NOT_NULL(strstr(js, "\"last_event_ticks\": null,"));
     g_free(js);
 }
 
@@ -282,6 +318,7 @@ int main(int argc, char *argv[])
 
     UNITY_BEGIN();
     RUN_TEST(test_audio_capture_start_events_psg);
+    RUN_TEST(test_audio_capture_stop_while_pending);
     RUN_TEST(test_audio_capture_reference_wav);
     RUN_TEST(test_audio_capture_sdl_warmup);
     RUN_TEST(test_audio_capture_timeline_restart);
