@@ -1,5 +1,12 @@
 # Read-only hardware-scroll snapshot
 
+**Historical API, superseded by upstream 2.0.6.** The integration now uses
+upstream `get_periph_gdg.hwscroll` with `sof/ssa/sea/sw/enabled` in port units.
+Convert SOF by 8 and SSA/SEA/SW by 64 for plane-byte addresses. The old fields
+below describe the prior qualified fork; they are no longer exported. Use
+`docs/en/mcp-server/resources-overview.md` for the current API. This avoids
+keeping a second GDG snapshot implementation.
+
 `get_periph_gdg` adds `has_hw_scroll` and, on MZ-800, `hw_scroll`:
 
 ```json
