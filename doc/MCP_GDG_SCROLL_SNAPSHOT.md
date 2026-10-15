@@ -32,3 +32,16 @@ Long headless gameplay comparisons can map physical VRAM to displayed addresses
 using this bounded response. Previously they needed to flush and reparse the
 complete growing I/O trace after every update. I/O traces remain useful as an
 independent bounded cross-check and for intermediate publication diagnostics.
+
+## Bounded qualification, 15 October 2026
+
+The native conversion project compared independent I/O-trace decoding with this
+snapshot over the same 1,773 keyboard updates, five actual offset values and
+16 camera changes. Full source crops, native display reconstructions, endpoint
+CPU flags/clocks, four complete RAM/VRAM captures and fetched-code tracking
+agree. Coverage was started at the same verified normal-game entry in both
+lanes; asynchronous loader-start coverage is a different scope. Eleven invalid
+host snapshot controls are rejected. SOF=0 correctly reports `enabled: false`
+and represents identity mapping. This is API/observer qualification, not full
+game campaign, acoustic or physical-hardware proof. Tested implementation:
+`e1f4cfcb426dc480a9ab7ccbfd20f73c9d43276b` (subsequent change is documentation).
