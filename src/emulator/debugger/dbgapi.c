@@ -78,6 +78,7 @@
 #if MZARCH == 800
 #include "mzarch/mz800/gdg/mz800_gdg.h"
 #include "mzarch/mz800/gdg/mz800_vramctrl.h"
+#include "mzarch/mz800/gdg/mz800_hwscroll.h"
 #elif MZARCH == 1500
 #include "mzarch/mz1500/gdg/mz1500_gdg.h"
 #elif MZARCH == 700
@@ -6261,6 +6262,14 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             p->regRF = (uint8_t)((g_vramctrl.regRF_PLANE & 0x0f)
                 | (g_vramctrl.regRF_SEARCH ? 0x80 : 0)
                 | (g_vramctrl.regWFRF_VBANK ? 0x10 : 0));
+            /* Read the device on the emulator thread. No port read, cycle
+             * advance, register setter or guest RAM inference is involved. */
+            p->has_hw_scroll = 1;
+            p->hw_scroll_enabled = (uint8_t)(g_hwscroll.enabled != 0);
+            p->hw_scroll_ssa = (uint32_t)g_hwscroll.regSSA;
+            p->hw_scroll_sea = (uint32_t)g_hwscroll.regSEA;
+            p->hw_scroll_width = (uint32_t)g_hwscroll.regSW;
+            p->hw_scroll_offset = (uint32_t)g_hwscroll.regSOF;
             p->regBOR    = (uint8_t)( g_gdg.regBOR & 0xFFu );
             p->regPALGRP = (uint8_t)( g_gdg.regPALGRP & 0xFFu );
             p->cksw      = (uint8_t)( g_gdg.cksw & 0x01u );
