@@ -482,6 +482,16 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     };
 
+    /* Headless has no window/render callback to throttle SDLAPP_LOOP_POLL.
+     * Wait for host events instead of pumping an empty SDL queue continuously.
+     * SDL_PushEvent wakes the wait immediately; the timeout bounds housekeeping
+     * and quit-flag latency. Guest CPU, raster, audio and TCP debugger work run
+     * on their existing threads and retain their clocks and command cadence. */
+    if (sdlapp_option_present("--headless"))
+    {
+        sdlapp_set_loop_mode(g_sdlapp, SDLAPP_LOOP_WAIT_TIMEOUT, 20);
+    };
+
     /* i18n_init musí být po sdlapp_new — používá g_sdlapp->paths->home_dir
      * pro lokalizaci adresáře s .mo soubory. */
     i18n_init();
