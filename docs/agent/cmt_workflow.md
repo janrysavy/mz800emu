@@ -147,6 +147,32 @@ SINGLE containers (a plain .mzf) hold one block.
 When no tape is loaded the tape resource returns
 `{"available": false, "blocks": []}`.
 
+## Inserting a tape from the command line
+
+The emulator can start with a tape already in the virtual cassette
+recorder. These options also work with `--mcp-pipe`:
+
+| Option | Effect |
+|--|--|
+| `--cmt <file>` | Insert the tape (`.mzf`, `.m12`, `.mzt`, `.tap`, `.wav`, `.wave`) in STOP. A CMT hack that is on is turned off for this session only; the `.ini` keeps the original setting. |
+| `--cmt-play` | Also press PLAY. |
+| `--cmt-play-pause` | The tape waits in PLAY + PAUSE until the ROM or the program turns the cassette motor on. |
+| `--cmt-boot` | MZ-800 only: like `--cmt-play-pause`, and the C key is held from start until the motor turns on, so the boot menu loads the first program from the tape. |
+
+The emulated motor follows the 8255 motor line (PC3): every rising edge
+toggles it. The ROM of all three computers makes such an edge during its
+startup, which stops a playing tape. So with a normal ROM boot,
+`--cmt-play` ends in PLAY + PAUSE as well; the tape keeps playing only
+together with `--run-mzf` (that skips the ROM). For a program that loads
+its further parts through the ROM loader, `--run-mzf <part1.mzf> --cmt
+<rest.mzt> --cmt-play-pause` is the usual combination.
+
+Check the result in `emulator://periph/cmt` (`filled`, `state`,
+`paused`, `cmthack_enabled`). Invalid combinations (a modifier without
+`--cmt`, `--cmt-play` with `--cmt-play-pause`, `--cmt-boot` with
+`--run-mzf` or `--cmt-play`) and a missing or unknown tape file end the
+emulator before it starts, with an error on stderr.
+
 ## Starting a program in a defined state
 
 A program may behave differently depending on what ran in the machine

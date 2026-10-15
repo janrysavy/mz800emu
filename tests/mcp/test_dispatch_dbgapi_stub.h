@@ -57,6 +57,17 @@ typedef struct st_DISPATCH_STUB_STATE {
     en_DBGAPI_CMD        last_cmd;     /**< Poslední cmd předaný submitu. */
     en_DBGAPI_CMD_ORIGIN last_origin;  /**< Origin field z posledního volání. */
     void                *last_data;    /**< data_ptr poslední call. */
+    uint16_t             cpu_flags_last_mask; /**< update_mask posledního SET_CPU_FLAGS. */
+    uint8_t              cpu_flags_last_r;    /**< r_reg posledního SET_CPU_FLAGS. */
+    st_DBGAPI_SCREENSHOT_SERIES_PARAM ss_last;      /**< Kopie posledního DBGAPI_CMD_SCREENSHOT_SERIES (vstup). */
+    int                  ss_calls;                  /**< Počet DBGAPI_CMD_SCREENSHOT_SERIES. */
+    int                  ss_fake_result;            /**< out_result, který stub vrátí (0 = OK). */
+    st_DBGAPI_PROFILER_PC_PARAM pc_last;            /**< Kopie posledního DBGAPI_CMD_PROFILER_PC (vstup; rows/path neplatné po návratu). */
+    int                  pc_calls;                  /**< Počet DBGAPI_CMD_PROFILER_PC. */
+    char                 pc_last_path[ 256 ];       /**< Kopie `path` posledního DBGAPI_CMD_PROFILER_PC ("" = NULL). */
+    st_DBGAPI_AUDIO_CAPTURE_PARAM ac_last;          /**< Kopie posledního DBGAPI_CMD_AUDIO_CAPTURE (vstup). */
+    int                  ac_calls;                  /**< Počet DBGAPI_CMD_AUDIO_CAPTURE. */
+    bool                 ac_fake_fail;              /**< true = stub vrátí chybu "An audio capture is already running". */
     void                *last_result;  /**< result_ptr poslední call. */
     int                  call_count;   /**< Počet volání mocku. */
     bool                 fail_next;    /**< Pokud true, příští call vrátí false. */
@@ -693,6 +704,7 @@ typedef struct st_DISPATCH_STUB_STATE {
     uint8_t              periph_gdg_fake_has_pal_group;
     uint8_t              periph_gdg_fake_has_cksw;
     uint8_t              periph_gdg_fake_regDMD;
+    uint8_t              periph_gdg_fake_has_vramctrl; /**< 1 = vyplnit WF/RF + HW scroll (MZ-800). */
     int                  periph_wd1793_calls;
     uint8_t              periph_wd1793_fake_available;
     uint8_t              periph_wd1793_fake_status;
@@ -740,6 +752,8 @@ typedef struct st_DISPATCH_STUB_STATE {
     int                  frame_screenshot_raw_calls;
     uint8_t              fb_available;
     int                  frame_screenshot_png_calls;
+    st_SCREENSHOT_OPTS   frame_screenshot_png_last_opts; /**< opts posledního GET_FRAME_SCREENSHOT_PNG. */
+    uint8_t              frame_screenshot_png_fake_bad_opts; /**< 1 = stub vrátí available=0 + bad_opts. */
     int                  video_text_dump_calls;
     uint8_t              text_dump_available;
 

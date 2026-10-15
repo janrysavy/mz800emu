@@ -1,4 +1,38 @@
 
+2026-10-14 - Released version 2.0.6
+
+	- BUGFIX: Zvuk - kanál PSG, který se změnil přesně na začátku zvukového snímku, zůstal ve zvukovém výstupu celý snímek (20 ms, na MZ-1500 16,7 ms) na předchozí úrovni, v hudbě jednou za jednu až tři sekundy; v hudbě zpravidla neslyšitelné, jasně patrné při porovnání s přesným zvukem zachycení zvuku (reference.wav). Zvuk nahraný do videa v emulovaném čase touto vadou netrpěl.
+
+	- Zachycení zvuku v GUI a z příkazové řádky: Tools -> Audio Capture -> Record Audio Capture (Alt+Q) zaznamená do nové složky ve vlastní výstupní složce (výchozí audio_captures vedle emulátoru), co dělá zvukový hardware - změny úrovní kanálů, zápisy do PSG, přesný zvuk a zvuk, který slyšíte (dva WAV k porovnání); v levém horním rohu obrazu se ukazuje ZVUK se zachyceným časem, notifikace ohlásí složku. Settings... nastavuje výstupní složku a vybírá soubory k zápisu. --audio-capture <složka> ho spustí hned po startu, --audio-capture-frames <počet> ho zastaví po zadaném počtu snímků (v režimu --headless pak emulátor skončí). Viz audio-capture.md.
+
+	- MCP - zachycení zvuku pro hledání chyb zvuku: emu_audio_capture_start zapisuje do složky v emulovaném čase každou změnu výstupní úrovně zvukových kanálů (reproduktor a kanály PSG, events.csv), každý zápis do PSG s dekódováním (psg_writes.csv), zvuk vyrenderovaný přesně v emulovaném čase (reference.wav) a zvuk ze zvukové výstupní cesty emulátoru, tedy to, co slyší uživatel (sdl.wav, stejný formát pro přímé porovnání); capture.json zachycení popisuje. emu_audio_capture_stop a emu_audio_capture_status. Viz mcp-server/tools-overview.md.
+
+	- Debugger - okno CPU Profiler má novou záložku Per PC: pro každou adresu instrukce počítá vykonání, T-stavy (včetně čekacích stavů) a stavy WAIT, i v kódu, na který se skáče, ne jen volá. Sloupce lze řadit, lze zobrazit jen rozsah adres, levý klik otevře adresu v Disassembly; stavový řádek rozdělí čas na instrukce, čekání v HALT a zbytek (hlavně přijetí přerušení). Export CSV zapíše všechny adresy. Viz debugger/profiler.md.
+
+	- MCP - profiler podle PC pro hledání míst, kde program tráví čas: emu_profiler_pc_start, emu_profiler_pc_stop, emu_profiler_pc_reset, emu_profiler_pc_get (nejvytíženější adresy s nejbližším symbolem, řazené podle T-stavů, vykonání, WAIT nebo adresy, volitelně rozsah adres) a emu_profiler_pc_export (CSV). Čas mimo instrukce se vykazuje zvlášť (halt_idle, other_tstates). S vypnutým profilerem se emulace nezpomalí. Viz mcp-server/tools-overview.md.
+
+	- Série snímků v GUI: Tools -> Screenshot -> Record Changed Frames (Alt+Shift+F) ukládá PNG každého emulovaného snímku, který se liší od předchozího (nebo každého snímku, viz Settings...), do nové složky ve výstupní složce screenshotů, s oblastí a měřítkem z nastavení screenshotu. Počítadlo v levém horním rohu obrazu ukazuje uložené soubory a snímky; po skončení série notifikace ohlásí složku. Viz screenshots.md.
+
+	- MCP - série snímků pro hledání chyb v animacích: emu_screenshot_series_start ukládá PNG každého emulovaného snímku, který se liší od posledního uloženého (nebo každého snímku), se stejnou oblastí, měřítkem a ořezem jako jeden screenshot; počítají se jen změny uvnitř nich. Snímky se berou v emulovaném čase, ani při MAX SPEED se žádný nevynechá (když zápis nestíhá, emulace počká). Soubory frame_NNNNNNN.png číslované podle emulovaného snímku a index.csv; emu_screenshot_series_stop a emu_screenshot_series_status. Viz mcp-server/headless-mode.md.
+
+	- Nová funkce: screenshoty (Tools -> Screenshot) na všech platformách. Save Screenshot (Alt+F) uloží PNG obrazu zobrazeného v okně do výstupní složky (výchozí: screenshots vedle emulátoru) se jménem podle platformy a času, Save Screenshot As... se zeptá na jméno souboru. V Settings... se volí oblast (celý obraz s borderem, nebo obraz bez borderu), měřítko (nativní body počítače - obraz 320x200 nebo 640x200 - nebo 1x až 4x s poměrem stran okna, 2x = okno na 100 %) a výstupní složka; nastavení se ukládá do konfigurace. Viz screenshots.md.
+
+	- MCP - emu_screenshot_save_to_file má nové volitelné parametry area (celý obraz, nebo obraz bez borderu), scale (pixely framebufferu jako dosud, body počítače - obraz 320x200 nebo 640x200 - nebo 1 až 4násobek s poměrem stran okna emulátoru) a crop (výřez nativního obrázku). Viz mcp-server/headless-mode.md.
+
+	- ZMĚNA: MCP - emu_set_register s IR nyní zapíše celý pár I:R (dříve jen bity 0-6 registru R, I beze změny) a emu_set_cpu_flags zapíše všech 8 bitů R včetně bitu 7, stejně jako instrukce LD R,A. Uložený stav CPU tak jde obnovit přesně. Editace R v okně CPU debuggeru bit 7 dál zachovává.
+
+	- MCP - emulator://periph/gdg u MZ-800 vrací i registry přístupu do VRAM (vramctrl: zápisový formát WF s režimem zápisu a rovinami, čtecí formát RF s vyhledávacím režimem a rovinami, VBANK) a registry hardwarového scrollu (hwscroll: SOF, SSA, SEA, SW v jednotkách zapisovaných do portů a zda je scroll aktivní).
+
+	- BUGFIX: Debugger - okno I/O portů zobrazovalo registry hardwarového scrollu MZ-800 SOF, SW, SSA a SEA posunuté (např. 28h po zápisu A5h do SOF). Nyní ukazuje hodnoty, které program zapsal.
+
+	- BUGFIX: MZ-800 hardwarový scroll - změna registru scrollu (SOF, SW, SSA, SEA) uprostřed obrazového řádku se uplatnila i na část řádku, kterou paprsek už vykreslil. Vykreslená část si nyní ponechá předchozí polohu scrollu.
+
+	- BUGFIX: CTC 8253 a reproduktor - okamžik zápisu do CTC (včetně GATE CTC0) a změny reproduktoru se počítal, jako by už provedená část instrukce uběhla dvakrát, např. 14 cyklů CPU od začátku LD (HL),A, která trvá 7. CTC0 tak začínal čítat o několik period CLK0 později a hrany reproduktoru dostávaly o stejnou dobu pozdější čas. Nahrávání hodnoty do CTC naměřené na skutečném MZ-800 se nemění.
+
+	- BUGFIX: Debugger - každé uložení metadat ve formátu JSON ztratilo v paměti celý strom JSON: záznamy trace (každý chunk přepisuje svá metadata), breakpointy, záložky, watch, proměnné breakpointů a Memory Heatmap. Paměť zabraná dlouhým záznamem trace tak rostla s jeho délkou.
+
+	- Nové volby --cmt <soubor>, --cmt-play, --cmt-play-pause a --cmt-boot: po startu vloží pásku (MZF, MZT, TAP nebo WAV) do virtuálního kazetofonu. CMT hack se vypne jen pro toto spuštění a otevře se okno Virtual CMT. --cmt-play stiskne PLAY, --cmt-play-pause nechá pásku čekat, dokud počítač nezapne motor kazetofonu, a --cmt-boot (MZ-800) navíc při startu drží klávesu C, takže bootovací nabídka nahraje program z pásky.
+
 	- BUGFIX: Snapshot - načtení snapshotu ponechalo čekající událost videa (GDG) ze stroje, který se přepisoval. Podle toho, kde emulace před načtením byla, mohl MZ-800 v grafickém režimu hned po načtení spadnout a na všech počítačích mohla emulace pokračovat o několik cyklů posunutá nebo čítač CTC1 ztratit pulz. Čekající událost se nyní odvodí z obnovené pozice paprsku, i u snapshotů uložených staršími verzemi.
 
 	- BUGFIX: CTC 8253 - čítač nahrával zapsanou hodnotu podle toho, kdy přišlo řídicí slovo, místo podle fáze hodin CLK. Podle měření na skutečném MZ-800 se hodnota nahraje až prvním celým pulzem CLK po zápisu: zapsaná při CLK = HIGH o pulz později než při CLK = LOW, okamžik řídicího slova nerozhoduje. Přerušení z CTC2 (takt z CTC1) tak v některých programech přicházelo o periodu CTC1 dříve nebo později než na skutečném počítači. Režim 0 po dosažení nuly nově čte 0000h po celou periodu CLK (dříve hned FFFFh). Režim 3 čte čítač po 2 jako skutečný obvod (dříve po 1); u lichého N je delší první půlperioda výstupu (HIGH), frekvence tónu se nemění.

@@ -1241,9 +1241,10 @@ async def emu_set_register(reg: str, value: int) -> str:
     Accepts the same case-insensitive register names returned by
     ``emu_get_registers``: ``AF``, ``BC``, ``DE``, ``HL``, ``AF_`` /
     ``AF2``, ``BC_`` / ``BC2``, ``DE_`` / ``DE2``, ``HL_`` / ``HL2``,
-    ``IX``, ``IY``, ``SP``, ``PC``, ``WZ``, ``IR``. For the ``IR``
-    register only the lower byte (R) is updated and the I register
-    keeps its previous value (matches the debugger UI behaviour).
+    ``IX``, ``IY``, ``SP``, ``PC``, ``WZ``, ``IR``. ``IR`` writes the
+    complete I:R pair - I is the high byte, R the low byte including
+    bit 7 (like LD I,A plus LD R,A) - so a saved CPU state can be
+    restored exactly.
 
     WARNING: This is a destructive operation. Mutating ``PC`` mid-flight
     changes the execution path; mutating ``SP`` invalidates the current
@@ -1253,8 +1254,8 @@ async def emu_set_register(reg: str, value: int) -> str:
 
     Args:
         reg: register name (case-insensitive).
-        value: 16-bit value 0..65535 (for 8-bit registers I/R only
-            the lower byte is meaningful).
+        value: 16-bit value 0..65535 (for ``IR``: I in the high
+            byte, R in the low byte).
     """
     if not (0 <= value <= 0xFFFF):
         return json.dumps({"error": "value must be in range 0..65535"})
@@ -5070,8 +5071,9 @@ async def emu_set_cpu_flags(iff1: int = -1, iff2: int = -1,
         iff2: shadow interrupt enable (0 or 1).
         im: Interrupt Mode (0, 1 or 2). Other values are rejected.
         i: Interrupt Vector register (0..255).
-        r: Memory Refresh register (0..255). Bit 7 is preserved by
-            the backend to match the LD A,R / RETI semantics.
+        r: Memory Refresh register (0..255). All 8 bits are written,
+            including bit 7, the same as the LD R,A instruction (the
+            refresh counter itself only increments bits 0-6).
 
     Returns:
         JSON ``{"updated": ["iff1", "im", ...], "values": {...}}``
@@ -6792,6 +6794,20 @@ async def resource_periph_gdg() -> str:
     For MZ-700/MZ-1500 entries 0..7 are the ``mode_color[]`` values
     directly.
 
+    MZ-800 only (the keys are absent on MZ-700/MZ-1500):
+
+      - ``vramctrl``: VRAM access registers of the 800 graphics modes,
+        ``{"wf_mode": "single"|"exor"|"or"|"reset"|"replace"|"pset",
+        "wf_mode_code": int, "wf_planes": int, "rf_planes": int,
+        "rf_search": bool, "vbank": 0|1}``. Plane masks: bit 0 = plane I
+        .. bit 3 = plane IV. WF is port 0CCh, RF port 0CDh; both are
+        write-only on the real machine, these are mirrors.
+      - ``hwscroll``: hardware scroll registers in the units the program
+        writes to the ports, ``{"enabled": bool, "sof": 0..3FFh (01CFh +
+        02CFh), "ssa": 0..7Fh (04CFh), "sea": 0..7Fh (05CFh), "sw": 0..7Fh
+        (03CFh)}``. ``enabled`` is true when the register values activate
+        the scroll.
+
     The handler is side-effect free; no GDG register read/write occurs
     during snapshot. Reading ``beam_row`` returns the instantaneous
     raster line, useful for raster-effect debugging.
@@ -7156,8 +7172,9 @@ async def resource_frame_screenshot() -> str:
 
 @mcp.tool()
 async def emu_screenshot_save_to_file(path: str, format: str = "png",
-                                      projection: str = "framebuffer",
-                                      crop: dict[str, int] | None = None) -> str:
+                                      area: str = "full",
+                                      scale: str = "framebuffer",
+                                      crop: Optional[dict] = None) -> str:
     """Render the current frame as PNG and save it directly to a file on the server host.
 
     This is the robust, self-service path for visual verification. Unlike the
@@ -7166,36 +7183,351 @@ async def emu_screenshot_save_to_file(path: str, format: str = "png",
     the large transport payload entirely. The AI client then reads the written
     file from disk.
 
+    The framebuffer has one pixel per GDG clock horizontally and one per
+    picture line vertically; the picture area (canvas) is 640 framebuffer
+    pixels wide, so in the 320-dot modes one dot is two framebuffer pixels.
+
     Args:
         path: destination file path on the server host. An absolute path is
             recommended; relative paths resolve against the server process
             working directory.
         format: image format, currently only ``png`` (default). Any other
             value is rejected with an error.
-        projection: ``framebuffer`` preserves the full raster. ``native``
-            exports the MZ-800 graphics canvas at 320x200 or 640x200,
-            retaining actual display RGB and removing only equal duplicate
-            horizontal samples. Use a paused machine after complete frames.
-        crop: optional native canvas rectangle with x, y, width and height.
-            For the Spectrum-compatible viewport use 0, 0, 256, 192.
+        area: ``full`` (default) - the whole frame including the border;
+            ``canvas`` - the picture only, without the border.
+        scale: ``framebuffer`` (default) - framebuffer pixels 1:1 (MZ-800
+            full frame 928x288); ``native`` - one image pixel per dot of
+            the computer: width halved when all pairs of framebuffer
+            pixels are equal (320-dot modes, MZ-800 canvas 320x200),
+            otherwise kept (640x200), lines 1:1; ``"1"`` to ``"4"`` - the
+            aspect ratio of the emulator window, ``"2"`` equals the window
+            at 100 % (MZ-800 full frame 928x576). Scale 1 drops every
+            second column in the 640-dot modes.
+        crop: optional rectangle ``{"x": int, "y": int, "width": int,
+            "height": int}`` in output pixels, only with ``framebuffer``
+            or ``native``. For a 256x192 ZX Spectrum style viewport in the
+            middle of a 320x200 canvas use ``area="canvas"``,
+            ``scale="native"``, ``crop={"x": 32, "y": 4, "width": 256,
+            "height": 192}``.
 
     Returns:
         ``{"available": true, "path": str, "format": "png", "width": int,
-        "height": int, "byte_size": int}`` on success, or
+        "height": int, "byte_size": int, "area": str, "scale": str}`` on
+        success (plus ``"hires": bool`` for ``scale="native"``), or
         ``{"available": false, "reason": str}`` when the framebuffer has not
-        been rendered yet.
+        been rendered yet. Invalid ``area``, ``scale`` or ``crop`` (also a
+        crop outside the image) returns an error.
 
     Note:
         Path access is unrestricted under the V0 ``wild`` security profile;
         path whitelisting lands in V1.A.
     """
-    data: dict[str, Any] = {"path": path, "projection": projection}
-    if crop is not None:
-        data["crop"] = crop
+    data: dict[str, Any] = {"path": path}
     if format:
         data["format"] = format
+    if area:
+        data["area"] = area
+    if scale:
+        data["scale"] = scale
+    if crop is not None:
+        data["crop"] = crop
     resp = await _send_request("screenshot_save_to_file", data)
     return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_screenshot_series_start(dir: str = "", area: str = "full",
+                                      scale: str = "native",
+                                      crop: Optional[dict] = None,
+                                      only_changed: bool = True,
+                                      frames: int = 0,
+                                      max_files: int = 0) -> str:
+    """Start saving a PNG of every changed emulated frame - for finding animation bugs.
+
+    At the end of every emulated frame the emulator compares the picture
+    (within ``area``, ``scale`` and ``crop``) with the last saved one and
+    writes ``frame_NNNNNNN.png`` when it differs. NNNNNNN is the number of
+    the emulated frame since the start of the series, so gaps in the
+    numbering are unchanged frames; ``index.csv`` lists ``frame,file,
+    gdg_screen``. Frames are taken in emulated time - also at MAX SPEED no
+    frame is skipped; when writing cannot keep up, the emulation waits.
+    The series only captures while the emulation runs (combine with
+    ``emu_run(frames=N)`` for an exact stretch).
+
+    Args:
+        dir: series directory on the server host; empty = a new
+            ``<platform>_frames_<date>_<time>`` folder in the screenshot
+            output folder.
+        area: ``full`` (default, with border) or ``canvas`` (picture only).
+        scale: ``native`` (default) - one image pixel per dot of the
+            computer (320 or 640 wide); ``framebuffer``; ``"1"`` to ``"4"``
+            (aspect ratio of the emulator window). Same as
+            ``emu_screenshot_save_to_file``.
+        crop: optional ``{"x", "y", "width", "height"}`` in output pixels
+            (``framebuffer`` or ``native`` only). Only changes inside the
+            crop count - useful to follow one sprite.
+        only_changed: ``True`` (default) = save only frames that differ
+            from the last saved one; ``False`` = every frame.
+        frames: stop automatically after this many emulated frames
+            (0 = until ``emu_screenshot_series_stop``).
+        max_files: safety limit of written files (0 = 10000).
+
+    Returns:
+        Series status ``{"active", "writing", "frames_seen", "files",
+        "unchanged", "dir", "stop_reason", "last_error", "area", "scale",
+        "only_changed"}``, or an error (series already running, invalid
+        parameters, directory cannot be created).
+    """
+    data: dict[str, Any] = {"area": area, "scale": scale,
+                            "only_changed": only_changed,
+                            "frames": frames, "max_files": max_files}
+    if dir:
+        data["dir"] = dir
+    if crop is not None:
+        data["crop"] = crop
+    resp = await _send_request("screenshot_series_start", data)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_screenshot_series_stop(wait: bool = True) -> str:
+    """Stop the frame series started by ``emu_screenshot_series_start``.
+
+    Args:
+        wait: ``True`` (default) = wait (at most 30 s) until all queued
+            frames are written; then ``writing`` is false and ``files`` is
+            final.
+
+    Returns:
+        Series status (see ``emu_screenshot_series_status``), or an error
+        when no series is running.
+    """
+    resp = await _send_request("screenshot_series_stop", {"wait": wait})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_screenshot_series_status() -> str:
+    """Status of the running or the last frame series.
+
+    Returns:
+        ``{"active": bool (capturing), "writing": bool (files still being
+        written), "frames_seen": int (emulated frames observed), "files":
+        int (PNG written), "unchanged": int (frames skipped as unchanged),
+        "dir": str, "stop_reason": str ("Stopped", "Frame count reached",
+        "File limit reached", "Error" or "" while running), "last_error":
+        str}``.
+    """
+    resp = await _send_request("screenshot_series_status", {})
+    return json.dumps(_data_or_error(resp))
+
+
+# ---------------------------------------------------------------------------
+# Profiler podle PC - počet vykonání, T-stavy a WAIT pro každou adresu
+# instrukce. Data i API v emulátoru: src/emulator/debugger/profiler_pc.h,
+# příkaz DBGAPI_CMD_PROFILER_PC.
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def emu_profiler_pc_start(reset: bool = True) -> str:
+    """Start the per-PC profiler: for every instruction address it counts
+    executions, T-states (including wait states) and wait states (VRAM and
+    PSG WAIT) - to find where a program spends its time.
+
+    Unlike ``emu_profiler_start`` (per function, via the call stack) it
+    sees every instruction, also code that is jumped to, not called. The
+    key is the logical PC (banks are not told apart). The overhead is one
+    function call per instruction while it runs; with the profiler off the
+    emulation is not slowed down.
+
+    Time not spent in instructions is counted separately: ``halt_idle``
+    (CPU waiting in HALT) and ``other_tstates`` (mainly interrupt
+    acknowledge), so ``tstates + halt_idle + other_tstates ==
+    elapsed_tstates``.
+
+    Typical use: ``emu_profiler_pc_start()``, ``emu_run(frames=N)``,
+    ``emu_profiler_pc_get()``.
+
+    Args:
+        reset: ``True`` (default) = clear previous data first; ``False`` =
+            continue adding to it.
+
+    Returns:
+        Summary ``{"active", "instructions", "tstates", "wait",
+        "halt_idle", "other_tstates", "elapsed_tstates", "unique_pcs"}``.
+    """
+    resp = await _send_request("profiler_pc_start", {"reset": reset})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_profiler_pc_stop() -> str:
+    """Stop the per-PC profiler. The data stays for ``emu_profiler_pc_get``
+    and ``emu_profiler_pc_export``.
+
+    Returns:
+        Summary ``{"active", "instructions", "tstates", "wait",
+        "halt_idle", "other_tstates", "elapsed_tstates", "unique_pcs"}``.
+    """
+    resp = await _send_request("profiler_pc_stop", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_profiler_pc_reset() -> str:
+    """Clear the per-PC profiler data. Whether it runs is not changed.
+
+    Returns:
+        Summary ``{"active", "instructions", "tstates", "wait",
+        "halt_idle", "other_tstates", "elapsed_tstates", "unique_pcs"}``.
+    """
+    resp = await _send_request("profiler_pc_reset", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_profiler_pc_get(sort: str = "tstates", limit: int = 50,
+                              from_addr: int = 0, to_addr: int = 0xFFFF) -> str:
+    """Get the busiest instruction addresses of the per-PC profiler.
+
+    Works while it runs and after ``emu_profiler_pc_stop``.
+
+    Args:
+        sort: ``tstates`` (default, where time is spent), ``count``
+            (executions), ``wait`` (wait states) or ``addr`` (by address).
+        limit: rows to return, 1-1000 (default 50).
+        from_addr: lowest address (default 0).
+        to_addr: highest address, inclusive (default 65535).
+
+    Returns:
+        Summary plus ``{"sort", "total_rows" (addresses executed in the
+        range), "rows": [{"pc", "count", "tstates", "wait", "tstates_pct"
+        (share of all instruction T-states), "avg_tstates", "symbol"
+        (nearest symbol at or below pc, "" = none), "sym_offset"}]}``.
+    """
+    resp = await _send_request("profiler_pc_get",
+                               {"sort": sort, "limit": limit,
+                                "from": from_addr, "to": to_addr})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_profiler_pc_export(path: str, sort: str = "addr") -> str:
+    """Write all executed addresses of the per-PC profiler to a CSV file.
+
+    Columns ``pc,count,tstates,wait,tstates_pct`` (pc as 4 hex digits,
+    tstates_pct = share of all instruction T-states in %).
+
+    Args:
+        path: output file on the server host (overwritten); the folder
+            must exist.
+        sort: ``addr`` (default), ``tstates``, ``count`` or ``wait``.
+
+    Returns:
+        Summary plus ``{"path", "rows"}``, or an error when the file
+        cannot be written.
+    """
+    resp = await _send_request("profiler_pc_export", {"path": path, "sort": sort})
+    return json.dumps(_data_or_error(resp))
+
+
+# ---------------------------------------------------------------------------
+# Zachycení zvuku do složky - události kanálů, zápisy do PSG, reference.wav
+# a sdl.wav. Jádro: src/emulator/audio_capture.h, příkaz DBGAPI_CMD_AUDIO_CAPTURE.
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def emu_audio_capture_start(dir: str = "", frames: int = 0,
+                                  events: bool = True, psg_writes: bool = True,
+                                  reference_wav: bool = True,
+                                  sdl_wav: bool = True) -> str:
+    """Start capturing what the sound hardware does - for finding sound bugs.
+
+    Files written into ``dir`` in emulated time:
+
+    * ``events.csv`` - ``ticks,time_us,frame,channel,level``: every change
+      of the output level (0-15) of a sound channel: ``ctc0`` (speaker,
+      0 or 15), ``psg0_0``..``psg0_3`` and on the MZ-1500 or an MZ-800 with
+      the second PSG ``psg1_0``..``psg1_3`` (channel 3 = noise). The first
+      rows (ticks 0) are the levels at the start.
+    * ``psg_writes.csv`` - ``ticks,time_us,frame,psg,byte,channel,reg,value``:
+      every write to the PSG (psg = target mask: 1 = PSG0, 2 = PSG1,
+      3 = both), decoded from the PSG state after the write: reg
+      ``tone_lo`` (latch byte, low 4 bits of the divider), ``tone`` (the
+      10-bit divider), ``volume`` (attenuation 0-15, 15 = off) or ``noise``
+      ((type << 2) | rate).
+    * ``reference.wav`` - the sound rendered exactly in emulated time (the
+      renderer of the video recording).
+    * ``sdl.wav`` - the sound as produced by the emulator's real audio
+      output path (what the user hears). Same format as reference.wav
+      (44100 Hz, 16 bit, stereo), but one frame later (without an audio
+      device; with a device the lag depends on its buffer). Comparing the
+      two shows defects of the output path.
+    * ``capture.json`` - platform, clock, channel names, counts, stop
+      reason (written at the end).
+
+    ``ticks`` are GDG clock ticks since the start (``gdg_clk_hz`` in
+    capture.json), ``frame`` is the audio frame (one video frame) since
+    the start. The capture begins at the end of the next audio frame; with
+    ``sdl_wav`` after 6 more frames that warm up the output path. It
+    captures only while the emulation runs - combine with
+    ``emu_run(frames=N)``.
+
+    Args:
+        dir: folder on the server host (created); empty = a new
+            ``<platform>_audio_<date>_<time>`` folder in the audio capture
+            output folder (default ``audio_captures`` next to the
+            emulator, Tools -> Audio Capture -> Settings...).
+        frames: stop automatically after this many audio frames (0 = until
+            ``emu_audio_capture_stop``, at most one hour).
+        events, psg_writes, reference_wav, sdl_wav: which files to write.
+
+    Returns:
+        Capture status (see ``emu_audio_capture_status``) with
+        ``pending: true``, or an error (already running, nothing selected,
+        folder cannot be created).
+    """
+    data: dict[str, Any] = {"frames": frames, "events": events,
+                            "psg_writes": psg_writes,
+                            "reference_wav": reference_wav,
+                            "sdl_wav": sdl_wav}
+    if dir:
+        data["dir"] = dir
+    resp = await _send_request("audio_capture_start", data)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_audio_capture_stop() -> str:
+    """Stop the audio capture and finish its files (WAV headers,
+    capture.json).
+
+    Returns:
+        Final capture status, or an error when no capture is running.
+    """
+    resp = await _send_request("audio_capture_stop", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_audio_capture_status() -> str:
+    """Status of the running or the last audio capture.
+
+    Returns:
+        ``{"pending": bool (waiting for the start), "active": bool,
+        "frames": int (captured audio frames), "events": int,
+        "psg_writes": int, "reference_samples": int, "sdl_blocks": int
+        (blocks of the output path; fewer than frames = it skipped frames,
+        e.g. at MAX SPEED with an audio device), "sdl_samples": int,
+        "dir": str, "stop_reason": str ("Stopped", "Frame count reached",
+        "Safety limit reached", "Emulation timeline restarted (reset or
+        snapshot load)", "Error", "Emulator exit" or "" while running),
+        "last_error": str}``.
+    """
+    resp = await _send_request("audio_capture_status", {})
+    return json.dumps(_data_or_error(resp))
+
+
 
 
 @mcp.resource("emulator://video/text_dump")

@@ -87,9 +87,18 @@
  *
  * mcp-run-mzf-bootstrap doplnil media_run_mzf (reset + bootstrap jako
  * --run-mzf, přidán na KONEC cmd_map[]) = 168 + 1 = 169.
+ *
+ * screenshot-series doplnil screenshot_series_start, _stop a _status
+ * (série PNG emulovaných snímků, na KONEC cmd_map[]) = 169 + 3 = 172.
+ *
+ * pc-stats doplnil profiler_pc_start, _stop, _reset, _get a _export
+ * (profiler podle PC, na KONEC cmd_map[]) = 172 + 5 = 177.
+ *
+ * audio-capture doplnil audio_capture_start, _stop a _status (zachycení
+ * zvuku do složky, na KONEC cmd_map[]) = 177 + 3 = 180.
  */
-/* Fork adds five PC-map and five fetched-detail coverage commands. */
-#define MCP_EXPECTED_CMD_COUNT 180
+/* Fork retains five PC-map and five fetched-version coverage commands. */
+#define MCP_EXPECTED_CMD_COUNT 190
 
 
 /* ====================================================================== */
@@ -5074,6 +5083,25 @@ static JsonNode *_v1d1_dispatch_and_get_data(const char *cmd,
 }
 
 
+/**
+ * @brief set_cpu_flags {"r": N} zapíše celý bajt R včetně bitu 7 (jako LD R,A):
+ *        dispatch posílá DBGAPI_CPU_FLAGS_UM_R_FULL, ne UM_R (7 bitů pro okno CPU).
+ */
+void test_set_cpu_flags_r_writes_full_byte(void) {
+    dispatch_stub_reset();
+    st_JSONL_MESSAGE *req = _make_request(
+        "{\"type\":\"request\",\"id\":9101,\"cmd\":\"set_cpu_flags\",\"data\":{\"r\":133}}");
+    char *resp = NULL;
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_TRUE(g_stub_state.cpu_flags_last_mask & DBGAPI_CPU_FLAGS_UM_R_FULL);
+    TEST_ASSERT_FALSE(g_stub_state.cpu_flags_last_mask & DBGAPI_CPU_FLAGS_UM_R);
+    TEST_ASSERT_EQUAL_HEX8(0x85, g_stub_state.cpu_flags_last_r);
+    free(resp);
+    jsonl_msg_free(req);
+}
+
+
 void test_get_config_settings_returns_filtered_or_sections(void) {
     dispatch_stub_reset();
     /* Stub vrátí non-OK pro SETTINGS_GET (= settings_fake_result = -2),
@@ -6109,6 +6137,22 @@ void test_get_periph_gdg_mz800_layout(void) {
         (int)json_array_get_int_element(pal, 1));
     TEST_ASSERT_EQUAL_INT(15 * 16,
         (int)json_array_get_int_element(pal, 15));
+    /* MZ-800: řadič VRAM (WF/RF) a HW scroll v jednotkách portu. */
+    TEST_ASSERT_TRUE(json_object_has_member(obj, "vramctrl"));
+    JsonObject *vc = json_object_get_object_member(obj, "vramctrl");
+    TEST_ASSERT_EQUAL_STRING("replace", json_object_get_string_member(vc, "wf_mode"));
+    TEST_ASSERT_EQUAL_INT(4, (int)json_object_get_int_member(vc, "wf_mode_code"));
+    TEST_ASSERT_EQUAL_INT(0x05, (int)json_object_get_int_member(vc, "wf_planes"));
+    TEST_ASSERT_EQUAL_INT(0x02, (int)json_object_get_int_member(vc, "rf_planes"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(vc, "rf_search"));
+    TEST_ASSERT_EQUAL_INT(1, (int)json_object_get_int_member(vc, "vbank"));
+    TEST_ASSERT_TRUE(json_object_has_member(obj, "hwscroll"));
+    JsonObject *hs = json_object_get_object_member(obj, "hwscroll");
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(hs, "enabled"));
+    TEST_ASSERT_EQUAL_INT(0x123, (int)json_object_get_int_member(hs, "sof"));
+    TEST_ASSERT_EQUAL_INT(5, (int)json_object_get_int_member(hs, "ssa"));
+    TEST_ASSERT_EQUAL_INT(0x7D, (int)json_object_get_int_member(hs, "sea"));
+    TEST_ASSERT_EQUAL_INT(0x78, (int)json_object_get_int_member(hs, "sw"));
     TEST_ASSERT_EQUAL_INT(1, g_stub_state.periph_gdg_calls);
     json_node_free(data);
     free(raw);
@@ -6126,6 +6170,7 @@ void test_get_periph_gdg_mz1500_layout(void) {
     g_stub_state.periph_gdg_fake_has_border_reg = 0;
     g_stub_state.periph_gdg_fake_has_pal_group  = 0;
     g_stub_state.periph_gdg_fake_has_cksw       = 0;
+    g_stub_state.periph_gdg_fake_has_vramctrl   = 0;
     char *raw = NULL;
     JsonNode *data = _v1d1_dispatch_and_get_data("get_periph_gdg", &raw);
     TEST_ASSERT_NOT_NULL(data);
@@ -6139,6 +6184,9 @@ void test_get_periph_gdg_mz1500_layout(void) {
     TEST_ASSERT_FALSE(json_object_get_boolean_member(obj, "has_cksw"));
     JsonArray *pal = json_object_get_array_member(obj, "palette");
     TEST_ASSERT_EQUAL_INT(8, (int)json_array_get_length(pal));
+    /* MZ-1500 nemá řadič VRAM MZ-800 ani HW scroll. */
+    TEST_ASSERT_FALSE(json_object_has_member(obj, "vramctrl"));
+    TEST_ASSERT_FALSE(json_object_has_member(obj, "hwscroll"));
     json_node_free(data);
     free(raw);
 }
@@ -6565,6 +6613,245 @@ void test_screenshot_save_to_file_png_unavailable(void) {
 }
 
 
+/** @brief Pomocník: screenshot_save_to_file s daty `data_json`, vrátí kód výsledku. */
+static en_MCP_DISPATCH_RESULT _screenshot_request(const char *data_json) {
+    char *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":913,"
+                                 "\"cmd\":\"screenshot_save_to_file\",\"data\":%s}", data_json);
+    st_JSONL_MESSAGE *req = _make_request(line);
+    g_free(line);
+    char *resp = NULL;
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+    free(resp);
+    jsonl_msg_free(req);
+    return rc;
+}
+
+
+/**
+ * @brief screenshot_save_to_file: area, scale a crop se předají do capture.
+ */
+void test_screenshot_save_to_file_options_passed(void) {
+    dispatch_stub_reset();
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _screenshot_request(
+        "{\"path\":\"x.png\",\"area\":\"canvas\",\"scale\":\"native\","
+        "\"crop\":{\"x\":32,\"y\":4,\"width\":256,\"height\":192}}"));
+    const st_SCREENSHOT_OPTS *o = &g_stub_state.frame_screenshot_png_last_opts;
+    TEST_ASSERT_EQUAL_INT(SCREENSHOT_AREA_CANVAS, o->area);
+    TEST_ASSERT_EQUAL_INT(SCREENSHOT_SCALE_NATIVE, o->scale_mode);
+    TEST_ASSERT_TRUE(o->crop);
+    TEST_ASSERT_EQUAL_UINT(32, o->crop_x);
+    TEST_ASSERT_EQUAL_UINT(4, o->crop_y);
+    TEST_ASSERT_EQUAL_UINT(256, o->crop_w);
+    TEST_ASSERT_EQUAL_UINT(192, o->crop_h);
+
+    /* scale jako číslo i jako řetězec; výchozí = framebuffer, full. */
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _screenshot_request("{\"path\":\"x.png\",\"scale\":3}"));
+    TEST_ASSERT_EQUAL_INT(SCREENSHOT_SCALE_WINDOW, o->scale_mode);
+    TEST_ASSERT_EQUAL_UINT(3, o->window_scale);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _screenshot_request("{\"path\":\"x.png\",\"scale\":\"2\"}"));
+    TEST_ASSERT_EQUAL_UINT(2, o->window_scale);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _screenshot_request("{\"path\":\"x.png\"}"));
+    TEST_ASSERT_EQUAL_INT(SCREENSHOT_AREA_FULL, o->area);
+    TEST_ASSERT_EQUAL_INT(SCREENSHOT_SCALE_FRAMEBUFFER, o->scale_mode);
+    TEST_ASSERT_FALSE(o->crop);
+}
+
+
+/**
+ * @brief screenshot_save_to_file: neplatné area / scale / crop a ořez mimo
+ *        obraz (bad_opts z capture) => INVALID_PARAMS.
+ */
+void test_screenshot_save_to_file_invalid_options(void) {
+    dispatch_stub_reset();
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS,
+        _screenshot_request("{\"path\":\"x.png\",\"area\":\"border\"}"));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS,
+        _screenshot_request("{\"path\":\"x.png\",\"scale\":5}"));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS,
+        _screenshot_request("{\"path\":\"x.png\",\"scale\":\"big\"}"));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS,
+        _screenshot_request("{\"path\":\"x.png\",\"crop\":{\"x\":0,\"y\":0,\"width\":0,\"height\":5}}"));
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.frame_screenshot_png_calls);
+
+    g_stub_state.frame_screenshot_png_fake_bad_opts = 1;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS,
+        _screenshot_request("{\"path\":\"x.png\",\"scale\":\"native\","
+                            "\"crop\":{\"x\":300,\"y\":0,\"width\":100,\"height\":5}}"));
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.frame_screenshot_png_calls);
+}
+
+
+/** @brief Pomocník: request `cmd` s daty `data_json`; vrátí kód, odpověď do *out (free). */
+static en_MCP_DISPATCH_RESULT _ss_request(const char *cmd, const char *data_json, char **out) {
+    char *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":914,\"cmd\":\"%s\",\"data\":%s}",
+                                 cmd, data_json);
+    st_JSONL_MESSAGE *req = _make_request(line);
+    g_free(line);
+    char *resp = NULL;
+    en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+    jsonl_msg_free(req);
+    if (out) *out = resp; else free(resp);
+    return rc;
+}
+
+
+/**
+ * @brief screenshot_series_start: výchozí parametry (full, native, jen změněné)
+ *        a předání dir, area, scale, crop, only_changed, frames, max_files.
+ */
+void test_screenshot_series_start_params(void) {
+    dispatch_stub_reset();
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("screenshot_series_start", "{}", NULL));
+    const st_DBGAPI_SCREENSHOT_SERIES_PARAM *p = &g_stub_state.ss_last;
+    TEST_ASSERT_EQUAL_INT(DBGAPI_SCREENSHOT_SERIES_OP_START, p->op);
+    TEST_ASSERT_EQUAL_INT(SCREENSHOT_AREA_FULL, p->params.opts.area);
+    TEST_ASSERT_EQUAL_INT(SCREENSHOT_SCALE_NATIVE, p->params.opts.scale_mode);
+    TEST_ASSERT_TRUE(p->params.only_changed);
+    TEST_ASSERT_EQUAL_UINT64(0, p->params.frames);
+    TEST_ASSERT_EQUAL_STRING("", p->params.dir);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("screenshot_series_start",
+        "{\"dir\":\"C:/tmp/s\",\"area\":\"canvas\",\"scale\":2,\"only_changed\":false,"
+        "\"frames\":100,\"max_files\":50}", NULL));
+    TEST_ASSERT_EQUAL_STRING("C:/tmp/s", p->params.dir);
+    TEST_ASSERT_EQUAL_INT(SCREENSHOT_AREA_CANVAS, p->params.opts.area);
+    TEST_ASSERT_EQUAL_INT(SCREENSHOT_SCALE_WINDOW, p->params.opts.scale_mode);
+    TEST_ASSERT_EQUAL_UINT(2, p->params.opts.window_scale);
+    TEST_ASSERT_FALSE(p->params.only_changed);
+    TEST_ASSERT_EQUAL_UINT64(100, p->params.frames);
+    TEST_ASSERT_EQUAL_UINT(50, p->params.max_files);
+}
+
+
+/**
+ * @brief screenshot_series_*: neplatné parametry => INVALID_PARAMS bez
+ *        předání, chyba jádra (např. série už běží) => EMU_ERROR s textem.
+ */
+void test_screenshot_series_errors(void) {
+    dispatch_stub_reset();
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS,
+        _ss_request("screenshot_series_start", "{\"frames\":-1}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS,
+        _ss_request("screenshot_series_start", "{\"only_changed\":\"yes\"}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS,
+        _ss_request("screenshot_series_start", "{\"scale\":7}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS,
+        _ss_request("screenshot_series_stop", "{\"wait\":1}", NULL));
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.ss_calls);
+
+    g_stub_state.ss_fake_result = DBGAPI_SCREENSHOT_SERIES_RESULT_FAILED;
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, _ss_request("screenshot_series_start", "{}", &resp));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "already running"));
+    free(resp);
+}
+
+
+/**
+ * @brief screenshot_series_status a stop: stav v odpovědi.
+ */
+void test_screenshot_series_status_stop(void) {
+    dispatch_stub_reset();
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("screenshot_series_status", "{}", &resp));
+    JsonParser *parser = NULL;
+    JsonObject *obj = _parse_response_object(resp, &parser);
+    JsonObject *data = json_object_get_object_member(obj, "data");
+    TEST_ASSERT_TRUE(json_object_has_member(data, "frames_seen"));
+    TEST_ASSERT_TRUE(json_object_has_member(data, "unchanged"));
+    TEST_ASSERT_EQUAL_STRING("C:/tmp/series", json_object_get_string_member(data, "dir"));
+    g_object_unref(parser);
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("screenshot_series_stop", "{\"wait\":false}", NULL));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_SCREENSHOT_SERIES_OP_STOP, g_stub_state.ss_last.op);
+}
+
+
+/**
+ * @brief profiler_pc_start/stop/reset: předaná operace a reset (výchozí true),
+ *        odpověď = souhrn.
+ */
+void test_profiler_pc_lifecycle(void) {
+    dispatch_stub_reset();
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("profiler_pc_start", "{}", &resp));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_PROFILER_PC_OP_START, g_stub_state.pc_last.op);
+    TEST_ASSERT_TRUE(g_stub_state.pc_last.reset);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"active\":true"));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"elapsed_tstates\""));
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("profiler_pc_start", "{\"reset\":false}", NULL));
+    TEST_ASSERT_FALSE(g_stub_state.pc_last.reset);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("profiler_pc_stop", "{}", NULL));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_PROFILER_PC_OP_STOP, g_stub_state.pc_last.op);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("profiler_pc_reset", "{}", NULL));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_PROFILER_PC_OP_RESET, g_stub_state.pc_last.op);
+    TEST_ASSERT_EQUAL_INT(4, g_stub_state.pc_calls);
+}
+
+
+/**
+ * @brief profiler_pc_get: výchozí parametry (tstates, 50, celý rozsah, se
+ *        symboly), předání sort/limit/from/to a řádky v odpovědi.
+ */
+void test_profiler_pc_get_params(void) {
+    dispatch_stub_reset();
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("profiler_pc_get", "{}", &resp));
+    const st_DBGAPI_PROFILER_PC_PARAM *p = &g_stub_state.pc_last;
+    TEST_ASSERT_EQUAL_INT(DBGAPI_PROFILER_PC_OP_GET, p->op);
+    TEST_ASSERT_EQUAL_INT(PROFILER_PC_SORT_TSTATES, p->sort);
+    TEST_ASSERT_EQUAL_UINT(50, p->rows_max);
+    TEST_ASSERT_EQUAL_HEX16(0x0000, p->lo);
+    TEST_ASSERT_EQUAL_HEX16(0xFFFF, p->hi);
+    TEST_ASSERT_TRUE(p->with_symbols);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"total_rows\":3"));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"pc\":4608"));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"symbol\":\"loop\""));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"sort\":\"tstates\""));
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("profiler_pc_get",
+        "{\"sort\":\"wait\",\"limit\":2,\"from\":4096,\"to\":8191}", &resp));
+    TEST_ASSERT_EQUAL_INT(PROFILER_PC_SORT_WAIT, p->sort);
+    TEST_ASSERT_EQUAL_UINT(2, p->rows_max);
+    TEST_ASSERT_EQUAL_HEX16(0x1000, p->lo);
+    TEST_ASSERT_EQUAL_HEX16(0x1FFF, p->hi);
+    /* Stub vrátí 3 adresy, zapíše jen kapacitu 2. */
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"pc\":4609"));
+    TEST_ASSERT_NULL(strstr(resp, "\"pc\":4610"));
+    free(resp);
+}
+
+
+/**
+ * @brief profiler_pc_get/export: neplatné parametry => INVALID_PARAMS bez
+ *        předání; export předá cestu a výchozí řazení podle adresy.
+ */
+void test_profiler_pc_errors_export(void) {
+    dispatch_stub_reset();
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("profiler_pc_get", "{\"sort\":\"x\"}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("profiler_pc_get", "{\"limit\":0}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("profiler_pc_get", "{\"limit\":1001}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("profiler_pc_get", "{\"from\":5,\"to\":4}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("profiler_pc_get", "{\"to\":65536}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("profiler_pc_start", "{\"reset\":1}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("profiler_pc_export", "{}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("profiler_pc_export", "{\"path\":\"\"}", NULL));
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.pc_calls);
+
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("profiler_pc_export", "{\"path\":\"C:/tmp/pc.csv\"}", &resp));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_PROFILER_PC_OP_EXPORT, g_stub_state.pc_last.op);
+    TEST_ASSERT_EQUAL_INT(PROFILER_PC_SORT_ADDR, g_stub_state.pc_last.sort);
+    TEST_ASSERT_EQUAL_STRING("C:/tmp/pc.csv", g_stub_state.pc_last_path);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"rows\":3"));
+    free(resp);
+}
+
+
 /**
  * @brief V1.D.4 - get_video_text_dump available (default v stubu).
  */
@@ -6757,6 +7044,60 @@ void test_get_state_includes_last_user_action_when_present(void) {
 /* ====================================================================== */
 /* Main runner                                                             */
 /* ====================================================================== */
+
+
+/**
+ * @brief audio_capture_start: výchozí parametry (všechny soubory, bez limitu)
+ *        a předání dir, frames a voleb souborů; stop a status.
+ */
+void test_audio_capture_start_params(void) {
+    dispatch_stub_reset();
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("audio_capture_start", "{}", &resp));
+    const st_DBGAPI_AUDIO_CAPTURE_PARAM *p = &g_stub_state.ac_last;
+    TEST_ASSERT_EQUAL_INT(DBGAPI_AUDIO_CAPTURE_OP_START, p->op);
+    TEST_ASSERT_EQUAL_STRING("", p->params.dir);
+    TEST_ASSERT_EQUAL_UINT64(0, p->params.frames);
+    TEST_ASSERT_TRUE(p->params.events && p->params.psg_writes && p->params.reference_wav && p->params.sdl_wav);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"pending\":true"));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"sdl_blocks\""));
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("audio_capture_start",
+        "{\"dir\":\"C:/tmp/a\",\"frames\":250,\"sdl_wav\":false,\"psg_writes\":false}", NULL));
+    TEST_ASSERT_EQUAL_STRING("C:/tmp/a", p->params.dir);
+    TEST_ASSERT_EQUAL_UINT64(250, p->params.frames);
+    TEST_ASSERT_FALSE(p->params.sdl_wav);
+    TEST_ASSERT_FALSE(p->params.psg_writes);
+    TEST_ASSERT_TRUE(p->params.events);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("audio_capture_stop", "{}", NULL));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_AUDIO_CAPTURE_OP_STOP, p->op);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("audio_capture_status", "{}", &resp));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_AUDIO_CAPTURE_OP_STATUS, p->op);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"frames\":7"));
+    free(resp);
+}
+
+
+/**
+ * @brief audio_capture_*: neplatné parametry => INVALID_PARAMS bez předání,
+ *        chyba jádra => EMU_ERROR s textem.
+ */
+void test_audio_capture_errors(void) {
+    dispatch_stub_reset();
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("audio_capture_start", "{\"frames\":-1}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("audio_capture_start", "{\"frames\":\"x\"}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("audio_capture_start", "{\"sdl_wav\":1}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("audio_capture_start", "{\"dir\":5}", NULL));
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.ac_calls);
+
+    g_stub_state.ac_fake_fail = true;
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, _ss_request("audio_capture_start", "{}", &resp));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "already running"));
+    free(resp);
+}
 
 int main(void) {
     UNITY_BEGIN();
@@ -6979,6 +7320,7 @@ int main(void) {
 
     /* V1.D.1 - Core + CPU extras Resource backings (9 testů) */
     RUN_TEST(test_get_config_settings_returns_filtered_or_sections);
+    RUN_TEST(test_set_cpu_flags_r_writes_full_byte);
     RUN_TEST(test_get_media_state_returns_slots_array_and_note);
     RUN_TEST(test_get_cpu_im2_vector_available_with_stub);
     RUN_TEST(test_get_cpu_interrupt_bus_z80_state_and_placeholders);
@@ -7046,6 +7388,16 @@ int main(void) {
     RUN_TEST(test_screenshot_save_to_file_missing_path);
     RUN_TEST(test_screenshot_save_to_file_bad_format);
     RUN_TEST(test_screenshot_save_to_file_png_unavailable);
+    RUN_TEST(test_screenshot_save_to_file_options_passed);
+    RUN_TEST(test_screenshot_save_to_file_invalid_options);
+    RUN_TEST(test_screenshot_series_start_params);
+    RUN_TEST(test_screenshot_series_errors);
+    RUN_TEST(test_screenshot_series_status_stop);
+    RUN_TEST(test_profiler_pc_lifecycle);
+    RUN_TEST(test_profiler_pc_get_params);
+    RUN_TEST(test_profiler_pc_errors_export);
+    RUN_TEST(test_audio_capture_start_params);
+    RUN_TEST(test_audio_capture_errors);
     RUN_TEST(test_get_video_text_dump_available);
     RUN_TEST(test_get_video_text_dump_unavailable);
 

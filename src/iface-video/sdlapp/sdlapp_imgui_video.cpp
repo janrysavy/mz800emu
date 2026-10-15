@@ -364,6 +364,11 @@ static gboolean sdlapp_myimgui_video_init(void)
     /* Viditelnost okna dálkového ovládání nahrávání ([VIDEOREC_UI]). */
     imgui_videorec_remote_apply_persisted();
 
+    /* CLI --cmt vkládá pásku do virtuálního CMT (cmt_cli.c) - otevřít
+     * okno Virtual CMT, aby uživatel viděl stav pásky. */
+    if (sdlapp_option_present("--cmt"))
+        gui->showVirtualCmtWindow = true;
+
     // Pri prvnim spusteni zobrazime okno s informacemi o programu.
     // CLI flag --no-first-run-windows toto chování potlačí (= headless
     // nebo scripted launch).
@@ -499,6 +504,11 @@ static SDL_Window *getSDL_Window_by_name(const char *name)
  *
  *
  *******************************************************************************/
+
+extern "C" SDL_Surface *iface_sdl3_video_get_screen_surface(void)
+{
+    return g_sdlapp_myimgui_video ? g_sdlapp_myimgui_video->surface : NULL;
+}
 
 void iface_sdl3_video_window_resize_event_handler(SdlAppWindow *win, SDL_Event *event)
 {

@@ -24,12 +24,15 @@
 #include "hw-generic/pio8255/pio8255.h"
 #include "hw-generic/cmt/cmt.h"
 #include "hw-generic/cmt/cmthack.h"
+#include "hw-generic/cmt/cmt_cli.h"
 #include "hw-generic/pioz80/pioz80.h"
 #include "hw-generic/printer/printer.h"
 #include "hw-generic/mz1p16/mz1p16_emu.h"
 #include "hw-generic/joy/joymz-1x03.h"
 #include "audio.h"
 #include "videorec/videorec.h"
+#include "screenshot/screenshot_series.h"
+#include "audio_capture.h"
 
 #if CFG_HWEXT_HAVE_FDC
 #include "hw-generic/fdc/fdc.h"
@@ -49,6 +52,7 @@
 #include "debugger/stack_history.h"
 #include "debugger/dbgapi_emu.h"
 #include "debugger/trace/cputrack.h"
+#include "debugger/profiler_pc.h"
 #include "debugger/trace/intlog.h"
 #include "debugger/trace/eventlog.h"
 #include "debugger/callstack.h"
@@ -195,10 +199,16 @@ static inline void mz800_main_event_callback_screen_done(void)
     pioz80_input_resync();
 #endif
     cmt_on_screen_done_event();
+    /* --cmt-boot: uvolní drženou klávesu C, až ROM zapne motor (bez
+     * držené klávesy jen jedno čtení příznaku). */
+    cmt_cli_on_screen_done();
     customspeed_on_screen_done();
 
     /* Video záznam: per-frame bod (1 atomické čtení, když se nenahrává). */
     videorec_on_screen_done();
+
+    /* Série screenshotů: per-frame bod (1 atomické čtení, když neběží). */
+    screenshot_series_on_screen_done();
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
     /* dbgapi CMDRQ drain a Freeze Bytes se tady jen OHLÁSÍ. Samotné
@@ -1143,6 +1153,7 @@ static void mzarch_main_reset(void)
 
     g_mzarch_main.reset_count++;
     videorec_on_reset(); /* událost reset + auto marker (bez nahrávání no-op) */
+    cmt_cli_on_reset(); /* --cmt-boot: pustit drženou klávesu C */
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
     /* PC se změnilo na 0000 - zruš případný BP skip vázaný na předchozí PC,
      * aby se BP na nové adrese (typicky 0000) správně aktivoval. */
@@ -1224,6 +1235,31 @@ static void mzarch_main_reset(void)
 #endif
 }
 
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+/**
+ * @brief Háčky po dokončení instrukce (cputrack, profiler podle PC).
+ *
+ * Hlavní smyčka sem vstupuje jedinou podmínkou
+ * `TEST_TRACE_CPUTRACK_ACTIVE | TEST_PROFILER_PC_ACTIVE`; teprve tady se
+ * rozhoduje, který háček je aktivní. Atribut noinline drží tělo hlavní
+ * smyčky kompaktní (viz cputrack.h @section hot_path_compactness).
+ *
+ * @param pc      Adresa začátku instrukce.
+ * @param tstates T-stavy instrukce včetně WAIT.
+ * @param wait    Čekací stavy instrukce.
+ */
+__attribute__((noinline))
+static void mzarch_main_post_instruction_hooks(uint16_t pc, uint32_t tstates, uint32_t wait)
+{
+    if ( TEST_TRACE_CPUTRACK_ACTIVE ) {
+        cputrack_hot_path_hook ( pc, tstates, wait );
+    }
+    if ( TEST_PROFILER_PC_ACTIVE ) {
+        profiler_pc_on_instruction ( pc, tstates, wait );
+    }
+}
+#endif
+
 /* Debug helper: read byte z aktualne mapovane pameti pro z80_dasm callback.
  * Pouzity v mzarch_main hot loop pro per-instruction PC + disassembly trace. */
 static uint8_t mzarch_debug_dasm_read(uint16_t addr, void *user_data)
@@ -1232,22 +1268,8 @@ static uint8_t mzarch_debug_dasm_read(uint16_t addr, void *user_data)
     return memory_read_byte(addr);
 }
 
-/**
- * @brief Hodnota CLI volby s cestou souboru převedená do UTF-8.
- *
- * Interní cesty emulátoru jsou v UTF-8 (GLib). Na Windows je ale `argv`
- * v ANSI kódové stránce procesu, takže cesta s diakritikou z `argv` by
- * v UTF-8 API (g_fopen, g_file_test, avi_writer_open) selhala. Na Windows se
- * proto hodnota vezme z UTF-16 příkazové řádky (g_win32_get_command_line()),
- * bezeztrátově i pro znaky mimo ANSI kódovou stránku. Hledá se stejně jako
- * v sdlapp_options: token přesně `name` (hodnota v dalším tokenu), nebo
- * `name=hodnota`. Jinde (a když se na Windows volba nenajde) vrátí kopii
- * hodnoty z sdlapp_option_value().
- *
- * @param name Jméno volby včetně `--` (např. "--record").
- * @return Nově alokovaná hodnota v UTF-8 (g_free), nebo NULL bez hodnoty.
- */
-static gchar *mzarch_cli_option_value_utf8(const char *name)
+/* Dokumentace viz mzarch.h. */
+char *mzarch_cli_option_value_utf8(const char *name)
 {
     const char *raw = sdlapp_option_value(name);
     if (!raw) return NULL;
@@ -1289,6 +1311,11 @@ void mzarch_main(void)
         };
     }
 
+    /* CLI volby --cmt, --cmt-play, --cmt-play-pause, --cmt-boot: vložení
+     * pásky do virtuálního CMT (po --run-mzf, aby program spuštěný z CLI
+     * mohl další díly nahrát z této pásky). */
+    cmt_cli_apply();
+
     /* CLI option --record: start video záznamu hned po bootu (a po --run-mzf).
      * Vlastní začátek nahrávání nastane na konci prvního emulovaného snímku. */
     if (sdlapp_option_present("--record"))
@@ -1309,6 +1336,29 @@ void mzarch_main(void)
         if (!videorec_request_start(&rec))
         {
             fprintf(stderr, "CLI --record: %s\n", videorec_get_last_error());
+        };
+    }
+
+    /* CLI volby --audio-capture, --audio-capture-frames: zachycení zvuku
+     * hned po bootu (a po --run-mzf). Začne na konci zvukového snímku, se
+     * sdl.wav po rozjezdu výstupní cesty (audio_capture.h). */
+    if (sdlapp_option_present("--audio-capture"))
+    {
+        st_AUDIO_CAPTURE_PARAMS cap;
+        audio_capture_params_from_settings(&cap);
+        gchar *cap_dir = mzarch_cli_option_value_utf8("--audio-capture");
+        g_strlcpy(cap.dir, cap_dir ? cap_dir : "", sizeof(cap.dir));
+        g_free(cap_dir);
+        const char *cap_frames = sdlapp_option_value("--audio-capture-frames");
+        if (cap_frames)
+        {
+            cap.frames = g_ascii_strtoull(cap_frames, NULL, 10);
+        };
+        cap.quit_after_stop = sdlapp_option_present("--headless");
+        char cap_err[AUDIO_CAPTURE_TEXT_MAX];
+        if (!audio_capture_start(&cap, cap_err, sizeof(cap_err)))
+        {
+            fprintf(stderr, "CLI --audio-capture: %s\n", cap_err);
         };
     }
 
@@ -1392,25 +1442,24 @@ void mzarch_main(void)
         g_mzarch_main.instruction_tstates = z80_step(g_mzarch_main.cpu);
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-        /* trace-suite cputrack hook - 1 event per dokončenou CPU instrukci.
-         * Test je 1 ALU op + branch, branch predictor naučí "vždy false"
-         * v default OFF stavu (= zero impact na hot path). Detail v
-         * docs/cz/debugger/Trace_Suite.md.
+        /* Háčky po instrukci (trace-suite cputrack, profiler podle PC) -
+         * 1 událost na dokončenou CPU instrukci. Oba příznaky se testují
+         * jedinou podmínkou (bitové OR, jedna větev), branch predictor se
+         * naučí "vždy false" v default OFF stavu. Detail v
+         * docs/cz/debugger/Trace_Suite.md a profiler_pc.h.
          *
          * wait_extra_tstates = g_mzarch_main.instruction_wait_tstates,
          * akumulovany v INSIDEOP_MREQ_MZ700_VRAMCTRL a INSIDEOP_IORQ_PSG_WRITE
          * paths (jediná místa volající z80_add_wait_states v hot loop).
          * V T-states units (z80 ISA), saturated na 0xFFFFFFFF. */
-        if ( TEST_TRACE_CPUTRACK_ACTIVE ) {
-            /* RPFIX: celá práce hooku (Z17b range-scope filtr, odečet WAIT,
-             * emit) je vynesena do NOINLINE cold helperu cputrack_hot_path_hook,
+        if ( TEST_TRACE_CPUTRACK_ACTIVE | TEST_PROFILER_PC_ACTIVE ) {
+            /* RPFIX: celá práce háčků je vynesena do NOINLINE helperu,
              * aby tělo této hot smyčky zůstalo kompaktní (stabilnější
              * code-layout / icache - viz cputrack.h @section hot_path_compactness).
-             * V OFF stavu (g_cputrack_active==0) se sem řízení vůbec nedostane
-             * = zero impact na hot path. */
-            cputrack_hot_path_hook (
+             * V OFF stavu se sem řízení vůbec nedostane. */
+            mzarch_main_post_instruction_hooks (
                 (uint16_t) g_mzarch_main.instruction_addr,
-                g_mzarch_main.instruction_tstates,
+                (uint32_t) g_mzarch_main.instruction_tstates,
                 g_mzarch_main.instruction_wait_tstates );
         }
 

@@ -21,6 +21,7 @@
 #include "emulator.h"
 #include "emulator/customspeed.h"
 #include "emulator/mzarch/mzarch.h"
+#include "emulator/hw-generic/cmt/cmt_cli.h"
 #include "version_info.h"
 
 #ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
@@ -77,10 +78,34 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
 #endif
     { "--run-mzf",          SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<filepath>",
       "Automatically load and run the given MZF file after the emulator boots." },
+    { "--cmt",              SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<filepath>",
+      "Insert a tape (.mzf, .m12, .mzt, .tap, .wav, .wave) into the virtual "
+      "cassette recorder at startup and open the Virtual CMT window. If the "
+      "CMT hack is on, it is turned off for this session only (the INI value "
+      "is kept). Missing file or unknown extension = error and exit." },
+    { "--cmt-play",         SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
+      "With --cmt: press PLAY after inserting the tape. A normal ROM boot "
+      "stops the cassette motor, so the tape then waits in PLAY + PAUSE; it "
+      "plays at once only together with --run-mzf." },
+    { "--cmt-play-pause",   SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
+      "With --cmt: press PLAY and PAUSE after inserting the tape; the tape "
+      "starts moving when the ROM turns the cassette motor on (e.g. after "
+      "LOAD). Cannot be combined with --cmt-play." },
+    { "--cmt-boot",         SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
+      "With --cmt: like --cmt-play-pause, and hold the C key from reset until "
+      "the ROM turns the cassette motor on, so the MZ-800 boot menu loads the "
+      "program from the tape. Only available on MZ-800. Cannot be combined "
+      "with --run-mzf or --cmt-play." },
     { "--record",           SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<file.avi>",
       "Start video recording (lossless AVI + .cuts.json sidecar) right after boot." },
     { "--record-frames",    SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_UINT,        NULL,        "<count>",
       "Stop video recording after <count> frames; in --headless mode then quit the emulator." },
+    { "--audio-capture",    SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<dir>",
+      "Start an audio capture into <dir> right after boot: channel level changes (events.csv), "
+      "PSG writes (psg_writes.csv), the exact sound (reference.wav) and the sound of the audio "
+      "output (sdl.wav); which files are written is set in Tools -> Audio Capture -> Settings." },
+    { "--audio-capture-frames", SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_UINT,    NULL,        "<count>",
+      "Stop the audio capture after <count> audio frames; in --headless mode then quit the emulator." },
     { "--cdl-mode",         SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        MODE_VALUES, "<off|window|always>",
       "Set the CDL (Memory Heatmap) recording mode." },
     { "--cdl-dir",          SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<dirpath>",
@@ -378,6 +403,14 @@ int main(int argc, char *argv[])
 #if MZARCH != 800
         fprintf(stderr, "Warning: --mode-switch is only supported on MZ-800, ignoring\n");
 #endif
+    };
+
+    /* --cmt, --cmt-play, --cmt-play-pause, --cmt-boot: kombinace voleb
+     * a soubor pásky se ověří hned (chyba = konec), pásku vloží až
+     * emulátorové vlákno po resetu (mzarch_main -> cmt_cli_apply). */
+    if (!cmt_cli_validate())
+    {
+        return EXIT_FAILURE;
     };
 
     /* --spdfd: alternativní launch mód. Větvíme dřív, než se inicializuje

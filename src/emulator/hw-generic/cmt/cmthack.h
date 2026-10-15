@@ -44,6 +44,22 @@ extern "C" {
     extern void cmthack_reinstall_rom_patch ( void );
     extern void cmthack_load_rom_patch ( unsigned enabled );
 
+    /**
+     * @brief Vypne CMT hack jen pro aktuální běh emulátoru (INI hodnota zůstane).
+     *
+     * Odinstaluje ROM patch (cmthack_load_rom_patch(0)) a připne INI hodnotu
+     * `[CMTHACK] enable` na stav před vypnutím (cfgelement_pin_save_value),
+     * takže se při ukončení do INI zapíše původní hodnota. Když uživatel
+     * hack během běhu sám zapne nebo vypne, připnutí se zruší a uloží se
+     * jeho volba. Používá CLI volba --cmt (cmt_cli.c).
+     *
+     * @pre Volá se po cmthack_init() (INI element je zaregistrovaný), na EMU
+     *      vlákně nebo před jeho rozběhem.
+     * @post CMTHACK_TEST_IS_INSTALLED == 0. Byl-li hack před voláním vypnutý,
+     *       nic se nemění (ani připnutí).
+     */
+    extern void cmthack_disable_for_session ( void );
+
     // Tyto funkce jsou pro mzarch specificke
     extern void cmthack_mzarch_reinstall_rom_patch ( void );
     extern void cmthack_mzarch_load_rom_patch ( unsigned enabled );

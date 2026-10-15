@@ -51,6 +51,7 @@ typedef struct MyImGui
     bool showSnapshotSetupWindow;
     bool showVideorecSetupWindow;        /**< Dialog nastavení video záznamu (Tools -> Video Recording -> Settings...). */
     bool showVideorecRemoteWindow;       /**< Okno dálkového ovládání nahrávání (Tools -> Video Recording -> Remote Control..., Alt+Shift+L); persistence [VIDEOREC_UI] remote_window. */
+    bool showScreenshotSetupWindow;      /**< Dialog nastavení screenshotu (Tools -> Screenshot -> Settings...). */
     bool showLanguageWindow;
     bool showPezikSettingsWindow;
     bool showRomSettingsWindow;

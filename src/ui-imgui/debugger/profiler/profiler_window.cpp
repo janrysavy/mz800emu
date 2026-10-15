@@ -2,9 +2,11 @@
 /*
  * profiler_window.cpp - CPU Profiler okno wrapper (mutant profiler V1, fáze F3).
  *
- * Tenký wrapper kolem dbg_profiler_render() ze sections/dbg_profiler.cpp.
+ * Tenký wrapper se dvěma záložkami: Functions = dbg_profiler_render()
+ * (sections/dbg_profiler.cpp), Per PC = dbg_profiler_pc_render()
+ * (sections/dbg_profiler_pc.cpp).
  * Vytváří top-level ImGui okno s vlastním title a persistentní geometrií
- * (ImGui ini), uvnitř volá sdílený render core.
+ * (ImGui ini), uvnitř volá render záložek.
  *
  * Stabilní ID: "CPU Profiler###profiler_window" (= prefix lze později
  * obohatit o arch / mode bez invalidace pozice/velikosti v ini).
@@ -39,6 +41,7 @@
 
 #include "profiler_window.h"
 #include "ui-imgui/debugger/sections/dbg_profiler.h"
+#include "ui-imgui/debugger/sections/dbg_profiler_pc.h"
 #include "ui-imgui/auto_layout.h"
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "libs/cfgfile/cfgmodule.h"
@@ -112,8 +115,20 @@ extern "C" void profiler_window_render ( bool *p_open ) {
         return;
     };
 
-    /* Veškerý vlastní obsah - toolbar + tabulka + status bar. */
-    dbg_profiler_render ( );
+    /* Dvě záložky: Functions (profiler po funkcích přes callstack)
+     * a Per PC (profiler podle adresy instrukce, profiler_pc.h). Každá
+     * má vlastní toolbar, tabulku a stavový řádek. */
+    if ( ImGui::BeginTabBar ( "###profiler_tabs" ) ) {
+        if ( ImGui::BeginTabItem ( _L ( "Functions###profiler_tab_func" ) ) ) {
+            dbg_profiler_render ( );
+            ImGui::EndTabItem ( );
+        };
+        if ( ImGui::BeginTabItem ( _L ( "Per PC###profiler_tab_pc" ) ) ) {
+            dbg_profiler_pc_render ( );
+            ImGui::EndTabItem ( );
+        };
+        ImGui::EndTabBar ( );
+    };
 
     ImGui::End ( );
 

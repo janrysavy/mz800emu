@@ -32,6 +32,8 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
 
 #include "libs/cmt_stream/cmt_stream.h"
 #include "cmtext_container.h"
@@ -86,6 +88,31 @@ extern "C" {
     extern int cmtext_container_open ( const char *filename );
 
     extern const char* cmtext_get_filename_extension ( const char *filename );
+
+    /**
+     * @brief Zjistí, zda má soubor příponu přehrávatelné pásky.
+     *
+     * Na rozdíl od cmtext_get_extension() nezávisí na cmtext_init(): prochází
+     * statickou tabulku g_cmtext[] až po koncový NULL, takže ji lze volat
+     * i při kontrole CLI voleb před startem emulátoru. Přípona se porovnává
+     * bez ohledu na velikost písmen (mzf, m12, mzt, tap, wav, wave).
+     *
+     * @param filename Jméno nebo cesta souboru (UTF-8); NULL = false.
+     * @return true, pokud přípona patří některé přehrávatelné (PLAYABLE) příponě.
+     * @note Bez vedlejších efektů, bezpečné z libovolného vlákna.
+     */
+    extern bool cmtext_is_playable_filename ( const char *filename );
+
+    /**
+     * @brief Zapíše seznam přípon přehrávatelných pásek, např. ".wav, .wave, .mzf".
+     *
+     * Stejně jako cmtext_is_playable_filename() nezávisí na cmtext_init().
+     * Slouží pro chybové zprávy (anglicky, bez lokalizace).
+     *
+     * @param buf Cílový buffer; výsledek je vždy ukončený nulou.
+     * @param size Velikost bufferu v bajtech (> 0); delší seznam se zkrátí.
+     */
+    extern void cmtext_get_playable_extensions_list ( char *buf, size_t size );
 
     /**
      * @brief Zjistí, zda lze pásku daného rozšíření přehrávat.

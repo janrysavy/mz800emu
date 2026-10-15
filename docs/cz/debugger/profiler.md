@@ -16,8 +16,9 @@ T-states (= takty Z80) per funkce. Pro každý unikátní cíl volání
 Profiler odpovídá na otázky typu "ve které rutině trávím nejvíc času",
 "kolikrát se ta rutina volá za frame", "jak dlouho běží IRQ handler".
 
-Není to per-instruction profiler - granularita je per CALL (= per entry
-adresa funkce). Pro analýzu jednotlivých scanline rutin použij sibling
+Na záložce Functions není granularita per instrukce, ale per CALL (= per entry
+adresa funkce). Čas po jednotlivých instrukcích ukáže záložka **Per PC**
+(sekce 10). Pro analýzu jednotlivých scanline rutin použij sibling
 okno **Callstack** + **Stack Monitor**.
 
 Profiler je postavený jako listener nad callstack subsystémem, tedy
@@ -354,3 +355,56 @@ Sort spec tabulky (= seřazení sloupců) ukládá ImGui sám do své INI.
   okno, ne historii.
 - **Watch okno + Profiler současně** - hot-spot v Profileru -> Watch
   na promenné té rutiny -> uvidíš co rutina dělá s daty.
+
+
+## 10. Záložka Per PC (profiler podle PC)
+
+Okno CPU Profiler má dvě záložky: **Functions** (vše popsané výše)
+a **Per PC**. Záložka Per PC počítá každou vykonanou instrukci podle
+její adresy, bez ohledu na CALL a RET. Vidí proto i kód, na který se
+skáče, obsluhy přerušení a smyčky v hlavním programu - to, co záložka
+Functions přičte celé jedné funkci, tu je rozložené po jednotlivých
+instrukcích.
+
+Ovládání:
+
+- **Start** začne sbírat a smaže předchozí data, **Stop** sběr zastaví
+  (data zůstanou), **Reset** data smaže.
+- **Range** - zobrazit jen adresy v rozsahu (hex, např. `8000` - `8FFF`).
+- **Export CSV...** zapíše všechny vykonané adresy (ne jen zobrazené),
+  sloupce `pc,count,tstates,wait,tstates_pct`.
+- Levý klik na řádek otevře adresu v Disassembly #1, pravý klik nabídne
+  breakpoint a Disassembly #2-#5.
+
+Sloupce:
+
+| Sloupec | Význam |
+|---|---|
+| Addr | adresa instrukce (logické PC) |
+| Symbol | nejbližší načtený symbol na adrese nebo pod ní, `+N` = posun |
+| Count | kolikrát se instrukce vykonala |
+| T% | podíl na T-stavech všech instrukcí |
+| T-states | T-stavy strávené v instrukci včetně čekacích stavů |
+| Avg T | průměr na jedno vykonání |
+| WAIT | čekací stavy vložené hardwarem (přístup do VRAM, zápis do PSG) |
+
+Tabulka ukazuje nejvýš 1000 řádků podle zvoleného sloupce řazení
+(výchozí T-states sestupně, tedy nejdražší instrukce nahoře).
+
+Stavový řádek rozdělí uplynulý emulovaný čas od Startu na **instrukce**,
+**HALT** (CPU stojí v instrukci HALT a čeká na přerušení) a **ostatní**
+(hlavně přijetí přerušení). Čas v HALT je rezerva výkonu; program, který
+na snímek čeká smyčkou místo HALT, ukáže tutéž rezervu jako instrukce
+čekací smyčky.
+
+Omezení:
+
+- Blokové instrukce (LDIR, LDDR, ...) se počítají při každém opakování
+  jako jedno vykonání.
+- Paměťové banky se nerozlišují - kód na stejné adrese v různých
+  bankách se sčítá.
+- Za běhu sběru stojí každá instrukce jedno volání funkce navíc; po
+  Stop se emulace nezpomaluje.
+
+Stejná data jsou dostupná přes MCP (`emu_profiler_pc_*`, viz
+mcp-server/tools-overview.md).

@@ -52,6 +52,8 @@ extern "C"
         BASEUI_FCHOOSER_CAT_DBG_SYMBOLS, /**< debugger: symboly */
         BASEUI_FCHOOSER_CAT_DBG_LISTS,   /**< debugger: seznamy breakpointů, záložek, watch, proměnných */
         BASEUI_FCHOOSER_CAT_DBG_EXPORT,  /**< debugger: exporty (disassembler, profiler, PSG, trace, CDL) */
+        BASEUI_FCHOOSER_CAT_SCREENSHOT,  /**< screenshoty obrazovky (PNG) */
+        BASEUI_FCHOOSER_CAT_AUDIO_CAPTURE, /**< výstupní složka zachycení zvuku */
         BASEUI_FCHOOSER_CAT_COUNT        /**< počet kategorií, není platná kategorie */
     } baseui_fchooser_category_t;
 

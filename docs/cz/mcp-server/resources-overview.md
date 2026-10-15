@@ -60,7 +60,7 @@ mají oproti Tools dvě výhody:
 | `emulator://periph/sn76489` | SN76489 PSG - mono / stereo snapshot (MZ-700 vrací available=false) |
 | `emulator://periph/ay3_8910` | AY-3-8910 PSG - placeholder (vždy available=false) |
 | `emulator://periph/beeper` | Audio cesta CTC0 OUT přes GATE0 + PC0 (raw bity + dopočet audible) |
-| `emulator://periph/gdg` | GDG video LSI - paleta, raster state, regDMD |
+| `emulator://periph/gdg` | GDG video LSI - paleta, raster state, regDMD; u MZ-800 i registry přístupu do VRAM (WF/RF) a hardwarový scroll |
 | `emulator://periph/wd1793` | WD279x FDC chip registry + 4 drive mount metadata |
 | `emulator://periph/cmt` | CMT cassette - stop/play/record state, motor, polarita, image basename, `cmthack_enabled` (ROM patch instant load) |
 | `emulator://periph/cmt/tape` | Výpis bloků naložené pásky - container_type (SINGLE/SIMPLE_TAPE), current_block, per-blok id/name/cmt_speed/type/playable/recordable |
@@ -99,6 +99,8 @@ file-based, žádný transport call).
 | `emulator://docs/sharp_display_code` | Sharp MZ ASCII vs display code vs std ASCII (decode `video/text_dump` + `mzascii` watch) |
 | `emulator://docs/mz800_keyboard` | Klávesnice MZ-800 - layout, matice, modifikátory, znakové vrstvy, jména kláves pro `emu_input_send_keys`, recepty na speciální znaky (MZ-700/1500 jako diff) |
 | `emulator://docs/cmt_workflow` | CMT workflow - reálná páska vs cmthack, transport, WAV recording, rychlostní poměry, SIMPLE_TAPE multi-blok seek + per-blok speed |
+| `emulator://docs/videorec_workflow` | Workflow nahrávání videa - nástroje `emu_videorec_*`, postup start, hraní, markery, retake ze snapshotu, stop, export do MP4 |
+| `emulator://docs/screenshot_workflow` | Workflow screenshotů - `emu_screenshot_save_to_file` s oblastí, měřítkem (framebuffer / nativní body / okno 1-4) a ořezem, rozměry obrázků podle platformy, recepty, série snímků `emu_screenshot_series_*` pro chyby v animacích |
 
 AI klient by měl číst `emulator://docs/index` jako první - poskytne
 přehled co se kde nachází a kdy to číst.
@@ -357,6 +359,14 @@ pro celý seznam slouží `emulator://watch`.
   discriminator `platform` field. MZ-800 má 16-color palette přes
   PAL_GRP + PAL0..3; MZ-700 / MZ-1500 mají 8-entry mode color tabulku.
   `palette_count` říká kolik entries je platných (16 nebo 8).
+- **MZ-800 přístup do VRAM a hardwarový scroll** - u MZ-800 vrací
+  `emulator://periph/gdg` navíc `vramctrl` (zápisový formát WF:
+  `wf_mode` single / exor / or / reset / replace / pset, `wf_planes`;
+  čtecí formát RF: `rf_planes`, `rf_search`; `vbank`) a `hwscroll`
+  (`enabled`, `sof`, `ssa`, `sea`, `sw` ve stejných jednotkách, jaké
+  program zapisuje do portů 01CFh-05CFh). Obojí jsou zrcadla registrů,
+  které na skutečném počítači jdou jen zapisovat; MZ-700 a MZ-1500 tyto
+  klíče nevracejí.
 - **GDG VRAM dump není dostupný** - Resource vrací jen registry +
   raster state. Pro VRAM obsah použijte `mem_read` Tool s
   banking-aware adresami.

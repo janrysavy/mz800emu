@@ -436,6 +436,7 @@ bool bp_vars_save_to_filepath ( const char *path, char *errbuf, size_t errbuf_si
 
     g_free ( out );
     g_object_unref ( gen );
+    if ( root ) json_node_unref ( root );
     g_object_unref ( b );
     g_free ( resolved );
     return ok;

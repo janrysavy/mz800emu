@@ -688,6 +688,7 @@ bool bookmarks_save ( const char *filepath ) {
 
     g_free ( out );
     g_object_unref ( gen );
+    if ( root ) json_node_unref ( root );
     g_object_unref ( b );
     g_free ( resolved );
     return ok;

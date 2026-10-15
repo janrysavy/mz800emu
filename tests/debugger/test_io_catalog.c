@@ -25,6 +25,9 @@
 #include <stdio.h>
 
 #include "debugger/io_catalog.h"
+#if MZARCH == 800
+#include "mzarch/mz800/gdg/mz800_hwscroll.h"
+#endif
 
 
 void setUp ( void ) {}
@@ -307,6 +310,38 @@ void test_io_catalog_0xCF_subregisters_present ( void )
     }
 }
 
+
+/**
+ * Zrcadla registrů scrollu vrací hodnotu tak, jak ji program zapsal do portu
+ * (ne interní bajtovou adresu plane, kterou drží g_hwscroll).
+ */
+void test_io_catalog_0xCF_scroll_values_match_port_writes ( void )
+{
+    static const struct {
+        uint16_t addr;
+        uint8_t value;
+    } writes[] = {
+        { 0xCF01, 0xA5 },   /* SOF_LO */
+        { 0xCF02, 0x02 },   /* SOF_HI (2 bity) */
+        { 0xCF03, 0x7D },   /* SW */
+        { 0xCF04, 0x05 },   /* SSA */
+        { 0xCF05, 0x50 },   /* SEA */
+    };
+
+    for ( size_t i = 0; i < sizeof( writes ) / sizeof( writes[ 0 ] ); i++ ) {
+        hwscroll_set_reg ( writes[ i ].addr & 0xFF, writes[ i ].value );
+    }
+    for ( size_t i = 0; i < sizeof( writes ) / sizeof( writes[ 0 ] ); i++ ) {
+        const st_IO_PORT_DESC *p = find_entry ( writes[ i ].addr );
+        char msg[ 128 ];
+        snprintf ( msg, sizeof( msg ), "0x%04X zrcadlo != zapsana hodnota", writes[ i ].addr );
+        TEST_ASSERT_NOT_NULL_MESSAGE ( p, msg );
+        TEST_ASSERT_NOT_NULL_MESSAGE ( p->read_value, msg );
+        TEST_ASSERT_EQUAL_HEX8_MESSAGE ( writes[ i ].value, p->read_value ( ), msg );
+    }
+    hwscroll_reset ( );
+}
+
 #endif /* MZARCH == 800 */
 
 
@@ -365,6 +400,7 @@ int main ( int argc, char *argv[] )
 #endif
 #if MZARCH == 800
     RUN_TEST ( test_io_catalog_0xCF_subregisters_present );
+    RUN_TEST ( test_io_catalog_0xCF_scroll_values_match_port_writes );
 #endif
 
     RUN_TEST ( test_io_catalog_arch_mask_set );

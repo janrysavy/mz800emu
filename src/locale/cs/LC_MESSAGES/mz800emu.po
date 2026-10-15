@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-08 21:08+0200\n"
+"POT-Creation-Date: 2026-10-13 21:57+0200\n"
 "PO-Revision-Date: 2026-03-11 21:00+0100\n"
 "Last-Translator: Michal Hucik <hucik@ordoz.com>\n"
 "Language-Team: Czech\n"
@@ -37,7 +37,7 @@ msgstr "Otevřít adresář"
 msgid "Untitled File Chooser"
 msgstr "Výběr souboru"
 
-#: src/emulator/audio.c:132
+#: src/emulator/audio.c:133
 msgid "Audio volume settings:"
 msgstr "Nastavení hlasitosti:"
 
@@ -62,21 +62,21 @@ msgstr ""
 "Adresa = 0x%04x\n"
 "Instrukce = '%s'\n"
 
-#: src/emulator/emulator.c:387
+#: src/emulator/emulator.c:398
 #: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:421
 #: src/ui-imgui/videorec/videorec_menu.cpp:140
 msgid "PAUSED"
 msgstr "POZASTAVENO"
 
-#: src/emulator/emulator.c:390
+#: src/emulator/emulator.c:401
 msgid "Max speed"
 msgstr "Maximální rychlost"
 
-#: src/emulator/emulator.c:393
+#: src/emulator/emulator.c:404
 msgid "Custom speed"
 msgstr "Vlastní rychlost"
 
-#: src/emulator/emulator.c:395
+#: src/emulator/emulator.c:406
 msgid "Normal speed"
 msgstr "Normální rychlost"
 
@@ -100,7 +100,7 @@ msgstr "Soubory pásek"
 msgid "Select CMT file to open"
 msgstr "Vyberte CMT soubor k otevření"
 
-#: src/emulator/hw-generic/cmt/cmthack.c:187
+#: src/emulator/hw-generic/cmt/cmthack.c:206
 msgid "Select a MZF File"
 msgstr "Vyberte MZF soubor"
 
@@ -384,6 +384,165 @@ msgstr "%.1f dB"
 #, c-format
 msgid "%.0f dB"
 msgstr "%.0f dB"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:52
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:144
+#: src/ui-imgui/videorec/videorec_menu.cpp:422
+#, c-format
+msgid "Cannot open folder: %s"
+msgstr "Nelze otevřít adresář: %s"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:53
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:72
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:119
+msgid "Audio Capture Error"
+msgstr "Chyba zachycení zvuku"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:71
+#, c-format
+msgid "Cannot start the audio capture: %s"
+msgstr "Zachycení zvuku nelze spustit: %s"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:80
+msgid "Audio Capture"
+msgstr "Zachycení zvuku"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:83
+msgid "Record Audio Capture"
+msgstr "Zachytit zvuk"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:87
+msgid ""
+"Records what the sound hardware does into a new folder until you stop it:\n"
+"changes of the channel levels, PSG writes, the exact sound (reference.wav)\n"
+"and the sound you hear (sdl.wav). For finding sound bugs."
+msgstr ""
+"Zaznamenává do nové složky, co dělá zvukový hardware, dokud ho nezastavíte:\n"
+"změny úrovní kanálů, zápisy do PSG, přesný zvuk (reference.wav)\n"
+"a zvuk, který slyšíte (sdl.wav). Pro hledání chyb zvuku."
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:92
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:178
+#: src/ui-imgui/videorec/videorec_menu.cpp:462
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:317
+msgid "Settings..."
+msgstr "Nastavení..."
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:95
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:181
+#: src/ui-imgui/videorec/videorec_menu.cpp:466
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:315
+msgid "Open Output Folder"
+msgstr "Otevřít výstupní adresář"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:118
+#, c-format
+msgid "Audio capture stopped after %.1f s: %s"
+msgstr "Zachycení zvuku skončilo po %.1f s: %s"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:123
+#, c-format
+msgid "Audio capture ended (%s): %.1f s saved to %s"
+msgstr "Zachycení zvuku skončilo (%s): %.1f s uloženo do %s"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:128
+#, c-format
+msgid "Audio capture saved: %.1f s to %s"
+msgstr "Zachycení zvuku uloženo: %.1f s do %s"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:143
+#, c-format
+msgid "AUDIO %.1f s"
+msgstr "ZVUK %.1f s"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:145
+msgid "AUDIO starting"
+msgstr "ZVUK začíná"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:190
+msgid "Audio Capture Settings"
+msgstr "Nastavení zachycení zvuku"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:193
+msgid "Files to write"
+msgstr "Soubory k zápisu"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:194
+msgid "events.csv - changes of the channel levels"
+msgstr "events.csv - změny úrovní kanálů"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:195
+msgid "psg_writes.csv - PSG writes, decoded"
+msgstr "psg_writes.csv - zápisy do PSG, dekódované"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:196
+msgid "reference.wav - exact sound in emulated time"
+msgstr "reference.wav - přesný zvuk v emulovaném čase"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:197
+msgid "sdl.wav - sound of the audio output (what you hear)"
+msgstr "sdl.wav - zvuk zvukového výstupu (co slyšíte)"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:201
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:371
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:260
+msgid "Output folder"
+msgstr "Výstupní adresář"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:204
+msgid "(default: audio_captures folder next to the emulator)"
+msgstr "(výchozí: adresář audio_captures vedle emulátoru)"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:214
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:384
+#: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:80
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:273
+msgid "Select Directory"
+msgstr "Vybrat adresář"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:217
+msgid "Each capture creates a new folder in the output folder."
+msgstr "Každé zachycení vytvoří ve výstupní složce novou složku."
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:218
+#, c-format
+msgid "Record Audio Capture (%s) starts and stops the capture."
+msgstr "Zachytit zvuk (%s) spustí a zastaví zachycení."
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:227
+#: src/ui-imgui/cmt/ImGuiCmt.cpp:175
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2419
+#: src/ui-imgui/dsk/dsk_create_window.cpp:104
+#: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:109
+#: src/ui-imgui/joy/joy_setup_window.cpp:564
+#: src/ui-imgui/message/message_window.cpp:90
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:406
+#: src/ui-imgui/snapshot/snapshot_notification.cpp:95
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:338
+msgid "OK"
+msgstr "OK"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:233
+#: src/ui-imgui/cmt/ImGuiCmt.cpp:187
+#: src/ui-imgui/debugger/membrowser/membrowser_annot_dialog.cpp:148
+#: src/ui-imgui/debugger/membrowser/membrowser_fill_dialog.cpp:264
+#: src/ui-imgui/debugger/sections/dbg_focus_to.cpp:264
+#: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:104
+#: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:111
+#: src/ui-imgui/joy/joy_setup_window.cpp:571
+#: src/ui-imgui/memext/memext_load_dialog.cpp:185
+#: src/ui-imgui/memext/memext_map_window.cpp:291
+#: src/ui-imgui/memext/memext_save_dialog.cpp:207
+#: src/ui-imgui/ramdisk/pezik_settings_window.cpp:289
+#: src/ui-imgui/rom/rom_settings_window.cpp:323
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:411
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:139
+#: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:176
+#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:99
+#: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:93
+#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:343
+msgid "Cancel"
+msgstr "Zrušit"
 
 #: src/ui-imgui/autotype/autotype_window.cpp:51
 msgid "Invalid character at position"
@@ -673,37 +832,6 @@ msgstr "Odpovídající rychlost: ~%.2f:1 (%.0f Bd)"
 #, c-format
 msgid "Each length must be greater than 0 and at most %.0f µs."
 msgstr "Každá délka musí být větší než 0 a nejvýš %.0f µs."
-
-#: src/ui-imgui/cmt/ImGuiCmt.cpp:175
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2419
-#: src/ui-imgui/dsk/dsk_create_window.cpp:104
-#: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:109
-#: src/ui-imgui/joy/joy_setup_window.cpp:564
-#: src/ui-imgui/message/message_window.cpp:90
-#: src/ui-imgui/snapshot/snapshot_notification.cpp:95
-#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:338
-msgid "OK"
-msgstr "OK"
-
-#: src/ui-imgui/cmt/ImGuiCmt.cpp:187
-#: src/ui-imgui/debugger/membrowser/membrowser_annot_dialog.cpp:148
-#: src/ui-imgui/debugger/membrowser/membrowser_fill_dialog.cpp:264
-#: src/ui-imgui/debugger/sections/dbg_focus_to.cpp:264
-#: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:104
-#: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:111
-#: src/ui-imgui/joy/joy_setup_window.cpp:571
-#: src/ui-imgui/memext/memext_load_dialog.cpp:185
-#: src/ui-imgui/memext/memext_map_window.cpp:291
-#: src/ui-imgui/memext/memext_save_dialog.cpp:207
-#: src/ui-imgui/ramdisk/pezik_settings_window.cpp:289
-#: src/ui-imgui/rom/rom_settings_window.cpp:323
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:139
-#: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:176
-#: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:99
-#: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:93
-#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:343
-msgid "Cancel"
-msgstr "Zrušit"
 
 #: src/ui-imgui/debugger/bookmarks/bm_window.cpp:267
 msgid "- Cancel##bm_add_toggle"
@@ -4751,6 +4879,7 @@ msgstr "Velikost (hex)###mb_save_size"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:473
 #: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1873
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:307
 msgid "Range:"
 msgstr "Rozsah:"
 
@@ -6651,9 +6780,17 @@ msgstr "Doba mezery key-up v gdgclk tikách."
 msgid "Tick stamp of current phase start."
 msgstr "Časová značka začátku aktuální fáze."
 
-#: src/ui-imgui/debugger/profiler/profiler_window.cpp:104
+#: src/ui-imgui/debugger/profiler/profiler_window.cpp:107
 msgid "CPU Profiler###profiler_window"
 msgstr "CPU Profiler###profiler_window"
+
+#: src/ui-imgui/debugger/profiler/profiler_window.cpp:121
+msgid "Functions###profiler_tab_func"
+msgstr "Funkce###profiler_tab_func"
+
+#: src/ui-imgui/debugger/profiler/profiler_window.cpp:125
+msgid "Per PC###profiler_tab_pc"
+msgstr "Podle PC###profiler_tab_pc"
 
 #: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1173
 #: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1328
@@ -7622,18 +7759,22 @@ msgid "Export profiler data as CSV"
 msgstr "Exportovat data profileru jako CSV"
 
 #: src/ui-imgui/debugger/sections/dbg_profiler.cpp:770
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:289
 msgid "Stop###pf_startstop"
 msgstr "Stop###pf_startstop"
 
 #: src/ui-imgui/debugger/sections/dbg_profiler.cpp:771
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:289
 msgid "Start###pf_startstop"
 msgstr "Start###pf_startstop"
 
 #: src/ui-imgui/debugger/sections/dbg_profiler.cpp:777
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:296
 msgid "Reset###pf_reset"
 msgstr "Reset###pf_reset"
 
 #: src/ui-imgui/debugger/sections/dbg_profiler.cpp:786
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:301
 msgid "Export CSV...###pf_export"
 msgstr "Export CSV...###pf_export"
 
@@ -7794,6 +7935,7 @@ msgid "Right click: more actions (BP, Bookmark, Disasm #2-5)"
 msgstr "Pravý klik: další akce (BP, záložka, Disasm #2-5)"
 
 #: src/ui-imgui/debugger/sections/dbg_profiler.cpp:1040
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:420
 msgid "Set Breakpoint###pf_bp"
 msgstr "Nastavit breakpoint###pf_bp"
 
@@ -7802,26 +7944,32 @@ msgid "Add Bookmark###pf_bm"
 msgstr "Přidat záložku###pf_bm"
 
 #: src/ui-imgui/debugger/sections/dbg_profiler.cpp:1057
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:424
 msgid "Show in Disassembly #2###pf_d2"
 msgstr "Zobrazit v Disassembly #2###pf_d2"
 
 #: src/ui-imgui/debugger/sections/dbg_profiler.cpp:1060
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:425
 msgid "Show in Disassembly #3###pf_d3"
 msgstr "Zobrazit v Disassembly #3###pf_d3"
 
 #: src/ui-imgui/debugger/sections/dbg_profiler.cpp:1063
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:426
 msgid "Show in Disassembly #4###pf_d4"
 msgstr "Zobrazit v Disassembly #4###pf_d4"
 
 #: src/ui-imgui/debugger/sections/dbg_profiler.cpp:1066
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:427
 msgid "Show in Disassembly #5###pf_d5"
 msgstr "Zobrazit v Disassembly #5###pf_d5"
 
 #: src/ui-imgui/debugger/sections/dbg_profiler.cpp:1146
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:463
 msgid "● RUNNING"
 msgstr "● BĚŽÍ"
 
 #: src/ui-imgui/debugger/sections/dbg_profiler.cpp:1150
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:467
 msgid "○ STOPPED"
 msgstr "○ ZASTAVENO"
 
@@ -7920,12 +8068,141 @@ msgstr ""
 "stávat nemělo. Prozkoumejte nebo dejte Reset."
 
 #: src/ui-imgui/debugger/sections/dbg_profiler.cpp:1299
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:529
 msgid "Export error###pf_export_error"
 msgstr "Chyba exportu###pf_export_error"
 
 #: src/ui-imgui/debugger/sections/dbg_profiler.cpp:1305
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:533
 msgid "OK###pf_export_error_ok"
 msgstr "OK###pf_export_error_ok"
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:251
+msgid "Export per-PC profile as CSV"
+msgstr "Export profilu podle PC do CSV"
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:275
+msgid "Export failed"
+msgstr "Export selhal"
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:293
+msgid "Start clears the previous data."
+msgstr "Start smaže předchozí data."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:322
+msgid "Per-PC profiler"
+msgstr "Profiler podle PC"
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:324
+msgid ""
+"Counts every executed instruction by its address: executions,\n"
+"T-states (including wait states) and WAIT states."
+msgstr ""
+"Počítá každou vykonanou instrukci podle její adresy: počet vykonání,\n"
+"T-stavy (včetně čekacích stavů) a stavy WAIT."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:326
+msgid "Unlike Functions it also sees code that is jumped to, not called."
+msgstr ""
+"Na rozdíl od záložky Funkce vidí i kód, na který se skáče, ne jen volá."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:327
+msgid "Block instructions (LDIR, ...) count every repetition."
+msgstr "Blokové instrukce (LDIR, ...) se počítají při každém opakování."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:328
+msgid "Address = logical PC, memory banks are not told apart."
+msgstr "Adresa = logické PC, paměťové banky se nerozlišují."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:329
+msgid "Range: show only addresses within it (hex)."
+msgstr "Rozsah: zobrazit jen adresy v něm (hex)."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:330
+msgid ""
+"Only the first 1000 rows of the chosen sort column are shown;\n"
+"Export CSV writes all addresses."
+msgstr ""
+"Zobrazí se jen prvních 1000 řádků podle zvoleného sloupce řazení;\n"
+"Export CSV zapíše všechny adresy."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:342
+msgid "Collecting - the table fills while the emulation runs."
+msgstr "Sbírá se - tabulka se plní, dokud emulace běží."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:343
+msgid "No data. Press Start and let the emulation run."
+msgstr "Žádná data. Stiskněte Start a nechte emulaci běžet."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:369
+msgid ""
+"Address of the instruction (logical PC).\n"
+"Left click: open in Disassembly #1."
+msgstr ""
+"Adresa instrukce (logické PC).\n"
+"Levý klik: otevřít v Disassembly #1."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:370
+msgid "Nearest symbol at or below the address, + offset."
+msgstr "Nejbližší symbol na adrese nebo pod ní, + posun."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:371
+msgid "How many times the instruction was executed."
+msgstr "Kolikrát byla instrukce vykonána."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:372
+msgid ""
+"Share of all instruction T-states (without HALT idle\n"
+"and interrupt acknowledge)."
+msgstr ""
+"Podíl na T-stavech všech instrukcí (bez nečinného HALT\n"
+"a přijetí přerušení)."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:373
+msgid ""
+"T-states spent in the instruction, including wait states.\n"
+"Sort here to find hot spots."
+msgstr ""
+"T-stavy strávené v instrukci včetně čekacích stavů.\n"
+"Řaďte podle tohoto sloupce pro nalezení horkých míst."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:374
+msgid "Average T-states per execution = T-states / Count."
+msgstr "Průměr T-stavů na vykonání = T-stavy / Počet."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:375
+msgid "Wait states inserted by the hardware (VRAM access, PSG write)."
+msgstr "Čekací stavy vložené hardwarem (přístup do VRAM, zápis do PSG)."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:472
+#, c-format
+msgid "Instructions: %llu"
+msgstr "Instrukce: %llu"
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:477
+#, c-format
+msgid "Time: %llu T = instructions %.1f%% + HALT %.1f%% + other %.1f%%"
+msgstr "Čas: %llu T = instrukce %.1f%% + HALT %.1f%% + ostatní %.1f%%"
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:483
+msgid ""
+"Emulated CPU time since Start.\n"
+"HALT = CPU waiting in HALT for an interrupt.\n"
+"Other = mainly interrupt acknowledge."
+msgstr ""
+"Emulovaný čas CPU od startu.\n"
+"HALT = CPU čeká v HALT na přerušení.\n"
+"Ostatní = hlavně přijetí přerušení."
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:490
+#, c-format
+msgid "WAIT: %llu T"
+msgstr "WAIT: %llu T"
+
+#: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:494
+#, c-format
+msgid "Addresses: %u of %u"
+msgstr "Adresy: %u z %u"
 
 #: src/ui-imgui/debugger/sections/dbg_stack_panel.cpp:903
 #: src/ui-imgui/debugger/sections/dbg_stack_panel.cpp:1022
@@ -9546,7 +9823,7 @@ msgstr "Znovu prohledat zařízení"
 msgid "Joystick"
 msgstr "Joystick"
 
-#: src/ui-imgui/main_window.cpp:102
+#: src/ui-imgui/main_window.cpp:105
 msgid "No audio device - running without sound"
 msgstr "Žádné zvukové zařízení - běží bez zvuku"
 
@@ -10303,6 +10580,152 @@ msgstr "Binární soubory ROM"
 msgid "CMT Hack Patch ROM"
 msgstr "ROM CMT Hack patche"
 
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:60
+msgid "The emulator screen is not available"
+msgstr "Obrazovka emulátoru není k dispozici"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:95
+#, c-format
+msgid "Screenshot saved (%u x %u): %s"
+msgstr "Screenshot uložen (%u x %u): %s"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:99
+#, c-format
+msgid "Cannot save screenshot to '%s': %s"
+msgstr "Screenshot nelze uložit do '%s': %s"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:100
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:145
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:221
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:235
+msgid "Screenshot Error"
+msgstr "Chyba screenshotu"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:130
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:162
+msgid "Save Screenshot"
+msgstr "Uložit screenshot"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:161
+msgid "Screenshot"
+msgstr "Screenshot"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:165
+msgid "Save Screenshot As..."
+msgstr "Uložit screenshot jako..."
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:170
+msgid "Record Changed Frames"
+msgstr "Nahrávat změněné snímky"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:174
+msgid ""
+"Saves a PNG of every emulated frame that differs from the previous one (area "
+"and scale from Settings) until you stop it."
+msgstr ""
+"Ukládá PNG každého emulovaného snímku, který se liší od předchozího (oblast "
+"a měřítko z nastavení), dokud ho nezastavíte."
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:220
+#, c-format
+msgid "Cannot start the frame series: %s"
+msgstr "Sérii snímků nelze spustit: %s"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:234
+#, c-format
+msgid "Frame series stopped after %u files: %s"
+msgstr "Série snímků skončila po %u souborech: %s"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:238
+#, c-format
+msgid "Frame series saved: %u files of %u frames to %s"
+msgstr "Série snímků uložena: %u souborů z %u snímků do %s"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:253
+#, c-format
+msgid "FRAMES %u / %u"
+msgstr "SNÍMKY %u / %u"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:288
+msgid "Native (computer dots, 320 or 640 wide)"
+msgstr "Nativní (body počítače, šířka 320 nebo 640)"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:289
+msgid "1x"
+msgstr "1x"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:290
+msgid "2x (window at 100 %)"
+msgstr "2x (okno na 100 %)"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:291
+msgid "3x"
+msgstr "3x"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:292
+msgid "4x"
+msgstr "4x"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:307
+#, c-format
+msgid "Image size: %u x %u or %u x %u (640-dot modes)"
+msgstr "Velikost obrázku: %u x %u nebo %u x %u (režimy 640 bodů)"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:310
+#, c-format
+msgid "Image size: %u x %u"
+msgstr "Velikost obrázku: %u x %u"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:327
+msgid "Screenshot Settings"
+msgstr "Nastavení screenshotu"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:332
+msgid "Area"
+msgstr "Oblast"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:333
+msgid "Whole frame with border"
+msgstr "Celý obraz s borderem"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:336
+msgid "Picture without border"
+msgstr "Obraz bez borderu"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:342
+msgid "Scale"
+msgstr "Měřítko"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:366
+msgid "1x drops every second column in the 640-dot modes."
+msgstr "1x v režimech 640 bodů vynechá každý druhý sloupec."
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:374
+msgid "(default: screenshots folder next to the emulator)"
+msgstr "(výchozí: adresář screenshots vedle emulátoru)"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:389
+msgid "Frame series: only changed frames"
+msgstr "Série snímků: jen změněné snímky"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:391
+msgid ""
+"Checked: Record Changed Frames saves only frames that differ from the last "
+"saved one. Unchecked: every emulated frame."
+msgstr ""
+"Zaškrtnuto: Nahrávat změněné snímky uloží jen snímky odlišné od posledního "
+"uloženého. Nezaškrtnuto: každý emulovaný snímek."
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:396
+#, c-format
+msgid "Save Screenshot (%s) saves the picture shown in the window."
+msgstr "Uložit screenshot (%s) uloží obraz zobrazený v okně."
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:397
+#, c-format
+msgid "Record Changed Frames (%s) saves emulated frames into a new folder."
+msgstr "Nahrávat změněné snímky (%s) ukládá emulované snímky do nové složky."
+
 #: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:157
 msgid "Snapshot Preview"
 msgstr "Náhled snímku"
@@ -10400,11 +10823,6 @@ msgstr "Nastavení snímků"
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:64
 msgid "Default Directory"
 msgstr "Výchozí adresář"
-
-#: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:80
-#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:273
-msgid "Select Directory"
-msgstr "Vybrat adresář"
 
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:86
 msgid "Default Save Options"
@@ -10669,7 +11087,7 @@ msgid "Unicard alternate FDC ports 0x58 - 0x5F"
 msgstr "Alternativní porty 0x58 - 0x5F pro Unicard FDC"
 
 #: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:440
-#: src/ui-imgui/topmenu/menu_tools.cpp:30
+#: src/ui-imgui/topmenu/menu_tools.cpp:32
 msgid "Tools"
 msgstr "Nástroje"
 
@@ -11668,23 +12086,23 @@ msgstr "Snížit - krok 100 %"
 msgid "Custom Speed Options"
 msgstr "Nastavení vlastní rychlosti"
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:32
+#: src/ui-imgui/topmenu/menu_tools.cpp:34
 msgid "DSK Images..."
 msgstr "DSK obrazy..."
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:37
+#: src/ui-imgui/topmenu/menu_tools.cpp:39
 msgid "Version Check"
 msgstr "Kontrola verze"
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:39
+#: src/ui-imgui/topmenu/menu_tools.cpp:41
 msgid "Make Online Version Check"
 msgstr "Provést online kontrolu verze"
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:44
+#: src/ui-imgui/topmenu/menu_tools.cpp:46
 msgid "Version Check Setup"
 msgstr "Nastavení kontroly verze"
 
-#: src/ui-imgui/topmenu/menu_tools.cpp:64
+#: src/ui-imgui/topmenu/menu_tools.cpp:72
 msgid "MCP Activity##menu_mcp_activity"
 msgstr "MCP Activity##menu_mcp_activity"
 
@@ -11936,11 +12354,6 @@ msgstr "Nahrávání začne po obnovení emulace"
 msgid "Recording time base: %s"
 msgstr "Časová základna nahrávání: %s"
 
-#: src/ui-imgui/videorec/videorec_menu.cpp:422
-#, c-format
-msgid "Cannot open folder: %s"
-msgstr "Nelze otevřít adresář: %s"
-
 #: src/ui-imgui/videorec/videorec_menu.cpp:432
 msgid "Video Recording"
 msgstr "Nahrávání videa"
@@ -11963,16 +12376,6 @@ msgstr ""
 "Zaškrtnuto: nahrávka sleduje skutečný čas (co bylo na obrazovce a v "
 "reproduktorech). Nezaškrtnuto: emulační čas (jeden emulovaný snímek obrazu = "
 "jeden snímek videa)."
-
-#: src/ui-imgui/videorec/videorec_menu.cpp:462
-#: src/ui-imgui/videorec/videorec_remote_window.cpp:317
-msgid "Settings..."
-msgstr "Nastavení..."
-
-#: src/ui-imgui/videorec/videorec_menu.cpp:466
-#: src/ui-imgui/videorec/videorec_remote_window.cpp:315
-msgid "Open Output Folder"
-msgstr "Otevřít výstupní adresář"
 
 #: src/ui-imgui/videorec/videorec_menu.cpp:470
 msgid "Remote Control..."
@@ -12200,10 +12603,6 @@ msgstr ""
 msgid "Video Recording Settings"
 msgstr "Nastavení nahrávání videa"
 
-#: src/ui-imgui/videorec/videorec_setup_dialog.cpp:260
-msgid "Output folder"
-msgstr "Výstupní adresář"
-
 #: src/ui-imgui/videorec/videorec_setup_dialog.cpp:263
 msgid "(default: videos folder next to the emulator)"
 msgstr "(výchozí: adresář videos vedle emulátoru)"
@@ -12244,6 +12643,16 @@ msgstr "MZ-1500 Virtuální klávesnice"
 #: src/ui-imgui/vkbd_window.cpp:228
 msgid "MZ-800 Virtual Keyboard"
 msgstr "MZ-800 Virtuální klávesnice"
+
+#~ msgid "Open Last Capture Folder"
+#~ msgstr "Otevřít složku posledního zachycení"
+
+#~ msgid ""
+#~ "Each capture creates a new folder in the screenshot output folder\n"
+#~ "(Tools -> Screenshot -> Settings...)."
+#~ msgstr ""
+#~ "Každé zachycení vytvoří novou složku ve výstupní složce screenshotů\n"
+#~ "(Nástroje -> Screenshot -> Nastavení...)."
 
 #~ msgid ""
 #~ "Adds a marker (chapter) on speed change, snapshot load, reset and pause "

@@ -331,7 +331,16 @@ def _scenarios(tmp):
     # Uvozovku Windows v názvu souboru (loose ref) nedovolí - ta se ověří
     # přímo funkcí c_escape níže.
     weird = "fix/we'ird-náme-č"
-    _git(repo, "checkout", "-q", "-b", weird)
+    # Jméno se nepředává na příkazové řádce: MSYS runtime (MSYS2 git
+    # spuštěný z Windows Pythonu) si ji parsuje sám a apostrof mimo
+    # uvozovky bere jako uvozovku, kterou odstraní. Proměnnou prostředí
+    # nepřeparsovává, takže dorazí beze změny.
+    res = subprocess.run([_BASH, "-c", 'git checkout -q -b "$MZ_BRANCH"'],
+                         cwd=str(repo), capture_output=True,
+                         env=dict(_ENV, MZ_BRANCH=weird))
+    if res.returncode != 0:
+        raise RuntimeError("git checkout -b failed: "
+                           + res.stderr.decode("utf-8", errors="replace").strip())
     rc, vals, _, _ = _run_gen(repo)
     check(rc == 0 and vals.get("build_revision_get_branch") == weird, "branch with apostrophe/diacritics round-trips")
 

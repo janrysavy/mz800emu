@@ -404,6 +404,8 @@ static gpointer _stdin_reader_thread(gpointer data)
  *    asset directories - klíčové pro CI / batch runtime)
  *  - --config (= explicit cesta k INI)
  *  - --no-save-ini / --no-first-run-windows (= chování v CI)
+ *  - --cmt, --cmt-play, --cmt-play-pause, --cmt-boot (= páska ve
+ *    virtuálním CMT od startu, pro AI klienty i testy; viz cmt_cli.h)
  *
  * Ostatní vyhradíme pro standardní `mz800emu.exe`.
  */
@@ -430,6 +432,15 @@ static const st_SDLAPP_OPTION_DEF g_pipe_known_options[] = {
       "Do not write the .ini file at exit." },
     { "--no-first-run-windows", SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,   NULL, NULL,
       "Suppress About + Version Check windows on first run." },
+    { "--cmt",                  SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING, NULL, "<filepath>",
+      "Insert a tape into the virtual cassette recorder at startup "
+      "(CMT hack off for this session)." },
+    { "--cmt-play",             SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,   NULL, NULL,
+      "With --cmt: press PLAY after inserting the tape." },
+    { "--cmt-play-pause",       SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,   NULL, NULL,
+      "With --cmt: PLAY + PAUSE; the tape moves when the ROM starts the motor." },
+    { "--cmt-boot",             SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,   NULL, NULL,
+      "With --cmt (MZ-800): hold C until the ROM starts the motor (boot from tape)." },
     { NULL, SDLAPP_OPTION_FLAG, SDLAPP_OPTVAL_NONE, NULL, NULL, NULL }
 };
 

@@ -257,6 +257,7 @@ void dispatch_stub_reset(void) {
     g_stub_state.periph_gdg_fake_has_pal_group  = 1;
     g_stub_state.periph_gdg_fake_has_cksw       = 1;
     g_stub_state.periph_gdg_fake_regDMD         = 0;
+    g_stub_state.periph_gdg_fake_has_vramctrl   = 1;
     g_stub_state.periph_wd1793_fake_available   = 1;
     g_stub_state.periph_wd1793_fake_status      = 0;
     g_stub_state.periph_wd1793_fake_drive0_present = 0;
@@ -277,6 +278,11 @@ void dispatch_stub_reset(void) {
     g_stub_state.frame_screenshot_raw_calls     = 0;
     g_stub_state.fb_available                   = 1;
     g_stub_state.frame_screenshot_png_calls     = 0;
+    memset(&g_stub_state.frame_screenshot_png_last_opts, 0, sizeof(g_stub_state.frame_screenshot_png_last_opts));
+    g_stub_state.frame_screenshot_png_fake_bad_opts = 0;
+    memset(&g_stub_state.ss_last, 0, sizeof(g_stub_state.ss_last));
+    g_stub_state.ss_calls = 0;
+    g_stub_state.ss_fake_result = 0;
     g_stub_state.video_text_dump_calls          = 0;
     g_stub_state.text_dump_available            = 1;
 
@@ -360,6 +366,82 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
 
     /* Cmd-specific fake fill */
     switch (cmd) {
+        case DBGAPI_CMD_AUDIO_CAPTURE:
+            /* Zachycení zvuku: zapamatuje vstup, vrátí stav (pending po START). */
+            if (data_ptr) {
+                st_DBGAPI_AUDIO_CAPTURE_PARAM *p = (st_DBGAPI_AUDIO_CAPTURE_PARAM *)data_ptr;
+                g_stub_state.ac_calls++;
+                g_stub_state.ac_last = *p;
+                memset(&p->out_status, 0, sizeof(p->out_status));
+                if (g_stub_state.ac_fake_fail) {
+                    strcpy(p->out_error, "An audio capture is already running");
+                    return false;
+                }
+                p->out_error[0] = '\0';
+                p->out_status.pending = (p->op == DBGAPI_AUDIO_CAPTURE_OP_START);
+                p->out_status.frames = 7;
+                strcpy(p->out_status.dir, "C:/tmp/audio");
+            }
+            break;
+
+        case DBGAPI_CMD_PROFILER_PC:
+            /* Profiler podle PC: zapamatuje vstup, u GET vrátí 3 adresy
+             * (zapsané do kapacity rows_max), u EXPORT 3 řádky. */
+            if (data_ptr) {
+                st_DBGAPI_PROFILER_PC_PARAM *p = (st_DBGAPI_PROFILER_PC_PARAM *)data_ptr;
+                g_stub_state.pc_calls++;
+                g_stub_state.pc_last = *p;
+                g_strlcpy(g_stub_state.pc_last_path, p->path ? p->path : "", sizeof(g_stub_state.pc_last_path));
+                memset(&p->out_summary, 0, sizeof(p->out_summary));
+                p->out_summary.active = (p->op == DBGAPI_PROFILER_PC_OP_START);
+                p->out_summary.tstates = 300;
+                p->out_summary.instructions = 30;
+                p->out_summary.unique_pcs = 3;
+                p->out_error[0] = '\0';
+                p->out_total = 0;
+                p->out_written = 0;
+                if (p->op == DBGAPI_PROFILER_PC_OP_GET) {
+                    p->out_total = 3;
+                    for (size_t i = 0; i < 3 && i < p->rows_max && p->rows; i++) {
+                        memset(&p->rows[i], 0, sizeof(p->rows[i]));
+                        p->rows[i].r.pc = (uint16_t)(0x1200 + i);
+                        p->rows[i].r.count = 10;
+                        p->rows[i].r.tstates = 100;
+                        p->rows[i].r.wait = i;
+                        strcpy(p->rows[i].symbol, "loop");
+                        p->rows[i].sym_offset = (uint32_t) i;
+                        p->out_written++;
+                    }
+                } else if (p->op == DBGAPI_PROFILER_PC_OP_EXPORT) {
+                    p->out_written = 3;
+                }
+            }
+            break;
+
+        case DBGAPI_CMD_SCREENSHOT_SERIES:
+            if (data_ptr) {
+                st_DBGAPI_SCREENSHOT_SERIES_PARAM *p = (st_DBGAPI_SCREENSHOT_SERIES_PARAM *)data_ptr;
+                g_stub_state.ss_calls++;
+                g_stub_state.ss_last = *p;
+                p->out_result = g_stub_state.ss_fake_result;
+                if (p->out_result != 0) {
+                    strcpy(p->out_error, "A frame series is already running");
+                    return false;
+                }
+                memset(&p->out_status, 0, sizeof(p->out_status));
+                p->out_status.active = (p->op == DBGAPI_SCREENSHOT_SERIES_OP_START);
+                strcpy(p->out_status.dir, "C:/tmp/series");
+            }
+            break;
+
+        case DBGAPI_CMD_SET_CPU_FLAGS:
+            if (data_ptr) {
+                const st_DBGAPI_CPU_FLAGS *p = (const st_DBGAPI_CPU_FLAGS *)data_ptr;
+                g_stub_state.cpu_flags_last_mask = p->update_mask;
+                g_stub_state.cpu_flags_last_r    = p->r_reg;
+            }
+            break;
+
         case DBGAPI_CMD_IS_RUNNING:
             if (result_ptr) {
                 *(bool *)result_ptr = g_stub_state.is_running;
@@ -1806,6 +1888,22 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                 for (unsigned i = 0; i < pn; i++) {
                     p->palette[i] = (uint8_t)(i * 16);
                 }
+                if (g_stub_state.periph_gdg_fake_has_vramctrl) {
+                    /* MZ-800: WF REPLACE planes I+III, RF search planes II, VBANK B,
+                     * HW scroll zapnutý (hodnoty v jednotkách portu). */
+                    p->has_vramctrl = 1;
+                    p->wf_mode      = 4;
+                    p->wf_plane     = 0x05;
+                    p->rf_plane     = 0x02;
+                    p->rf_search    = 1;
+                    p->wfrf_vbank   = 1;
+                    p->has_hwscroll = 1;
+                    p->hs_enabled   = 1;
+                    p->hs_sof       = 0x123;
+                    p->hs_ssa       = 5;
+                    p->hs_sea       = 0x7D;
+                    p->hs_sw        = 0x78;
+                }
             }
             break;
 
@@ -2055,9 +2153,14 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                 st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM *p =
                     (st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM *)data_ptr;
                 g_stub_state.frame_screenshot_png_calls++;
+                g_stub_state.frame_screenshot_png_last_opts = p->opts;
                 memset(p, 0, sizeof(*p));
                 p->available = 0;
                 strcpy(p->reason, "PNG encoder dependency not available");
+                if (g_stub_state.frame_screenshot_png_fake_bad_opts) {
+                    p->bad_opts = 1;
+                    strcpy(p->reason, "Crop rectangle must lie within the 320x200 image");
+                }
             }
             break;
 

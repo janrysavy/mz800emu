@@ -20,6 +20,7 @@
 #include "emulator.h"
 #include "time_profiler.h"
 #include "videorec/videorec.h"
+#include "audio_capture.h"
 
 /* Režim podle reality převzorkovává výstup této cesty - musí znát jeho frekvenci a blok
  * (blok = IFACE_AUDIO_SAMPLE_RATE / VIDEO_SCREENS_PER_SEC: 882 při 50, 735 při 60 snímcích/s;
@@ -275,6 +276,8 @@ float *iface_audio_wait_for_data(size_t *output_samples_size)
 
     /* Video záznam podle reality: kopie bloku, který jde do reproduktoru (mimo realtime 1 čtení příznaku). */
     videorec_rt_audio_output(output_samples, output_samples_count);
+    /* Zachycení zvuku: stejný blok do sdl.wav (mimo zachycení 1 čtení příznaku). */
+    audio_capture_sdl_output(output_samples, output_samples_count);
     return output_samples;
 }
 
@@ -462,13 +465,15 @@ void iface_audio_20ms_sync(void)
     APP_COND_SIGNAL(g_iface_audio.frame_cond);
     APP_MUTEX_UNLOCK(g_iface_audio.mutex);
 
-    if (g_iface_audio.sync_by_timer && videorec_rt_audio_wants_output())
+    if (g_iface_audio.sync_by_timer && (videorec_rt_audio_wants_output() || audio_capture_wants_sdl()))
     {
         /* Bez audio zařízení (headless, GUI po selhání zařízení): video záznam
          * podle reality chce zvuk "jak by zněl".
          * Vyrobit blok stejnou SDL cestou jen pro nahrávku (nic se nepřehrává); jen když
          * ho jitter buffer potřebuje - jako zařízení, které si data žádá (při MAX SPEED
-         * se tak nevyrábí blok za každou 20ms událost). */
+         * se tak nevyrábí blok za každou 20ms událost).
+         * Zachycení zvuku (sdl.wav) chce blok za každý snímek - audio_capture_wants_sdl()
+         * platí jen během zachycení se zapnutým sdl.wav. */
         size_t samples_size = 0;
         float *samples = iface_audio_wait_for_data(&samples_size);
         g_free(samples);

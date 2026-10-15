@@ -97,12 +97,12 @@ typedef struct { uint8_t last_value; ref_event_t samples[4096]; unsigned samples
 typedef struct {
     float lp_prev[T_CH_MAX];                       /* iface_audio_lowpass_filter, :81 */
     float ag_prev[T_CH_MAX];                       /* iface_audio_anti_glitch_filter, :159 */
-    uint8_t ctc_park_prev; size_t ctc_park_cnt; float ctc_park_gain; int ctc_park_gcnt; /* :230-233 */
-    uint8_t psg_park_prev[T_CH_MAX]; size_t psg_park_cnt[T_CH_MAX]; float psg_park_gain[T_CH_MAX]; int psg_park_gcnt[T_CH_MAX]; /* :345-348 */
-    float psg_iir[T_CH_MAX];                       /* :385 */
+    uint8_t ctc_park_prev; size_t ctc_park_cnt; float ctc_park_gain; int ctc_park_gcnt; /* :227-230 */
+    uint8_t psg_park_prev[T_CH_MAX]; size_t psg_park_cnt[T_CH_MAX]; float psg_park_gain[T_CH_MAX]; int psg_park_gcnt[T_CH_MAX]; /* :337-340 */
+    float psg_iir[T_CH_MAX];                       /* :377 */
 } ref_state_t;
 
-/** Kopie iface_audio_resampler_process_audio_log() (iface_audio_resampler.c:29-70). */
+/** Kopie iface_audio_resampler_process_audio_log() (iface_audio_resampler.c:29-67). */
 static void ref_process_audio_log(const ref_src_t *source, uint64_t log_count_samples, size_t samples_count, uint8_t *samples)
 {
     if (source->samples_count == 0) {
@@ -114,20 +114,15 @@ static void ref_process_audio_log(const ref_src_t *source, uint64_t log_count_sa
     size_t event_index = 0;
     uint64_t total_time = source->samples[event_index].count_ticks;
     for (size_t i = 0; i < samples_count; i++, current_time += step) {
-        while (current_time >= (total_time - 1)) {
-            if (event_index < source->samples_count) {
-                event_index++;
-                total_time += source->samples[event_index].count_ticks;
-            } else {
-                total_time = log_count_samples;
-                break;
-            }
+        while ((current_time + 1 >= total_time) && (event_index + 1 < source->samples_count)) {
+            event_index++;
+            total_time += source->samples[event_index].count_ticks;
         }
         samples[i] = source->samples[event_index].value;
     }
 }
 
-/** Kopie iface_audio_lowpass_filter() (iface_audio_resampler.c:79-86). */
+/** Kopie iface_audio_lowpass_filter() (iface_audio_resampler.c:76-83). */
 static inline float ref_lowpass(ref_state_t *s, int channel, float input)
 {
     float alpha = 0.4f;
@@ -135,7 +130,7 @@ static inline float ref_lowpass(ref_state_t *s, int channel, float input)
     return s->lp_prev[channel];
 }
 
-/** Kopie iface_audio_anti_glitch_filter() (iface_audio_resampler.c:157-165). */
+/** Kopie iface_audio_anti_glitch_filter() (iface_audio_resampler.c:154-162). */
 static inline float ref_anti_glitch(ref_state_t *s, int channel, float input)
 {
     float smooth_factor = 0.2f;
@@ -144,7 +139,7 @@ static inline float ref_anti_glitch(ref_state_t *s, int channel, float input)
     return output;
 }
 
-/** Kopie parkování CTC0 (iface_audio_resampler.c:229-266). */
+/** Kopie parkování CTC0 (iface_audio_resampler.c:226-263). */
 static inline float ref_ctc_park(ref_state_t *s, float resampled, uint8_t end_value, size_t parked_samples, size_t parked_fade)
 {
     if ((end_value == 0) || (end_value != s->ctc_park_prev)) {
@@ -170,7 +165,7 @@ static inline float ref_ctc_park(ref_state_t *s, float resampled, uint8_t end_va
     return resampled;
 }
 
-/** Řetězec CTC0 po převzorkování (iface_audio_resampler.c:229-288): parkování, low-pass, anti-glitch. */
+/** Řetězec CTC0 po převzorkování (iface_audio_resampler.c:226-285): parkování, low-pass, anti-glitch. */
 static float ref_ctc_chain(ref_state_t *s, float resampled, uint8_t end_value)
 {
     resampled = ref_ctc_park(s, resampled, end_value, T_PARK, T_FADE);
@@ -178,7 +173,7 @@ static float ref_ctc_chain(ref_state_t *s, float resampled, uint8_t end_value)
     return ref_anti_glitch(s, 0, filtered1);
 }
 
-/** Řetězec PSG po převzorkování (iface_audio_resampler.c:342-387): parkování, IIR /6. */
+/** Řetězec PSG po převzorkování (iface_audio_resampler.c:334-379): parkování, IIR /6. */
 static float ref_psg_chain(ref_state_t *s, int channel, float resampled, uint8_t end_value)
 {
     if ((end_value == 0) || (end_value != s->psg_park_prev[channel])) {
@@ -206,7 +201,7 @@ static float ref_psg_chain(ref_state_t *s, int channel, float resampled, uint8_t
     return s->psg_iir[channel];
 }
 
-/** Kopie iface_audio_resampler_output_stream_ctc0() (iface_audio_resampler.c:193-296). */
+/** Kopie iface_audio_resampler_output_stream_ctc0() (iface_audio_resampler.c:190-293). */
 static void ref_output_stream_ctc0(ref_state_t *s, const uint8_t *input_samples, size_t input_samples_count,
                                    size_t output_samples_count, float *output_samples)
 {
@@ -225,7 +220,7 @@ static void ref_output_stream_ctc0(ref_state_t *s, const uint8_t *input_samples,
     }
 }
 
-/** Kopie iface_audio_resampler_process_psg_audio_log() (iface_audio_resampler.c:298-417). */
+/** Kopie iface_audio_resampler_process_psg_audio_log() (iface_audio_resampler.c:295-409). */
 static void ref_process_psg(ref_state_t *s, int channel, const ref_src_t *source, uint64_t log_count_samples,
                             const float *volume, size_t samples_count, float *samples)
 {
@@ -238,14 +233,9 @@ static void ref_process_psg(ref_state_t *s, int channel, const ref_src_t *source
     size_t event_index = 0;
     uint64_t total_time = source->samples[event_index].count_ticks;
     for (size_t i = 0; i < samples_count; i++, current_time += step) {
-        while (current_time >= (total_time - 1)) {
-            if (event_index < source->samples_count) {
-                event_index++;
-                total_time += source->samples[event_index].count_ticks;
-            } else {
-                total_time = log_count_samples;
-                break;
-            }
+        while ((current_time + 1 >= total_time) && (event_index + 1 < source->samples_count)) {
+            event_index++;
+            total_time += source->samples[event_index].count_ticks;
         }
         uint8_t current_value = source->samples[event_index].value;
         float resampled = volume[current_value];
@@ -569,7 +559,7 @@ static double mean16(const int16_t *x, size_t from, size_t to)
 /*
  * Známá odchylka SDL cesty, kterou renderer NEkopíruje (dokumentační test):
  * kanál PSG bez změny v celém snímku jde v SDL cestě přes časnou větev
- * `samples_count == 0` (iface_audio_resampler.c:307-314), která vrátí
+ * `samples_count == 0` (iface_audio_resampler.c:304-311), která vrátí
  * `volume[last_value]` bez parkování a bez IIR. Trvalá nenulová hodnota PSG
  * se proto v SDL cestě nikdy nezaparkuje (zůstane stejnosměrná úroveň),
  * renderer ji po 45 ms zaparkuje jako CTC0. Rozdíl je jen ve stejnosměrné
@@ -594,15 +584,17 @@ static void test_known_deviation_psg_constant_level(void)
 }
 
 /*
- * Známá chyba SDL cesty, kterou renderer NEkopíruje (dokumentační test):
- * změna kanálu přesně v prvním taktu logu snímku dá `samples[0].count_ticks == 0`
- * a podmínka `current_time >= (total_time - 1)` (iface_audio_resampler.c:51
- * a :325) pak přeteče (0 - 1 v uint64_t), takže SDL cesta celý snímek drží
- * starou hodnotu kanálu. Kroky PSG v audio.c padají na `last_psg_timestamp`,
- * který je zároveň `first_timestamp` dalšího logu, takže změna PSG v prvním
- * kroku snímku tento stav vyvolá [neověřeno na živém emulátoru].
+ * Regrese opravené chyby SDL cesty (dříve dokumentační test známé chyby):
+ * změna kanálu přesně v prvním taktu logu snímku dá `samples[0].count_ticks == 0`.
+ * Původní podmínka `current_time >= (total_time - 1)` pak přetekla (0 - 1
+ * v uint64_t) a SDL cesta celý snímek držela starou hodnotu kanálu. Kroky PSG
+ * v audio.c padají na `last_psg_timestamp`, který je zároveň `first_timestamp`
+ * dalšího logu, takže změna PSG v prvním kroku snímku tento stav vyvolá -
+ * ověřeno zachycením zvuku (emu_audio_capture) na živém emulátoru: Batman 14,
+ * SAPO-P 16, FX-Soundtrack 1 38 snímků za 30 s s rozdílem DC > 500 proti
+ * referenci, po opravě 0.
  */
-static void test_known_sdl_bug_event_at_frame_start(void)
+static void test_event_at_frame_start(void)
 {
     const float gain[T_CH_MAX] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
     static int16_t ref[3 * T_SPF_MAX], ren[3 * T_SPF_MAX];
@@ -612,10 +604,11 @@ static void test_known_sdl_bug_event_at_frame_start(void)
     qsort(s_ev, s_nev, sizeof(*s_ev), ev_cmp);
     run_sdl(3, gain, ref, NULL);
     run_renderer(3, gain, ren, NULL);
-    /* PSG2 (hlasitost 15, úroveň 0,25) ve snímku 1: SDL ho nepustí, renderer ano; PSG1 v obou */
+    /* PSG2 (hlasitost 15, úroveň 0,25) ve snímku 1: SDL cesta i renderer ho
+     * pustí (dříve SDL chyběl celou úrovní 0,25 = 8192); PSG1 v obou. */
     double d1 = mean16(ren, T_SPF + 100, 2 * T_SPF) - mean16(ref, T_SPF + 100, 2 * T_SPF);
     printf("event at frame start: renderer - SDL mean in frame 1 = %.1f (PSG2 level %.1f)\n", d1, 32767.0 * 0.25);
-    TEST_ASSERT_DOUBLE_WITHIN(400.0, 32767.0 * 0.25, d1);
+    TEST_ASSERT_DOUBLE_WITHIN(400.0, 0.0, d1);
     free(s_ev);
     s_ev = NULL;
     s_cap = s_nev = 0;
@@ -767,7 +760,7 @@ int main(void)
     RUN_TEST(test_chain_bit_exact);
     RUN_TEST(test_full_path_parity);
     RUN_TEST(test_known_deviation_psg_constant_level);
-    RUN_TEST(test_known_sdl_bug_event_at_frame_start);
+    RUN_TEST(test_event_at_frame_start);
     RUN_TEST(test_stereo_parity_mz1500);
     RUN_TEST(test_mono_parity_mz700_ntsc);
     RUN_TEST(test_stereo_parity_mz800_psg1);

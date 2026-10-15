@@ -762,6 +762,7 @@ static char *build_subsys_header_json ( void )
     gchar *out = json_generator_to_data ( gen, &len );
 
     g_object_unref ( gen );
+    if ( root ) json_node_unref ( root );
     g_object_unref ( b );
 
     return out;  /* caller uvolní přes g_free */

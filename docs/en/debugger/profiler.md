@@ -17,8 +17,9 @@ The profiler answers questions like "in which routine am I spending the
 most time", "how many times does this routine get called per frame",
 "how long does the IRQ handler run".
 
-It is not a per-instruction profiler - granularity is per CALL (= per
-function entry address). For analysis of individual scanline routines
+On the Functions tab the granularity is not per instruction but per CALL (= per
+function entry address). Time per single instruction is shown by the
+**Per PC** tab (section 10). For analysis of individual scanline routines
 use the sibling **Callstack** + **Stack Monitor** windows.
 
 The profiler is built as a listener on top of the callstack subsystem,
@@ -364,3 +365,57 @@ its own INI.
 - **Watch window + Profiler together** - hot spot in the Profiler ->
   Watch on the variables of that routine -> you see what the routine
   does with the data.
+
+
+## 10. Per PC tab (per-PC profiler)
+
+The CPU Profiler window has two tabs: **Functions** (everything
+described above) and **Per PC**. The Per PC tab counts every executed
+instruction by its address, regardless of CALL and RET. It therefore
+also sees code that is jumped to, interrupt handlers and loops in the
+main program - what the Functions tab adds to one whole function is
+split here into single instructions.
+
+Controls:
+
+- **Start** begins collecting and clears the previous data, **Stop**
+  stops collecting (the data stays), **Reset** clears the data.
+- **Range** - show only addresses within the range (hex, e.g. `8000` -
+  `8FFF`).
+- **Export CSV...** writes all executed addresses (not only the shown
+  ones), columns `pc,count,tstates,wait,tstates_pct`.
+- A left click on a row opens the address in Disassembly #1, a right
+  click offers a breakpoint and Disassembly #2-#5.
+
+Columns:
+
+| Column | Meaning |
+|---|---|
+| Addr | address of the instruction (logical PC) |
+| Symbol | nearest loaded symbol at or below the address, `+N` = offset |
+| Count | how many times the instruction was executed |
+| T% | share of the T-states of all instructions |
+| T-states | T-states spent in the instruction, including wait states |
+| Avg T | average per execution |
+| WAIT | wait states inserted by the hardware (VRAM access, PSG write) |
+
+The table shows at most 1000 rows of the chosen sort column (default
+T-states descending, i.e. the most expensive instructions on top).
+
+The status line splits the emulated time since Start into
+**instructions**, **HALT** (the CPU stands in a HALT instruction waiting
+for an interrupt) and **other** (mainly interrupt acknowledge). Time in
+HALT is spare time; a program that waits for the frame in a loop instead
+of HALT shows the same spare time as the instructions of that loop.
+
+Limits:
+
+- Block instructions (LDIR, LDDR, ...) count every repetition as one
+  execution.
+- Memory banks are not told apart - code at the same address in
+  different banks adds up.
+- While collecting, every instruction costs one extra function call;
+  after Stop the emulation is not slowed down.
+
+The same data is available over MCP (`emu_profiler_pc_*`, see
+mcp-server/tools-overview.md).

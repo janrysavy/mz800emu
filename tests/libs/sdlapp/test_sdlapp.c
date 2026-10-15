@@ -539,17 +539,63 @@ void test_timer_remove_nonexistent(void)
     sdlapp_remove_timer(g_app, 999);
 }
 
-/** Queued timer data can outlive its allocation. It must not be dereferenced. */
-void test_timer_stale_event(void)
+/** @brief Počet volání callbacku timeru v test_timer_stale_event_*. */
+static int s_stale_cb_calls = 0;
+
+/** @brief Callback timeru, který jen počítá volání. */
+static gboolean stale_count_cb(guint timer_id, gpointer user_data)
 {
+    (void)timer_id;
+    (void)user_data;
+    s_stale_cb_calls++;
+    return TRUE;
+}
+
+/**
+ * @brief Událost odebraného timeru, která ještě čeká ve frontě SDL, nesmí
+ *        zavolat jiný timer.
+ *
+ * Timer A se odebere (g_free), zatímco jeho událost čeká ve frontě. Nový
+ * timer B může od alokátoru dostat stejnou adresu, takže samotná kontrola
+ * "ukazatel je v seznamu" by starou událost přisoudila timeru B. Test tuto
+ * situaci vyrobí deterministicky: událost nese ID odebraného timeru A
+ * (user.code), ale ukazatel živého timeru B (user.data1). Událost se smí
+ * zpracovat, jen když sedí ukazatel i ID.
+ *
+ * Nalezeno ve forku janrysavy/mz800emu (297ca20), test napsán nezávisle.
+ */
+void test_timer_stale_event_after_remove(void)
+{
+    s_stale_cb_calls = 0;
+    sdlapp_set_fps_limit(g_app, 0);
+
+    guint id_a = sdlapp_add_timer(g_app, 1000000, stale_count_cb, NULL);
+    TEST_ASSERT_NOT_EQUAL(0, id_a);
+    sdlapp_remove_timer(g_app, id_a);
+
+    guint id_b = sdlapp_add_timer(g_app, 1000000, stale_count_cb, NULL);
+    TEST_ASSERT_NOT_EQUAL(0, id_b);
+    TEST_ASSERT_NOT_EQUAL(id_a, id_b);
+    SdlAppTimer *timer_b = (SdlAppTimer *)g_app->timers->data;
+
     SDL_Event event;
     SDL_zero(event);
     event.type = g_app->timer_event_type;
-    event.user.code = 999;
-    event.user.data1 = (void *)(uintptr_t)1;
+    event.user.code = (Sint32)id_a;
+    event.user.data1 = timer_b;
+    TEST_ASSERT_TRUE(SDL_PushEvent(&event));
+
+    sdlapp_iteration(g_app);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, s_stale_cb_calls,
+                                  "stale event of a removed timer called another timer");
+
+    /* kontrola: platná událost timeru B se zpracuje */
+    event.user.code = (Sint32)id_b;
     TEST_ASSERT_TRUE(SDL_PushEvent(&event));
     sdlapp_iteration(g_app);
-    TEST_ASSERT_NULL(g_app->timers);
+    TEST_ASSERT_EQUAL_INT(1, s_stale_cb_calls);
+
+    sdlapp_remove_timer(g_app, id_b);
 }
 
 /* ========================================================================
@@ -692,7 +738,7 @@ int main(void)
     RUN_TEST(test_timer_add_remove);
     RUN_TEST(test_timer_zero_interval);
     RUN_TEST(test_timer_remove_nonexistent);
-    RUN_TEST(test_timer_stale_event);
+    RUN_TEST(test_timer_stale_event_after_remove);
 
     /* regresní */
     RUN_TEST(test_bug1_activate);

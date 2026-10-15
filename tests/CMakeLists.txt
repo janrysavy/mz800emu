@@ -42,6 +42,8 @@ add_subdirectory(libs/wav)
 add_subdirectory(libs/avirec)
 add_subdirectory(libs/zxtape)
 add_subdirectory(videorec)
+add_subdirectory(screenshot)
+add_subdirectory(audio)
 
 # Python testy pomocných skriptů z docs/tools/ (bez Pythonu se neregistrují)
 add_subdirectory(tools)

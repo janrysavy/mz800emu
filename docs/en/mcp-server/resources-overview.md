@@ -62,7 +62,7 @@ two advantages over Tools:
 | `emulator://periph/sn76489` | SN76489 PSG - mono / stereo snapshot (MZ-700 returns available=false) |
 | `emulator://periph/ay3_8910` | AY-3-8910 PSG - placeholder (always available=false) |
 | `emulator://periph/beeper` | CTC0 OUT audio path through GATE0 + PC0 (raw bits + derived audible) |
-| `emulator://periph/gdg` | GDG video LSI - palette, raster state, regDMD |
+| `emulator://periph/gdg` | GDG video LSI - palette, raster state, regDMD; MZ-800 also VRAM access registers (WF/RF) and hardware scroll |
 | `emulator://periph/wd1793` | WD279x FDC chip registers + 4 drive mount metadata |
 | `emulator://periph/cmt` | CMT cassette - stop/play/record state, motor, polarity, image basename, `cmthack_enabled` (ROM patch instant load) |
 | `emulator://periph/cmt/tape` | Loaded tape block listing - container_type (SINGLE/SIMPLE_TAPE), current_block, per-block id/name/cmt_speed/type/playable/recordable |
@@ -101,6 +101,8 @@ transport call).
 | `emulator://docs/sharp_display_code` | Sharp MZ ASCII vs display code vs std ASCII (decoding `video/text_dump` + `mzascii` watch) |
 | `emulator://docs/mz800_keyboard` | MZ-800 keyboard - layout, matrix, modifiers, character layers, key names for `emu_input_send_keys`, special-character recipes (MZ-700/1500 as a diff) |
 | `emulator://docs/cmt_workflow` | CMT workflow - real tape vs cmthack, transport, WAV recording, speed ratios, SIMPLE_TAPE multi-block seek + per-block speed |
+| `emulator://docs/videorec_workflow` | Video recording workflow - `emu_videorec_*` tools, recipe start, play, markers, retake from a snapshot, stop, export to MP4 |
+| `emulator://docs/screenshot_workflow` | Screenshot workflow - `emu_screenshot_save_to_file` with area, scale (framebuffer / native dots / window 1-4) and crop, picture sizes per build, recipes, frame series `emu_screenshot_series_*` for animation bugs |
 
 AI clients should read `emulator://docs/index` first - it shows what
 is documented and when to consult each topic.
@@ -369,6 +371,13 @@ URI; use `emulator://watch` for the full list.
   PAL_GRP + PAL0..3; MZ-700 / MZ-1500 have an 8-entry mode color
   table. `palette_count` indicates how many entries are valid
   (16 or 8).
+- **MZ-800 VRAM access and hardware scroll** - on the MZ-800
+  `emulator://periph/gdg` also returns `vramctrl` (write format WF:
+  `wf_mode` single / exor / or / reset / replace / pset, `wf_planes`;
+  read format RF: `rf_planes`, `rf_search`; `vbank`) and `hwscroll`
+  (`enabled`, `sof`, `ssa`, `sea`, `sw` in the same units the program
+  writes to ports 01CFh-05CFh). Both are mirrors of write-only
+  registers; MZ-700 and MZ-1500 do not return these keys.
 - **GDG VRAM dump not available** - the Resource only returns
   registers and raster state. To read VRAM content the client must
   use the `mem_read` Tool with banking-aware addresses.

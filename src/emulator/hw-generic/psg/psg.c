@@ -31,6 +31,7 @@
 #include "hw-generic/gdg/gdg.h"
 #include "hw-generic/gdg/gdgclk.h"
 #include "audio.h"
+#include "audio_capture.h"
 #include "mzarch/mzarch.h"
 
 #include <glib.h>
@@ -302,9 +303,6 @@ void psg_write_byte(unsigned channel, uint8_t value)
 {
     mzarch_main_insideop_iorq_psg_write();
     uint64_t total_ticks = gdg_compute_total_ticks(g_gdg.total_elapsed.ticks);
-#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
-    audio_capture_psg_write(total_ticks,g_psg_module.stereo?channel:PSG_CH_LEFT,value);
-#endif
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
     /* trace-suite hwlog: zaznamenat write do PSG datového portu.
@@ -343,6 +341,11 @@ void psg_write_byte(unsigned channel, uint8_t value)
         {
             psg_write_log_record(total_ticks, PSG_CH_LEFT, value);
         }
+        /* Zachycení zvuku (psg_writes.csv) - po zápisu, dekóduje se stav PSG. */
+        if (audio_capture_wanted())
+        {
+            audio_capture_on_psg_write(total_ticks, PSG_CH_LEFT, value);
+        }
         return;
     }
 
@@ -364,6 +367,11 @@ void psg_write_byte(unsigned channel, uint8_t value)
     if (g_psg_write_log.enabled)
     {
         psg_write_log_record(total_ticks, channel, value);
+    }
+    /* Zachycení zvuku (psg_writes.csv) - po zápisu, dekóduje se stav PSG. */
+    if (audio_capture_wanted())
+    {
+        audio_capture_on_psg_write(total_ticks, channel, value);
     }
 }
 

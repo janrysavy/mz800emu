@@ -183,6 +183,24 @@ extern "C"
     extern bool mzarch_mode_sw_parse_cli(const char *text, en_MZ800_MODE_SW *out);
 
     /**
+     * @brief Hodnota CLI volby s cestou souboru převedená do UTF-8.
+     *
+     * Interní cesty emulátoru jsou v UTF-8 (GLib). Na Windows je ale `argv`
+     * v ANSI kódové stránce procesu, takže se tam hodnota vezme z UTF-16
+     * příkazové řádky (g_win32_get_command_line()), bezeztrátově i pro znaky
+     * mimo ANSI kódovou stránku. Hledá se stejně jako v sdlapp_options: token
+     * přesně `name` (hodnota v dalším tokenu), nebo `name=hodnota`. Jinde
+     * (a když se na Windows volba nenajde) vrátí kopii sdlapp_option_value().
+     *
+     * @param name Jméno volby včetně `--` (např. "--record", "--cmt").
+     * @return Nově alokovaná hodnota v UTF-8 (uvolnit g_free), nebo NULL,
+     *         pokud volba nemá hodnotu.
+     * @pre sdlapp_options_init() už proběhlo.
+     * @note Bez vedlejších efektů, volatelné z libovolného vlákna.
+     */
+    extern char *mzarch_cli_option_value_utf8(const char *name);
+
+    /**
      * @brief Vynutí kompletní překreslení obrazovky emulátoru z aktuálního
      *        stavu VRAM/GDG (border i screen), nezávisle na debuggeru.
      *

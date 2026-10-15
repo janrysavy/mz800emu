@@ -50,10 +50,30 @@ mz_add_test(cpu_z80_r_register
     LABELS   "standalone;libs"
 )
 
-# Per-step cycle deltas must stay defined across both signed and uint32 wrap.
-mz_add_test(cpu_z80_cycle_delta
+# Pokriva navratovou hodnotu z80_step() na hranicich total_cycles 2^31 a 2^32
+# (puvodne odecet pres int = signed overflow, UB). Nalezeno ve forku
+# janrysavy/mz800emu. Viz emu-experiments/fork-bugs/.
+mz_add_test(cpu_z80_step_cycles
     TYPE     STANDALONE
-    SOURCES  test_cycle_delta.c
+    SOURCES  test_step_cycles.c
     LIBS     mzlib_cpu_z80
     LABELS   "standalone;libs"
+)
+
+# Pokrývá nulování cpu->op_tstate v z80_reset(). Po resetu nesmí zůstat délka
+# poslední instrukce, emulátor op_tstate čte i mimo instrukci (bootstrap MZF,
+# ladicí příkazy). Viz emu-experiments/z80-reset-optstate/README.md.
+mz_add_test(cpu_z80_reset_state
+    TYPE     STANDALONE
+    SOURCES  test_reset_state.c
+    LIBS     mzlib_cpu_z80
+    LABELS   "standalone;libs"
+)
+
+# Independent fork regression across both signed and uint32 clock boundaries.
+mz_add_test(cpu_z80_cycle_delta
+    TYPE STANDALONE
+    SOURCES test_cycle_delta.c
+    LIBS mzlib_cpu_z80
+    LABELS "standalone;libs"
 )

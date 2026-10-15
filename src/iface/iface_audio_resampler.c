@@ -48,18 +48,15 @@ uint8_t *iface_audio_resampler_process_audio_log(const st_AUDIO_SOURCE_LOG *sour
 
     for (size_t i = 0; i < samples_count; i++, current_time += step)
     {
-        while (current_time >= (total_time - 1))
+        /* Posun na událost platnou v current_time. Podmínka `current_time + 1
+         * >= total_time` je původní `current_time >= total_time - 1` bez
+         * podtečení: událost přesně na začátku snímku má count_ticks == 0 a
+         * `total_time - 1` by přetekl na maximum (kanál by celý snímek držel
+         * starou hodnotu). Index nepřekročí poslední událost. */
+        while ((current_time + 1 >= total_time) && (event_index + 1 < source->samples_count))
         {
-            if (event_index < source->samples_count)
-            {
-                event_index++;
-                total_time += source->samples[event_index].count_ticks;
-            }
-            else
-            {
-                total_time = log_count_samples;
-                break;
-            };
+            event_index++;
+            total_time += source->samples[event_index].count_ticks;
         };
 
         uint8_t current_value = source->samples[event_index].value;
@@ -322,18 +319,13 @@ float *iface_audio_resampler_process_psg_audio_log(int channel, const st_AUDIO_S
 
     for (size_t i = 0; i < samples_count; i++, current_time += step)
     {
-        while (current_time >= (total_time - 1))
+        /* Posun na událost platnou v current_time - bez podtečení při
+         * count_ticks == 0 a bez čtení za poslední událostí, viz
+         * iface_audio_resampler_process_audio_log(). */
+        while ((current_time + 1 >= total_time) && (event_index + 1 < source->samples_count))
         {
-            if (event_index < source->samples_count)
-            {
-                event_index++;
-                total_time += source->samples[event_index].count_ticks;
-            }
-            else
-            {
-                total_time = log_count_samples;
-                break;
-            };
+            event_index++;
+            total_time += source->samples[event_index].count_ticks;
         };
 
         uint8_t current_value = source->samples[event_index].value;

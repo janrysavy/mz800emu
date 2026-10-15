@@ -426,19 +426,41 @@ void test_cmd_set_reg_pc ( void ) {
 }
 
 
-void test_cmd_set_reg_ir_special_handling ( void ) {
-    /* Maintained API restores the COMPLETE I:R pair for snapshots/fixtures.
-     * Both I and programmable R bit 7 must change in both directions. */
-    const uint16_t values[] = { 0x55BB, 0x127F, 0x3480, 0x5600 };
-    for (unsigned n = 0; n < sizeof(values)/sizeof(values[0]); n++) {
-        g_mzarch_main.cpu->i = 0xAA;
-        g_mzarch_main.cpu->r = 0x80;
-        st_DBGAPI_REG_PARAM p = { (uint8_t)Z80_REG_IR, values[n] };
-        TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_SET_REG, &p, NULL ) );
-        TEST_ASSERT_EQUAL_HEX8 ( values[n] >> 8, g_mzarch_main.cpu->i );
-        TEST_ASSERT_EQUAL_HEX8 ( values[n] & 0xFF, g_mzarch_main.cpu->r );
-        TEST_ASSERT_EQUAL_HEX16 ( values[n], z80_get_reg(g_mzarch_main.cpu, Z80_REG_IR) );
-    }
+void test_cmd_set_reg_ir_writes_full_pair ( void ) {
+    /* IR = celý pár I:R včetně bitu 7 R (jako LD I,A + LD R,A), v obou
+     * směrech bitu 7. */
+    g_mzarch_main.cpu->i = 0xAA;
+    g_mzarch_main.cpu->r = 0x00;
+    st_DBGAPI_REG_PARAM p = { (uint8_t)Z80_REG_IR, 0x55BB };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_SET_REG, &p, NULL ) );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x55, g_mzarch_main.cpu->i );
+    TEST_ASSERT_EQUAL_HEX8 ( 0xBB, g_mzarch_main.cpu->r );
+
+    st_DBGAPI_REG_PARAM p2 = { (uint8_t)Z80_REG_IR, 0x1234 };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_SET_REG, &p2, NULL ) );
+    TEST_ASSERT_EQUAL_HEX16 ( 0x1234, z80_get_reg ( g_mzarch_main.cpu, Z80_REG_IR ) );
+}
+
+
+void test_cmd_set_cpu_flags_r_masks ( void ) {
+    /* UM_R (okno CPU): jen dolních 7 bitů, bit 7 zachová.
+     * UM_R_FULL (MCP): všech 8 bitů jako LD R,A. */
+    st_DBGAPI_CPU_FLAGS f;
+    memset ( &f, 0, sizeof ( f ) );
+    g_mzarch_main.cpu->r = 0x80;
+    f.update_mask = DBGAPI_CPU_FLAGS_UM_R;
+    f.r_reg = 0x3B;
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_SET_CPU_FLAGS, &f, NULL ) );
+    TEST_ASSERT_EQUAL_HEX8 ( 0xBB, g_mzarch_main.cpu->r );
+
+    f.update_mask = DBGAPI_CPU_FLAGS_UM_R_FULL;
+    f.r_reg = 0x3B;
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_SET_CPU_FLAGS, &f, NULL ) );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x3B, g_mzarch_main.cpu->r );
+
+    f.r_reg = 0xC4;
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_SET_CPU_FLAGS, &f, NULL ) );
+    TEST_ASSERT_EQUAL_HEX8 ( 0xC4, g_mzarch_main.cpu->r );
 }
 
 
@@ -1144,7 +1166,8 @@ int main ( int argc, char *argv[] ) {
     RUN_TEST ( test_cmd_get_reg_null_args_fail );
 
     RUN_TEST ( test_cmd_set_reg_pc );
-    RUN_TEST ( test_cmd_set_reg_ir_special_handling );
+    RUN_TEST ( test_cmd_set_reg_ir_writes_full_pair );
+    RUN_TEST ( test_cmd_set_cpu_flags_r_masks );
     RUN_TEST ( test_cmd_set_reg_invalid_id_fails );
     RUN_TEST ( test_cmd_set_reg_null_data_fails );
 

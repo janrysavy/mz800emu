@@ -70,6 +70,10 @@ jsou odmítnuty s chybou - pro vygenerovaný výpis použijte `--help`.
 | `--version` | - | Vypsat verzi, revizi, datum buildu, původ zdrojů (větev, commit, neuložené změny, pokud jsou k dispozici), překladač, zakompilované části, verze SDL a GLib a hostitelský OS, pak skončit. Funguje ve všech binárkách (`mz800emu`, `mz700emu-pal`, `mz700emu-ntsc`, `mz1500emu`) i s `--mcp-pipe`; emulátor ani okno se nespouští. |
 | `--console` | - | Pouze Windows: alokovat okno konzole pro stdout/stderr. |
 | `--run-mzf` | `<filepath>` | Po startu emulátoru automaticky načíst a spustit zadaný MZF soubor. |
+| `--cmt` | `<filepath>` | Po startu vložit pásku do virtuálního kazetofonu: `.mzf`, `.m12`, `.mzt`, `.tap`, `.wav` nebo `.wave`. Je-li zapnutý CMT hack, vypne se jen pro toto spuštění (v `.ini` zůstane původní nastavení). V okně se otevře okno Virtual CMT. Chybějící soubor nebo neznámá přípona = chyba a konec. |
+| `--cmt-play` | - | S `--cmt`: po vložení stisknout PLAY. Když emulátor startuje přes ROM, ROM při své inicializaci motor kazetofonu zastaví, takže páska čeká v PLAY + PAUSE; hned hraje jen spolu s `--run-mzf`. |
+| `--cmt-play-pause` | - | S `--cmt`: páska čeká v PLAY + PAUSE a rozjede se, až ROM nebo program zapne motor kazetofonu (např. `LOAD` v BASICu, nahrávání z monitoru). Nelze kombinovat s `--cmt-play`. |
+| `--cmt-boot` | - | Jen MZ-800, s `--cmt`: jako `--cmt-play-pause` a emulátor navíc od startu drží klávesu C, dokud ROM nezapne motor, takže bootovací nabídka nahraje program z pásky. Funguje v obou polohách přepínače režimu. Nelze kombinovat s `--run-mzf` ani s `--cmt-play`. |
 | `--cdl-mode` | `<off\|window\|always>` | Nastavit režim CDL (Memory Heatmap) recordingu. |
 | `--cdl-dir` | `<dirpath>` | Nastavit cílový adresář pro CDL export. Adresář se při exportu vytvoří, pokud neexistuje. |
 | `--cdl-name` | `<basename>` | Nastavit basename pro CDL export (bez `.json`). Plná cesta meta souboru je `<dir>/<name>.json`; per-region binární soubory se ukládají jako `<dir>/<name>_<region>.cdl`. |
@@ -109,6 +113,8 @@ jsou odmítnuty s chybou - pro vygenerovaný výpis použijte `--help`.
 | `--mode-switch` | `<700\|800>` | Jen MZ-800: poloha zadního přepínače režimu (SW1) - `700` = MZ-700 mód, `800` = MZ-800 mód. Přepínač čte ROM při spouštění programu. Přepíše hodnotu `[MZ800] mode_switch` z `.ini` (stejně jako menu Rear DIP Switch). Neplatná hodnota = chyba a konec. |
 | `--record` | `<soubor.avi>` | Zahájit nahrávání videa hned po startu. Viz [`video-recording.md`](video-recording.md). |
 | `--record-frames` | `<počet>` | Ukončit nahrávání videa po zadaném počtu snímků; v režimu `--headless` pak emulátor skončí. |
+| `--audio-capture` | `<složka>` | Spustit zachycení zvuku do složky hned po startu (úrovně kanálů, zápisy do PSG, reference.wav, sdl.wav; soubory se vybírají v Tools -> Audio Capture -> Settings...). Viz [`audio-capture.md`](audio-capture.md). |
+| `--audio-capture-frames` | `<počet>` | Ukončit zachycení zvuku po zadaném počtu snímků; v režimu `--headless` pak emulátor skončí. |
 
 ### Layout CDL exportu
 
@@ -245,6 +251,22 @@ hodnotu na všechny 4 subsystémy najednou. Per-subsystém option
 (`--cputrack-mode`, `--iorqlog-dir`, ...) má vždy precedenci - shorthand
 vyplní pouze ty subsystémy, kde uživatel per-subsys option nepředal.
 
+
+## Screenshoty
+
+Tools -> Screenshot -> Save Screenshot (`Alt + F`) uloží PNG obrazu
+zobrazeného v okně; oblast (s borderem nebo bez) a měřítko (nativní body nebo
+1x až 4x okna) se nastavují v Settings... Record Changed Frames
+(`Alt + Shift + F`) ukládá každý změněný emulovaný snímek pro hledání chyb
+v animacích. Podrobnosti viz [`screenshots.md`](screenshots.md).
+
+## Zachycení zvuku
+
+Tools -> Audio Capture -> Record Audio Capture (`Alt + Q`) zaznamená do nové
+složky, co dělá zvukový hardware: změny úrovní kanálů, zápisy do PSG, přesný
+zvuk a zvuk, který slyšíte (dva WAV k porovnání) - pro hledání chyb zvuku.
+Také z příkazové řádky (`--audio-capture`) a přes MCP. Podrobnosti viz
+[`audio-capture.md`](audio-capture.md).
 
 ## MAX SPEED benchmark
 

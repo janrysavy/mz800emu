@@ -161,6 +161,17 @@ void video_sdl3_set_surface_colormap(uint32_t *colormap, SDL_Surface *surface)
     iface_video_create_redraw_full_screen_request();
 }
 
+/**
+ * @brief Převede indexovaný surface (INDEX8 + paleta) na nový surface RGBA32.
+ *
+ * Čte po řádcích podle pitch zdroje i cíle: řádek surface může být delší
+ * než jeho šířka (zarovnání SDL), typicky u šířky, která není násobkem 4.
+ * Alfa je vždy 255.
+ *
+ * @param surface Zdrojový surface ve formátu SDL_PIXELFORMAT_INDEX8 s paletou.
+ * @return Nový surface RGBA32 (vlastní volající, uvolnit SDL_DestroySurface),
+ *         nebo NULL při chybě (špatný formát, chybí paleta, alokace).
+ */
 SDL_Surface *ConvertIndexedSurfaceToRGBA(SDL_Surface *surface)
 {
     if (!surface || surface->format != SDL_PIXELFORMAT_INDEX8)
@@ -186,23 +197,18 @@ SDL_Surface *ConvertIndexedSurfaceToRGBA(SDL_Surface *surface)
         return NULL;
     }
 
-    Uint8 *srcPixels = (Uint8 *)surface->pixels;
-    Uint32 *dstPixels = (Uint32 *)converted->pixels;
-    // Respect row pitch, including odd-width indexed UI/component surfaces.
+    const SDL_PixelFormatDetails *rgba = SDL_GetPixelFormatDetails(SDL_PIXELFORMAT_RGBA32);
+
+    // Kopírujeme a převádíme indexované pixely na RGBA, po řádcích podle pitch
     for (int y = 0; y < surface->h; y++)
-    for (int x = 0; x < surface->w; x++)
     {
-        int i = y * (converted->pitch / 4) + x;
-        Uint8 index = srcPixels[y * surface->pitch + x];               // Index v paletě
-        SDL_Color color = palette->colors[index]; // Skutečná barva
-        dstPixels[i] = SDL_MapRGBA(SDL_GetPixelFormatDetails(SDL_PIXELFORMAT_RGBA32), NULL, color.r, color.g, color.b, 255);
-#if 0
-        if (i == 0) {
-            SDL_Log("First pixel index: %d (R=%d G=%d B=%d A=%d)",
-                index,
-                color.r, color.g, color.b, color.a);
+        const Uint8 *srcRow = (const Uint8 *)surface->pixels + (size_t)y * surface->pitch;
+        Uint32 *dstRow = (Uint32 *)((Uint8 *)converted->pixels + (size_t)y * converted->pitch);
+        for (int x = 0; x < surface->w; x++)
+        {
+            SDL_Color color = palette->colors[srcRow[x]]; // Skutečná barva
+            dstRow[x] = SDL_MapRGBA(rgba, NULL, color.r, color.g, color.b, 255);
         };
-#endif
     };
     return converted;
 }
@@ -253,7 +259,11 @@ GLuint SDL_SurfaceToTexture(SDL_Surface *surface)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
+    /* Řádek surface může být delší než w * 4 (zarovnání SDL) - délku řádku
+     * v pixelech předáme OpenGL, jinak by se řádky posouvaly. */
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, surface->pitch / 4);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, surface->w, surface->h, 0, format, GL_UNSIGNED_BYTE, surface->pixels);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
     glBindTexture(GL_TEXTURE_2D, 0);
 

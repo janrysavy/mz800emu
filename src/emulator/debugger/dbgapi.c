@@ -48,6 +48,8 @@
 #include "stack_history.h"
 #include "callstack.h"
 #include "profiler.h"
+#include "profiler_pc.h"
+#include "audio_capture.h"
 #include "watch.h"
 #include "watch_emu_cache.h"  /* V1.D.2.C: dispatch-side mirror lookup */
 #include "bp_vars.h"
@@ -56,6 +58,8 @@
 #include "mhmap.h"
 #include "freeze/freeze.h"
 #include "png_encode.h"
+#include "screenshot/screenshot_capture.h"
+#include "screenshot/screenshot_series.h"
 #include "trace/eventlog.h"
 #include "trace/eventlog_trigger.h"
 #include "io_history.h"
@@ -67,7 +71,6 @@
 #include "snapshot/snapshot.h"
 #include "videorec/videorec.h"
 #include "iface/iface_audio.h"
-#include "audio.h"
 #include "symbols/sym_db.h"
 #include "mzarch/mzarch.h"
 #include "mzarch/mzarch_platform.h"
@@ -77,8 +80,6 @@
 #include "memory/memory.h"
 #if MZARCH == 800
 #include "mzarch/mz800/gdg/mz800_gdg.h"
-#include "mzarch/mz800/gdg/mz800_vramctrl.h"
-#include "mzarch/mz800/gdg/mz800_hwscroll.h"
 #elif MZARCH == 1500
 #include "mzarch/mz1500/gdg/mz1500_gdg.h"
 #elif MZARCH == 700
@@ -95,6 +96,8 @@
 #if MZARCH == 800
 #include "mzarch/mz800/mz800_main.h"
 #include "mzarch/mz800/mz800_iorq.h"
+#include "mzarch/mz800/gdg/mz800_vramctrl.h"
+#include "mzarch/mz800/gdg/mz800_hwscroll.h"
 #elif MZARCH == 1500
 #include "mzarch/mz1500/mz1500_main.h"
 #include "mzarch/mz1500/mz1500_iorq.h"
@@ -140,6 +143,67 @@
 #endif
 #include "iface/iface_video.h"
 #include "hw-generic/gdg/framebuffer.h"
+
+/**
+ * @brief Porovnání adres symbolů pro qsort (vzestupně).
+ */
+static int dbgapi_profiler_pc_addr_cmp ( const void *a, const void *b )
+{
+    uint16_t x = *(const uint16_t *) a, y = *(const uint16_t *) b;
+    return (int) x - (int) y;
+}
+
+
+/**
+ * @brief Doplní do řádků profileru podle PC nejbližší symbol (adresa <= pc).
+ *
+ * Bere jen globální symboly (bank_id 0, CPU pohled), stejně jako MCP
+ * symbol_lookup. Při více symbolech na jedné adrese rozhoduje priorita
+ * sym_db_lookup_by_addr (LBL > MAP > NOI > SYM).
+ *
+ * @param rows Řádky (vyplněné `r.pc`).
+ * @param n    Počet řádků.
+ * @post Řádky bez symbolu mají symbol "" a sym_offset 0.
+ * @note Volá se v emu vlákně jako ostatní MCP příkazy nad sym_db
+ *       (symbol_lookup, symbol_list).
+ */
+static void dbgapi_profiler_pc_fill_symbols ( st_DBGAPI_PROFILER_PC_ROW *rows, size_t n )
+{
+    for ( size_t i = 0; i < n; i++ ) {
+        rows[ i ].symbol[ 0 ] = '\0';
+        rows[ i ].sym_offset = 0;
+    };
+    size_t count = sym_db_count ( );
+    if ( n == 0 || count == 0 ) return;
+    uint16_t *addrs = (uint16_t *) g_malloc ( count * sizeof ( uint16_t ) );
+    size_t na = 0;
+    st_SYM_DB_ITER it;
+    sym_db_iter_init ( &it );
+    const st_SYMBOL *s;
+    while ( ( s = sym_db_iter_next ( &it ) ) != NULL && na < count ) {
+        if ( s->bank_id != 0 || s->addr > 0xFFFFu ) continue;
+        addrs[ na++ ] = (uint16_t) s->addr;
+    };
+    qsort ( addrs, na, sizeof ( uint16_t ), dbgapi_profiler_pc_addr_cmp );
+    for ( size_t i = 0; i < n; i++ ) {
+        uint16_t pc = rows[ i ].r.pc;
+        /* Binární hledání poslední adresy <= pc. */
+        size_t lo = 0, hi = na;
+        while ( lo < hi ) {
+            size_t mid = ( lo + hi ) / 2;
+            if ( addrs[ mid ] <= pc ) lo = mid + 1;
+            else hi = mid;
+        };
+        if ( lo == 0 ) continue;
+        uint16_t sa = addrs[ lo - 1 ];
+        const st_SYMBOL *sym = sym_db_lookup_by_addr ( sa, 0 );
+        if ( !sym || !sym->name ) continue;
+        g_strlcpy ( rows[ i ].symbol, sym->name, sizeof ( rows[ i ].symbol ) );
+        rows[ i ].sym_offset = (uint32_t) ( pc - sa );
+    };
+    g_free ( addrs );
+}
+
 
 /**
  * @brief Převede délky pulzů (sekundy) na pole µs v pořadí hlavičky CMTSPEED.
@@ -830,7 +894,6 @@ const char *dbgapi_cmd_to_str(en_DBGAPI_CMD cmd)
         case DBGAPI_CMD_DEBUGGER_STATE_RECOMPUTE:  return "debugger_state_recompute";
         /* video-capture Task 15 - video záznam */
         case DBGAPI_CMD_VIDEOREC:                  return "videorec";
-        case DBGAPI_CMD_AUDIO_CAPTURE:             return "audio_capture";
         /* ui-thread-writes T1 - historie a aktivita I/O */
         case DBGAPI_CMD_IO_HISTORY_SET_CAPACITY:   return "io_history_set_capacity";
         case DBGAPI_CMD_IO_HISTORY_CLEAR:          return "io_history_clear";
@@ -882,6 +945,9 @@ const char *dbgapi_cmd_to_str(en_DBGAPI_CMD cmd)
         case DBGAPI_CMD_INPUT_JOY_CLEAR:           return "input_joy_clear";
         case DBGAPI_CMD_HID_SCRIPT_START:          return "hid_script_start";
         case DBGAPI_CMD_HID_SCRIPT_CANCEL:         return "hid_script_cancel";
+        case DBGAPI_CMD_SCREENSHOT_SERIES:         return "screenshot_series";
+        case DBGAPI_CMD_PROFILER_PC:               return "profiler_pc";
+        case DBGAPI_CMD_AUDIO_CAPTURE:             return "audio_capture";
         /* V1.D.1 - Core + CPU extras Resources */
         case DBGAPI_CMD_GET_CPU_IM2_VECTOR:        return "get_cpu_im2_vector";
         case DBGAPI_CMD_GET_CPU_INTERRUPT_BUS:     return "get_cpu_interrupt_bus";
@@ -1681,9 +1747,10 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
 
         case DBGAPI_CMD_SET_REG:
             /* Zápis 16bitové hodnoty do Z80 registru. data_ptr:
-             * st_DBGAPI_REG_PARAM* (= reg_id + value). Pro IR registr
-             * je speciální handling (jen dolní bajt = R), shodný s
-             * debugger_change_z80_register(). Forward přes přímý
+             * st_DBGAPI_REG_PARAM* (= reg_id + value). IR zapíše celý pár
+             * I:R včetně bitu 7 R (jako LD I,A + LD R,A), aby šel přes MCP
+             * věrně obnovit stav CPU; okno CPU edituje I a R zvlášť přes
+             * SET_CPU_FLAGS (UM_I, UM_R). Forward přes přímý
              * z80_set_reg() bez pause check (= debugger_change funkce
              * dělá pause check pro UI vlákno; dbgapi je už v emu vlákně).
              *
@@ -1696,10 +1763,7 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 {
                     if ((z80_reg_t)p->reg_id == Z80_REG_IR)
                     {
-                        /* The API exposes IR as the complete I:R pair.
-                         * Restore both bytes, including programmable R bit7.
-                         * Preserving the UI's refresh-only edit semantics here
-                         * prevents faithful snapshot/CPU-state restoration. */
+                        /* Celý pár I:R (I = horní bajt, R = dolní bajt). */
                         z80_set_reg ( g_mzarch_main.cpu, Z80_REG_IR, p->value );
                     }
                     else
@@ -2239,11 +2303,17 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 {
                     cpu->i = p->i_reg;
                 };
-                if (p->update_mask & DBGAPI_CPU_FLAGS_UM_R)
+                if (p->update_mask & DBGAPI_CPU_FLAGS_UM_R_FULL)
                 {
-                    /* Legacy flags-tool semantics: edit the low seven refresh
-                     * bits, preserving programmed bit7. Use SET_REG IR for a
-                     * complete I:R restoration, including bit7. */
+                    /* Celý bajt jako LD R,A - jediná instrukce, která mění
+                     * bit 7 R (báze cpu/z80/09-r-register.md). Umožní věrně
+                     * obnovit stav CPU přes MCP. */
+                    cpu->r = p->r_reg;
+                }
+                else if (p->update_mask & DBGAPI_CPU_FLAGS_UM_R)
+                {
+                    /* Editace refresh čítače v okně CPU: dolních 7 bitů,
+                     * bit 7 R (mění ho jen LD R,A, M1 cykly ne) zachovat. */
                     cpu->r = (uint8_t)(p->r_reg & 0x7F)
                            | (cpu->r & 0x80);
                 };
@@ -4215,17 +4285,6 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
 
         /* --- Video záznam (video-capture Task 15) ---
          * Logika v dbgapi_videorec_execute(); handler jen validuje param. */
-        case DBGAPI_CMD_AUDIO_CAPTURE:
-        {
-            st_DBGAPI_AUDIO_CAPTURE_PARAM *p=(st_DBGAPI_AUDIO_CAPTURE_PARAM*)rq->data_ptr;
-#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
-            rq->success=p && EMULATOR_TEST_PAUSED && audio_capture_request(p->action,p->rate,p->max_frames,
-                                                    p->physical_clock,p->offset,p->limit,&p->json);
-#else
-            (void)p;rq->success=false;
-#endif
-            break;
-        }
         case DBGAPI_CMD_VIDEOREC:
         {
             st_DBGAPI_VIDEOREC_PARAM *p = (st_DBGAPI_VIDEOREC_PARAM *) rq->data_ptr;
@@ -5528,6 +5587,143 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             break;
         }
 
+        case DBGAPI_CMD_SCREENSHOT_SERIES:
+        {
+            /* Série screenshotů (screenshot_series.h): start, stop, stav.
+             * Stav se vrací vždy, i při chybě operace. */
+            st_DBGAPI_SCREENSHOT_SERIES_PARAM *p =
+                (st_DBGAPI_SCREENSHOT_SERIES_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            p->out_result = DBGAPI_SCREENSHOT_SERIES_RESULT_OK;
+            p->out_error[ 0 ] = 0;
+            switch ( p->op )
+            {
+                case DBGAPI_SCREENSHOT_SERIES_OP_START:
+                    if ( !screenshot_series_start ( &p->params, p->out_error, sizeof ( p->out_error ) ) )
+                    {
+                        p->out_result = DBGAPI_SCREENSHOT_SERIES_RESULT_FAILED;
+                    };
+                    break;
+                case DBGAPI_SCREENSHOT_SERIES_OP_STOP:
+                    if ( !screenshot_series_stop ( ) )
+                    {
+                        p->out_result = DBGAPI_SCREENSHOT_SERIES_RESULT_NOT_RUNNING;
+                        g_strlcpy ( p->out_error, "No frame series is running", sizeof ( p->out_error ) );
+                    };
+                    break;
+                case DBGAPI_SCREENSHOT_SERIES_OP_STATUS:
+                default:
+                    break;
+            };
+            screenshot_series_get_status ( &p->out_status );
+            rq->success = ( p->out_result == DBGAPI_SCREENSHOT_SERIES_RESULT_OK );
+            break;
+        }
+
+        case DBGAPI_CMD_AUDIO_CAPTURE:
+        {
+            /* Zachycení zvuku (audio_capture.h): start, stop, stav.
+             * Stav se vrací vždy, i při chybě operace. */
+            st_DBGAPI_AUDIO_CAPTURE_PARAM *p = (st_DBGAPI_AUDIO_CAPTURE_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            p->out_error[ 0 ] = 0;
+            switch ( p->op )
+            {
+                case DBGAPI_AUDIO_CAPTURE_OP_START:
+                    (void) audio_capture_start ( &p->params, p->out_error, sizeof ( p->out_error ) );
+                    break;
+                case DBGAPI_AUDIO_CAPTURE_OP_STOP:
+                    if ( !audio_capture_stop ( ) )
+                    {
+                        g_strlcpy ( p->out_error, "No audio capture is running", sizeof ( p->out_error ) );
+                    };
+                    break;
+                case DBGAPI_AUDIO_CAPTURE_OP_STATUS:
+                default:
+                    break;
+            };
+            audio_capture_get_status ( &p->out_status );
+            rq->success = ( p->out_error[ 0 ] == 0 );
+            break;
+        }
+
+        case DBGAPI_CMD_PROFILER_PC:
+        {
+            /* Profiler podle PC (profiler_pc.h). Souhrn se vrací vždy. */
+            st_DBGAPI_PROFILER_PC_PARAM *p = (st_DBGAPI_PROFILER_PC_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            p->out_error[ 0 ] = 0;
+            p->out_total = 0;
+            p->out_written = 0;
+            switch ( p->op )
+            {
+                case DBGAPI_PROFILER_PC_OP_START:
+                    if ( p->reset ) profiler_pc_reset ( );
+                    profiler_pc_set_active ( true );
+                    break;
+                case DBGAPI_PROFILER_PC_OP_STOP:
+                    profiler_pc_set_active ( false );
+                    break;
+                case DBGAPI_PROFILER_PC_OP_RESET:
+                    profiler_pc_reset ( );
+                    break;
+                case DBGAPI_PROFILER_PC_OP_GET:
+                {
+                    if ( !p->rows || p->rows_max == 0 )
+                    {
+                        p->out_total = profiler_pc_get_rows ( p->sort, p->lo, p->hi, NULL, 0 );
+                        break;
+                    };
+                    st_PROFILER_PC_ROW *tmp = (st_PROFILER_PC_ROW *) g_malloc ( p->rows_max * sizeof ( *tmp ) );
+                    p->out_total = profiler_pc_get_rows ( p->sort, p->lo, p->hi, tmp, p->rows_max );
+                    p->out_written = ( p->out_total < p->rows_max ) ? p->out_total : p->rows_max;
+                    for ( size_t i = 0; i < p->out_written; i++ )
+                    {
+                        p->rows[ i ].r = tmp[ i ];
+                    };
+                    g_free ( tmp );
+                    if ( p->with_symbols )
+                    {
+                        dbgapi_profiler_pc_fill_symbols ( p->rows, p->out_written );
+                    }
+                    else
+                    {
+                        for ( size_t i = 0; i < p->out_written; i++ )
+                        {
+                            p->rows[ i ].symbol[ 0 ] = '\0';
+                            p->rows[ i ].sym_offset = 0;
+                        };
+                    };
+                    break;
+                }
+                case DBGAPI_PROFILER_PC_OP_EXPORT:
+                {
+                    int n = profiler_pc_export_csv ( p->path, p->sort, p->out_error, sizeof ( p->out_error ) );
+                    if ( n >= 0 ) p->out_written = (size_t) n;
+                    else if ( !p->out_error[ 0 ] ) g_strlcpy ( p->out_error, "export failed", sizeof ( p->out_error ) );
+                    break;
+                }
+                default:
+                    g_strlcpy ( p->out_error, "unknown operation", sizeof ( p->out_error ) );
+                    break;
+            };
+            profiler_pc_get_summary ( &p->out_summary );
+            rq->success = ( p->out_error[ 0 ] == 0 );
+            break;
+        }
+
         /* --- V1.D.1: Core + CPU extras Resources -------------------- */
 
         case DBGAPI_CMD_GET_CPU_IM2_VECTOR:
@@ -6254,22 +6450,6 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             p->has_border_reg = 1;
             p->has_pal_group  = 1;
             p->has_cksw       = 1;
-            /* Side-effect-free chip mirrors; WF/RF are write-only on the bus. */
-            p->has_vram_format = 1;
-            p->regWF = (uint8_t)((g_vramctrl.regWF_PLANE & 0x0f)
-                | ((g_vramctrl.regWF_MODE & 7) << 5)
-                | (g_vramctrl.regWFRF_VBANK ? 0x10 : 0));
-            p->regRF = (uint8_t)((g_vramctrl.regRF_PLANE & 0x0f)
-                | (g_vramctrl.regRF_SEARCH ? 0x80 : 0)
-                | (g_vramctrl.regWFRF_VBANK ? 0x10 : 0));
-            /* Read the device on the emulator thread. No port read, cycle
-             * advance, register setter or guest RAM inference is involved. */
-            p->has_hw_scroll = 1;
-            p->hw_scroll_enabled = (uint8_t)(g_hwscroll.enabled != 0);
-            p->hw_scroll_ssa = (uint32_t)g_hwscroll.regSSA;
-            p->hw_scroll_sea = (uint32_t)g_hwscroll.regSEA;
-            p->hw_scroll_width = (uint32_t)g_hwscroll.regSW;
-            p->hw_scroll_offset = (uint32_t)g_hwscroll.regSOF;
             p->regBOR    = (uint8_t)( g_gdg.regBOR & 0xFFu );
             p->regPALGRP = (uint8_t)( g_gdg.regPALGRP & 0xFFu );
             p->cksw      = (uint8_t)( g_gdg.cksw & 0x01u );
@@ -6287,6 +6467,20 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
             p->palette[ 3 ] = (uint8_t)( g_gdg.regPAL3 & 0xFFu );
             /* entries 4..15 zůstávají 0 (placeholder; klient si dopočítá
              * podle regPAL0..3 + regPALGRP - viz hw/09-video-mz800-modes.md). */
+            /* Řadič VRAM (WF/RF) a HW scroll - jen MZ-800. Scroll v jednotkách
+             * portu (hwscroll_get_*), ne interní bajtové adresy plane. */
+            p->has_vramctrl = 1;
+            p->wf_mode      = (uint8_t)( g_vramctrl.regWF_MODE & 0x07u );
+            p->wf_plane     = (uint8_t)( g_vramctrl.regWF_PLANE & 0x0Fu );
+            p->rf_plane     = (uint8_t)( g_vramctrl.regRF_PLANE & 0x0Fu );
+            p->rf_search    = (uint8_t)( g_vramctrl.regRF_SEARCH & 0x01u );
+            p->wfrf_vbank   = (uint8_t)( g_vramctrl.regWFRF_VBANK & 0x01u );
+            p->has_hwscroll = 1;
+            p->hs_enabled   = (uint8_t)( g_hwscroll.enabled & 0x01u );
+            p->hs_sof       = (uint16_t) hwscroll_get_sof ( );
+            p->hs_ssa       = (uint8_t) hwscroll_get_ssa ( );
+            p->hs_sea       = (uint8_t) hwscroll_get_sea ( );
+            p->hs_sw        = (uint8_t) hwscroll_get_sw ( );
             memcpy ( p->platform, "mz800", 6 );
 #elif MZARCH == 1500
             /* MZ-1500: 8-entry palette `mode1500_color[8]`, žádný regBOR
@@ -6915,23 +7109,19 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
 
         case DBGAPI_CMD_GET_FRAME_SCREENSHOT_PNG:
         {
-            /* PNG screenshot - enkód plného framebufferu přes
-             * stb_image_write.h (viz png_encode.{c,h}).
+            /* PNG screenshot přes jádro screenshotu (screenshot_encode_png):
+             * oblast, měřítko a ořez podle p->opts (memset 0 = celý
+             * framebuffer 1:1, dřívější chování).
              *
              * Pixel acquisition je IDENTICKÁ jako GET_FRAME_SCREENSHOT_RAW
              * (= konzistence obrazu): INDEX8 buffer
              * g_iface_video->fbsnapshot_pixels (GUI cesta, pod
              * fbsnapshot_pixels_mutex), fallback na g_framebuffer.pixels
-             * (GDG live, headless). Expand na RGBA8888 přes paletu
-             * display_get_default_color_schema(), index = pixel & 0x0F.
+             * (GDG live, headless). Threading shodný s raw handlerem (krátký
+             * lock SDL path, GDG fallback bez locku v emu thread executoru).
              *
-             * Na rozdíl od raw nepoužíváme downscale - PNG je vždy plný
-             * frame (VIDEO_DISPLAY_WIDTH x VIDEO_DISPLAY_HEIGHT). Threading
-             * shodný s raw handlerem (krátký lock SDL path, GDG fallback
-             * bez locku v emu thread executoru).
-             *
-             * Buffer ownership: handler alokuje PNG stream (p->buffer)
-             * přes glib, dispatch ho po base64 uvolní g_free.
+             * Buffer ownership: PNG stream (p->buffer) alokuje jádro přes
+             * glib, dispatch ho po zápisu nebo base64 uvolní g_free.
              */
             st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM *p =
                 (st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM *) rq->data_ptr;
@@ -6940,56 +7130,10 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 rq->success = false;
                 break;
             };
-            /* Preserve request fields; this executor runs on the emulation thread. */
-            const uint8_t native = p->native_pixels, crop = p->crop_requested;
-            const uint32_t cx = p->crop_x, cy = p->crop_y;
-            const uint32_t cw = p->crop_width, ch = p->crop_height;
+            /* Vstupní volby přežijí vynulování výstupů. */
+            st_SCREENSHOT_OPTS opts = p->opts;
             memset ( p, 0, sizeof ( *p ) );
-            p->native_pixels = native;
-            p->crop_requested = crop;
-            p->crop_x = cx; p->crop_y = cy;
-
-            uint32_t w = (uint32_t) VIDEO_DISPLAY_WIDTH;
-            uint32_t h = (uint32_t) VIDEO_DISPLAY_HEIGHT;
-            uint32_t origin_x = 0, origin_y = 0, step_x = 1;
-            if ( native )
-            {
-#if MZARCH == 800
-                if ( GDG_MZ800_DMD_TEST_MZ700 )
-                {
-                    strcpy ( p->reason, "Native export requires MZ-800 graphics mode" );
-                    rq->success = true;
-                    break;
-                }
-                step_x = GDG_MZ800_DMD_TEST_SCRW640 ? 1 : 2;
-                w = VIDEO_CANVAS_WIDTH / step_x;
-                h = VIDEO_CANVAS_HEIGHT;
-                if ( crop && ( !cw || !ch || cx >= w || cy >= h || cw > w-cx || ch > h-cy ) )
-                {
-                    strcpy ( p->reason, "Crop outside native canvas" );
-                    rq->success = true;
-                    break;
-                }
-                origin_x = VIDEO_BORDER_LEFT_WIDTH + ( crop ? cx*step_x : 0 );
-                origin_y = VIDEO_BORDER_TOP_HEIGHT + ( crop ? cy : 0 );
-                if ( crop ) { w = cw; h = ch; }
-#else
-                strcpy ( p->reason, "Native export requires MZ-800 graphics mode" );
-                rq->success = true;
-                break;
-#endif
-            }
-            p->crop_width = w; p->crop_height = h;
-            p->horizontal_step = (uint8_t)step_x;
-            uint32_t *g_video_colormap = display_get_default_color_schema();
-            if ( !g_video_colormap )
-            {
-                /* Display modul ještě neinicializován. */
-                p->available = 0;
-                strcpy ( p->reason, "Display not initialized" );
-                rq->success = true;
-                break;
-            };
+            p->opts = opts;
 
             /* Výběr zdroje pixelů - viz raw handler pro threading detaily. */
             const uint8_t *src = NULL;
@@ -7018,56 +7162,28 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 break;
             };
 
-            p->source_screen_id = g_iface_video->fbsnapshot_screen_id;
-            p->fallback_source = sdl_locked ? SCREENSHOT_SRC_SDL_SNAPSHOT : SCREENSHOT_SRC_GDG_LIVE;
-            /* Retain the raster's colours. No filtering or palette substitution. */
-            uint8_t *rgba = (uint8_t *) g_malloc ( (gsize) w * h * 4 );
-            uint8_t *dst = rgba;
-            bool pairs_equal = true;
-            for ( uint32_t y = 0; y < h; y++ )
-            {
-                const uint8_t *src_row = src + (size_t)(origin_y+y)*VIDEO_DISPLAY_WIDTH + origin_x;
-                for ( uint32_t x = 0; x < w; x++ )
-                {
-                    uint8_t pix_idx = src_row[ x*step_x ] & 0x0Fu;
-                    if ( step_x == 2 && pix_idx != (src_row[x*step_x+1] & 0x0Fu) ) pairs_equal = false;
-                    uint32_t rgb = g_video_colormap[ pix_idx ];
-                    dst[ 0 ] = (uint8_t) ( ( rgb >> 16 ) & 0xFFu ); /* R */
-                    dst[ 1 ] = (uint8_t) ( ( rgb >> 8 ) & 0xFFu );  /* G */
-                    dst[ 2 ] = (uint8_t) ( rgb & 0xFFu );           /* B */
-                    dst[ 3 ] = 0xFF;                                /* A */
-                    dst += 4;
-                };
-            };
+            st_SCREENSHOT_PNG png;
+            bool encoded = screenshot_encode_png ( src, VIDEO_DISPLAY_WIDTH, &opts, &png,
+                                                   p->reason, sizeof ( p->reason ) );
             if ( sdl_locked )
             {
                 APP_MUTEX_UNLOCK ( g_iface_video->fbsnapshot_pixels_mutex );
             };
-            if ( !pairs_equal )
+            if ( !encoded )
             {
-                g_free ( rgba );
-                strcpy ( p->reason, "Unequal horizontal samples; use framebuffer export" );
-                rq->success = true;
-                break;
-            }
-
-            /* Enkód do PNG streamu (glib alokovaný buffer). */
-            size_t png_len = 0;
-            uint8_t *png = png_encode_rgba ( rgba, w, h, &png_len );
-            g_free ( rgba );
-            if ( !png || png_len == 0 )
-            {
-                g_free ( png );
+                /* Neplatné volby, neinicializovaný displej nebo chyba
+                 * enkódu - důvod je v p->reason. */
                 p->available = 0;
-                strcpy ( p->reason, "PNG encode failed" );
+                p->bad_opts  = png.bad_opts ? 1 : 0;
                 rq->success = true;
                 break;
             };
 
-            p->buffer      = png;
-            p->buffer_size = png_len;
-            p->width       = w;
-            p->height      = h;
+            p->buffer      = png.png;
+            p->buffer_size = png.png_len;
+            p->width       = png.width;
+            p->height      = png.height;
+            p->hires       = png.hires ? 1 : 0;
             p->available   = 1;
             rq->success = true;
             break;

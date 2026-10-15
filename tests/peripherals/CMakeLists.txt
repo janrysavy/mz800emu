@@ -34,11 +34,19 @@ mz_add_test(gdg_mirror
     LABELS   "emu;peripherals"
 )
 
-# Actual native raster prefix must retain the mapping before a register write.
-mz_add_test(gdg_scroll_causality
+# HW scroll MZ-800: zápis registru uprostřed řádku nesmí přemapovat pixely,
+# které paprsek už vykreslil; ladicí settery v jednotkách portu.
+mz_add_test(hwscroll
     TYPE     EMU
-    SOURCES  test_gdg_scroll_causality.c
-    LABELS   "emu;peripherals;gdg"
+    SOURCES  test_hwscroll.c
+    LABELS   "emu;peripherals"
+)
+
+# Retain the independent old/new raster-prefix regression from our fork.
+mz_add_test(gdg_scroll_causality
+    TYPE EMU
+    SOURCES test_gdg_scroll_causality.c
+    LABELS "emu;peripherals;gdg"
 )
 
 # Bootstrap --run-mzf (MZ-800 mód) nastavuje DMD cestou OUT CEh

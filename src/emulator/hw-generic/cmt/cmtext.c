@@ -107,6 +107,45 @@ st_CMTEXT* cmtext_get_extension ( const char *filename ) {
 }
 
 
+/**
+ * @brief Seznam přípon přehrávatelného rozšíření, nebo NULL.
+ *
+ * Rozšíření bez info, bez přípon nebo jen pro nahrávání vrací NULL.
+ */
+static char** cmtext_playable_fileexts ( const st_CMTEXT *ext ) {
+    if ( ( ext->info == NULL ) || ( !( ext->info->type & CMTEXT_TYPE_PLAYABLE ) ) ) return NULL;
+    return ext->info->fileext;
+}
+
+
+bool cmtext_is_playable_filename ( const char *filename ) {
+    if ( !filename ) return false;
+    const char *file_ext = cmtext_get_filename_extension ( filename );
+    if ( !file_ext ) return false;
+    for ( int i = 0; g_cmtext[i] != NULL; i++ ) {
+        char **exts = cmtext_playable_fileexts ( g_cmtext[i] );
+        for ( int j = 0; exts && exts[j] != NULL; j++ ) {
+            if ( 0 == strcasecmp ( file_ext, exts[j] ) ) return true;
+        };
+    };
+    return false;
+}
+
+
+void cmtext_get_playable_extensions_list ( char *buf, size_t size ) {
+    buf[0] = '\0';
+    size_t len = 0;
+    for ( int i = 0; g_cmtext[i] != NULL; i++ ) {
+        char **exts = cmtext_playable_fileexts ( g_cmtext[i] );
+        for ( int j = 0; exts && exts[j] != NULL; j++ ) {
+            int n = snprintf ( &buf[len], size - len, "%s.%s", ( len ? ", " : "" ), exts[j] );
+            if ( n < 0 || (size_t) n >= size - len ) return; /* zkrácený seznam */
+            len += (size_t) n;
+        };
+    };
+}
+
+
 st_CMTEXT* cmtext_get_recording_extension ( void ) {
     int i;
     for ( i = 0; i < g_count_extensions; i++ ) {

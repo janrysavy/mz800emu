@@ -81,6 +81,24 @@ void cmthack_load_rom_patch(unsigned enabled)
     cmthack_mzarch_load_rom_patch(enabled);
 }
 
+/** INI element `[CMTHACK] enable` (nastaví cmthack_init), pro připnutí INI hodnoty. */
+static CFGELM *s_cmthack_enable_elm = NULL;
+
+void cmthack_disable_for_session(void)
+{
+    if (!CMTHACK_TEST_IS_INSTALLED)
+    {
+        return;
+    };
+    cmthack_load_rom_patch(0);
+    if (s_cmthack_enable_elm)
+    {
+        /* Do INI se při ukončení zapíše 1 (stav před vypnutím), dokud
+         * uživatel hack sám nepřepne. */
+        cfgelement_pin_save_value(s_cmthack_enable_elm, 1);
+    };
+}
+
 void cmthack_reset(void)
 {
     /* pokud jsme rozecteny MZF soubor, tak ho zavrem */
@@ -120,6 +138,7 @@ void cmthack_init(void)
     elm = cfgmodule_register_new_element(cmod, "enable", CFGENTYPE_BOOL, DEFAULT_CMT_HACK_ENABLE);
     cfgelement_set_propagate_cb(elm, cmthack_propagatecfg_load_rom_patch, NULL);
     cfgelement_set_handlers(elm, NULL, (void *)&g_cmthack.load_patch_installed);
+    s_cmthack_enable_elm = elm;
 
     elm = cfgmodule_register_new_element(cmod, "fix_fname_terminator", CFGENTYPE_BOOL, DEFAULT_CMT_HACK_FIX_TERMINATOR);
     cfgelement_set_handlers(elm, (void *)&g_cmthack.fix_fname_terminator, (void *)&g_cmthack.fix_fname_terminator);

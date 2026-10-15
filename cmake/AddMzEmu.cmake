@@ -115,6 +115,7 @@ function(mz_add_emulator target mzarch tvsys)
         src/emulator/debugger
         src/emulator/snapshot
         src/emulator/videorec
+        src/emulator/screenshot
         src/emulator/mcp
     )
 
@@ -256,6 +257,7 @@ function(mz_add_pipe_emulator_disabled target mzarch tvsys)
         src/emulator/debugger
         src/emulator/snapshot
         src/emulator/videorec
+        src/emulator/screenshot
         src/emulator/mcp
     )
     # Pro pipe target VŠECHNY src/emulator/mcp/ soubory zůstávají (vč.

@@ -477,8 +477,6 @@ static en_MCP_DISPATCH_RESULT _handle_trace_save(const st_JSONL_MESSAGE *req,
                                                  char **out_response);
 
 /* video-capture Task 15 - video záznam fwd decls */
-static en_MCP_DISPATCH_RESULT _handle_audio_capture(const st_JSONL_MESSAGE *req,
-                                                  char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_videorec_start(const st_JSONL_MESSAGE *req,
                                                      char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_videorec_stop(const st_JSONL_MESSAGE *req,
@@ -491,6 +489,31 @@ static en_MCP_DISPATCH_RESULT _handle_videorec_status(const st_JSONL_MESSAGE *re
                                                       char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_videorec_timebase(const st_JSONL_MESSAGE *req,
                                                         char **out_response);
+/* screenshot-series fwd decls */
+static en_MCP_DISPATCH_RESULT _handle_screenshot_series_start(const st_JSONL_MESSAGE *req,
+                                                              char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_screenshot_series_stop(const st_JSONL_MESSAGE *req,
+                                                             char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_screenshot_series_status(const st_JSONL_MESSAGE *req,
+                                                               char **out_response);
+/* pc-stats - profiler podle PC fwd decls */
+static en_MCP_DISPATCH_RESULT _handle_profiler_pc_start(const st_JSONL_MESSAGE *req,
+                                                        char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_profiler_pc_stop(const st_JSONL_MESSAGE *req,
+                                                       char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_profiler_pc_reset(const st_JSONL_MESSAGE *req,
+                                                        char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_profiler_pc_get(const st_JSONL_MESSAGE *req,
+                                                      char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_profiler_pc_export(const st_JSONL_MESSAGE *req,
+                                                         char **out_response);
+/* audio-capture fwd decls */
+static en_MCP_DISPATCH_RESULT _handle_audio_capture_start(const st_JSONL_MESSAGE *req,
+                                                          char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_audio_capture_stop(const st_JSONL_MESSAGE *req,
+                                                         char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_audio_capture_status(const st_JSONL_MESSAGE *req,
+                                                           char **out_response);
 
 /* V1.A.7 - Profiler Tools fwd decls */
 static en_MCP_DISPATCH_RESULT _handle_profiler_start(const st_JSONL_MESSAGE *req,
@@ -1103,7 +1126,6 @@ static const st_MCP_CMD_MAP_ENTRY g_cmd_map[] = {
     /* video-capture Task 15 - video záznam (všechny platformy). Přidáno na KONEC
      * tabulky kvůli stabilitě pozičního indexu v hello supported_commands. */
     { "videorec_start",          DBGAPI_CMD_VIDEOREC,                 _handle_videorec_start          },
-    { "audio_capture",          DBGAPI_CMD_AUDIO_CAPTURE,            _handle_audio_capture          },
     { "videorec_stop",           DBGAPI_CMD_VIDEOREC,                 _handle_videorec_stop           },
     { "videorec_pause",          DBGAPI_CMD_VIDEOREC,                 _handle_videorec_pause          },
     { "videorec_marker",         DBGAPI_CMD_VIDEOREC,                 _handle_videorec_marker         },
@@ -1115,6 +1137,25 @@ static const st_MCP_CMD_MAP_ENTRY g_cmd_map[] = {
      * Přidáno na KONEC tabulky kvůli stabilitě pozičního indexu v hello
      * supported_commands. */
     { "media_run_mzf",           DBGAPI_CMD_MEDIA_RUN_MZF,            _handle_media_run_mzf           },
+    /* Série screenshotů (každý změněný emulovaný snímek jako PNG). Přidáno na
+     * KONEC tabulky kvůli stabilitě pozičního indexu v hello supported_commands. */
+    { "screenshot_series_start",  DBGAPI_CMD_SCREENSHOT_SERIES,       _handle_screenshot_series_start  },
+    { "screenshot_series_stop",   DBGAPI_CMD_SCREENSHOT_SERIES,       _handle_screenshot_series_stop   },
+    { "screenshot_series_status", DBGAPI_CMD_SCREENSHOT_SERIES,       _handle_screenshot_series_status },
+    /* Profiler podle PC (počet, T-stavy a WAIT pro každou adresu instrukce).
+     * Přidáno na KONEC tabulky kvůli stabilitě pozičního indexu v hello
+     * supported_commands. */
+    { "profiler_pc_start",        DBGAPI_CMD_PROFILER_PC,             _handle_profiler_pc_start        },
+    { "profiler_pc_stop",         DBGAPI_CMD_PROFILER_PC,             _handle_profiler_pc_stop         },
+    { "profiler_pc_reset",        DBGAPI_CMD_PROFILER_PC,             _handle_profiler_pc_reset        },
+    { "profiler_pc_get",          DBGAPI_CMD_PROFILER_PC,             _handle_profiler_pc_get          },
+    { "profiler_pc_export",       DBGAPI_CMD_PROFILER_PC,             _handle_profiler_pc_export       },
+    /* Zachycení zvuku do složky (události kanálů, zápisy PSG, reference.wav,
+     * sdl.wav). Přidáno na KONEC tabulky kvůli stabilitě pozičního indexu
+     * v hello supported_commands. */
+    { "audio_capture_start",      DBGAPI_CMD_AUDIO_CAPTURE,           _handle_audio_capture_start      },
+    { "audio_capture_stop",       DBGAPI_CMD_AUDIO_CAPTURE,           _handle_audio_capture_stop       },
+    { "audio_capture_status",     DBGAPI_CMD_AUDIO_CAPTURE,           _handle_audio_capture_status     },
     /* sentinel */
     { NULL,              DBGAPI_CMD_NONE,              NULL                  },
 };
@@ -2218,7 +2259,8 @@ static en_MCP_DISPATCH_RESULT _handle_set_cpu_flags(
                                  MCP_DISPATCH_INVALID_PARAMS, out_response);
         }
         param.r_reg = (uint8_t)r;
-        param.update_mask |= DBGAPI_CPU_FLAGS_UM_R;
+        /* MCP zapisuje celý bajt jako LD R,A (včetně bitu 7). */
+        param.update_mask |= DBGAPI_CPU_FLAGS_UM_R_FULL;
     }
 
     if (param.update_mask == 0) {
@@ -2253,7 +2295,7 @@ static en_MCP_DISPATCH_RESULT _handle_set_cpu_flags(
         json_array_add_string_element(updated, "i");
         json_object_set_int_member(values, "i", (gint64)param.i_reg);
     }
-    if (param.update_mask & DBGAPI_CPU_FLAGS_UM_R) {
+    if (param.update_mask & DBGAPI_CPU_FLAGS_UM_R_FULL) {
         json_array_add_string_element(updated, "r");
         json_object_set_int_member(values, "r", (gint64)param.r_reg);
     }
@@ -6799,74 +6841,6 @@ static en_MCP_DISPATCH_RESULT _handle_callstack_get(const st_JSONL_MESSAGE *req,
  *
  * Response: `{"started": true, "mode": "always"}`.
  */
-static en_MCP_DISPATCH_RESULT _handle_cdl_start(const st_JSONL_MESSAGE *req,
-                                                 char **out_response) {
-    int64_t req_id = jsonl_msg_get_req_id(req);
-    if (!_submit_dbgapi(DBGAPI_CMD_CDL_START, NULL, NULL)) {
-        return _err_response(req_id, "cdl_start failed",
-                             MCP_DISPATCH_EMU_ERROR, out_response);
-    }
-    JsonObject *resp = json_object_new();
-    json_object_set_boolean_member(resp, "started", TRUE);
-    json_object_set_string_member(resp, "mode", "always");
-    return _ok_response(req_id, resp, out_response);
-}
-
-
-/**
- * @brief `cdl_stop` handler - vypne Memory Heatmap recording.
- *
- * Bez parametrů. Forward na DBGAPI_CMD_CDL_STOP. Data zůstávají
- * zachovaná v g_mhmap - klient může před stop volat `cdl_export`
- * nebo později `cdl_reset`.
- *
- * Response: `{"stopped": true, "mode": "off"}`.
- */
-static en_MCP_DISPATCH_RESULT _handle_instruction_coverage(const st_JSONL_MESSAGE *req,
-                                                         char **out_response) {
-    int64_t id=jsonl_msg_get_req_id(req);
-    const char *action=strrchr(jsonl_msg_get_cmd(req),'.')+1;
-    st_DBGAPI_INSTRUCTION_COVERAGE_PARAM p={0};p.reset=true;p.limit=256;
-    p.action=!strcmp(action,"start") ? 0 : !strcmp(action,"stop") ? 1 :
-             !strcmp(action,"reset") ? 2 : !strcmp(action,"status") ? 3 : 4;
-    JsonNode *node=(JsonNode *)jsonl_msg_get_data_node(req);
-    if (node && json_node_get_node_type(node)!=JSON_NODE_NULL) {
-        if (json_node_get_node_type(node)!=JSON_NODE_OBJECT)
-            return _err_response(id,"params must be an object",MCP_DISPATCH_INVALID_PARAMS,out_response);
-        JsonObject *obj=json_node_get_object(node);
-        GList *keys=json_object_get_members(obj);bool valid=true;
-        for(GList *it=keys;it;it=it->next) {
-            const char *key=it->data;JsonNode *value=json_object_get_member(obj,key);
-            if (p.action==0 && !strcmp(key,"reset") && JSON_NODE_HOLDS_VALUE(value) &&
-                json_node_get_value_type(value)==G_TYPE_BOOLEAN) p.reset=json_node_get_boolean(value);
-            else if (JSON_NODE_HOLDS_VALUE(value) && json_node_get_value_type(value)==G_TYPE_INT64 &&
-                ((p.action==0 && !strcmp(key,"capacity")) ||
-                 (p.action==4 && (!strcmp(key,"offset") || !strcmp(key,"limit"))))) {
-                gint64 n=json_node_get_int(value);
-                if (n<0 || n>1048576) valid=false;
-                else if (!strcmp(key,"capacity")) {
-                    p.capacity=(uint32_t)n;
-                    if (n<256 || (n & (n-1))) valid=false;
-                } else if (!strcmp(key,"offset")) p.offset=(uint32_t)n;
-                else {p.limit=(uint32_t)n;if (!n || n>1024) valid=false;}
-            } else valid=false;
-        }
-        g_list_free(keys);
-        if (!valid) return _err_response(id,"invalid detailed coverage parameters",MCP_DISPATCH_INVALID_PARAMS,out_response);
-    }
-    if (!_submit_dbgapi(DBGAPI_CMD_INSTRUCTION_COVERAGE,&p,NULL)) {
-        g_free(p.json);
-        return _err_response(id,"detailed coverage requires a paused emulator (except status) and compatible capacity",MCP_DISPATCH_EMU_ERROR,out_response);
-    }
-    JsonParser *parser=json_parser_new();
-    if (!p.json || !json_parser_load_from_data(parser,p.json,-1,NULL)) {
-        g_free(p.json);g_object_unref(parser);
-        return _err_response(id,"detailed coverage serialization failed",MCP_DISPATCH_EMU_ERROR,out_response);
-    }
-    JsonObject *result=json_object_ref(json_node_get_object(json_parser_get_root(parser)));
-    g_free(p.json);g_object_unref(parser);return _ok_response(id,result,out_response);
-}
-
 static en_MCP_DISPATCH_RESULT _handle_pc_coverage(const st_JSONL_MESSAGE *req,
                                                  char **out_response) {
     int64_t req_id = jsonl_msg_get_req_id(req);
@@ -6924,6 +6898,74 @@ static en_MCP_DISPATCH_RESULT _handle_pc_coverage(const st_JSONL_MESSAGE *req,
     return _ok_response(req_id, data, out_response);
 }
 
+static en_MCP_DISPATCH_RESULT _handle_instruction_coverage(const st_JSONL_MESSAGE *req,
+                                                         char **out_response) {
+    int64_t id=jsonl_msg_get_req_id(req);
+    const char *action=strrchr(jsonl_msg_get_cmd(req),'.')+1;
+    st_DBGAPI_INSTRUCTION_COVERAGE_PARAM p={0};p.reset=true;p.limit=256;
+    p.action=!strcmp(action,"start") ? 0 : !strcmp(action,"stop") ? 1 :
+             !strcmp(action,"reset") ? 2 : !strcmp(action,"status") ? 3 : 4;
+    JsonNode *node=(JsonNode *)jsonl_msg_get_data_node(req);
+    if (node && json_node_get_node_type(node)!=JSON_NODE_NULL) {
+        if (json_node_get_node_type(node)!=JSON_NODE_OBJECT)
+            return _err_response(id,"params must be an object",MCP_DISPATCH_INVALID_PARAMS,out_response);
+        JsonObject *obj=json_node_get_object(node);
+        GList *keys=json_object_get_members(obj);bool valid=true;
+        for(GList *it=keys;it;it=it->next) {
+            const char *key=it->data;JsonNode *value=json_object_get_member(obj,key);
+            if (p.action==0 && !strcmp(key,"reset") && JSON_NODE_HOLDS_VALUE(value) &&
+                json_node_get_value_type(value)==G_TYPE_BOOLEAN) p.reset=json_node_get_boolean(value);
+            else if (JSON_NODE_HOLDS_VALUE(value) && json_node_get_value_type(value)==G_TYPE_INT64 &&
+                ((p.action==0 && !strcmp(key,"capacity")) ||
+                 (p.action==4 && (!strcmp(key,"offset") || !strcmp(key,"limit"))))) {
+                gint64 n=json_node_get_int(value);
+                if (n<0 || n>1048576) valid=false;
+                else if (!strcmp(key,"capacity")) {
+                    p.capacity=(uint32_t)n;
+                    if (n<256 || (n & (n-1))) valid=false;
+                } else if (!strcmp(key,"offset")) p.offset=(uint32_t)n;
+                else {p.limit=(uint32_t)n;if (!n || n>1024) valid=false;}
+            } else valid=false;
+        }
+        g_list_free(keys);
+        if (!valid) return _err_response(id,"invalid detailed coverage parameters",MCP_DISPATCH_INVALID_PARAMS,out_response);
+    }
+    if (!_submit_dbgapi(DBGAPI_CMD_INSTRUCTION_COVERAGE,&p,NULL)) {
+        g_free(p.json);
+        return _err_response(id,"detailed coverage requires a paused emulator (except status) and compatible capacity",MCP_DISPATCH_EMU_ERROR,out_response);
+    }
+    JsonParser *parser=json_parser_new();
+    if (!p.json || !json_parser_load_from_data(parser,p.json,-1,NULL)) {
+        g_free(p.json);g_object_unref(parser);
+        return _err_response(id,"detailed coverage serialization failed",MCP_DISPATCH_EMU_ERROR,out_response);
+    }
+    JsonObject *result=json_object_ref(json_node_get_object(json_parser_get_root(parser)));
+    g_free(p.json);g_object_unref(parser);return _ok_response(id,result,out_response);
+}
+
+static en_MCP_DISPATCH_RESULT _handle_cdl_start(const st_JSONL_MESSAGE *req,
+                                                 char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    if (!_submit_dbgapi(DBGAPI_CMD_CDL_START, NULL, NULL)) {
+        return _err_response(req_id, "cdl_start failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    JsonObject *resp = json_object_new();
+    json_object_set_boolean_member(resp, "started", TRUE);
+    json_object_set_string_member(resp, "mode", "always");
+    return _ok_response(req_id, resp, out_response);
+}
+
+
+/**
+ * @brief `cdl_stop` handler - vypne Memory Heatmap recording.
+ *
+ * Bez parametrů. Forward na DBGAPI_CMD_CDL_STOP. Data zůstávají
+ * zachovaná v g_mhmap - klient může před stop volat `cdl_export`
+ * nebo později `cdl_reset`.
+ *
+ * Response: `{"stopped": true, "mode": "off"}`.
+ */
 static en_MCP_DISPATCH_RESULT _handle_cdl_stop(const st_JSONL_MESSAGE *req,
                                                 char **out_response) {
     int64_t req_id = jsonl_msg_get_req_id(req);
@@ -7368,65 +7410,6 @@ static int _videorec_member(JsonObject *obj, const char *key, GType type) {
     if (!n || json_node_is_null(n)) return 0;
     if (json_node_get_node_type(n) != JSON_NODE_VALUE) return -1;
     return (json_node_get_value_type(n) == type) ? 1 : -1;
-}
-
-/* Passive native sound observation. All capture state and chip access are
- * serialized on the emulator owner thread, through the same debugger queue. */
-static en_MCP_DISPATCH_RESULT _handle_audio_capture(const st_JSONL_MESSAGE *req,char **out_response)
-{
-    int64_t id=jsonl_msg_get_req_id(req);
-    JsonObject *obj=_videorec_data_obj(req);
-    if (!obj || _videorec_member(obj,"action",G_TYPE_STRING)!=1)
-        return _err_response(id,"audio_capture requires action",MCP_DISPATCH_INVALID_PARAMS,out_response);
-    GList *keys=json_object_get_members(obj);
-    for (GList *k=keys;k;k=k->next) {
-        const char *name=(const char*)k->data;
-        if (strcmp(name,"action") && strcmp(name,"section") && strcmp(name,"sample_rate") &&
-            strcmp(name,"max_frames") && strcmp(name,"physical_clock") && strcmp(name,"offset") && strcmp(name,"limit")) {
-            g_list_free(keys);return _err_response(id,"Unknown audio_capture parameter",MCP_DISPATCH_INVALID_PARAMS,out_response);
-        }
-    }
-    g_list_free(keys);
-    st_DBGAPI_AUDIO_CAPTURE_PARAM p={0};p.rate=48000;p.max_frames=480000;p.limit=2048;p.physical_clock=true;
-    const char *action=json_object_get_string_member(obj,"action");
-    if (!strcmp(action,"start")) p.action=0;
-    else if (!strcmp(action,"stop")) p.action=1;
-    else if (!strcmp(action,"status")) p.action=2;
-    else if (!strcmp(action,"read")) {
-        if (_videorec_member(obj,"section",G_TYPE_STRING)!=1)
-            return _err_response(id,"audio read requires section",MCP_DISPATCH_INVALID_PARAMS,out_response);
-        const char *section=json_object_get_string_member(obj,"section");
-        if (!strcmp(section,"raw_pcm"))p.action=3;
-        else if (!strcmp(section,"filtered_pcm"))p.action=4;
-        else if (!strcmp(section,"events"))p.action=5;
-        else if (!strcmp(section,"writes"))p.action=6;
-        else return _err_response(id,"Unknown audio section",MCP_DISPATCH_INVALID_PARAMS,out_response);
-    } else return _err_response(id,"Unknown audio action",MCP_DISPATCH_INVALID_PARAMS,out_response);
-    const char *numeric[]={"sample_rate","max_frames","offset","limit"};
-    unsigned *values[]={&p.rate,&p.max_frames,&p.offset,&p.limit};
-    for (unsigned i=0;i<4;i++) {
-        int present=_videorec_member(obj,numeric[i],G_TYPE_INT64);
-        if (present<0)return _err_response(id,"Audio numeric parameter must be integer",MCP_DISPATCH_INVALID_PARAMS,out_response);
-        if (present) {
-            gint64 n=json_object_get_int_member(obj,numeric[i]);
-            if (n<0 || n>1920000)return _err_response(id,"Audio parameter outside bounds",MCP_DISPATCH_INVALID_PARAMS,out_response);
-            *values[i]=(unsigned)n;
-        }
-    }
-    int has_clock=_videorec_member(obj,"physical_clock",G_TYPE_BOOLEAN);
-    if (has_clock<0)return _err_response(id,"physical_clock must be boolean",MCP_DISPATCH_INVALID_PARAMS,out_response);
-    if (has_clock)p.physical_clock=json_object_get_boolean_member(obj,"physical_clock");
-    if (!p.limit || p.limit>4096)
-        return _err_response(id,"Audio page limit must be 1..4096",MCP_DISPATCH_INVALID_PARAMS,out_response);
-    if (!_submit_dbgapi(DBGAPI_CMD_AUDIO_CAPTURE,&p,NULL)) {
-        g_free(p.json);return _err_response(id,"Audio capture unavailable, invalid or emulator not paused",MCP_DISPATCH_EMU_ERROR,out_response);
-    }
-    JsonParser *parser=json_parser_new();
-    if (!p.json || !json_parser_load_from_data(parser,p.json,-1,NULL)) {
-        g_free(p.json);g_object_unref(parser);return _err_response(id,"Audio capture serialization failed",MCP_DISPATCH_EMU_ERROR,out_response);
-    }
-    JsonObject *result=json_object_ref(json_node_get_object(json_parser_get_root(parser)));
-    g_free(p.json);g_object_unref(parser);return _ok_response(id,result,out_response);
 }
 
 /**
@@ -12292,7 +12275,11 @@ static en_MCP_DISPATCH_RESULT _handle_get_periph_beeper(
  *    "regDMD": int, "regBOR": int, "regPALGRP": int, "regct53g7": int,
  *    "beam_row": int, "total_screens": int, "total_ticks": int,
  *    "sts_vsync": int, "sts_hsync": int, "hbln": int, "vbln": int,
- *    "cksw": int, "tempo": int, "tempo_divider": int}
+ *    "cksw": int, "tempo": int, "tempo_divider": int,
+ *    jen MZ-800: "vramctrl": {"wf_mode": str, "wf_mode_code": int,
+ *      "wf_planes": int, "rf_planes": int, "rf_search": bool, "vbank": int},
+ *    "hwscroll": {"enabled": bool, "sof": int, "ssa": int, "sea": int,
+ *      "sw": int} (scroll v jednotkách portu)}
  */
 static en_MCP_DISPATCH_RESULT _handle_get_periph_gdg(
     const st_JSONL_MESSAGE *req, char **out_response) {
@@ -12315,22 +12302,6 @@ static en_MCP_DISPATCH_RESULT _handle_get_periph_gdg(
     json_object_set_boolean_member(resp, "has_pal_group",  param.has_pal_group ? TRUE : FALSE);
     json_object_set_boolean_member(resp, "has_cksw",       param.has_cksw ? TRUE : FALSE);
     json_object_set_int_member(resp,    "regDMD",       (gint64)param.regDMD);
-    json_object_set_boolean_member(resp, "has_vram_format", param.has_vram_format ? TRUE : FALSE);
-    if (param.has_vram_format) {
-        json_object_set_int_member(resp, "regWF", (gint64)param.regWF);
-        json_object_set_int_member(resp, "regRF", (gint64)param.regRF);
-    }
-    json_object_set_boolean_member(resp, "has_hw_scroll", param.has_hw_scroll ? TRUE : FALSE);
-    if (param.has_hw_scroll) {
-        JsonObject *scroll = json_object_new();
-        json_object_set_int_member(scroll, "ssa", (gint64)param.hw_scroll_ssa);
-        json_object_set_int_member(scroll, "sea", (gint64)param.hw_scroll_sea);
-        json_object_set_int_member(scroll, "width", (gint64)param.hw_scroll_width);
-        json_object_set_int_member(scroll, "offset", (gint64)param.hw_scroll_offset);
-        json_object_set_boolean_member(scroll, "enabled", param.hw_scroll_enabled ? TRUE : FALSE);
-        json_object_set_string_member(scroll, "units", "plane-bytes");
-        json_object_set_object_member(resp, "hw_scroll", scroll);
-    }
     json_object_set_int_member(resp,    "regBOR",       (gint64)param.regBOR);
     json_object_set_int_member(resp,    "regPALGRP",    (gint64)param.regPALGRP);
     json_object_set_int_member(resp,    "regct53g7",    (gint64)param.regct53g7);
@@ -12344,6 +12315,32 @@ static en_MCP_DISPATCH_RESULT _handle_get_periph_gdg(
     json_object_set_int_member(resp,    "cksw",         (gint64)param.cksw);
     json_object_set_int_member(resp,    "tempo",        (gint64)param.tempo);
     json_object_set_int_member(resp,    "tempo_divider", (gint64)param.tempo_divider);
+    /* MZ-800: řadič VRAM (WF/RF) - objekt jen tam, kde existuje. Kódy 5 a 7
+     * emulátor neukládá (GDG při WM2 = 1 ignoruje WM0, báze
+     * hw/10a-vram-rf-wf.md), tabulka je pro úplnost mapuje jako 4 a 6. */
+    if (param.has_vramctrl) {
+        static const char *const wf_mode_names[8] = {
+            "single", "exor", "or", "reset", "replace", "replace", "pset", "pset"
+        };
+        JsonObject *vc = json_object_new();
+        json_object_set_string_member(vc,  "wf_mode",      wf_mode_names[param.wf_mode & 0x07u]);
+        json_object_set_int_member(vc,     "wf_mode_code", (gint64)param.wf_mode);
+        json_object_set_int_member(vc,     "wf_planes",    (gint64)param.wf_plane);
+        json_object_set_int_member(vc,     "rf_planes",    (gint64)param.rf_plane);
+        json_object_set_boolean_member(vc, "rf_search",    param.rf_search ? TRUE : FALSE);
+        json_object_set_int_member(vc,     "vbank",        (gint64)param.wfrf_vbank);
+        json_object_set_object_member(resp, "vramctrl", vc);
+    }
+    /* MZ-800: HW scroll v jednotkách portu. */
+    if (param.has_hwscroll) {
+        JsonObject *hs = json_object_new();
+        json_object_set_boolean_member(hs, "enabled", param.hs_enabled ? TRUE : FALSE);
+        json_object_set_int_member(hs,     "sof",     (gint64)param.hs_sof);
+        json_object_set_int_member(hs,     "ssa",     (gint64)param.hs_ssa);
+        json_object_set_int_member(hs,     "sea",     (gint64)param.hs_sea);
+        json_object_set_int_member(hs,     "sw",      (gint64)param.hs_sw);
+        json_object_set_object_member(resp, "hwscroll", hs);
+    }
     /* Paleta array, jen palette_count platných entries. */
     JsonArray *pal_arr = json_array_new();
     unsigned pn = param.palette_count;
@@ -12829,57 +12826,11 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot_raw(
  *   pokud available=false:
  *   {"available": false, "reason": str}
  */
-/* Shared PNG options for base64 and server-side file output. */
-static bool _png_options(const st_JSONL_MESSAGE *req, st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM *p) {
-    JsonNode *node = (JsonNode *)jsonl_msg_get_data_node(req);
-    if (!node) return true;
-    if (json_node_get_node_type(node) != JSON_NODE_OBJECT) return false;
-    JsonObject *obj = json_node_get_object(node);
-    if (json_object_has_member(obj, "projection")) {
-        JsonNode *v = json_object_get_member(obj, "projection");
-        if (json_node_get_value_type(v) != G_TYPE_STRING) return false;
-        const char *s = json_node_get_string(v);
-        if (strcmp(s, "native") == 0) p->native_pixels = 1;
-        else if (strcmp(s, "framebuffer") != 0) return false;
-    }
-    if (json_object_has_member(obj, "crop")) {
-        JsonNode *v = json_object_get_member(obj, "crop");
-        if (!p->native_pixels || json_node_get_node_type(v) != JSON_NODE_OBJECT) return false;
-        JsonObject *c = json_node_get_object(v);
-        const char *keys[] = {"x", "y", "width", "height"};
-        uint32_t *values[] = {&p->crop_x, &p->crop_y, &p->crop_width, &p->crop_height};
-        if (json_object_get_size(c) != 4) return false;
-        for (int i=0; i<4; i++) {
-            if (!json_object_has_member(c, keys[i])) return false;
-            JsonNode *n = json_object_get_member(c, keys[i]);
-            if (json_node_get_value_type(n) != G_TYPE_INT64) return false;
-            gint64 value = json_node_get_int(n);
-            if (value < 0 || value > UINT32_MAX) return false;
-            *values[i] = (uint32_t)value;
-        }
-        p->crop_requested = 1;
-    }
-    return true;
-}
-
-static void _png_metadata(JsonObject *resp, const st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM *p) {
-    json_object_set_string_member(resp, "projection", p->native_pixels ? "native" : "framebuffer");
-    json_object_set_string_member(resp, "source", p->fallback_source == SCREENSHOT_SRC_GDG_LIVE ? "gdg_live" : "sdl_snapshot");
-    json_object_set_int_member(resp, "source_screen_id", p->source_screen_id);
-    json_object_set_int_member(resp, "horizontal_samples_per_pixel", p->horizontal_step);
-    json_object_set_int_member(resp, "crop_x", p->crop_x);
-    json_object_set_int_member(resp, "crop_y", p->crop_y);
-    json_object_set_string_member(resp, "palette", "emulator_display_rgb");
-}
-
 static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot(
     const st_JSONL_MESSAGE *req, char **out_response) {
     int64_t req_id = jsonl_msg_get_req_id(req);
     st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM param;
     memset(&param, 0, sizeof(param));
-    if (!_png_options(req, &param)) {
-        return _err_response(req_id, "Invalid PNG projection/crop", MCP_DISPATCH_INVALID_PARAMS, out_response);
-    }
     if (!_submit_dbgapi(DBGAPI_CMD_GET_FRAME_SCREENSHOT_PNG, &param, NULL)) {
         return _err_response(req_id, "get_frame_screenshot failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
@@ -12900,9 +12851,88 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot(
     json_object_set_int_member(resp,     "height",    (gint64)param.height);
     json_object_set_int_member(resp,     "byte_size", (gint64)param.buffer_size);
     json_object_set_string_member(resp,  "data_b64",  b64 ? b64 : "");
-    _png_metadata(resp, &param);
     g_free(b64);
     return _ok_response(req_id, resp, out_response);
+}
+
+
+/**
+ * @brief Načte volby screenshotu (area, scale, crop) z parametrů requestu.
+ *
+ * - `area`  (string): "full" (výchozí) nebo "canvas",
+ * - `scale` (string nebo int): "framebuffer" (výchozí), "native", 1..4
+ *           (poměr stran okna, 2 = okno na 100 %),
+ * - `crop`  (objekt {x, y, width, height}): výřez ve výstupních pixelech,
+ *           jen se scale "framebuffer" nebo "native".
+ *
+ * Chybějící klíč = výchozí hodnota (dřívější chování: celý framebuffer 1:1).
+ *
+ * @param obj      Parametry requestu (může být NULL = výchozí volby).
+ * @param opts     Výstup.
+ * @param err      Buffer na anglický popis chyby.
+ * @param err_size Velikost `err`.
+ * @return true = volby načteny; false = neplatná hodnota (popis v `err`).
+ */
+static bool _screenshot_opts_from_json(JsonObject *obj, st_SCREENSHOT_OPTS *opts,
+                                       char *err, size_t err_size) {
+    screenshot_opts_init(opts);
+    if (!obj) return true;
+
+    if (json_object_has_member(obj, "area")) {
+        char *area = _obj_str_dup(obj, "area");
+        bool ok = area && screenshot_area_from_string(area, &opts->area);
+        g_free(area);
+        if (!ok) {
+            g_strlcpy(err, "'area' must be 'full' or 'canvas'", err_size);
+            return false;
+        }
+    }
+
+    if (json_object_has_member(obj, "scale")) {
+        JsonNode *n = json_object_get_member(obj, "scale");
+        bool ok = false;
+        if (n && json_node_get_node_type(n) == JSON_NODE_VALUE) {
+            GType t = json_node_get_value_type(n);
+            if (t == G_TYPE_STRING) {
+                ok = screenshot_scale_from_string(json_node_get_string(n),
+                                                  &opts->scale_mode, &opts->window_scale);
+            } else if (t == G_TYPE_INT64) {
+                gint64 v = json_node_get_int(n);
+                if (v >= 1 && v <= SCREENSHOT_WINDOW_SCALE_MAX) {
+                    opts->scale_mode = SCREENSHOT_SCALE_WINDOW;
+                    opts->window_scale = (unsigned)v;
+                    ok = true;
+                }
+            }
+        }
+        if (!ok) {
+            g_strlcpy(err, "'scale' must be 'framebuffer', 'native' or 1 to 4", err_size);
+            return false;
+        }
+    }
+
+    if (json_object_has_member(obj, "crop")) {
+        JsonNode *n = json_object_get_member(obj, "crop");
+        if (!n || json_node_get_node_type(n) != JSON_NODE_OBJECT) {
+            g_strlcpy(err, "'crop' must be an object {x, y, width, height}", err_size);
+            return false;
+        }
+        JsonObject *c = json_node_get_object(n);
+        gint64 x = _obj_int_or(c, "x", -1);
+        gint64 y = _obj_int_or(c, "y", -1);
+        gint64 w = _obj_int_or(c, "width", -1);
+        gint64 h = _obj_int_or(c, "height", -1);
+        if (x < 0 || y < 0 || w <= 0 || h <= 0 || x > 0xFFFF || y > 0xFFFF || w > 0xFFFF || h > 0xFFFF) {
+            g_strlcpy(err, "'crop' needs non-negative x, y and positive width, height", err_size);
+            return false;
+        }
+        opts->crop = true;
+        opts->crop_x = (unsigned)x;
+        opts->crop_y = (unsigned)y;
+        opts->crop_w = (unsigned)w;
+        opts->crop_h = (unsigned)h;
+    }
+    return true;
 }
 
 
@@ -12919,10 +12949,17 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot(
  * Parametry (data):
  *   - `path`   (string, povinné)   - cílová cesta na disku serveru
  *   - `format` (string, volitelné) - jen "png" (default); jiné = chyba
+ *   - `area`   (string, volitelné) - "full" (default) / "canvas"
+ *   - `scale`  (string|int, volitelné) - "framebuffer" (default), "native",
+ *              1..4 (poměr stran okna, 2 = okno na 100 %)
+ *   - `crop`   (objekt, volitelné) - {x, y, width, height} ve výstupních
+ *              pixelech, jen se scale "framebuffer" nebo "native"
+ *   Viz _screenshot_opts_from_json(); neplatné volby = INVALID_PARAMS.
  *
  * Layout response (available=true):
  *   {"available": true, "path": str, "format": "png",
- *    "width": N, "height": N, "byte_size": N}
+ *    "width": N, "height": N, "byte_size": N,
+ *    "area": str, "scale": str, "hires": bool (jen scale "native")}
  *   available=false (framebuffer ještě nevykreslen):
  *   {"available": false, "reason": str}
  *
@@ -12957,17 +12994,27 @@ static en_MCP_DISPATCH_RESULT _handle_screenshot_save_to_file(
     }
     g_free(format);
 
+    /* Oblast, měřítko a ořez (výchozí = celý framebuffer 1:1). */
+    st_SCREENSHOT_OPTS opts;
+    char opts_err[128];
+    if (!_screenshot_opts_from_json(data_obj, &opts, opts_err, sizeof(opts_err))) {
+        g_free(path);
+        return _err_response(req_id, opts_err, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+
     /* PNG capture - stejná emu-thread cesta jako get_frame_screenshot. */
     st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM param;
     memset(&param, 0, sizeof(param));
-    if (!_png_options(req, &param)) {
-        g_free(path);
-        return _err_response(req_id, "Invalid PNG projection/crop", MCP_DISPATCH_INVALID_PARAMS, out_response);
-    }
+    param.opts = opts;
     if (!_submit_dbgapi(DBGAPI_CMD_GET_FRAME_SCREENSHOT_PNG, &param, NULL)) {
         g_free(path);
         return _err_response(req_id, "get_frame_screenshot failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    if (!param.available && param.bad_opts) {
+        /* Neplatné volby (např. ořez mimo obraz) - chyba parametrů. */
+        g_free(path);
+        return _err_response(req_id, param.reason, MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
     if (!param.available) {
         JsonObject *resp = json_object_new();
@@ -13002,7 +13049,11 @@ static en_MCP_DISPATCH_RESULT _handle_screenshot_save_to_file(
     json_object_set_int_member(resp,     "width",     (gint64)param.width);
     json_object_set_int_member(resp,     "height",    (gint64)param.height);
     json_object_set_int_member(resp,     "byte_size", (gint64)param.buffer_size);
-    _png_metadata(resp, &param);
+    json_object_set_string_member(resp,  "area",  screenshot_area_to_string(opts.area));
+    json_object_set_string_member(resp,  "scale", screenshot_scale_to_string(opts.scale_mode, opts.window_scale));
+    if (opts.scale_mode == SCREENSHOT_SCALE_NATIVE) {
+        json_object_set_boolean_member(resp, "hires", param.hires ? TRUE : FALSE);
+    }
     g_free(path);
     return _ok_response(req_id, resp, out_response);
 }
@@ -14037,6 +14088,536 @@ static en_MCP_DISPATCH_RESULT _handle_eventlog_get_event(
     json_object_set_int_member(data, "pc", param.pc);
     json_object_set_int_member(data, "payload", (gint64)param.payload);
     return _ok_response(req_id, data, out_response);
+}
+
+
+/* ============================================================================
+ *  screenshot-series: série PNG každého (změněného) emulovaného snímku
+ * ============================================================================ */
+
+/**
+ * @brief Stav série jako JSON objekt (z out_status parametru dbgapi).
+ * @param st Stav.
+ * @return Nový JsonObject (vlastní volající).
+ */
+static JsonObject *_screenshot_series_status_json(const st_SCREENSHOT_SERIES_STATUS *st) {
+    JsonObject *o = json_object_new();
+    json_object_set_boolean_member(o, "active",  st->active);
+    json_object_set_boolean_member(o, "writing", st->writing);
+    json_object_set_int_member(o, "frames_seen", (gint64) st->frames_seen);
+    json_object_set_int_member(o, "files",       (gint64) st->files);
+    json_object_set_int_member(o, "unchanged",   (gint64) st->unchanged);
+    json_object_set_string_member(o, "dir",         st->dir);
+    json_object_set_string_member(o, "stop_reason", st->stop_reason);
+    json_object_set_string_member(o, "last_error",  st->last_error);
+    return o;
+}
+
+/**
+ * @brief Provede DBGAPI_CMD_SCREENSHOT_SERIES.
+ *
+ * @param p       Parametr (op vyplněn).
+ * @param err_out Výstup: anglický text chyby operace (ukazuje do p->out_error
+ *                nebo na statický text), NULL = operace proběhla.
+ * @return false = příkaz se nepodařilo předat emu vláknu (bez textu chyby).
+ */
+static bool _screenshot_series_submit(st_DBGAPI_SCREENSHOT_SERIES_PARAM *p, const char **err_out) {
+    p->out_result = DBGAPI_SCREENSHOT_SERIES_RESULT_FAILED;
+    p->out_error[0] = '\0';
+    bool ok = _submit_dbgapi(DBGAPI_CMD_SCREENSHOT_SERIES, p, NULL);
+    if (ok) {
+        *err_out = NULL;
+        return true;
+    }
+    /* Handler proběhl, ale operace selhala (out_error vyplněn) - jinak
+     * se příkaz vůbec nepředal. */
+    *err_out = p->out_error[0] ? p->out_error : NULL;
+    return *err_out != NULL;
+}
+
+/**
+ * @brief `screenshot_series_start` handler - spustí sérii screenshotů.
+ *
+ * Parametry (všechny volitelné):
+ *   - `dir`          (string) - adresář série; chybí = nový podadresář výstupní
+ *                    složky screenshotů (`<platforma>_frames_RRRRMMDD_HHMMSS`),
+ *   - `area`, `scale`, `crop` - jako screenshot_save_to_file, ale výchozí
+ *                    `scale` je "native",
+ *   - `only_changed` (bool, výchozí true) - jen snímky odlišné od posledního
+ *                    uloženého (posuzuje se výsledek v oblasti, měřítku a ořezu),
+ *   - `frames`       (int >= 0) - po tolika emulovaných snímcích stop (0 = do stop),
+ *   - `max_files`    (int >= 0) - pojistka počtu souborů (0 = 10000).
+ *
+ * Response: stav série (viz _screenshot_series_status_json) + area, scale,
+ * only_changed. První snímek se zachytí na nejbližším konci emulovaného
+ * snímku (série snímá jen za běhu emulace). Neplatné parametry =>
+ * INVALID_PARAMS, běžící série nebo nelze vytvořit adresář => EMU_ERROR.
+ */
+static en_MCP_DISPATCH_RESULT _handle_screenshot_series_start(const st_JSONL_MESSAGE *req,
+                                                              char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    st_DBGAPI_SCREENSHOT_SERIES_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_SCREENSHOT_SERIES_OP_START;
+    screenshot_series_params_init(&p.params);
+
+    char opts_err[128];
+    if (!_screenshot_opts_from_json(obj, &p.params.opts, opts_err, sizeof(opts_err))) {
+        return _err_response(req_id, opts_err, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (!obj || !json_object_has_member(obj, "scale")) {
+        p.params.opts.scale_mode = SCREENSHOT_SCALE_NATIVE;
+    }
+    int has_dir = _videorec_member(obj, "dir", G_TYPE_STRING);
+    int has_only = _videorec_member(obj, "only_changed", G_TYPE_BOOLEAN);
+    int has_frames = _videorec_member(obj, "frames", G_TYPE_INT64);
+    int has_max = _videorec_member(obj, "max_files", G_TYPE_INT64);
+    if (has_dir < 0 || has_only < 0 || has_frames < 0 || has_max < 0) {
+        return _err_response(req_id,
+                             "Invalid parameters: dir must be a string, only_changed a boolean, "
+                             "frames and max_files integers",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    gint64 frames = has_frames ? json_object_get_int_member(obj, "frames") : 0;
+    gint64 max_files = has_max ? json_object_get_int_member(obj, "max_files") : 0;
+    if (frames < 0 || max_files < 0 || max_files > G_MAXUINT) {
+        return _err_response(req_id, "Invalid parameters: frames and max_files must be >= 0",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (has_dir) g_strlcpy(p.params.dir, json_object_get_string_member(obj, "dir"), sizeof(p.params.dir));
+    if (has_only) p.params.only_changed = json_object_get_boolean_member(obj, "only_changed");
+    p.params.frames = (uint64_t) frames;
+    p.params.max_files = (unsigned) max_files;
+
+    const char *err = NULL;
+    if (!_screenshot_series_submit(&p, &err) || err) {
+        return _err_response(req_id, err ? err : "screenshot_series command failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    JsonObject *resp = _screenshot_series_status_json(&p.out_status);
+    json_object_set_string_member(resp, "area",  screenshot_area_to_string(p.params.opts.area));
+    json_object_set_string_member(resp, "scale", screenshot_scale_to_string(p.params.opts.scale_mode,
+                                                                            p.params.opts.window_scale));
+    json_object_set_boolean_member(resp, "only_changed", p.params.only_changed);
+    return _ok_response(req_id, resp, out_response);
+}
+
+/**
+ * @brief `screenshot_series_stop` handler - ukončí snímání série.
+ *
+ * Parametr `wait` (bool, výchozí true): počkat (max 30 s), až zapisovací
+ * vlákno dopíše frontu - pak `writing` = false a `files` je konečné.
+ * Response: stav série. Bez běžící série chyba "No frame series is running".
+ */
+static en_MCP_DISPATCH_RESULT _handle_screenshot_series_stop(const st_JSONL_MESSAGE *req,
+                                                             char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    int has_wait = _videorec_member(obj, "wait", G_TYPE_BOOLEAN);
+    if (has_wait < 0) {
+        return _err_response(req_id, "Invalid parameters: wait must be a boolean",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    bool wait = has_wait ? json_object_get_boolean_member(obj, "wait") : true;
+
+    st_DBGAPI_SCREENSHOT_SERIES_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_SCREENSHOT_SERIES_OP_STOP;
+    const char *err = NULL;
+    if (!_screenshot_series_submit(&p, &err) || err) {
+        return _err_response(req_id, err ? err : "screenshot_series command failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    for (int i = 0; wait && p.out_status.writing && i < 3000; i++) {
+        g_usleep(10000);
+        memset(&p, 0, sizeof(p));
+        p.op = DBGAPI_SCREENSHOT_SERIES_OP_STATUS;
+        if (!_screenshot_series_submit(&p, &err)) break;
+    }
+    return _ok_response(req_id, _screenshot_series_status_json(&p.out_status), out_response);
+}
+
+/**
+ * @brief `screenshot_series_status` handler - stav běžící nebo poslední série.
+ *
+ * Bez parametrů. Response: stav série (active, writing, frames_seen, files,
+ * unchanged, dir, stop_reason, last_error).
+ */
+static en_MCP_DISPATCH_RESULT _handle_screenshot_series_status(const st_JSONL_MESSAGE *req,
+                                                               char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    st_DBGAPI_SCREENSHOT_SERIES_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_SCREENSHOT_SERIES_OP_STATUS;
+    const char *err = NULL;
+    if (!_screenshot_series_submit(&p, &err)) {
+        return _err_response(req_id, "screenshot_series command failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    return _ok_response(req_id, _screenshot_series_status_json(&p.out_status), out_response);
+}
+
+
+
+
+/* ============================================================================
+ *  pc-stats: profiler podle PC (počet, T-stavy a WAIT na adresu instrukce)
+ * ============================================================================ */
+
+/**
+ * @brief Souhrn profileru podle PC jako JSON objekt.
+ * @param s Souhrn.
+ * @return Nový JsonObject (vlastní volající).
+ */
+static JsonObject *_profiler_pc_summary_json(const st_PROFILER_PC_SUMMARY *s) {
+    JsonObject *o = json_object_new();
+    json_object_set_boolean_member(o, "active", s->active);
+    json_object_set_int_member(o, "instructions",    (gint64) s->instructions);
+    json_object_set_int_member(o, "tstates",         (gint64) s->tstates);
+    json_object_set_int_member(o, "wait",            (gint64) s->wait);
+    json_object_set_int_member(o, "halt_idle",       (gint64) s->halt_idle);
+    json_object_set_int_member(o, "other_tstates",   (gint64) s->other_tstates);
+    json_object_set_int_member(o, "elapsed_tstates", (gint64) s->elapsed_tstates);
+    json_object_set_int_member(o, "unique_pcs",      (gint64) s->unique_pcs);
+    return o;
+}
+
+/**
+ * @brief Přečte volitelné `sort` ("tstates", "count", "wait", "addr").
+ * @param obj  Data požadavku (může být NULL).
+ * @param def  Řazení, když parametr chybí.
+ * @param out  Výstup.
+ * @return false = neplatná hodnota.
+ */
+static bool _profiler_pc_sort_param(JsonObject *obj, en_PROFILER_PC_SORT def, en_PROFILER_PC_SORT *out) {
+    *out = def;
+    int has = _videorec_member(obj, "sort", G_TYPE_STRING);
+    if (has < 0) return false;
+    if (!has) return true;
+    const char *s = json_object_get_string_member(obj, "sort");
+    if (strcmp(s, "tstates") == 0) { *out = PROFILER_PC_SORT_TSTATES; return true; }
+    if (strcmp(s, "count") == 0)   { *out = PROFILER_PC_SORT_COUNT;   return true; }
+    if (strcmp(s, "wait") == 0)    { *out = PROFILER_PC_SORT_WAIT;    return true; }
+    if (strcmp(s, "addr") == 0)    { *out = PROFILER_PC_SORT_ADDR;    return true; }
+    return false;
+}
+
+/**
+ * @brief Provede operaci bez řádků a vrátí souhrn (start, stop, reset).
+ * @param req          Požadavek.
+ * @param p            Parametr (op vyplněn).
+ * @param out_response Výstup JSON.
+ * @return Výsledek dispatch.
+ */
+static en_MCP_DISPATCH_RESULT _profiler_pc_simple(const st_JSONL_MESSAGE *req,
+                                                  st_DBGAPI_PROFILER_PC_PARAM *p,
+                                                  char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    if (!_submit_dbgapi(DBGAPI_CMD_PROFILER_PC, p, NULL)) {
+        return _err_response(req_id, p->out_error[0] ? p->out_error : "profiler_pc command failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    return _ok_response(req_id, _profiler_pc_summary_json(&p->out_summary), out_response);
+}
+
+/**
+ * @brief `profiler_pc_start` handler - zapne sběr profileru podle PC.
+ *
+ * Parametr `reset` (bool, výchozí true): vynulovat data před startem.
+ * Response: souhrn (viz _profiler_pc_summary_json).
+ */
+static en_MCP_DISPATCH_RESULT _handle_profiler_pc_start(const st_JSONL_MESSAGE *req,
+                                                        char **out_response) {
+    JsonObject *obj = _videorec_data_obj(req);
+    int has_reset = _videorec_member(obj, "reset", G_TYPE_BOOLEAN);
+    if (has_reset < 0) {
+        return _err_response(jsonl_msg_get_req_id(req), "Invalid parameters: reset must be a boolean",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    st_DBGAPI_PROFILER_PC_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_PROFILER_PC_OP_START;
+    p.reset = has_reset ? json_object_get_boolean_member(obj, "reset") : true;
+    return _profiler_pc_simple(req, &p, out_response);
+}
+
+/**
+ * @brief `profiler_pc_stop` handler - vypne sběr, data zůstanou.
+ *
+ * Bez parametrů. Response: souhrn.
+ */
+static en_MCP_DISPATCH_RESULT _handle_profiler_pc_stop(const st_JSONL_MESSAGE *req,
+                                                       char **out_response) {
+    st_DBGAPI_PROFILER_PC_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_PROFILER_PC_OP_STOP;
+    return _profiler_pc_simple(req, &p, out_response);
+}
+
+/**
+ * @brief `profiler_pc_reset` handler - vynuluje data (stav sběru nemění).
+ *
+ * Bez parametrů. Response: souhrn.
+ */
+static en_MCP_DISPATCH_RESULT _handle_profiler_pc_reset(const st_JSONL_MESSAGE *req,
+                                                        char **out_response) {
+    st_DBGAPI_PROFILER_PC_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_PROFILER_PC_OP_RESET;
+    return _profiler_pc_simple(req, &p, out_response);
+}
+
+/**
+ * @brief `profiler_pc_get` handler - nejvytíženější adresy inline.
+ *
+ * Parametry (volitelné): `sort` ("tstates" výchozí, "count", "wait", "addr"),
+ * `limit` (1..DBGAPI_PROFILER_PC_ROWS_MAX, výchozí 50), `from` a `to`
+ * (rozsah adres včetně, výchozí 0..65535).
+ *
+ * Response: souhrn + `sort`, `total_rows` (adres s vykonáním v rozsahu)
+ * a `rows` [{pc, count, tstates, wait, tstates_pct, avg_tstates, symbol,
+ * sym_offset}]; symbol = nejbližší symbol na adrese <= pc ("" = žádný).
+ */
+static en_MCP_DISPATCH_RESULT _handle_profiler_pc_get(const st_JSONL_MESSAGE *req,
+                                                      char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    en_PROFILER_PC_SORT sort;
+    if (!_profiler_pc_sort_param(obj, PROFILER_PC_SORT_TSTATES, &sort)) {
+        return _err_response(req_id, "Invalid parameters: sort must be tstates, count, wait or addr",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    int has_limit = _videorec_member(obj, "limit", G_TYPE_INT64);
+    int has_from = _videorec_member(obj, "from", G_TYPE_INT64);
+    int has_to = _videorec_member(obj, "to", G_TYPE_INT64);
+    if (has_limit < 0 || has_from < 0 || has_to < 0) {
+        return _err_response(req_id, "Invalid parameters: limit, from and to must be integers",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    gint64 limit = has_limit ? json_object_get_int_member(obj, "limit") : 50;
+    gint64 from = has_from ? json_object_get_int_member(obj, "from") : 0;
+    gint64 to = has_to ? json_object_get_int_member(obj, "to") : 0xFFFF;
+    if (limit < 1 || limit > DBGAPI_PROFILER_PC_ROWS_MAX || from < 0 || from > 0xFFFF
+        || to < 0 || to > 0xFFFF || to < from) {
+        return _err_response(req_id, "Invalid parameters: limit must be 1..1000, "
+                             "0 <= from <= to <= 65535",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    st_DBGAPI_PROFILER_PC_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_PROFILER_PC_OP_GET;
+    p.sort = sort;
+    p.lo = (uint16_t) from;
+    p.hi = (uint16_t) to;
+    p.with_symbols = true;
+    p.rows_max = (size_t) limit;
+    p.rows = g_new0(st_DBGAPI_PROFILER_PC_ROW, p.rows_max);
+    if (!_submit_dbgapi(DBGAPI_CMD_PROFILER_PC, &p, NULL)) {
+        g_free(p.rows);
+        return _err_response(req_id, p.out_error[0] ? p.out_error : "profiler_pc_get failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    JsonObject *resp = _profiler_pc_summary_json(&p.out_summary);
+    static const char *const sort_names[] = { "tstates", "count", "wait", "addr" };
+    json_object_set_string_member(resp, "sort", sort_names[sort]);
+    json_object_set_int_member(resp, "total_rows", (gint64) p.out_total);
+    JsonArray *arr = json_array_new();
+    for (size_t i = 0; i < p.out_written; i++) {
+        const st_DBGAPI_PROFILER_PC_ROW *r = &p.rows[i];
+        JsonObject *item = json_object_new();
+        json_object_set_int_member(item, "pc", r->r.pc);
+        json_object_set_int_member(item, "count", (gint64) r->r.count);
+        json_object_set_int_member(item, "tstates", (gint64) r->r.tstates);
+        json_object_set_int_member(item, "wait", (gint64) r->r.wait);
+        double pct = p.out_summary.tstates
+                   ? 100.0 * (double) r->r.tstates / (double) p.out_summary.tstates : 0.0;
+        json_object_set_double_member(item, "tstates_pct", pct);
+        json_object_set_double_member(item, "avg_tstates",
+                                      r->r.count ? (double) r->r.tstates / (double) r->r.count : 0.0);
+        json_object_set_string_member(item, "symbol", r->symbol);
+        json_object_set_int_member(item, "sym_offset", r->sym_offset);
+        json_array_add_object_element(arr, item);
+    }
+    json_object_set_array_member(resp, "rows", arr);
+    g_free(p.rows);
+    return _ok_response(req_id, resp, out_response);
+}
+
+/**
+ * @brief `profiler_pc_export` handler - všechny adresy do CSV.
+ *
+ * Parametry: `path` (string, povinný; soubor se přepíše), `sort` (volitelný,
+ * výchozí "addr", jinak jako u profiler_pc_get). Response: souhrn + `path` a `rows` (zapsané
+ * řádky). Chyba zápisu => EMU_ERROR s textem.
+ */
+static en_MCP_DISPATCH_RESULT _handle_profiler_pc_export(const st_JSONL_MESSAGE *req,
+                                                         char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    en_PROFILER_PC_SORT sort;
+    if (!_profiler_pc_sort_param(obj, PROFILER_PC_SORT_ADDR, &sort)) {
+        return _err_response(req_id, "Invalid parameters: sort must be tstates, count, wait or addr",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (_videorec_member(obj, "path", G_TYPE_STRING) != 1
+        || !json_object_get_string_member(obj, "path")[0]) {
+        return _err_response(req_id, "Invalid parameters: path must be a non-empty string",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    const char *path = json_object_get_string_member(obj, "path");
+    st_DBGAPI_PROFILER_PC_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_PROFILER_PC_OP_EXPORT;
+    p.sort = sort;
+    p.path = path;
+    if (!_submit_dbgapi(DBGAPI_CMD_PROFILER_PC, &p, NULL)) {
+        return _err_response(req_id, p.out_error[0] ? p.out_error : "profiler_pc_export failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    JsonObject *resp = _profiler_pc_summary_json(&p.out_summary);
+    json_object_set_string_member(resp, "path", path);
+    json_object_set_int_member(resp, "rows", (gint64) p.out_written);
+    return _ok_response(req_id, resp, out_response);
+}
+
+/* ============================================================================
+ *  audio-capture: zachycení zvuku do složky (events, PSG zápisy, 2x WAV)
+ * ============================================================================ */
+
+/**
+ * @brief Stav zachycení zvuku jako JSON objekt.
+ * @param st Stav.
+ * @return Nový JsonObject (vlastní volající).
+ */
+static JsonObject *_audio_capture_status_json(const st_AUDIO_CAPTURE_STATUS *st) {
+    JsonObject *o = json_object_new();
+    json_object_set_boolean_member(o, "pending", st->pending);
+    json_object_set_boolean_member(o, "active",  st->active);
+    json_object_set_int_member(o, "frames",            (gint64) st->frames);
+    json_object_set_int_member(o, "events",            (gint64) st->events);
+    json_object_set_int_member(o, "psg_writes",        (gint64) st->psg_writes);
+    json_object_set_int_member(o, "reference_samples", (gint64) st->reference_samples);
+    json_object_set_int_member(o, "sdl_blocks",        (gint64) st->sdl_blocks);
+    json_object_set_int_member(o, "sdl_samples",       (gint64) st->sdl_samples);
+    json_object_set_string_member(o, "dir",         st->dir);
+    json_object_set_string_member(o, "stop_reason", st->stop_reason);
+    json_object_set_string_member(o, "last_error",  st->last_error);
+    return o;
+}
+
+/**
+ * @brief Provede DBGAPI_CMD_AUDIO_CAPTURE.
+ *
+ * @param p       Parametr (op vyplněn).
+ * @param err_out Výstup: anglický text chyby operace (ukazuje do p->out_error),
+ *                NULL = operace proběhla.
+ * @return false = příkaz se nepodařilo předat emu vláknu (bez textu chyby).
+ */
+static bool _audio_capture_submit(st_DBGAPI_AUDIO_CAPTURE_PARAM *p, const char **err_out) {
+    p->out_error[0] = '\0';
+    bool ok = _submit_dbgapi(DBGAPI_CMD_AUDIO_CAPTURE, p, NULL);
+    if (ok) {
+        *err_out = NULL;
+        return true;
+    }
+    *err_out = p->out_error[0] ? p->out_error : NULL;
+    return *err_out != NULL;
+}
+
+/**
+ * @brief `audio_capture_start` handler - naplánuje zachycení zvuku.
+ *
+ * Parametry (všechny volitelné):
+ *   - `dir` (string) - složka; chybí = nová podsložka výstupní složky
+ *     zachycení (`<platforma>_audio_RRRRMMDD_HHMMSS`, viz
+ *     audio_capture_resolve_output_dir()),
+ *   - `frames` (int >= 0) - po tolika zvukových snímcích stop (0 = do stop),
+ *   - `events`, `psg_writes`, `reference_wav`, `sdl_wav` (bool, výchozí
+ *     true) - které soubory zapisovat.
+ *
+ * Response: stav zachycení (pending = true; začne na konci nejbližšího
+ * zvukového snímku). Neplatné parametry => INVALID_PARAMS, běžící
+ * zachycení, žádný soubor nebo nejde vytvořit složka => EMU_ERROR.
+ */
+static en_MCP_DISPATCH_RESULT _handle_audio_capture_start(const st_JSONL_MESSAGE *req,
+                                                          char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    st_DBGAPI_AUDIO_CAPTURE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_AUDIO_CAPTURE_OP_START;
+    audio_capture_params_init(&p.params);
+
+    static const char *const flags[4] = { "events", "psg_writes", "reference_wav", "sdl_wav" };
+    bool *flag_ptr[4] = { &p.params.events, &p.params.psg_writes, &p.params.reference_wav, &p.params.sdl_wav };
+    int has_dir = _videorec_member(obj, "dir", G_TYPE_STRING);
+    int has_frames = _videorec_member(obj, "frames", G_TYPE_INT64);
+    bool bad = (has_dir < 0 || has_frames < 0);
+    for (int i = 0; i < 4 && !bad; i++) {
+        int h = _videorec_member(obj, flags[i], G_TYPE_BOOLEAN);
+        if (h < 0) bad = true;
+        else if (h) *flag_ptr[i] = json_object_get_boolean_member(obj, flags[i]);
+    }
+    if (bad) {
+        return _err_response(req_id,
+                             "Invalid parameters: dir must be a string, frames an integer, "
+                             "events, psg_writes, reference_wav and sdl_wav booleans",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    gint64 frames = has_frames ? json_object_get_int_member(obj, "frames") : 0;
+    if (frames < 0) {
+        return _err_response(req_id, "Invalid parameters: frames must be >= 0",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (has_dir) g_strlcpy(p.params.dir, json_object_get_string_member(obj, "dir"), sizeof(p.params.dir));
+    p.params.frames = (uint64_t) frames;
+
+    const char *err = NULL;
+    if (!_audio_capture_submit(&p, &err) || err) {
+        return _err_response(req_id, err ? err : "audio_capture command failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    return _ok_response(req_id, _audio_capture_status_json(&p.out_status), out_response);
+}
+
+/**
+ * @brief `audio_capture_stop` handler - ukončí zachycení a dopíše soubory.
+ *
+ * Bez parametrů. Response: stav (konečné počty, stop_reason "Stopped").
+ * Bez běžícího zachycení chyba "No audio capture is running".
+ */
+static en_MCP_DISPATCH_RESULT _handle_audio_capture_stop(const st_JSONL_MESSAGE *req,
+                                                         char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    st_DBGAPI_AUDIO_CAPTURE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_AUDIO_CAPTURE_OP_STOP;
+    const char *err = NULL;
+    if (!_audio_capture_submit(&p, &err) || err) {
+        return _err_response(req_id, err ? err : "audio_capture command failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    return _ok_response(req_id, _audio_capture_status_json(&p.out_status), out_response);
+}
+
+/**
+ * @brief `audio_capture_status` handler - stav běžícího nebo posledního zachycení.
+ *
+ * Bez parametrů. Response: viz _audio_capture_status_json().
+ */
+static en_MCP_DISPATCH_RESULT _handle_audio_capture_status(const st_JSONL_MESSAGE *req,
+                                                           char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    st_DBGAPI_AUDIO_CAPTURE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_AUDIO_CAPTURE_OP_STATUS;
+    const char *err = NULL;
+    if (!_audio_capture_submit(&p, &err)) {
+        return _err_response(req_id, "audio_capture command failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    return _ok_response(req_id, _audio_capture_status_json(&p.out_status), out_response);
 }
 
 

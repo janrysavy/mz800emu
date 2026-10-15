@@ -264,9 +264,22 @@ extern int g_eventlog_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS
     extern void debugger_step_call(unsigned value);
     extern void debugger_reset_history(void);
     extern void debugger_init(void);
-    /* UI readiness only; does not change guest execution or clocks. */
-    extern int debugger_is_initialized(void);
     extern void debugger_exit(void);
+
+    /**
+     * @brief Zjistí, zda je stav debuggeru inicializovaný pro UI vlákno.
+     *
+     * debugger_init() běží v emu vlákně až po inicializaci video rozhraní,
+     * UI vlákno už v tu chvíli vykresluje. Okna debuggeru (Breakpoints,
+     * Watch, ...) proto smí číst stav jádra (g_breakpoints, ...) až když
+     * funkce vrátí nenulu.
+     *
+     * @return Nenula po dokončení debugger_init(), 0 před ním a od začátku
+     *         debugger_exit().
+     * @note Lze volat z libovolného vlákna (GLib atomic). Nechrání souběh
+     *       úprav stavu za běhu - ty řeší fronta dbgapi.
+     */
+    extern int debugger_is_initialized(void);
     /*
      * Show/hide hlavního okna debuggeru - DVĚ sady podle vlákna:
      *

@@ -32,6 +32,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "app/app_thread.h"
+#include "screenshot/screenshot.h"
+#include "screenshot/screenshot_series.h"
+#include "debugger/profiler_pc.h"
+#include "audio_capture.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -680,9 +684,32 @@ typedef enum en_DBGAPI_CMD
     DBGAPI_CMD_HID_SCRIPT_START,     /* Spustit sekvenci vstupu - data_ptr: st_DBGAPI_HID_SCRIPT* (vlastník = volající, viz kontrakt struktury) */
     DBGAPI_CMD_HID_SCRIPT_CANCEL,    /* Zrušit běžící sekvenci (uvolní drženou klávesu/joystick) - data_ptr: st_DBGAPI_HID_SCRIPT* (zruší jen tuto sekvenci) */
 
-    DBGAPI_CMD_AUDIO_CAPTURE, /* Owner-thread passive audio observation. */
-    DBGAPI_CMD_PC_COVERAGE, /* Passive PC bitmap; st_DBGAPI_PC_COVERAGE_PARAM. */
-    DBGAPI_CMD_INSTRUCTION_COVERAGE, /* Bounded fetched-unit/outcome evidence. */
+    /* === screenshot-series: série PNG každého (změněného) emulovaného snímku ===
+     *
+     * Jeden příkaz s operací (vzor DBGAPI_CMD_VIDEOREC): start, stop a stav
+     * série (screenshot_series.h). Start a stop jsou thread-safe i bez fronty,
+     * průchod emu vláknem drží MCP ve stejném modelu jako ostatní příkazy
+     * a dispatch test build je přes stub. Přidáno na KONEC enumu kvůli
+     * stabilitě číselných hodnot. */
+    DBGAPI_CMD_SCREENSHOT_SERIES,    /* Série screenshotů (start/stop/stav) - data_ptr: st_DBGAPI_SCREENSHOT_SERIES_PARAM* */
+
+    /* pc-stats - profiler podle PC (profiler_pc.h)
+     *
+     * Jeden příkaz s operací (vzor DBGAPI_CMD_SCREENSHOT_SERIES): start,
+     * stop, reset, výběr řádků a export do CSV. Data zapisuje emu vlákno,
+     * proto čtení i export jdou přes frontu. Přidáno na KONEC enumu kvůli
+     * stabilitě číselných hodnot. */
+    DBGAPI_CMD_PROFILER_PC,          /* Profiler podle PC - data_ptr: st_DBGAPI_PROFILER_PC_PARAM* */
+
+    /* audio-capture - zachycení zvuku do složky (audio_capture.h)
+     *
+     * Jeden příkaz s operací (vzor DBGAPI_CMD_SCREENSHOT_SERIES): start, stop
+     * a stav. Stav zachycení patří emu vláknu, proto vše přes frontu.
+     * Přidáno na KONEC enumu kvůli stabilitě číselných hodnot. */
+    DBGAPI_CMD_AUDIO_CAPTURE,        /* Zachycení zvuku (start/stop/stav) - data_ptr: st_DBGAPI_AUDIO_CAPTURE_PARAM* */
+
+    DBGAPI_CMD_PC_COVERAGE, /* Passive, owner-thread PC bitmap. */
+    DBGAPI_CMD_INSTRUCTION_COVERAGE, /* Fetched versions and decisions. */
 } en_DBGAPI_CMD;
 
 typedef struct st_DBGAPI_PC_COVERAGE_PARAM {
@@ -699,13 +726,6 @@ typedef struct st_DBGAPI_INSTRUCTION_COVERAGE_PARAM {
     uint32_t capacity, offset, limit;
     char *json; /* OUT glib-owned; transport frees after serialization. */
 } st_DBGAPI_INSTRUCTION_COVERAGE_PARAM;
-
-typedef struct st_DBGAPI_AUDIO_CAPTURE_PARAM {
-    int action;
-    unsigned rate,max_frames,offset,limit;
-    bool physical_clock;
-    char *json; /* OUT glib-owned; dispatch frees after serialization. */
-} st_DBGAPI_AUDIO_CAPTURE_PARAM;
 
 
 
@@ -978,7 +998,10 @@ typedef struct st_DBGAPI_CPU_FLAGS
 #define DBGAPI_CPU_FLAGS_UM_IFF2 (1u << 1)  /**< Zapsat iff2 (0/1) */
 #define DBGAPI_CPU_FLAGS_UM_IM   (1u << 2)  /**< Zapsat im (0/1/2 - jine hodnoty rejected) */
 #define DBGAPI_CPU_FLAGS_UM_I    (1u << 3)  /**< Zapsat i_reg (8-bit) */
-#define DBGAPI_CPU_FLAGS_UM_R    (1u << 4)  /**< Zapsat r_reg (8-bit) */
+/** Zapsat dolních 7 bitů r_reg (refresh čítač), bit 7 R zachovat - editace v okně CPU. */
+#define DBGAPI_CPU_FLAGS_UM_R    (1u << 4)
+/** Zapsat celý r_reg včetně bitu 7, jako instrukce LD R,A (MCP set_cpu_flags). Přednost před UM_R. */
+#define DBGAPI_CPU_FLAGS_UM_R_FULL (1u << 5)
 
 /**
  * @brief IM2 ISR vektor pro CPU window (jen platformy s PIO-Z80).
@@ -2791,6 +2814,126 @@ typedef struct st_DBGAPI_VIDEOREC_PARAM
 
 
 /**
+ * @brief Operace příkazu DBGAPI_CMD_SCREENSHOT_SERIES (MCP `screenshot_series_*`).
+ */
+typedef enum en_DBGAPI_SCREENSHOT_SERIES_OP
+{
+    DBGAPI_SCREENSHOT_SERIES_OP_START = 0, /**< screenshot_series_start() s `params`. */
+    DBGAPI_SCREENSHOT_SERIES_OP_STOP,      /**< screenshot_series_stop(). */
+    DBGAPI_SCREENSHOT_SERIES_OP_STATUS,    /**< Jen stav. */
+} en_DBGAPI_SCREENSHOT_SERIES_OP;
+
+/** @brief Výsledek DBGAPI_CMD_SCREENSHOT_SERIES: operace provedena. */
+#define DBGAPI_SCREENSHOT_SERIES_RESULT_OK          0
+/** @brief Výsledek DBGAPI_CMD_SCREENSHOT_SERIES: start selhal (text v out_error). */
+#define DBGAPI_SCREENSHOT_SERIES_RESULT_FAILED      ( -1 )
+/** @brief Výsledek DBGAPI_CMD_SCREENSHOT_SERIES: stop bez běžící série. */
+#define DBGAPI_SCREENSHOT_SERIES_RESULT_NOT_RUNNING ( -2 )
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_SCREENSHOT_SERIES.
+ *
+ * `params` vyplní volající jen pro START. Handler vždy vyplní `out_result`,
+ * `out_error` a `out_status` (stav po operaci).
+ *
+ * @invariant `out_result != DBGAPI_SCREENSHOT_SERIES_RESULT_OK` <=> `rq->success == false`.
+ */
+typedef struct st_DBGAPI_SCREENSHOT_SERIES_PARAM
+{
+    en_DBGAPI_SCREENSHOT_SERIES_OP op;          /**< IN: operace. */
+    st_SCREENSHOT_SERIES_PARAMS params;         /**< IN (START): parametry série. */
+    int  out_result;                            /**< OUT: DBGAPI_SCREENSHOT_SERIES_RESULT_*. */
+    char out_error[ SCREENSHOT_SERIES_TEXT_MAX ]; /**< OUT: anglický text chyby ("" při úspěchu). */
+    st_SCREENSHOT_SERIES_STATUS out_status;     /**< OUT: stav série po operaci. */
+} st_DBGAPI_SCREENSHOT_SERIES_PARAM;
+
+
+/**
+ * @brief Operace příkazu DBGAPI_CMD_PROFILER_PC (MCP `profiler_pc_*`, GUI záložka Per PC).
+ */
+typedef enum en_DBGAPI_PROFILER_PC_OP
+{
+    DBGAPI_PROFILER_PC_OP_START = 0, /**< profiler_pc_set_active(true); s `reset` nejdřív vynuluje. */
+    DBGAPI_PROFILER_PC_OP_STOP,      /**< profiler_pc_set_active(false), data zůstanou. */
+    DBGAPI_PROFILER_PC_OP_RESET,     /**< profiler_pc_reset(). */
+    DBGAPI_PROFILER_PC_OP_GET,       /**< Souhrn + nejvýše `rows_max` řádků do `rows`. */
+    DBGAPI_PROFILER_PC_OP_EXPORT,    /**< profiler_pc_export_csv() do `path`. */
+} en_DBGAPI_PROFILER_PC_OP;
+
+/** @brief Nejvíc řádků, které vrací jeden GET přes MCP. */
+#define DBGAPI_PROFILER_PC_ROWS_MAX 1000
+/** @brief Velikost bufferu na název symbolu v řádku (delší název se zkrátí). */
+#define DBGAPI_PROFILER_PC_SYM_MAX  48
+
+/**
+ * @brief Řádek výsledku GET: data adresy a nejbližší symbol.
+ *
+ * Symbol se vyplní jen při `with_symbols` (MCP); GUI si symboly dohledává
+ * samo v UI vlákně.
+ */
+typedef struct st_DBGAPI_PROFILER_PC_ROW
+{
+    st_PROFILER_PC_ROW r;                         /**< Data adresy. */
+    char     symbol[ DBGAPI_PROFILER_PC_SYM_MAX ]; /**< Nejbližší symbol na adrese <= pc (CPU pohled), "" = žádný. */
+    uint32_t sym_offset;                          /**< pc - adresa symbolu (0 = symbol přímo na pc). */
+} st_DBGAPI_PROFILER_PC_ROW;
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_PROFILER_PC.
+ *
+ * Handler vždy vyplní `out_summary` (stav po operaci) a `out_error`.
+ *
+ * @par Vlastnictví
+ * `rows` a `path` vlastní volající; handler do `rows` jen zapisuje.
+ *
+ * @invariant rq->success == false <=> out_error != "" nebo chybí parametr.
+ */
+typedef struct st_DBGAPI_PROFILER_PC_PARAM
+{
+    en_DBGAPI_PROFILER_PC_OP op;   /**< IN: operace. */
+    bool     reset;                /**< IN (START): vynulovat data před startem. */
+    en_PROFILER_PC_SORT sort;      /**< IN (GET, EXPORT): řazení. */
+    uint16_t lo;                   /**< IN (GET): nejnižší adresa. */
+    uint16_t hi;                   /**< IN (GET): nejvyšší adresa (včetně). */
+    bool     with_symbols;         /**< IN (GET): vyplnit symbol v řádcích. */
+    st_DBGAPI_PROFILER_PC_ROW *rows; /**< IN (GET): pole na řádky, nebo NULL. */
+    size_t   rows_max;             /**< IN (GET): kapacita `rows`. */
+    const char *path;              /**< IN (EXPORT): cílový CSV soubor. */
+    size_t   out_total;            /**< OUT (GET): adres s vykonáním v rozsahu. */
+    size_t   out_written;          /**< OUT (GET): zapsaných řádků; (EXPORT): řádků v CSV. */
+    st_PROFILER_PC_SUMMARY out_summary; /**< OUT: souhrn po operaci. */
+    char     out_error[ 256 ];     /**< OUT: anglický text chyby, "" = OK. */
+} st_DBGAPI_PROFILER_PC_PARAM;
+
+
+/**
+ * @brief Operace příkazu DBGAPI_CMD_AUDIO_CAPTURE (MCP `audio_capture_*`).
+ */
+typedef enum en_DBGAPI_AUDIO_CAPTURE_OP
+{
+    DBGAPI_AUDIO_CAPTURE_OP_START = 0, /**< audio_capture_start() s `params`. */
+    DBGAPI_AUDIO_CAPTURE_OP_STOP,      /**< audio_capture_stop(). */
+    DBGAPI_AUDIO_CAPTURE_OP_STATUS,    /**< Jen stav. */
+} en_DBGAPI_AUDIO_CAPTURE_OP;
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_AUDIO_CAPTURE.
+ *
+ * `params` vyplní volající jen pro START. Handler vždy vyplní `out_error`
+ * a `out_status` (stav po operaci).
+ *
+ * @invariant rq->success == false <=> out_error != "".
+ */
+typedef struct st_DBGAPI_AUDIO_CAPTURE_PARAM
+{
+    en_DBGAPI_AUDIO_CAPTURE_OP op;            /**< IN: operace. */
+    st_AUDIO_CAPTURE_PARAMS params;           /**< IN (START): parametry zachycení. */
+    char out_error[ AUDIO_CAPTURE_TEXT_MAX ]; /**< OUT: anglický text chyby ("" při úspěchu). */
+    st_AUDIO_CAPTURE_STATUS out_status;       /**< OUT: stav po operaci. */
+} st_DBGAPI_AUDIO_CAPTURE_PARAM;
+
+
+/**
  * @brief Lifecycle operace nad trace kanálem.
  *
  * Sdílené jádro pro DBGAPI_CMD_TRACE_* handlery i pro forwarding z BP-action
@@ -3816,15 +3959,20 @@ typedef struct st_DBGAPI_PERIPH_GDG_PARAM
     uint8_t  _pad[2];            /**< Zarovnání. */
     uint32_t tempo;              /**< OUT: tempo počítadlo (společné). */
     uint32_t tempo_divider;      /**< OUT: tempo_divider (společné). */
-    uint8_t has_vram_format;     /**< OUT: WF/RF mirrors are available (MZ-800 only). */
-    uint8_t regWF;               /**< OUT: write format, plane mask and shared bank bit. */
-    uint8_t regRF;               /**< OUT: read format, plane mask and shared bank bit. */
-    uint8_t has_hw_scroll;       /**< OUT: MZ-800 hardware-scroll snapshot is available. */
-    uint8_t hw_scroll_enabled;   /**< OUT: actual cached enable state, not inferred by client. */
-    uint32_t hw_scroll_ssa;      /**< OUT: scroll start address in plane bytes. */
-    uint32_t hw_scroll_sea;      /**< OUT: scroll end address in plane bytes. */
-    uint32_t hw_scroll_width;    /**< OUT: scroll window width in plane bytes. */
-    uint32_t hw_scroll_offset;   /**< OUT: display address offset in plane bytes. */
+    /* --- MZ-800: řadič VRAM (WF/RF, porty CCh/CDh) - platné při has_vramctrl --- */
+    uint8_t  has_vramctrl;       /**< OUT: 1 = MZ-800 (pole wf_* / rf_* / wfrf_vbank platná), 0 = jinde. */
+    uint8_t  wf_mode;            /**< OUT: režim zápisu WF 0-7 (enum WFR_MODE: 0 SINGLE, 1 EXOR, 2 OR, 3 RESET, 4 REPLACE, 6 PSET). */
+    uint8_t  wf_plane;           /**< OUT: maska plane pro zápis (bit 0 = I .. bit 3 = IV). */
+    uint8_t  rf_plane;           /**< OUT: maska plane pro čtení (bit 0 = I .. bit 3 = IV). */
+    uint8_t  rf_search;          /**< OUT: RF bit 7: 1 = vyhledávací (search) čtení, 0 = jednoduché. */
+    uint8_t  wfrf_vbank;         /**< OUT: VBANK pro přístup CPU do VRAM (0 = A, 1 = B). */
+    /* --- MZ-800: HW scroll (porty 01CFh-05CFh) - platné při has_hwscroll --- */
+    uint8_t  has_hwscroll;       /**< OUT: 1 = MZ-800 (pole hs_* platná), 0 = jinde. */
+    uint8_t  hs_enabled;         /**< OUT: 1 = podmínky scrollu splněné, scroll se uplatňuje. */
+    uint16_t hs_sof;             /**< OUT: SOF v jednotkách portů 01CFh/02CFh (0..3FFh). */
+    uint8_t  hs_ssa;             /**< OUT: SSA v jednotkách portu 04CFh (0..7Fh). */
+    uint8_t  hs_sea;             /**< OUT: SEA v jednotkách portu 05CFh (0..7Fh). */
+    uint8_t  hs_sw;              /**< OUT: SW v jednotkách portu 03CFh (0..7Fh). */
 } st_DBGAPI_PERIPH_GDG_PARAM;
 
 
@@ -4157,10 +4305,10 @@ typedef struct st_DBGAPI_FRAME_SCREENSHOT_RAW_PARAM
  * @brief Parametr pro DBGAPI_CMD_GET_FRAME_SCREENSHOT_PNG.
  *
  * Handler enkóduje aktuální framebuffer (= stejná pixel cesta jako
- * screenshot_raw: INDEX8 buffer expandovaný přes paletu na RGBA8888) do
- * PNG streamu pomocí vendorovaného stb_image_write.h. PNG je vždy plný
- * frame bez downscale (= jiný kontejner než raw, ale identický obsah
- * při raw factor=1).
+ * screenshot_raw: INDEX8 buffer) do PNG přes jádro screenshotu
+ * (screenshot_encode_png): oblast, měřítko a ořez podle `opts`. Nulová
+ * `opts` (memset 0) = celý framebuffer 1:1 bez ořezu, tedy identický
+ * obsah jako raw při factor=1.
  *
  * Při úspěchu `available=1`, `buffer` ukazuje na handlerem alokovaný
  * PNG file stream (glib alokace) a `buffer_size` je jeho délka; dispatch
@@ -4173,12 +4321,9 @@ typedef struct st_DBGAPI_FRAME_SCREENSHOT_RAW_PARAM
  */
 typedef struct st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM
 {
-    uint8_t  native_pixels;       /**< IN: export canvas at native resolution, without border. */
-    uint8_t  crop_requested;      /**< IN: explicit rectangle in native canvas coordinates. */
-    uint32_t crop_x, crop_y, crop_width, crop_height;
-    uint32_t source_screen_id;    /**< OUT: published framebuffer identity. */
-    uint8_t  fallback_source;     /**< OUT: SCREENSHOT_SRC_* */
-    uint8_t  horizontal_step;     /**< OUT: framebuffer samples per exported pixel. */
+    st_SCREENSHOT_OPTS opts;      /**< IN: oblast, měřítko, ořez (memset 0 = celý framebuffer 1:1). */
+    uint8_t  hires;               /**< OUT: měřítko native ponechalo šířku 640 bodů. */
+    uint8_t  bad_opts;            /**< OUT: při available=0 - neplatné opts (ořez mimo obraz, měřítko), reason popisuje. */
     uint8_t  available;           /**< OUT: 1 = PNG stream zapsán, 0 = nedostupný. */
     uint8_t  _pad[3];
     uint32_t width;               /**< OUT: šířka obrázku v pixelech. */

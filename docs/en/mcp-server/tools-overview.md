@@ -73,17 +73,45 @@ documented separately in [Resources overview](resources-overview.md).
 | `emu_videorec_marker` | no | Marker (chapter) at the current recording position |
 | `emu_videorec_status` | no | Video recording status (state, frames, segment, size, path, last event) |
 | `emu_videorec_timebase` | no | Recording timebase: emulated time or real time |
+| `emu_screenshot_save_to_file` | yes (creates / overwrites a file) | PNG of the screen to a file: area (full / canvas), scale (framebuffer / native dots / window 1-4), crop |
+| `emu_screenshot_series_start` | yes (creates files) | Frame series: a PNG of every changed emulated frame (area, scale, crop, only_changed, frames, max_files) |
+| `emu_screenshot_series_stop` | no | Stop the frame series, by default wait until all frames are written |
+| `emu_screenshot_series_status` | no | Frame series status (frames seen, files, unchanged, folder, stop reason) |
 | `emu_profiler_start` | no | Start CPU profiler (hot-path overhead) |
 | `emu_profiler_stop` | no | Stop profiler (data preserved) |
 | `emu_profiler_reset` | no | Clear profiler aggregator |
 | `emu_profiler_export` | no | Export profile to CSV or JSON file |
 | `emu_profiler_get` | no | Inline JSON with entries + global stats |
+| `emu_profiler_pc_start` | no | Start the per-PC profiler (executions, T-states and WAIT per instruction address) |
+| `emu_profiler_pc_stop` | no | Stop the per-PC profiler (data preserved) |
+| `emu_profiler_pc_reset` | no | Clear the per-PC profiler data |
+| `emu_profiler_pc_get` | no | Busiest instruction addresses with the nearest symbol (sort, limit, address range) |
+| `emu_profiler_pc_export` | no | All executed addresses to a CSV file |
+| `emu_audio_capture_start` | yes (creates files) | Audio capture into a folder: channel level changes, PSG writes, reference.wav and sdl.wav (frames, file selection) |
+| `emu_audio_capture_stop` | no | Stop the audio capture and finish its files |
+| `emu_audio_capture_status` | no | Audio capture status (frames, events, PSG writes, samples, SDL blocks, folder, stop reason) |
 | `emu_media_load_mzf` | no | CMT-hack instant load of MZF (header + body) into RAM at LOAD_ADDR (path or bytes_b64) |
 | `emu_media_run_mzf` | **YES** | Reset + start MZF in the `--run-mzf` state (default); `bootstrap=false` = load + ROM disconnect + JP STRT without reset |
 | `emu_media_load_binary` | **YES** | Raw bytes from file to Z80 memory, **destructive** |
 | `emu_media_insert` | **YES** | Insert image into slot (auto-eject when already mounted) |
 | `emu_media_eject` | no | Eject image from slot |
 | `emu_media_state` | no | Snapshot of all 11 slots (cmt/fdc0_fd0..3/fdc1_fd0..3/qd/ide8) |
+| `emu_cmt_open` | **YES** | Open a tape file (.mzf, .mzt, .wav, ...) into the real tape drive, optionally play |
+| `emu_cmt_eject` | **YES** | Eject the tape from the real tape drive |
+| `emu_cmt_play` | **YES** | Start tape playback (transport PLAY) |
+| `emu_cmt_play_paused` | **YES** | Start tape playback paused (waits until resumed) |
+| `emu_cmt_pause` | **YES** | Pause / resume the tape transport |
+| `emu_cmt_stop` | **YES** | Stop the tape transport (PLAY or RECORD -> STOP) |
+| `emu_cmt_record` | **YES** | Record the tape output to a WAV file |
+| `emu_cmt_hack_set` | **YES** | Enable / disable cmthack (instant tape load ROM patch) |
+| `emu_cmt_set_cpu_boost` | **YES** | Enable / disable CPU boost while the tape runs |
+| `emu_cmt_set_mzfsize_check` | **YES** | Enable / disable the MZF size check on tape load |
+| `emu_cmt_set_polarity` | **YES** | Tape signal polarity (rear DIP switch) |
+| `emu_cmt_set_speed` | **YES** | Default playback speed of the virtual cassette (ratio or custom pulses) |
+| `emu_cmt_tape_seek` | **YES** | Seek a multi-block tape to a block |
+| `emu_cmt_tape_set_block_speed` | **YES** | Playback speed of a single tape block |
+| `emu_set_speed` | no | Emulation speed: 100 %, custom percent or MAX SPEED |
+| `emu_speed_step` | no | Change the custom emulation speed by a relative percentage |
 | `emu_settings_set` | **YES** | Live INI write (whitelist); **mutates global state** |
 | `emu_settings_get` | no | Read INI key + type (open read, no whitelist) |
 | `emu_platform_set` | **YES** | Platform switch attempt - returns error (compile-time MZARCH) |
@@ -130,6 +158,9 @@ documented separately in [Resources overview](resources-overview.md).
 | `emu_eventlog_get_event` | no | Read event[idx] - pxclk/screen/category/pc/payload |
 | `emu_regions_list` | no | Enumerate physical memory regions (ROM, VRAM, CG-ROM, MemExt banks, ...) bypassing Z80 banking |
 | `emu_region_read` | no | Raw no-side-effect read from a specific region (= equivalent of the GUI Memory browser for headless debug) |
+| `emu_region_write` | **YES** | Raw write into a physical memory region (bypass Z80 banking), max 65536 bytes |
+| `emu_file_load_to_region` | **YES** | Load a file (or a part of it) into a memory region, max 65536 bytes |
+| `emu_file_save_from_region` | yes (creates / overwrites a file) | Save a part of a memory region to a file, max 65536 bytes |
 
 ## Sensitive operations
 
@@ -285,8 +316,9 @@ Overwrites a single 16-bit Z80 register. Arguments:
 - `reg` (string) - register name, case-insensitive. Accepts `AF`,
   `BC`, `DE`, `HL`, `AF_` / `AF2`, `BC_` / `BC2`, `DE_` / `DE2`,
   `HL_` / `HL2`, `IX`, `IY`, `SP`, `PC`, `WZ`, `IR`.
-- `value` (int, 0..65535) - new value. For `IR` only the lower byte
-  (R) is written; I keeps its previous value.
+- `value` (int, 0..65535) - new value. `IR` writes the complete I:R
+  pair: I is the high byte, R the low byte including bit 7 (like
+  LD I,A plus LD R,A).
 
 **Destructive operation.** Writing to `PC` changes the execution
 path; writing to `SP` invalidates the current call stack. Save a
@@ -989,6 +1021,65 @@ emulator cannot open an audio device) the sound is rendered by the same
 path without being played. Returns the status plus
 `timebase_requested`; an invalid value is a parameter error.
 
+## Screenshot tools
+
+PNG pictures of the emulator screen written straight to a file on the
+server host (no large base64 payload in the reply). The workflow with
+recipes is in the MCP document `emulator://docs/screenshot_workflow`; the
+parameters are also described in [headless-mode.md](headless-mode.md).
+
+### `emu_screenshot_save_to_file` (sensitive - creates / overwrites a file)
+
+Arguments:
+
+- `path` (string, required) - PNG file to write.
+- `format` (string, default `png`) - only `png` is supported.
+- `area` (string, default `full`) - `full` = whole frame with the border,
+  `canvas` = the picture only.
+- `scale` (string, default `framebuffer`) - `framebuffer` = framebuffer
+  pixels 1:1 (MZ-800 full frame 928x288); `native` = one image pixel per
+  dot of the computer (MZ-800 picture 320x200, or 640x200 in the 640-dot
+  modes); `"1"` to `"4"` = the aspect ratio of the emulator window, `"2"`
+  = window at 100 % (MZ-800 full frame 928x576).
+- `crop` (object, optional) - `{"x", "y", "width", "height"}` in output
+  pixels, only with `framebuffer` or `native`.
+
+Returns `{available, path, format, width, height, byte_size, area, scale}`
+(+ `hires` with `native`), `{available: false, reason}` before the first
+rendered frame. An invalid `area`, `scale` or `crop` (also a crop outside
+the image) is a parameter error and no file is written.
+
+### `emu_screenshot_series_start` (sensitive - creates files)
+
+Saves a PNG of every emulated frame that differs from the last saved one -
+for finding animation bugs. Arguments (all optional): `dir` (series
+folder; empty = a new `<platform>_frames_YYYYMMDD_HHMMSS` folder in the
+screenshot output folder), `area`, `scale` (default `native`), `crop` -
+as above, only changes inside them count; `only_changed` (default `true`;
+`false` = every frame), `frames` (stop after N emulated frames, 0 = until
+stop), `max_files` (safety limit, 0 = 10000).
+
+Frames are taken in emulated time at the end of every frame - none is
+skipped even at MAX SPEED; when writing cannot keep up, the emulation
+waits. Nothing is captured while the emulation is paused. Files
+`frame_NNNNNNN.png` (NNNNNNN = emulated frame since the start, gaps =
+unchanged frames) and `index.csv` (`frame,file,gdg_screen`). Returns the
+series status plus `area`, `scale`, `only_changed`. Errors: a series is
+already running, invalid parameters, the folder cannot be created.
+
+### `emu_screenshot_series_stop`
+
+Argument `wait` (bool, default `true`): wait (at most 30 s) until all
+queued frames are written. Returns the series status. Without a series:
+`No frame series is running`.
+
+### `emu_screenshot_series_status`
+
+No arguments. Returns `active` (capturing), `writing` (files still being
+written), `frames_seen`, `files`, `unchanged`, `dir`, `stop_reason`
+(`Stopped`, `Frame count reached`, `File limit reached`, `Error`, empty
+while running) and `last_error`.
+
 ## Profiler tools
 
 The CPU profiler aggregates per-function statistics (calls, exclusive
@@ -1076,6 +1167,158 @@ Response:
 The `entries` array is in hash-map iteration order (= not sorted).
 The client is expected to sort it according to its own metric
 (typically `excl_cycles` descending).
+
+## Per-PC profiler tools
+
+The per-PC profiler counts every executed instruction by its address
+(logical PC): executions, T-states including wait states, and wait
+states alone (VRAM access, PSG write). Unlike the function profiler
+above it needs no CALL/RET pairing, so it also sees code that is
+jumped to, interrupt handlers and self-contained loops - typically the
+place to start when optimizing a program.
+
+- Block instructions (LDIR, LDDR, ...) count every repetition as one
+  execution (the CPU fetches them again).
+- Memory banks are not told apart: code at the same address in
+  different banks adds up.
+- Time outside instructions is counted separately: `halt_idle` (the CPU
+  waits in HALT, the HALT instruction itself counts at its address) and
+  `other_tstates` (mainly interrupt acknowledge). Always
+  `tstates + halt_idle + other_tstates == elapsed_tstates`.
+- Overhead: one function call per instruction while it runs. With the
+  profiler stopped the emulation is not slowed down.
+
+Typical use:
+
+```
+emu_profiler_pc_start()          # clears previous data
+emu_run(frames=50)               # one second of an MZ-800 (PAL)
+emu_profiler_pc_get(limit=20)    # where the time went
+emu_profiler_pc_stop()
+```
+
+All five tools return the summary `{"active", "instructions",
+"tstates", "wait", "halt_idle", "other_tstates", "elapsed_tstates",
+"unique_pcs"}` (plus the fields below).
+
+### `emu_profiler_pc_start`
+
+Start collecting. Argument `reset` (bool, default true): clear previous
+data first; false continues adding to it.
+
+### `emu_profiler_pc_stop`
+
+Stop collecting; the data stays for `emu_profiler_pc_get` and
+`emu_profiler_pc_export`.
+
+### `emu_profiler_pc_reset`
+
+Clear the data. Whether the profiler runs is not changed.
+
+### `emu_profiler_pc_get`
+
+The busiest addresses inline. Arguments (all optional):
+
+- `sort` - `tstates` (default), `count`, `wait` or `addr`,
+- `limit` - rows, 1..1000 (default 50),
+- `from_addr`, `to_addr` - address range, inclusive (default 0..65535).
+
+Adds `sort`, `total_rows` (executed addresses in the range, may exceed
+`limit`) and `rows`:
+
+```json
+{"pc": 33667, "count": 109893, "tstates": 2307503, "wait": 0,
+ "tstates_pct": 64.79, "avg_tstates": 21.0,
+ "symbol": "fill_loop", "sym_offset": 3}
+```
+
+`tstates_pct` is the share of all instruction T-states. `symbol` is the
+nearest loaded symbol at or below `pc` (CPU view, as
+`emu_symbol_lookup`), `""` when there is none.
+
+### `emu_profiler_pc_export`
+
+Write all executed addresses to a CSV file. Arguments: `path` (required,
+overwritten; the folder must exist) and `sort` (default `addr`). CSV:
+UTF-8, LF line endings, decimal point regardless of the locale; header
+`pc,count,tstates,wait,tstates_pct`, `pc` as 4 hex digits. Adds `path`
+and `rows`.
+
+## Audio capture tools
+
+The audio capture writes what the sound hardware does into a folder, in
+emulated time - for finding sound bugs of a program or of the emulator.
+The same capture is available in the GUI (Tools -> Audio Capture, `Alt + Q`)
+and on the command line (`--audio-capture`), see
+[`../audio-capture.md`](../audio-capture.md).
+
+| File | Content |
+|---|---|
+| `events.csv` | `ticks,time_us,frame,channel,level` - every change of the output level (0-15) of a sound channel |
+| `psg_writes.csv` | `ticks,time_us,frame,psg,byte,channel,reg,value` - every write to the PSG, decoded |
+| `reference.wav` | the sound rendered exactly in emulated time (the renderer of the video recording) |
+| `sdl.wav` | the sound produced by the emulator's audio output path - what the user hears |
+| `capture.json` | platform, `gdg_clk_hz`, `frames_per_sec`, channel names, counts, stop reason (written at the end) |
+
+- `ticks` are GDG clock ticks since the start of the capture
+  (`gdg_clk_hz` in capture.json), `time_us` the same in microseconds,
+  `frame` the audio frame (= video frame, 20 ms PAL / 16.7 ms NTSC)
+  since the start.
+- Channels: `ctc0` (the speaker driven by CTC0 and the PIO, level 0 or
+  15), `psg0_0`..`psg0_3` and, on the MZ-1500 or an MZ-800 with the
+  second PSG, `psg1_0`..`psg1_3`. Channel 3 of a PSG is the noise
+  channel. The first rows of events.csv (ticks 0) are the levels at the
+  start.
+- psg_writes.csv: `psg` is the target (1 = PSG0, 2 = PSG1, 3 = both),
+  `byte` the written value in hex. Decoding from the PSG state after the
+  write (for both PSGs from PSG0): `reg` = `tone_lo` (latch byte of a
+  tone: the low 4 bits of the divider, the divider changes only with the
+  data byte), `tone` (the complete 10-bit divider), `volume`
+  (attenuation 0-15, 15 = off) or `noise` (`(type << 2) | rate`).
+- Both WAV files are 44100 Hz, 16 bit, stereo. sdl.wav comes later than
+  reference.wav: without an audio device (headless) by exactly one frame,
+  with a device by its buffering. With a device at MAX SPEED the output
+  path skips frames - `sdl_blocks` is then lower than `frames`.
+- Start: the capture begins at the end of the next audio frame, with
+  `sdl_wav` after 6 more frames that warm up the output path (its filters
+  would otherwise start cold). Levels that did not change for a while
+  start damped in both files, as in the output path.
+- End: `emu_audio_capture_stop`, `frames` reached, a safety limit of one
+  hour, a reset or a snapshot load (the emulated time jumps back), a write
+  error, or the end of the emulator.
+- It captures only while the emulation runs - combine with
+  `emu_run(frames=N)`.
+
+Typical use:
+
+```
+emu_audio_capture_start(dir="C:/tmp/snd", frames=250)   # 5 s PAL
+emu_run(frames=260)
+emu_audio_capture_status()      # stop_reason "Frame count reached"
+```
+
+### `emu_audio_capture_start`
+
+Arguments (all optional): `dir` (folder, created; empty = a new
+`<platform>_audio_<date>_<time>` folder in the audio capture output folder,
+default `audio_captures` next to the emulator),
+`frames` (stop after this many audio frames, 0 = until stop), `events`,
+`psg_writes`, `reference_wav`, `sdl_wav` (bool, default true - which
+files to write). Returns the status with `pending: true`, or an error
+(already running, nothing selected, folder cannot be created).
+
+### `emu_audio_capture_stop`
+
+Stop and finish the files. Returns the final status; error "No audio
+capture is running" when there is none.
+
+### `emu_audio_capture_status`
+
+`{"pending", "active", "frames", "events", "psg_writes",
+"reference_samples", "sdl_blocks", "sdl_samples", "dir", "stop_reason",
+"last_error"}`. `stop_reason`: `Stopped`, `Frame count reached`,
+`Safety limit reached`, `Emulation timeline restarted (reset or snapshot
+load)`, `Error`, `Emulator exit`, empty while running.
 
 ## Media tools
 
@@ -1876,6 +2119,56 @@ Returns:
 Main use case: AI client in headless mode (= no GUI access) inspects
 emu physical memory - ROM monitor content, VRAM bitmap planes,
 MemExt banks.
+
+### `emu_region_write` (sensitive)
+
+Raw write into a physical memory region (= bypass Z80 banking), the
+counterpart of `emu_region_read`.
+
+Args:
+- `region_id` (= from the last `regions_list` call)
+- `offset` (= byte offset within the region, 0..size-1)
+- `data_b64` (= base64 bytes, 1..65536 bytes after decoding; clamped at
+  the end of the region)
+
+Returns `{"region_id", "offset", "length", "written"}` - `length` is the
+number of bytes actually written (after clamping), `written` = at least
+one byte was written.
+
+Read-only regions (`memext_flash`, `prohibited_shadow`), a disconnected
+region or an invalid `region_id` / `offset` return a parameter error
+`region write failed: read-only, disconnected, or invalid
+region_id/offset`. ROM regions are writable as a debug fixture: the patch
+lasts until the ROM is reloaded (e.g. after a reset); the ROM file on disk
+does not change. The `logical` region (Z80 view) writes through the
+current banking with the usual side effects (e.g. a VRAM write goes
+through the GDG write format) - for editing VRAM use the physical plane
+regions. A VRAM change shows on the next frame; a paused GUI needs a
+refresh.
+
+### `emu_file_load_to_region` (sensitive)
+
+Loads a file into a memory region without base64 on the client side
+(Python composite: file read + `emu_region_write`).
+
+Args: `path`, `region_id`, `dest_offset` (default 0), `src_offset`
+(skip N bytes of the file, default 0), `length` (bytes to copy, default
+-1 = to the end of the file).
+
+More than 65536 bytes is an error (`length N > 65536; split into multiple
+calls`) - copy a large file in parts. On success returns the reply of
+`emu_region_write` plus `src_file` and `src_offset`.
+
+### `emu_file_save_from_region`
+
+Saves a part of a memory region to a file (Python composite:
+`emu_region_read` + file write) - ROM dumps, ramdisk backups, raw VRAM.
+
+Args: `path` (overwritten), `region_id`, `src_offset` (default 0),
+`length` (default 4096, max 65536).
+
+Returns `{"region_id", "src_offset", "length", "dest_file"}`; `length` is
+the number of bytes actually saved (clamped at the end of the region).
 
 ## Speed control tools
 

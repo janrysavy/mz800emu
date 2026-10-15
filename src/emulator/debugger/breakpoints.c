@@ -925,9 +925,9 @@ void breakpoints_save_to_filepath ( const char *filepath ) {
     json_builder_end_object ( b );
 
     JsonGenerator *gen = json_generator_new ( );
-    /* json_builder_get_root() vrací JsonNode vlastněný builderem - NEsmí
-     * se volat json_node_free(), uvolní se s g_object_unref(builder).
-     * Generator si interně bere referenci přes json_generator_set_root. */
+    /* json_builder_get_root() předává vlastnictví volajícímu (transfer full
+     * v Json-1.0.gir); json_generator_set_root() si uzel zkopíruje. Root se
+     * proto uvolní json_node_unref() po použití generátoru. */
     JsonNode *root = json_builder_get_root ( b );
     json_generator_set_root ( gen, root );
     json_generator_set_pretty ( gen, TRUE );
@@ -950,6 +950,7 @@ void breakpoints_save_to_filepath ( const char *filepath ) {
     };
     g_free ( out );
     g_object_unref ( gen );
+    if ( root ) json_node_unref ( root );
     g_object_unref ( b );
 }
 

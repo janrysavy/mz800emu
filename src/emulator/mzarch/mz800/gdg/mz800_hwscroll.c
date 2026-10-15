@@ -85,10 +85,37 @@ void hwscroll_reset(void)
     g_hwscroll.enabled = 0;
 }
 
+/**
+ * @brief Dokreslí uplynulou část aktuálního obrazového řádku se stávajícím
+ *        mapováním scrollu.
+ *
+ * Framebuffer se doplňuje líně až k aktuálnímu sloupci paprsku. Před změnou
+ * kteréhokoliv registru scrollu se proto musí dokreslit to, co paprsek už
+ * prošel, ještě se STARÝM mapováním adres - jinak by se nové mapování
+ * uplatnilo i zpětně na začátek řádku. Stejný postup používá zápis palety
+ * a DMD v mz800_gdg.c.
+ *
+ * V režimu MZ-700 scroll neplatí a nic se nedokresluje.
+ *
+ * @post Pixely aktuálního řádku až k paprsku jsou ve framebufferu,
+ *       g_framebuffer.screen_changes = SCRSTS_THIS_IS_CHANGED (jen režim MZ-800).
+ */
+static inline void hwscroll_flush_elapsed_pixels(void)
+{
+    if (!GDG_MZ800_DMD_TEST_MZ700)
+    {
+        framebuffer_MZ800_screen_changed();
+    };
+}
+
+/**
+ * @brief Přepočítá příznak g_hwscroll.enabled podle aktuálních registrů.
+ *
+ * @pre Uplynulá část řádku je dokreslená (hwscroll_flush_elapsed_pixels()
+ *      před změnou registru).
+ */
 static void hwscroll_regs_changed(void)
 {
-
-    unsigned last_hwscroll_enabled = g_hwscroll.enabled;
 
     /* jsou splneny vsechny podminky pro scroll? */
     if ((g_hwscroll.regSOF > 0) &&
@@ -144,23 +171,23 @@ static void hwscroll_regs_changed(void)
         };
 #endif
     };
-
-    if ((!GDG_MZ800_DMD_TEST_MZ700) && (0 != (last_hwscroll_enabled | g_hwscroll.enabled)))
-    {
-        framebuffer_MZ800_screen_changed();
-    };
 }
 
+/**
+ * @brief Zápis do registru scrollu z portu xxCFh (OUT CPU).
+ *
+ * @param addr  Horní bajt adresy portu: 01h SOF_LO, 02h SOF_HI, 03h SW,
+ *              04h SSA, 05h SEA. Jiné hodnoty se ignorují (jen dokreslení).
+ * @param value Zapsaná hodnota.
+ *
+ * @pre Volat z emu vlákna; g_gdg.total_elapsed.ticks odpovídá okamžiku zápisu.
+ * @post Uplynulá část řádku je vykreslená se starým mapováním, registry
+ *       a g_hwscroll.enabled mají nový stav.
+ */
 void hwscroll_set_reg(unsigned addr, uint8_t value)
 {
 
-    /* Commit elapsed scanout with the OLD address mapping. Flushing only in
-     * hwscroll_regs_changed() retroactively applies the new mapping to pixels
-     * already passed by the beam (including enable/disable transitions). */
-    if (!GDG_MZ800_DMD_TEST_MZ700 && addr >= 1 && addr <= 5)
-    {
-        framebuffer_MZ800_screen_changed();
-    }
+    hwscroll_flush_elapsed_pixels();
 
     // printf ( "addr: 0x%02x, value: 0x%02x, PC: 0x%04x\n", addr, value, z80ex_get_reg ( g_mz800_main.cpu, regPC ) );
 
@@ -200,50 +227,90 @@ void hwscroll_set_reg(unsigned addr, uint8_t value)
     hwscroll_regs_changed();
 }
 
+/*
+ * Ladicí přístup k registrům scrollu (debugger, MCP).
+ *
+ * Hodnoty jsou v jednotkách portu xxCFh, tedy stejné, jaké zapisuje program:
+ * SSA, SEA a SW 0..7Fh, SOF 0..3FFh. Interně se ukládají jako bajtové adresy
+ * plane (SSA, SEA, SW << 6, SOF << 3).
+ */
+
+/** @brief Vrátí SSA v jednotkách portu 04CFh (0..7Fh). */
 unsigned hwscroll_get_ssa(void)
 {
-    return g_hwscroll.regSSA;
+    return g_hwscroll.regSSA >> 6;
 }
 
+/** @brief Vrátí SEA v jednotkách portu 05CFh (0..7Fh). */
 unsigned hwscroll_get_sea(void)
 {
     return g_hwscroll.regSEA >> 6;
 }
 
+/** @brief Vrátí SW v jednotkách portu 03CFh (0..7Fh). */
 unsigned hwscroll_get_sw(void)
 {
     return g_hwscroll.regSW >> 6;
 }
 
+/** @brief Vrátí SOF v jednotkách portů 01CFh/02CFh (0..3FFh). */
 unsigned hwscroll_get_sof(void)
 {
     return g_hwscroll.regSOF >> 3;
 }
 
+/**
+ * @brief Nastaví SSA jako zápis do portu 04CFh.
+ *
+ * @param value Hodnota v jednotkách portu (použije se bit 0-6).
+ * @pre Volat z emu vlákna.
+ * @post Uplynulá část řádku je vykreslená se starým mapováním.
+ */
 void hwscroll_set_ssa(unsigned value)
 {
-    if (!GDG_MZ800_DMD_TEST_MZ700) framebuffer_MZ800_screen_changed();
-    g_hwscroll.regSSA = value & 0x7f;
+    hwscroll_flush_elapsed_pixels();
+    g_hwscroll.regSSA = (value & 0x7f) << 6;
     hwscroll_regs_changed();
 }
 
+/**
+ * @brief Nastaví SEA jako zápis do portu 05CFh.
+ *
+ * @param value Hodnota v jednotkách portu (použije se bit 0-6).
+ * @pre Volat z emu vlákna.
+ * @post Uplynulá část řádku je vykreslená se starým mapováním.
+ */
 void hwscroll_set_sea(unsigned value)
 {
-    if (!GDG_MZ800_DMD_TEST_MZ700) framebuffer_MZ800_screen_changed();
+    hwscroll_flush_elapsed_pixels();
     g_hwscroll.regSEA = (value & 0x7f) << 6;
     hwscroll_regs_changed();
 }
 
+/**
+ * @brief Nastaví SW jako zápis do portu 03CFh.
+ *
+ * @param value Hodnota v jednotkách portu (použije se bit 0-6).
+ * @pre Volat z emu vlákna.
+ * @post Uplynulá část řádku je vykreslená se starým mapováním.
+ */
 void hwscroll_set_sw(unsigned value)
 {
-    if (!GDG_MZ800_DMD_TEST_MZ700) framebuffer_MZ800_screen_changed();
+    hwscroll_flush_elapsed_pixels();
     g_hwscroll.regSW = (value & 0x7f) << 6;
     hwscroll_regs_changed();
 }
 
+/**
+ * @brief Nastaví celý 10bitový SOF jako zápis do portů 01CFh a 02CFh.
+ *
+ * @param value Hodnota v jednotkách portu (použije se bit 0-9).
+ * @pre Volat z emu vlákna.
+ * @post Uplynulá část řádku je vykreslená se starým mapováním.
+ */
 void hwscroll_set_sof(unsigned value)
 {
-    if (!GDG_MZ800_DMD_TEST_MZ700) framebuffer_MZ800_screen_changed();
+    hwscroll_flush_elapsed_pixels();
     g_hwscroll.regSOF = (value & 0x3ff) << 3;
     hwscroll_regs_changed();
 }

@@ -66,11 +66,15 @@ static Uint32 sdlapp_timer_sdl_callback(void *param, SDL_TimerID id, Uint32 inte
 /**
  * @brief Zpracuje timer event v hlavním vlákně.
  *
- * Ověří existenci timeru v seznamu a zavolá uživatelský callback.
- * Pokud callback vrátí FALSE, timer se automaticky odstraní.
+ * Událost může ve frontě SDL čekat i po odebrání timeru (sdlapp_remove_timer
+ * strukturu uvolní). Ukazatel z události se proto nesmí dereferencovat,
+ * dokud není nalezen v seznamu živých timerů, a i pak musí sedět ID timeru
+ * (user.code): alokátor mohl stejnou adresu mezitím přidělit novému timeru.
+ * Teprve potom se zavolá uživatelský callback. Pokud callback vrátí FALSE,
+ * timer se automaticky odstraní.
  *
  * @param app Ukazatel na aplikaci.
- * @param event SDL event s timer daty.
+ * @param event SDL event s timer daty (user.code = ID, user.data1 = timer).
  */
 static void sdlapp_process_timer_event(SdlApp *app, SDL_Event *event)
 {
@@ -78,7 +82,7 @@ static void sdlapp_process_timer_event(SdlApp *app, SDL_Event *event)
     if (!timer)
         return;
 
-    /* ověříme, že timer stále existuje v seznamu */
+    /* ověříme, že timer stále existuje v seznamu (bez dereference) */
     gboolean found = FALSE;
     for (GList *l = app->timers; l != NULL; l = l->next)
     {
@@ -89,8 +93,7 @@ static void sdlapp_process_timer_event(SdlApp *app, SDL_Event *event)
         }
     }
 
-    /* Removed timers can still have queued events. Do not dereference their
-     * freed data; the ID also protects against allocator pointer reuse. */
+    /* stará událost odebraného timeru, jehož adresu dostal nový timer */
     if (!found || timer->id != (guint)event->user.code || !timer->callback)
         return;
 

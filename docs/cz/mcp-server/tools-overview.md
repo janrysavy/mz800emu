@@ -73,17 +73,45 @@ dokumentu [Resources overview](resources-overview.md).
 | `emu_videorec_marker` | ne | Marker (kapitola) na aktuální pozici nahrávky |
 | `emu_videorec_status` | ne | Stav nahrávání videa (stav, snímky, segment, velikost, cesta, poslední událost) |
 | `emu_videorec_timebase` | ne | Časová základna nahrávání: emulační čas nebo podle reality |
+| `emu_screenshot_save_to_file` | ano (vytvoří / přepíše soubor) | PNG obrazovky do souboru: oblast (full / canvas), měřítko (framebuffer / nativní body / okno 1-4), ořez |
+| `emu_screenshot_series_start` | ano (vytváří soubory) | Série snímků: PNG každého změněného emulovaného snímku (oblast, měřítko, ořez, only_changed, frames, max_files) |
+| `emu_screenshot_series_stop` | ne | Ukončí sérii snímků, standardně počká na zápis všech snímků |
+| `emu_screenshot_series_status` | ne | Stav série snímků (sledované snímky, soubory, nezměněné, složka, důvod konce) |
 | `emu_profiler_start` | ne | Start CPU profileru (hot-path overhead) |
 | `emu_profiler_stop` | ne | Stop profileru (data zachována) |
 | `emu_profiler_reset` | ne | Vynuluje agregátor profileru |
 | `emu_profiler_export` | ne | Export profile do CSV nebo JSON souboru |
 | `emu_profiler_get` | ne | Inline JSON s entries + globální stats |
+| `emu_profiler_pc_start` | ne | Start profileru podle PC (vykonání, T-stavy a WAIT na adresu instrukce) |
+| `emu_profiler_pc_stop` | ne | Stop profileru podle PC (data zachována) |
+| `emu_profiler_pc_reset` | ne | Smaže data profileru podle PC |
+| `emu_profiler_pc_get` | ne | Nejvytíženější adresy instrukcí s nejbližším symbolem (řazení, limit, rozsah adres) |
+| `emu_profiler_pc_export` | ne | Všechny vykonané adresy do CSV souboru |
+| `emu_audio_capture_start` | ano (vytváří soubory) | Zachycení zvuku do složky: změny úrovní kanálů, zápisy do PSG, reference.wav a sdl.wav (frames, výběr souborů) |
+| `emu_audio_capture_stop` | ne | Ukončí zachycení zvuku a dopíše soubory |
+| `emu_audio_capture_status` | ne | Stav zachycení zvuku (snímky, události, zápisy PSG, vzorky, bloky SDL, složka, důvod konce) |
 | `emu_media_load_mzf` | ne | CMT-hack instant load MZF (header + body) do RAM na LOAD_ADDR (path nebo bytes_b64) |
 | `emu_media_run_mzf` | **ANO** | Reset + spuštění MZF ve stavu jako po `--run-mzf` (výchozí); `bootstrap=false` = load + ROM disconnect + JP STRT bez resetu |
 | `emu_media_load_binary` | **ANO** | Raw bajty z file do Z80 paměti, **destruktivní** |
 | `emu_media_insert` | **ANO** | Vloží image do slotu (auto-eject pokud již vloženo) |
 | `emu_media_eject` | ne | Vyjme image ze slotu |
 | `emu_media_state` | ne | Snapshot stavu všech 11 slotů (cmt/fdc0_fd0..3/fdc1_fd0..3/qd/ide8) |
+| `emu_cmt_open` | **ANO** | Otevře soubor pásky (.mzf, .mzt, .wav, ...) do skutečného kazetofonu, volitelně přehraje |
+| `emu_cmt_eject` | **ANO** | Vysune pásku ze skutečného kazetofonu |
+| `emu_cmt_play` | **ANO** | Spustí přehrávání pásky (transport PLAY) |
+| `emu_cmt_play_paused` | **ANO** | Spustí přehrávání pásky v pauze (čeká na pokračování) |
+| `emu_cmt_pause` | **ANO** | Pozastaví / obnoví transport pásky |
+| `emu_cmt_stop` | **ANO** | Zastaví transport pásky (PLAY nebo RECORD -> STOP) |
+| `emu_cmt_record` | **ANO** | Nahrává výstup pásky do WAV souboru |
+| `emu_cmt_hack_set` | **ANO** | Zapne / vypne cmthack (patch ROM pro okamžité nahrání z pásky) |
+| `emu_cmt_set_cpu_boost` | **ANO** | Zapne / vypne zrychlení CPU během běhu pásky |
+| `emu_cmt_set_mzfsize_check` | **ANO** | Zapne / vypne kontrolu velikosti MZF při nahrávání |
+| `emu_cmt_set_polarity` | **ANO** | Polarita signálu pásky (zadní DIP přepínač) |
+| `emu_cmt_set_speed` | **ANO** | Výchozí rychlost přehrávání virtuálního kazetofonu (poměr nebo vlastní pulzy) |
+| `emu_cmt_tape_seek` | **ANO** | Posune víceblokovou pásku na zvolený blok |
+| `emu_cmt_tape_set_block_speed` | **ANO** | Rychlost přehrávání jednoho bloku pásky |
+| `emu_set_speed` | ne | Rychlost emulace: 100 %, vlastní procenta nebo MAX SPEED |
+| `emu_speed_step` | ne | Změní vlastní rychlost emulace o relativní počet procent |
 | `emu_settings_set` | **ANO** | Live INI write (whitelist), **mutuje globální stav** |
 | `emu_settings_get` | ne | Read INI klíče + typ (open read, žádný whitelist) |
 | `emu_platform_set` | **ANO** | Pokus o platform switch - vrací error (compile-time MZARCH) |
@@ -130,6 +158,9 @@ dokumentu [Resources overview](resources-overview.md).
 | `emu_eventlog_get_event` | ne | Načte event[idx] - pxclk/screen/category/pc/payload |
 | `emu_regions_list` | ne | Enumerate fyzických paměťových regionů (ROM, VRAM, CG-ROM, MemExt banks, ...) bypass Z80 banking |
 | `emu_region_read` | ne | Raw no-side-effect read z konkrétního regionu (= ekvivalent GUI Memory browseru pro headless debug) |
+| `emu_region_write` | **ANO** | Raw zápis do fyzického regionu paměti (mimo banking Z80), max 65536 bajtů |
+| `emu_file_load_to_region` | **ANO** | Nahraje soubor (nebo jeho část) do regionu paměti, max 65536 bajtů |
+| `emu_file_save_from_region` | ano (vytvoří / přepíše soubor) | Uloží část regionu paměti do souboru, max 65536 bajtů |
 
 ## Sensitive operace
 
@@ -281,8 +312,8 @@ Přepíše 16-bitovou hodnotu jednoho Z80 registru. Argumenty:
 - `reg` (string) - jméno registru, case-insensitive. Akceptuje
   `AF`, `BC`, `DE`, `HL`, `AF_` / `AF2`, `BC_` / `BC2`, `DE_` /
   `DE2`, `HL_` / `HL2`, `IX`, `IY`, `SP`, `PC`, `WZ`, `IR`.
-- `value` (int, 0..65535) - nová hodnota. Pro `IR` se zapisuje jen
-  dolní bajt (R), I se zachová.
+- `value` (int, 0..65535) - nová hodnota. `IR` zapíše celý pár I:R:
+  I je horní bajt, R dolní bajt včetně bitu 7 (jako LD I,A a LD R,A).
 
 **Destruktivní operace.** Zápis do `PC` mění tok provádění, zápis
 do `SP` invaliduje aktuální call stack. Před experimenty doporučeno
@@ -964,6 +995,66 @@ pauza podle `realtime_pause`). Bez zvukového zařízení (`--headless`,
 zvuk vyrobí stejnou cestou, jen se nepřehraje. Vrací
 stav a navíc `timebase_requested`; neplatná hodnota je chyba parametrů.
 
+## Nástroje screenshotu
+
+PNG obrázky obrazovky emulátoru zapsané přímo do souboru na počítači se
+serverem (v odpovědi není velký base64 obsah). Postup s recepty je
+v MCP dokumentu `emulator://docs/screenshot_workflow`; parametry popisuje
+i [headless-mode.md](headless-mode.md).
+
+### `emu_screenshot_save_to_file` (citlivý - vytvoří / přepíše soubor)
+
+Argumenty:
+
+- `path` (string, povinný) - PNG soubor k zápisu.
+- `format` (string, výchozí `png`) - podporované je jen `png`.
+- `area` (string, výchozí `full`) - `full` = celý obraz s borderem,
+  `canvas` = jen obraz bez borderu.
+- `scale` (string, výchozí `framebuffer`) - `framebuffer` = pixely
+  framebufferu 1:1 (MZ-800 celý obraz 928x288); `native` = jeden pixel
+  obrázku na bod počítače (MZ-800 obraz 320x200, v režimech 640 bodů
+  640x200); `"1"` až `"4"` = poměr stran okna emulátoru, `"2"` = okno na
+  100 % (MZ-800 celý obraz 928x576).
+- `crop` (objekt, volitelný) - `{"x", "y", "width", "height"}` ve
+  výstupních pixelech, jen s `framebuffer` nebo `native`.
+
+Vrací `{available, path, format, width, height, byte_size, area, scale}`
+(+ `hires` u `native`), před prvním vykresleným snímkem `{available:
+false, reason}`. Neplatná `area`, `scale` nebo `crop` (i ořez mimo obraz)
+je chyba parametrů a soubor se nezapíše.
+
+### `emu_screenshot_series_start` (citlivý - vytváří soubory)
+
+Ukládá PNG každého emulovaného snímku, který se liší od posledního
+uloženého - pro hledání chyb v animacích. Argumenty (všechny volitelné):
+`dir` (složka série; prázdný = nová složka
+`<platforma>_frames_RRRRMMDD_HHMMSS` ve výstupní složce screenshotů),
+`area`, `scale` (výchozí `native`), `crop` - jako výše, počítají se jen
+změny uvnitř nich; `only_changed` (výchozí `true`; `false` = každý
+snímek), `frames` (stop po N emulovaných snímcích, 0 = do stop),
+`max_files` (pojistka, 0 = 10000).
+
+Snímky se berou v emulovaném čase na konci každého snímku - ani při MAX
+SPEED se žádný nevynechá; když zápis nestíhá, emulace počká. V pauze
+emulace se nic nesnímá. Soubory `frame_NNNNNNN.png` (NNNNNNN = emulovaný
+snímek od startu, mezery = nezměněné snímky) a `index.csv`
+(`frame,file,gdg_screen`). Vrací stav série a navíc `area`, `scale`,
+`only_changed`. Chyby: série už běží, neplatné parametry, složku nelze
+vytvořit.
+
+### `emu_screenshot_series_stop`
+
+Argument `wait` (bool, výchozí `true`): počkat (nejvýš 30 s), až se
+zapíšou všechny snímky ve frontě. Vrací stav série. Bez série:
+`No frame series is running`.
+
+### `emu_screenshot_series_status`
+
+Bez argumentů. Vrací `active` (snímá), `writing` (soubory se ještě
+zapisují), `frames_seen`, `files`, `unchanged`, `dir`, `stop_reason`
+(`Stopped`, `Frame count reached`, `File limit reached`, `Error`, za běhu
+prázdný) a `last_error`.
+
 ## Profiler tools
 
 CPU profiler agreguje per-function statistiky (calls, exclusive
@@ -1047,6 +1138,153 @@ Response:
 Pole `entries` je v pořadí hash-map iterace (= bez sortování).
 Klient si sortuje podle vlastní metriky (typicky `excl_cycles`
 descending).
+
+## Profiler podle PC
+
+Profiler podle PC počítá každou vykonanou instrukci podle její adresy
+(logické PC): počet vykonání, T-stavy včetně čekacích stavů a samotné
+čekací stavy (přístup do VRAM, zápis do PSG). Na rozdíl od profileru po
+funkcích výše nepotřebuje párování CALL/RET, takže vidí i kód, na který
+se skáče, obsluhy přerušení a samostatné smyčky - obvykle první krok
+při optimalizaci programu.
+
+- Blokové instrukce (LDIR, LDDR, ...) se počítají při každém opakování
+  jako jedno vykonání (CPU je načítá znovu).
+- Paměťové banky se nerozlišují: kód na stejné adrese v různých bankách
+  se sčítá.
+- Čas mimo instrukce se vede zvlášť: `halt_idle` (CPU čeká v HALT,
+  samotná instrukce HALT se počítá na své adrese) a `other_tstates`
+  (hlavně přijetí přerušení). Vždy platí
+  `tstates + halt_idle + other_tstates == elapsed_tstates`.
+- Režie: jedno volání funkce na instrukci, dokud sběr běží. Se
+  zastaveným profilerem se emulace nezpomalí.
+
+Typické použití:
+
+```
+emu_profiler_pc_start()          # smaže předchozí data
+emu_run(frames=50)               # jedna sekunda MZ-800 (PAL)
+emu_profiler_pc_get(limit=20)    # kam čas odešel
+emu_profiler_pc_stop()
+```
+
+Všech pět nástrojů vrací souhrn `{"active", "instructions", "tstates",
+"wait", "halt_idle", "other_tstates", "elapsed_tstates", "unique_pcs"}`
+(plus položky uvedené níže).
+
+### `emu_profiler_pc_start`
+
+Spustí sběr. Argument `reset` (bool, výchozí true): nejdřív smazat
+předchozí data; false pokračuje v přičítání.
+
+### `emu_profiler_pc_stop`
+
+Zastaví sběr; data zůstanou pro `emu_profiler_pc_get`
+a `emu_profiler_pc_export`.
+
+### `emu_profiler_pc_reset`
+
+Smaže data. Zda profiler běží, se nemění.
+
+### `emu_profiler_pc_get`
+
+Nejvytíženější adresy inline. Argumenty (všechny volitelné):
+
+- `sort` - `tstates` (výchozí), `count`, `wait` nebo `addr`,
+- `limit` - počet řádků, 1..1000 (výchozí 50),
+- `from_addr`, `to_addr` - rozsah adres včetně (výchozí 0..65535).
+
+Přidá `sort`, `total_rows` (vykonané adresy v rozsahu, může být víc než
+`limit`) a `rows`:
+
+```json
+{"pc": 33667, "count": 109893, "tstates": 2307503, "wait": 0,
+ "tstates_pct": 64.79, "avg_tstates": 21.0,
+ "symbol": "fill_loop", "sym_offset": 3}
+```
+
+`tstates_pct` je podíl na T-stavech všech instrukcí. `symbol` je
+nejbližší načtený symbol na adrese `pc` nebo pod ní (pohled CPU, jako
+`emu_symbol_lookup`), `""` když žádný není.
+
+### `emu_profiler_pc_export`
+
+Zapíše všechny vykonané adresy do CSV. Argumenty: `path` (povinný,
+přepíše se; složka musí existovat) a `sort` (výchozí `addr`). CSV:
+UTF-8, konce řádků LF, desetinná tečka bez ohledu na locale; hlavička
+`pc,count,tstates,wait,tstates_pct`, `pc` jako 4 hex číslice. Přidá
+`path` a `rows`.
+
+## Zachycení zvuku
+
+Zachycení zvuku zapisuje do složky, co dělá zvukový hardware, v emulovaném
+čase - pro hledání chyb zvuku v programu i v emulátoru. Stejné zachycení je
+i v GUI (Tools -> Audio Capture, `Alt + Q`) a v příkazové řádce
+(`--audio-capture`), viz [`../audio-capture.md`](../audio-capture.md).
+
+| Soubor | Obsah |
+|---|---|
+| `events.csv` | `ticks,time_us,frame,channel,level` - každá změna výstupní úrovně (0-15) zvukového kanálu |
+| `psg_writes.csv` | `ticks,time_us,frame,psg,byte,channel,reg,value` - každý zápis do PSG s dekódováním |
+| `reference.wav` | zvuk vyrenderovaný přesně v emulovaném čase (renderer video záznamu) |
+| `sdl.wav` | zvuk ze zvukové výstupní cesty emulátoru - to, co slyší uživatel |
+| `capture.json` | platforma, `gdg_clk_hz`, `frames_per_sec`, názvy kanálů, počty, důvod konce (zapisuje se na konci) |
+
+- `ticks` jsou takty GDG od začátku zachycení (`gdg_clk_hz` v
+  capture.json), `time_us` totéž v mikrosekundách, `frame` zvukový snímek
+  (= snímek obrazu, 20 ms PAL / 16,7 ms NTSC) od začátku.
+- Kanály: `ctc0` (reproduktor řízený CTC0 a PIO, úroveň 0 nebo 15),
+  `psg0_0`..`psg0_3` a na MZ-1500 nebo MZ-800 s druhým PSG
+  `psg1_0`..`psg1_3`. Kanál 3 každého PSG je šumový. První řádky
+  events.csv (ticks 0) jsou úrovně na začátku.
+- psg_writes.csv: `psg` je cíl (1 = PSG0, 2 = PSG1, 3 = oba), `byte`
+  zapsaná hodnota hexadecimálně. Dekóduje se ze stavu PSG po zápisu (pro
+  oba PSG z PSG0): `reg` = `tone_lo` (latch bajt tónu: spodní 4 bity
+  děliče, dělič se mění až datovým bajtem), `tone` (celý 10bitový dělič),
+  `volume` (útlum 0-15, 15 = vypnuto) nebo `noise` (`(typ << 2) | rychlost`).
+- Oba WAV jsou 44100 Hz, 16 bit, stereo. sdl.wav je proti reference.wav
+  opožděný: bez zvukového zařízení (headless) přesně o jeden snímek, se
+  zařízením podle jeho bufferu. Se zařízením při MAX SPEED výstupní cesta
+  snímky vynechává - `sdl_blocks` je pak menší než `frames`.
+- Začátek: zachycení začne na konci nejbližšího zvukového snímku, se
+  `sdl_wav` až po dalších 6 snímcích, které rozjedou výstupní cestu (jinak
+  by její filtry začínaly ze studeného stavu). Úrovně, které se delší dobu
+  nezměnily, začnou v obou souborech ztlumené, jako ve výstupní cestě.
+- Konec: `emu_audio_capture_stop`, dosažení `frames`, pojistka jedné
+  hodiny, reset nebo načtení snapshotu (emulovaný čas skočí zpět), chyba
+  zápisu nebo ukončení emulátoru.
+- Zachytává se jen za běhu emulace - kombinovat s `emu_run(frames=N)`.
+
+Typické použití:
+
+```
+emu_audio_capture_start(dir="C:/tmp/snd", frames=250)   # 5 s PAL
+emu_run(frames=260)
+emu_audio_capture_status()      # stop_reason "Frame count reached"
+```
+
+### `emu_audio_capture_start`
+
+Argumenty (všechny volitelné): `dir` (složka, vytvoří se; prázdný = nová
+složka `<platforma>_audio_<datum>_<čas>` ve výstupní složce zachycení,
+výchozí `audio_captures` vedle emulátoru),
+`frames` (stop po tolika zvukových snímcích, 0 = do stop), `events`,
+`psg_writes`, `reference_wav`, `sdl_wav` (bool, výchozí true - které
+soubory zapisovat). Vrací stav s `pending: true`, nebo chybu (už běží,
+nic nevybráno, složku nejde vytvořit).
+
+### `emu_audio_capture_stop`
+
+Ukončí zachycení a dopíše soubory. Vrací konečný stav; chyba "No audio
+capture is running", když žádné neběží.
+
+### `emu_audio_capture_status`
+
+`{"pending", "active", "frames", "events", "psg_writes",
+"reference_samples", "sdl_blocks", "sdl_samples", "dir", "stop_reason",
+"last_error"}`. `stop_reason`: `Stopped`, `Frame count reached`,
+`Safety limit reached`, `Emulation timeline restarted (reset or snapshot
+load)`, `Error`, `Emulator exit`, za běhu prázdný.
 
 ## Media tools
 
@@ -1837,6 +2075,55 @@ Hlavní use case: AI klient v headless mode (= bez GUI access)
 inspectuje fyzické paměti emu - ROM monitor content, VRAM bitmap
 planes, MemExt banks. Reply 0007 v mzdos requests-to-emu-team
 obsahuje příklady použití.
+
+### `emu_region_write` (citlivý)
+
+Raw zápis do fyzického regionu paměti (= mimo banking Z80), protějšek
+`emu_region_read`.
+
+Args:
+- `region_id` (= z posledního volání `regions_list`)
+- `offset` (= byte offset v rámci regionu, 0..size-1)
+- `data_b64` (= base64 bajty, 1..65536 bajtů po dekódování; na konci
+  regionu se zkrátí)
+
+Vrací `{"region_id", "offset", "length", "written"}` - `length` je počet
+skutečně zapsaných bajtů (po zkrácení), `written` = zapsal se aspoň
+jeden bajt.
+
+Regiony jen pro čtení (`memext_flash`, `prohibited_shadow`), odpojený
+region nebo neplatný `region_id` / `offset` vrátí chybu parametrů
+`region write failed: read-only, disconnected, or invalid
+region_id/offset`. ROM regiony jsou zapisovatelné jako ladicí pomůcka:
+úprava platí do nového nahrání ROM (např. po resetu), soubor ROM na disku
+se nemění. Region `logical` (pohled Z80) zapisuje přes aktuální banking
+s běžnými vedlejšími efekty (např. zápis do VRAM jde přes zápisový formát
+GDG) - pro úpravu VRAM použijte fyzické regiony rovin. Změna VRAM se
+ukáže v dalším snímku; GUI v pauze potřebuje překreslit.
+
+### `emu_file_load_to_region` (citlivý)
+
+Nahraje soubor do regionu paměti bez base64 na straně klienta (Python
+složenina: čtení souboru + `emu_region_write`).
+
+Args: `path`, `region_id`, `dest_offset` (výchozí 0), `src_offset`
+(přeskočí N bajtů souboru, výchozí 0), `length` (počet bajtů, výchozí
+-1 = do konce souboru).
+
+Víc než 65536 bajtů je chyba (`length N > 65536; split into multiple
+calls`) - velký soubor kopírujte po částech. Při úspěchu vrací odpověď
+`emu_region_write` a navíc `src_file` a `src_offset`.
+
+### `emu_file_save_from_region`
+
+Uloží část regionu paměti do souboru (Python složenina: `emu_region_read`
++ zápis souboru) - výpisy ROM, zálohy ramdisku, raw VRAM.
+
+Args: `path` (přepíše se), `region_id`, `src_offset` (výchozí 0),
+`length` (výchozí 4096, max 65536).
+
+Vrací `{"region_id", "src_offset", "length", "dest_file"}`; `length` je
+počet skutečně uložených bajtů (na konci regionu se zkrátí).
 
 ## Speed control tools
 

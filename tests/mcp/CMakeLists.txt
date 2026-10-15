@@ -59,6 +59,7 @@ mz_add_test(mcp_dispatch
         ${CMAKE_SOURCE_DIR}/src/emulator/mcp/cooperation.c
         ${CMAKE_SOURCE_DIR}/src/emulator/mcp/event_bus.c
         ${CMAKE_SOURCE_DIR}/src/emulator/mcp/trap_manager.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/screenshot/screenshot.c
     LABELS   "standalone;mcp"
 )
 
@@ -277,6 +278,25 @@ if(Python3_FOUND)
                    "(Python ${Python3_VERSION})")
 
     # -----------------------------------------------------------
+    # Test 7b2: CLI volby --audio-capture, --audio-capture-frames (headless)
+    # -----------------------------------------------------------
+    # Spustí mz800emu --headless se zachycením zvuku na 60 snímků; ověří,
+    # že emulátor sám skončí, soubory a capture.json (frames, sdl_blocks)
+    # a výběr souborů z INI [AUDIO_CAPTURE]. MCP TCP port volný od systému.
+    add_test(
+        NAME    mcp_cli_audio_capture
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_audio_capture.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_cli_audio_capture PROPERTIES
+        LABELS  "e2e;mcp;cli"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_cli_audio_capture "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
     # Test 7c: stav stroje po CLI --run-mzf (headless + MCP TCP)
     # -----------------------------------------------------------
     # Pro mz700emu-pal, mz700emu-ntsc, mz800emu a mz1500emu (chybí-li jen
@@ -363,6 +383,26 @@ if(Python3_FOUND)
     message(STATUS "  tests/mcp: registered mcp_cmt_snapshot "
                    "(Python ${Python3_VERSION})")
 
+    # CLI volby virtuální kazety --cmt, --cmt-play, --cmt-play-pause,
+    # --cmt-boot (všechny 4 binárky): vložení pásky, vypnutí CMT hacku jen
+    # pro běh (INI zůstane), PLAY / PLAY + PAUSE vůči hraně PC3 z inicializace
+    # ROM, na MZ-800 nahrání a spuštění MZF z pásky přes IPL (klávesa C),
+    # chybné kombinace. Pipe, varianty s --run-mzf přes MCP TCP (volný port
+    # od systému). Bez binárek 77 (SKIP).
+    add_test(
+        NAME    mcp_cli_cmt
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_cmt.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_cli_cmt PROPERTIES
+        LABELS  "e2e;mcp;pipe;tcp;cmt"
+        TIMEOUT 300
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_cli_cmt "
+                   "(Python ${Python3_VERSION})")
+
     # Snapshot obnoví i čekající GDG událost (GitHub issue #6): stav po
     # snapshot_load přes "špinavý" stroj + run se shoduje s během bez
     # loadu (všechny 4 binárky, fáze s každou čekající GDG událostí);
@@ -442,6 +482,63 @@ if(Python3_FOUND)
         SKIP_RETURN_CODE 77
     )
     message(STATUS "  tests/mcp: registered mcp_mode_switch "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Test 7d1c: get_periph_gdg - řadič VRAM (WF/RF) a HW scroll MZ-800
+    # -----------------------------------------------------------
+    # Program zapíše WF, RF a registry scrollu; odpověď nese objekty
+    # vramctrl a hwscroll (scroll v jednotkách portu).
+    add_test(
+        NAME    mcp_periph_gdg_vramctrl
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_periph_gdg_vramctrl.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_periph_gdg_vramctrl PROPERTIES
+        LABELS  "e2e;mcp;tcp"
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_periph_gdg_vramctrl "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Test 7d1d: screenshot_save_to_file - area, scale, crop
+    # -----------------------------------------------------------
+    # Rozměry PNG pro výchozí, canvas+native, scale 2 a ořez;
+    # ořez mimo obraz je chyba parametrů.
+    add_test(
+        NAME    mcp_screenshot_options
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_screenshot_options.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_screenshot_options PROPERTIES
+        LABELS  "e2e;mcp;tcp"
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_screenshot_options "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Test 7d1e: série screenshotů (screenshot_series_*)
+    # -----------------------------------------------------------
+    # Statický obraz + only_changed -> 1 soubor, všechny snímky -> N souborů,
+    # druhý start a stop bez série jsou chyby.
+    add_test(
+        NAME    mcp_screenshot_series
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_screenshot_series_e2e.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_screenshot_series PROPERTIES
+        LABELS  "e2e;mcp;tcp"
+        TIMEOUT 90
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_screenshot_series "
                    "(Python ${Python3_VERSION})")
 
     # -----------------------------------------------------------

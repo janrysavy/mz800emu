@@ -270,56 +270,59 @@ static uint8_t read_gdg_palette(void)
 #if MZARCH == 800
 
 /**
- * Read SOF0 - dolních 8 bitů scroll offset (g_hwscroll.regSOF & 0xFF).
+ * Read SOF0 - dolních 8 bitů scroll offset tak, jak byly zapsány do 01CFh.
  *
- * @return Spodní byte aktualne nastaveneho SOF.
+ * g_hwscroll.regSOF drží SOF jako bajtovou adresu plane (hodnota portu << 3),
+ * proto se před maskou posouvá zpět.
+ *
+ * @return Dolní bajt 10bitového SOF (hodnota portu 01CFh).
  */
 static uint8_t read_gdg_sof0(void)
 {
-    return (uint8_t)(g_hwscroll.regSOF & 0xFF);
+    return (uint8_t)((g_hwscroll.regSOF >> 3) & 0xFF);
 }
 
 /**
- * Read SOF1 - horní 2 bity scroll offset (g_hwscroll.regSOF >> 8 & 0x03).
+ * Read SOF1 - horní 2 bity scroll offset tak, jak byly zapsány do 02CFh.
  *
- * Bity 0-1 = horní 2 bity SOF (= bity 8-9 plné 10-bit hodnoty).
+ * Bity 0-1 = bity 8-9 10bitového SOF; regSOF je hodnota portu << 3.
  * Bity 2-7 jsou ignorovány.
  *
  * @return Spodní 2 bity = horní 2 bity SOF.
  */
 static uint8_t read_gdg_sof1(void)
 {
-    return (uint8_t)((g_hwscroll.regSOF >> 8) & 0x03);
+    return (uint8_t)((g_hwscroll.regSOF >> 11) & 0x03);
 }
 
 /**
  * Read SW (scroll width) z g_hwscroll.regSW.
  *
- * @return SW jako 8-bit.
+ * @return SW tak, jak byl zapsán do 03CFh (regSW je hodnota portu << 6).
  */
 static uint8_t read_gdg_sw(void)
 {
-    return (uint8_t)(g_hwscroll.regSW & 0xFF);
+    return (uint8_t)((g_hwscroll.regSW >> 6) & 0xFF);
 }
 
 /**
  * Read SSA (scroll start address) z g_hwscroll.regSSA.
  *
- * @return SSA jako 8-bit.
+ * @return SSA tak, jak byl zapsán do 04CFh (regSSA je hodnota portu << 6).
  */
 static uint8_t read_gdg_ssa(void)
 {
-    return (uint8_t)(g_hwscroll.regSSA & 0xFF);
+    return (uint8_t)((g_hwscroll.regSSA >> 6) & 0xFF);
 }
 
 /**
  * Read SEA (scroll end address) z g_hwscroll.regSEA.
  *
- * @return SEA jako 8-bit.
+ * @return SEA tak, jak byl zapsán do 05CFh (regSEA je hodnota portu << 6).
  */
 static uint8_t read_gdg_sea(void)
 {
-    return (uint8_t)(g_hwscroll.regSEA & 0xFF);
+    return (uint8_t)((g_hwscroll.regSEA >> 6) & 0xFF);
 }
 
 /**
