@@ -48,3 +48,25 @@ ctest --test-dir build -L mcp
 buildu `make NO_MCP=1` se test nezaregistruje (jeho jediný zdroj
 `jsonl_io.c` by se v guard-blockovaném režimu zkompiloval jako prázdný
 TU a test by selhal na undefined symbol).
+
+## Blocking RUN breakpoint wakeup latency
+
+`test_run_breakpoint_latency.py` measures host response time separately from
+guest execution. Assemble its maintained four-byte Z80 fixture first (sjasmplus):
+
+```bash
+mkdir -p build/mcp-run-latency
+sjasmplus --raw=build/mcp-run-latency/loop.bin tests/mcp/run_breakpoint_latency.asm
+python tests/mcp/test_run_breakpoint_latency.py --exe ./mz800emu \
+    --program build/mcp-run-latency/loop.bin \
+    --report build/mcp-run-latency/report.json
+```
+
+Every one of256 stops must be a breakpoint at1200h after exactly14 T-states,
+with no frame elapsed and registers preserved except refresh R/WZ. The
+default25ms worst host-latency limit detects a missing pause notification:
+the old frame-condition wait sometimes sleeps for its50ms safety poll when
+no new framebuffer is published. The loop never changes device clocks or
+repairs guest state. On a heavily loaded host the optional `--max-host-ms`
+sets an explicit latency budget; the JSON keeps every sample. This is an
+opt-in performance regression and needs no Python packages.
