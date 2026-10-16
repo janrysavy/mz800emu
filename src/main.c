@@ -36,6 +36,16 @@
 
 SdlApp *g_sdlapp = NULL;
 
+/**
+ * @brief Nejdelší čekání hlavní smyčky na událost SDL v režimu --headless [ms].
+ *
+ * Headless běží smyčka v režimu SDLAPP_LOOP_WAIT_TIMEOUT místo aktivního
+ * pollingu. Události (časovače sdlapp, ukončení) čekání probudí hned; hodnota
+ * určuje jen nejdelší prodlevu, než si smyčka všimne sdlapp_quit() z jiného
+ * vlákna (ten událost nevloží).
+ */
+#define MAIN_HEADLESS_LOOP_WAIT_MS 20
+
 
 /**
  * @brief Whitelist všech známých CLI options.
@@ -482,16 +492,6 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     };
 
-    /* Headless has no window/render callback to throttle SDLAPP_LOOP_POLL.
-     * Wait for host events instead of pumping an empty SDL queue continuously.
-     * SDL_PushEvent wakes the wait immediately; the timeout bounds housekeeping
-     * and quit-flag latency. Guest CPU, raster, audio and TCP debugger work run
-     * on their existing threads and retain their clocks and command cadence. */
-    if (sdlapp_option_present("--headless"))
-    {
-        sdlapp_set_loop_mode(g_sdlapp, SDLAPP_LOOP_WAIT_TIMEOUT, 20);
-    };
-
     /* i18n_init musí být po sdlapp_new — používá g_sdlapp->paths->home_dir
      * pro lokalizaci adresáře s .mo soubory. */
     i18n_init();
@@ -598,6 +598,17 @@ int main(int argc, char *argv[])
     {
         SDLAPP_ERROR("Failed to start emulator thread");
         return EXIT_FAILURE;
+    };
+
+    /* Headless: hlavní vlákno nemá okno, které by smyčku brzdilo vykreslením
+     * (vsync), a ve výchozím režimu SDLAPP_LOOP_POLL by se točilo naprázdno
+     * na celém jádru. Práce pro hlavní vlákno chodí jako události SDL
+     * (časovače sdlapp, SDL_EVENT_QUIT), které čekání hned probudí; timeout
+     * jen omezuje, jak dlouho po sdlapp_quit() z jiného vlákna smyčka ještě
+     * běží. Emulace, MCP TCP server a zvuk mají vlastní vlákna. */
+    if (sdlapp_option_present("--headless"))
+    {
+        sdlapp_set_loop_mode(g_sdlapp, SDLAPP_LOOP_WAIT_TIMEOUT, MAIN_HEADLESS_LOOP_WAIT_MS);
     };
 
     sdlapp_run(g_sdlapp);

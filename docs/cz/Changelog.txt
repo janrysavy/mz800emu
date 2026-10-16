@@ -1,4 +1,10 @@
 
+	- Režim --headless už zbytečně nezatěžuje celé jedno jádro procesoru. Hlavní vlákno bez okna dřív dokola kontrolovalo události, teď na ně čeká; rychlost emulace se nemění.
+
+	- Debugger a MCP - krok a pokračování z pauzy se provedou hned. Dřív emulace po příkazu Step nebo Run v pauze čekala ještě až 20 ms, takže automatické krokování nebo opakovaný běh k breakpointu, které čekají na výsledek, stály na každý krok či rozběh 20 ms navíc.
+
+	- BUGFIX: Nahrávání videa - při přepnutí z reálného času zpět na emulovaný čas mohl v nahrávce chybět jeden snímek (přepnutí se provedlo až s krátkým zpožděním po požadavku). Teď platí od požadavku.
+
 	- MCP - emu_profiler_pc_bitmap vrací vykonané adresy profileru podle PC jako bitmapu 8 KiB v base64 (bit na adresu, stejné adresy jako emu_profiler_pc_get a export) - pokrytí kódu, které jde číst často, třeba po každém kroku automatického průchodu. Viz mcp-server/tools-overview.md.
 
 	- Zachycení zvuku - capture.json nově obsahuje absolutní začátek a konec zachycení v taktech GDG od spuštění emulace (origin_ticks = čas 0 v CSV a první vzorek reference.wav, end_ticks = konec reference.wav, last_event_ticks = poslední řádek CSV, began) a hodiny platformy (clocks: gdg_base_hz, skutečný krystal gdg_real_base_hz, děličky CPU, CTC0 a PSG, takty na snímek), aby šly události zachycení přesně spárovat s během programu. Viz audio-capture.md.

@@ -879,12 +879,12 @@ void videorec_get_status(st_VIDEOREC_STATUS *out);
  * @brief Přepne časovou základnu nahrávání (za běhu i pro příští start).
  *
  * Nastaví `g_videorec_settings.timebase` a požadovanou časovou základnu
- * běžící nebo čekající session. Přepnutí provede vlákno vzorkovače na
- * nejbližším ticku (nejvýš jedna perioda snímku, 20 ms při 50 a 16,7 ms
- * při 60 snímcích/s): emulated -> realtime hned (i v pauze
- * emulace), realtime -> emulated na nejbližším konci emulovaného snímku
- * (emulační osa musí začít na hranici snímku; v pauze emulace se do té doby
- * nezapisuje). Přepnutí je hranice segmentu s výchozím přechodem, začíná
+ * běžící nebo čekající session. emulated -> realtime provede vlákno
+ * vzorkovače na nejbližším ticku (nejvýš jedna perioda snímku, 20 ms při 50
+ * a 16,7 ms při 60 snímcích/s), i v pauze emulace. realtime -> emulated
+ * ohlásí už tento požadavek a provede se na nejbližším konci emulovaného
+ * snímku po něm (emulační osa musí začít na hranici snímku; v pauze emulace
+ * se do té doby nezapisuje), takže v nahrávce žádný snímek nechybí. Přepnutí je hranice segmentu s výchozím přechodem, začíná
  * nová větev a do sidecaru se zapíše událost `timebase`. Návrat do
  * emulačního času požádaný v pauze emulace čeká na první konec snímku po
  * pokračování; do té doby vzorkovač nezapisuje (ani zamrzlý obraz podle

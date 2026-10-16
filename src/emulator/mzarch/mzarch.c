@@ -1049,16 +1049,20 @@ static inline void mzzarch_main_do_emulator_paused(void)
          * čekal každý synchronní příkaz UI v pauze až 20 ms - u editace
          * v Memory Browseru (zápis přes frontu po každém bajtu) a u
          * vícekrokových MCP handlerů se to sčítalo. Návratová hodnota je
-         * nepodstatná, drain proběhne na začátku další iterace. */
-        /* The drain above may have handled Run or Step. In that case the
-         * emulation thread must leave this loop immediately: waiting on an
-         * empty queue would add the full 20 ms timeout to every debugger
-         * resume. Keep the condition-variable wait for genuinely paused idle
-         * iterations; this does not change guest CPU/device timing. */
-        if (EMULATOR_TEST_PAUSED && (!TEST_DEBUGGER_STEP_CALL))
+         * nepodstatná, drain proběhne na začátku další iterace.
+         *
+         * Čeká se jen tehdy, když emulace po drainu pořád stojí. Když drain
+         * právě zpracoval Run nebo Step (pauza zrušena nebo krok vyžádán),
+         * smyčka hned skončí; jinak by se rozběh odložil o celých 20 ms,
+         * protože nový příkaz, který by čekání probudil, nepřijde - klient
+         * čeká na výsledek (step_done, breakpoint). Změřeno přes MCP pipe:
+         * krok i rozběh k breakpointu 21 ms -> pod 1 ms. Odpauzování mimo
+         * frontu (klávesa Pause v GUI z UI vlákna) čekání neprobudí, tam
+         * zůstává nejvýš 20 ms jako dřív. */
+        if (EMULATOR_TEST_PAUSED && !TEST_DEBUGGER_STEP_CALL)
         {
             (void)dbgapi_emu_wait_for_cmd(&g_dbgapi_cmdrq_queue, 20);
-        }
+        };
     };
 
     /* Po opuštění pause smyčky (= unpause přes F5/F4/F7/F8 nebo Run To

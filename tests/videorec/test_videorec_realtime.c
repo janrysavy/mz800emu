@@ -1062,6 +1062,30 @@ static void test_pause_during_rt_leaving(void)
     g_free(j);
 }
 
+/**
+ * Návrat do emulačního času platí od požadavku, ne až od ticku vzorkovače:
+ * emulovaný snímek hned po požadavku (bez ticku mezi nimi) už návrat provede
+ * a zapíše se. Dřív návrat připravil až tick, takže snímky mezi požadavkem
+ * a tickem chyběly v nahrávce (ani realtime, ani emulační čas).
+ */
+static void test_leave_realtime_from_request(void)
+{
+    rec_start();
+    live_ticks(5);
+    TEST_ASSERT_TRUE(videorec_request_timebase(VIDEOREC_TIMEBASE_EMULATED));
+    TEST_ASSERT_EQUAL_INT(VIDEOREC_TIMEBASE_EMULATED, status().timebase_effective);
+    emu_frame(); /* bez ticku: návrat dopíše frontu (D) a zapíše tento snímek */
+    TEST_ASSERT_EQUAL_UINT64(5 + D + 1, videorec_get_frames());
+    tick(); /* tick po návratu nic nezapíše */
+    TEST_ASSERT_EQUAL_UINT64(5 + D + 1, videorec_get_frames());
+    emu_frames(2);
+    rec_stop_emu();
+    TEST_ASSERT_EQUAL_UINT32(5 + D + 3, avi_frames());
+    gchar *j = cuts_json();
+    assert_event(j, 5 + D, "timebase", "emulated");
+    g_free(j);
+}
+
 /* Headless producent: zvuk se vyrábí jen v realtime a jen když buffer potřebuje data. */
 static void test_headless_wants_output(void)
 {
@@ -1099,6 +1123,7 @@ int main(int argc, char *argv[])
     RUN_TEST(test_realtime_basic_delay_and_audio);
     RUN_TEST(test_realtime_repeats_last_displayed_frame);
     RUN_TEST(test_switch_timebase_segments_and_events);
+    RUN_TEST(test_leave_realtime_from_request);
     RUN_TEST(test_pause_skip);
     RUN_TEST(test_pause_freeze);
     RUN_TEST(test_pause_freeze_capped);

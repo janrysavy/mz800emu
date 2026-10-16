@@ -1,4 +1,10 @@
 
+	- The --headless mode no longer keeps one processor core needlessly busy. The main thread without a window used to check for events in a loop, now it waits for them; the emulation speed does not change.
+
+	- Debugger and MCP - a step or a continue from pause is carried out at once. Before, after a Step or Run command in pause the emulation still waited up to 20 ms, so automated stepping or repeated runs to a breakpoint that wait for the result paid an extra 20 ms per step or run.
+
+	- BUGFIX: Video recording - when switching from real time back to emulation time, one frame could be missing in the recording (the switch took effect only with a short delay after the request). It now takes effect from the request.
+
 	- MCP - emu_profiler_pc_bitmap returns the executed addresses of the per-PC profiler as an 8 KiB base64 bitmap (one bit per address, the same addresses as emu_profiler_pc_get and export) - code coverage that can be read often, for example after every step of an automated run. See mcp-server/tools-overview.md.
 
 	- Audio capture - capture.json now contains the absolute start and end of the capture in GDG clock ticks since the emulation started (origin_ticks = time 0 in the CSV files and the first sample of reference.wav, end_ticks = the end of reference.wav, last_event_ticks = the last CSV row, began) and the platform clocks (clocks: gdg_base_hz, the real crystal gdg_real_base_hz, the CPU, CTC0 and PSG dividers, ticks per frame), so the capture events can be matched exactly with the run of the program. See audio-capture.md.

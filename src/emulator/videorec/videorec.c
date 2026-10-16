@@ -2599,7 +2599,17 @@ bool videorec_request_timebase(en_VIDEOREC_TIMEBASE tb)
     g_videorec_settings.timebase = tb;
     g_mutex_lock(&g_vr.mutex);
     bool session = (g_vr.state != VIDEOREC_STATE_IDLE) || g_vr.req_start;
-    if (session) g_vr.timebase = tb; /* přepnutí provede nejbližší tick vzorkovače */
+    if (session) {
+        g_vr.timebase = tb; /* vstup do realtime provede nejbližší tick vzorkovače */
+        if (g_vr.rt_on && !g_vr.rt_leaving && !vr_rt_want()) {
+            /* Návrat do emulačního času se ohlásí hned (stejně jako v ticku
+             * vzorkovače), ne až na nejbližším ticku: emulované snímky mezi
+             * požadavkem a tím tikem by jinak nebyly v nahrávce ani v realtime
+             * (vzorkovač na ticku přepnutí už nezapíše), ani v emulačním čase. */
+            g_vr.rt_leaving = true;
+            vr_flag_set(VIDEOREC_FLAG_REQ);
+        }
+    }
     vr_publish_status();
     g_mutex_unlock(&g_vr.mutex);
     return session;

@@ -119,6 +119,32 @@ if(Python3_FOUND)
     message(STATUS "  tests/mcp: registered mcp_pipe_e2e "
                    "(Python ${Python3_VERSION})")
 
+    # Krok a rozběh z pauzy bez zbytečného 20ms čekání smyčky pauzy
+    # (klient čeká jen na událost step_done / paused přes event_poll).
+    add_test(
+        NAME    mcp_pipe_resume_latency
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_pipe_resume_latency.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_pipe_resume_latency PROPERTIES
+        LABELS  "e2e;mcp;pipe"
+        TIMEOUT 60
+    )
+
+    # Hlavní vlákno v --headless se netočí naprázdno (spotřeba CPU procesu).
+    add_test(
+        NAME    mcp_headless_cpu
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_headless_cpu.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_headless_cpu PROPERTIES
+        LABELS  "e2e;mcp"
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+    )
+
     # -----------------------------------------------------------
     # Test 4: MCP Python wrapper E2E přes JSON-RPC stdio (V0.B.3)
     # -----------------------------------------------------------
