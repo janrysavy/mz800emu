@@ -3,8 +3,9 @@
 
 Use an assembled run_breakpoint_latency.asm binary, never host opcode patches:
   python test_run_breakpoint_latency.py --exe /path/mz800emu --program loop.bin
-The regression keeps every stop before the next physical frame, checks the
-exact14-T instruction interval, and reports host latency separately. Only the
+The regression checks every exact14-T instruction interval and reports host
+latency separately. At most one interval can cross a physical frame boundary;
+the initial beam phase is retained. Only the
 owned emulator process is launched/terminated; no register/memory repairs.
 """
 import argparse
@@ -100,7 +101,7 @@ def main():
                                pc=end['regs']['PC'],stopped_by=result['stopped_by'],
                                actual_frames=result['actual_frames'])
                     report['samples'].append(row)
-                    assert row['stopped_by'] == 'breakpoint' and row['actual_frames'] == 0, row
+                    assert row['stopped_by'] == 'breakpoint' and row['actual_frames'] in (0,1), row
                     assert row['pc'] == 0x1200 and cycles == 14, row
                     assert {k:v for k,v in end['regs'].items() if k not in ('IR','WZ')} == stable
                     assert (end['regs']['IR']&0xFF00) == (begin['regs']['IR']&0xFF00)
@@ -108,6 +109,8 @@ def main():
                 values = [v['host_ms'] for v in report['samples']]
                 report['median_host_ms'] = statistics.median(values)
                 report['worst_host_ms'] = max(values)
+                report['no_frame_stops'] = sum(v['actual_frames'] == 0 for v in report['samples'])
+                assert report['no_frame_stops'] >= args.samples-1, report['samples']
                 report['host_limit_ms'] = args.max_host_ms
                 assert report['worst_host_ms'] < args.max_host_ms, report['worst_host_ms']
                 report['passed'] = True
