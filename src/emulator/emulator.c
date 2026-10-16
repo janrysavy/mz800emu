@@ -353,7 +353,26 @@ void emulator_pause(bool value)
         MZ800_MAIN_SET_EVENT(MZEVENT_BREAK_EMULATION_PAUSED, 0);
     };
 
-    g_emulator.paused = value;
+    /* MCP's frame-bounded run waits on this condition and also tests paused.
+     * A breakpoint can stop before another framebuffer is published; without
+     * a pause notification the caller sleeps until its50ms safety poll.
+     * Share the predicate mutex to avoid a lost wake between check and wait.
+     * Broadcast because the video consumer can be waiting on the same cond.
+     * This changes host wakeup only, never CPU/device clocks or stop location.
+     */
+    if (g_iface_video && g_iface_video->fbsnapshot_pixels_mutex
+            && g_iface_video->fbsnapshot_pixels_cond)
+    {
+        APP_MUTEX_LOCK(g_iface_video->fbsnapshot_pixels_mutex);
+        g_emulator.paused = value;
+        if (value)
+            APP_COND_BROADCAST(g_iface_video->fbsnapshot_pixels_cond);
+        APP_MUTEX_UNLOCK(g_iface_video->fbsnapshot_pixels_mutex);
+    }
+    else
+    {
+        g_emulator.paused = value;
+    }
 
     // MAX SPEED benchmark: pauza ukončuje měřený segment, unpauza jej (v MAX SPEED) obnoví
     emulator_measuring_maxspeed_update_segment();

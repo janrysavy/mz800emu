@@ -217,7 +217,7 @@ static inline void app_cond_destroy(app_cond_t **cond)
 
 #define APP_COND_CREATE(cond) app_cond_create(&cond)
 #define APP_COND_DESTROY(cond) app_cond_destroy(&cond)
-//#define APP_COND_BROADCAST(cond) SDL_CondBroadcast(cond)
+#define APP_COND_BROADCAST(cond) SDL_BroadcastCondition(cond)
 #define APP_COND_SIGNAL(cond) SDL_SignalCondition(cond)
 #define APP_COND_WAIT(cond, mutex) SDL_WaitCondition(cond, mutex)
 //#define APP_COND_WAIT_UNTIL(cond, mutex, end_time) SDL_CondWaitTimeout(cond, mutex, end_time)
