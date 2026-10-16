@@ -124,6 +124,7 @@ static inline void app_cond_destroy(app_cond_t **cond)
 #define SDL_CreateCondition SDL_CreateCond
 #define SDL_DestroyCondition SDL_DestroyCond
 #define SDL_SignalCondition SDL_CondSignal
+#define SDL_BroadcastCondition SDL_CondBroadcast
 #define SDL_WaitCondition SDL_CondWait
 #define SDL_WaitConditionTimeout SDL_CondWaitTimeout
 #else
