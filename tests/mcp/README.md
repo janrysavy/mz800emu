@@ -63,7 +63,9 @@ python tests/mcp/test_run_breakpoint_latency.py --exe ./mz800emu \
 ```
 
 Every one of256 stops must be a breakpoint at1200h after exactly14 T-states,
-with no frame elapsed and registers preserved except refresh R/WZ. The
+with registers preserved except refresh R/WZ. All but at most one interval
+must have no frame elapsed: the initial beam phase is retained, and every
+sample is kept even if it crosses the next frame boundary. The
 default25ms worst host-latency limit detects a missing pause notification:
 the old frame-condition wait sometimes sleeps for its50ms safety poll when
 no new framebuffer is published. The loop never changes device clocks or
