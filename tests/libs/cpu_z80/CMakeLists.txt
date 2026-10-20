@@ -78,3 +78,13 @@ mz_add_test(cpu_z80_push_order
     LIBS     mzlib_cpu_z80
     LABELS   "standalone;libs"
 )
+
+# Příznaky v opakující iteraci LDIR/LDDR/CPIR/CPDR/INIR/INDR/OTIR/OTDR
+# (YF/XF z adresy instrukce, u INxR/OTxR i PF/HF) podle měření BLKFLAGS
+# na MZ-800 a na reálných čipech Z80. Viz emu-experiments/z80-block-flags/.
+mz_add_test(cpu_z80_block_repeat
+    TYPE     STANDALONE
+    SOURCES  test_block_repeat.c
+    LIBS     mzlib_cpu_z80
+    LABELS   "standalone;libs"
+)

@@ -20,7 +20,7 @@
  * - DAA lookup tabulka (2048 záznamů)
  * - Inline prefix handlery (CB/ED/DD/FD/DDCB/FDCB)
  *
- * @version multi-v0.3
+ * @version multi-v0.4
  */
 
 #include "z80.h"
