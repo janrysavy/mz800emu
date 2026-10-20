@@ -1,3 +1,9 @@
+	- BUGFIX: Z80 - osamocený prefix DD nebo FD (bajt za ním není instrukce s IX nebo IY, například DD 00) zvýšil registr R o 3 místo o 2 a bajt za prefixem se z paměti četl dvakrát. Mezi prefixem a instrukcí se navíc mohlo přijmout přerušení. Nově jsou prefix a instrukce jeden krok jako na skutečném procesoru: R se zvýší o 2, bajt se čte jednou a krok v debuggeru provede prefix i instrukci.
+
+	- BUGFIX: Z80 - INIR, INDR, OTIR a OTDR nechávaly v opakující iteraci v interním registru MEMPTR hodnotu BC + 1 nebo BC - 1. Nově je v opakující iteraci MEMPTR adresa instrukce + 1, stejně jako u LDIR a CPIR, podle měření na reálných procesorech Z80 i na MZ-800. MEMPTR je vidět v debuggeru, přes MCP (WZ) a v bitech 5 a 3 F po BIT n,(HL).
+
+	- BUGFIX: Z80 - LDIR, LDDR, CPIR, CPDR, INIR, INDR, OTIR a OTDR nastavovaly v opakující iteraci příznaky stejně jako v poslední iteraci. Když se instrukce zastaví mezi iteracemi (přerušení, NMI, krok v debuggeru), jsou nově bity 5 a 3 registru F kopií bitů 13 a 11 adresy instrukce a u INIR, INDR, OTIR a OTDR se navíc mění P/V a H, podle měření na reálných procesorech Z80 i na MZ-800. Poslední iterace a jednorázové LDI, CPI, INI, OUTI a další se nemění.
+
 	- BUGFIX: Memory Heatmap (CDL) - dokumentace formátu exportu uváděla buňku 12 B se třemi čítači R, W, X. Export ale zapisuje 16 B se čtvrtým čítačem S (zápisy do zásobníku), takže podle dokumentace se soubory četly posunutě. Import CDL v GUI nově odmítne export s jinou velikostí buňky.
 
 	- BUGFIX: Trace Suite - dokumentace formátu CPU Track neodpovídala exportu: popisovala neexistující pole initial_state.regs a memory_dumps místo initial_regs a initial_*_file, uváděla VRAM a EXVRAM MZ-800 po 32 KB místo 16 KB, soubory RAMdisků a CG-RAM MZ-1500, které se neukládají, a jen WAIT u VRAM v režimu MZ-700. Příklad manifestu je teď skutečný export.
