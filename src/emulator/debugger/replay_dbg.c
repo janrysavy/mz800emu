@@ -332,14 +332,14 @@ bool replay_dbg_execute(const char *cmd_name, const char *args_json, char **err)
             if (cmd == DBGAPI_CMD_MEM_WRITE_CHECKED)
             {
                 checked.addr = (uint16_t)replay_dbg_int(o, "addr", 0);
-                checked.length = (uint16_t)data_len;
+                checked.length = (uint32_t)data_len;
                 checked.data = data;
                 data_ptr = &checked;
             }
             else
             {
                 mem.addr = (uint16_t)replay_dbg_int(o, "addr", 0);
-                mem.len = (uint16_t)data_len;
+                mem.len = (uint32_t)data_len;
                 mem.buf = data;
                 data_ptr = &mem;
             };

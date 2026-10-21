@@ -8,7 +8,9 @@
 
 	- BUGFIX: Joystick - s joystickem emulovaným na numerické klávesnici fungovaly klávesy 0-9 numerické klávesnice zároveň jako klávesy klávesnice MZ: se zapnutým NumLock jako číslice, s vypnutým jako kurzorové klávesy a INST. Nově ovládají jen joystick, bez ohledu na NumLock. Ostatní klávesy numerické klávesnice (+ - * / . Enter) zůstávají klávesnicí; bez joysticku na numerické klávesnici se nic nemění.
 
-	- BUGFIX: MCP - popis nástroje emu_mem_read uváděl délku čtení 1-256 bajtů, emulátor přitom přečte až 65535 bajtů (adresa + délka nejvýš 10000h).
+	- BUGFIX: MCP - popis nástroje emu_mem_read uváděl délku čtení 1-256 bajtů, emulátor přitom přečetl až 65535 bajtů. Nově emu_mem_read přečte až 65536 bajtů (adresa + délka nejvýš 10000h, celou paměť tedy jedním voláním od adresy 0) a popis to uvádí.
+
+	- BUGFIX: MCP - emu_mem_write a emu_mem_write_force s přesně 65536 bajty (celá paměť od adresy 0) nezapsaly nic: emu_mem_write vrátil chybu kontroly paměti na adrese 0000h a emu_mem_write_force ohlásil 65536 zapsaných bajtů. Nově se zapíše celý blok, u emu_mem_write jen tehdy, když je celá paměť zapisovatelná.
 
 	- BUGFIX: Z80 - osamocený prefix DD nebo FD (bajt za ním není instrukce s IX nebo IY, například DD 00) zvýšil registr R o 3 místo o 2 a bajt za prefixem se z paměti četl dvakrát. Mezi prefixem a instrukcí se navíc mohlo přijmout přerušení. Nově jsou prefix a instrukce jeden krok jako na skutečném procesoru: R se zvýší o 2, bajt se čte jednou a krok v debuggeru provede prefix i instrukci.
 

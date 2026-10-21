@@ -172,6 +172,7 @@ typedef struct st_DISPATCH_STUB_STATE {
     uint8_t              mem_write_buf[256];   /**< Zachycená kopie dat z MEM_WRITE_CHECKED.data */
     uint16_t             mem_write_buf_len;    /**< Počet zachycených bajtů. */
     uint16_t             mem_write_addr;       /**< Zachycená adresa z param.addr. */
+    uint32_t             mem_write_req_len;    /**< Délka v param.length, jak ji dispatch předal (před ořezem kopie). */
 
     /* V0.B.6 - chybející Tools:
      *
@@ -408,7 +409,8 @@ typedef struct st_DISPATCH_STUB_STATE {
      *   nmi_inject_calls - kolikrát byl NMI_INJECT vyslán.
      *
      * mem_write_force:
-     *   mwf_addr / mwf_buf / mwf_len - zachycený obsah parametru.
+     *   mwf_addr / mwf_buf / mwf_len - zachycený obsah parametru (mwf_len
+ *   po ořezu na velikost mwf_buf), mwf_req_len - nezkrácená délka.
      */
     uint16_t             io_last_port;
     uint8_t              io_last_value;
@@ -422,6 +424,7 @@ typedef struct st_DISPATCH_STUB_STATE {
     int                  nmi_inject_calls;
     uint16_t             mwf_addr;
     uint16_t             mwf_len;
+    uint32_t             mwf_req_len;          /**< Délka v param.len u MEM_WRITE_FORCE, jak ji dispatch předal. */
     uint8_t              mwf_buf[ 256 ];
 
     /* V1.A.7 - Profiler Tools scenario:

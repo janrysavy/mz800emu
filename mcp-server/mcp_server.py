@@ -1506,8 +1506,9 @@ async def emu_mem_read(addr: int, length: int = 16, want_data: bool = True) -> s
 
     Args:
         addr: Z80 memory address (0-65535).
-        length: number of bytes to read (1-65535, ``addr + length`` at
-            most 0x10000). Defaults to 16. Above a few KiB prefer
+        length: number of bytes to read (1-65536, ``addr + length`` at
+            most 0x10000, so all 64 KiB in one call only from address
+            0). Defaults to 16. Above a few KiB prefer
             ``want_data=False`` to keep the response small.
         want_data: False = only ``sha256``, no ``data_b64``.
     """
@@ -3313,6 +3314,8 @@ async def emu_mem_write_force(addr: int, data_hex: str,
     Args:
         addr: Z80 address (0-65535).
         data_hex: hex string of bytes (even length, e.g. ``"3E01C9"``).
+            The decoded byte count plus addr must not exceed 0x10000
+            (all 64 KiB in one call only from address 0).
         expected_sha256: conditional write, same as ``emu_mem_write``.
         want_hashes: also return ``before_sha256`` and ``after_sha256``.
 

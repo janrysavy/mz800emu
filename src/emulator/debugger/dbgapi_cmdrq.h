@@ -1016,13 +1016,17 @@ typedef struct st_DBGAPI_REG_PARAM
  * `cond` platí jen pro MEM_WRITE_FORCE (podmíněný zápis, viz
  * st_DBGAPI_WRITE_COND); ostatní příkazy ho ignorují.
  *
+ * Invariant: `len` <= 0x10000 (celý adresní prostor CPU). Adresa bajtu
+ * `i` je `(uint16_t)(addr + i)`, takže blok přes konec prostoru
+ * pokračuje od 0000h; MCP takový blok odmítá (`addr + len` <= 0x10000).
+ *
  * @note Odesílatel musí strukturu vynulovat (nebo inicializovat
  *       agregátem), jinak by `cond` byl neplatný ukazatel.
  */
 typedef struct st_DBGAPI_MEM_PARAM
 {
     uint16_t addr; /**< Počáteční adresa */
-    uint16_t len;  /**< Délka bloku v bajtech */
+    uint32_t len;  /**< Délka bloku v bajtech, 0..0x10000 (uint32_t, aby se vešel celý prostor 64 KiB) */
     uint8_t *buf;  /**< Buffer pro data (pro WRITE: vstupní data, pro READ: výstup) */
     st_DBGAPI_WRITE_COND *cond; /**< (IN/OUT) Podmínka zápisu (jen MEM_WRITE_FORCE), NULL = bez podmínky. */
 } st_DBGAPI_MEM_PARAM;
@@ -1345,7 +1349,8 @@ typedef struct st_DBGAPI_PIOZ80_VEC_PARAM
  * toho UI dostane explicit failure a může uživateli ukázat warning.
  *
  * @field addr               Počáteční adresa zápisu
- * @field length             Počet bajtů
+ * @field length             Počet bajtů, 1..0x10000 (uint32_t, aby se vešel
+ *                           celý adresní prostor 64 KiB; 0 = chyba)
  * @field data               Vstupní data (caller vlastní; handler jen čte)
  * @field success            (OUT) 1 = celý blok zapsán, 0 = žádný bajt zapsán
  * @field first_failed_addr  (OUT) Adresa, na které check selhal (pouze při success=0)
@@ -1358,7 +1363,7 @@ typedef struct st_DBGAPI_PIOZ80_VEC_PARAM
 typedef struct st_DBGAPI_MEM_WRITE_CHECKED_PARAM
 {
     uint16_t addr;
-    uint16_t length;
+    uint32_t length;
     const uint8_t *data;
     uint8_t  success;
     uint16_t first_failed_addr;

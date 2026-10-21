@@ -8,7 +8,9 @@
 
 	- BUGFIX: Joystick - with a joystick emulated on the numeric keypad, the keypad keys 0-9 also acted as keys of the MZ keyboard: with NumLock on as the digits, with NumLock off as the cursor keys and INST. Now they control only the joystick, regardless of NumLock. The other keypad keys (+ - * / . Enter) stay keyboard keys; without a joystick on the numeric keypad nothing changes.
 
-	- BUGFIX: MCP - the description of emu_mem_read stated a read length of 1-256 bytes, while the emulator reads up to 65535 bytes (address + length at most 10000h).
+	- BUGFIX: MCP - the description of emu_mem_read stated a read length of 1-256 bytes, while the emulator read up to 65535 bytes. emu_mem_read now reads up to 65536 bytes (address + length at most 10000h, so the whole memory in one call from address 0) and the description says so.
+
+	- BUGFIX: MCP - emu_mem_write and emu_mem_write_force with exactly 65536 bytes (the whole memory from address 0) wrote nothing: emu_mem_write returned a memory check error at address 0000h and emu_mem_write_force reported 65536 bytes written. The whole block is now written, by emu_mem_write only when the whole memory is writable.
 
 	- BUGFIX: Z80 - a stray DD or FD prefix (the byte after it is not an IX or IY instruction, for example DD 00) increased the R register by 3 instead of 2 and the byte after the prefix was read from memory twice. An interrupt could also be accepted between the prefix and the instruction. Now the prefix and the instruction are a single step as on a real CPU: R increases by 2, the byte is read once and a debugger step executes both the prefix and the instruction.
 

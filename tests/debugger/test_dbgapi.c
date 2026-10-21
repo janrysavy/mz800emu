@@ -21,6 +21,7 @@
 #include "debugger/dbgapi_cmdrq.h"
 #include "debugger/dbgapi_emu.h"
 #include "debugger/dbgapi_regions.h"
+#include "debugger/replay_dbg.h"
 #include "state_hash.h"
 #include "debugger/breakpoints.h"
 #include "debugger/bptmap.h"
@@ -1196,6 +1197,98 @@ void test_cmd_mem_write_checked_ram_succeeds ( void ) {
 }
 
 
+/**
+ * @brief Ověří, že celý prostor 0000h-FFFFh obsahuje bajt @p value.
+ * @param value Očekávaný bajt.
+ * @param what Popis kroku do zprávy testu.
+ */
+static void assert_full_64k ( uint8_t value, const char *what ) {
+    uint8_t *buf = g_malloc ( 0x10000 );
+    st_DBGAPI_MEM_PARAM rp = { 0x0000, 0x10000, buf };
+    TEST_ASSERT_TRUE_MESSAGE ( call_dispatch ( DBGAPI_CMD_MEM_READ, &rp, NULL ), what );
+    uint32_t bad = 0x10000;
+    for ( uint32_t i = 0; i < 0x10000; i++ ) {
+        if ( buf[ i ] != value ) {
+            bad = i;
+            break;
+        };
+    };
+    g_free ( buf );
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE ( 0x10000, bad, what );
+}
+
+
+/**
+ * @brief Zápis celých 64 KiB (addr 0, délka 65536) přes MEM_WRITE_CHECKED,
+ *        MEM_WRITE_FORCE i přes přehrání zaznamenaného zápisu (N61).
+ *
+ * Délka se dřív předávala v uint16_t a 65536 přeteklo na 0: MEM_WRITE_CHECKED
+ * skončil chybou regionu na 0000h, MEM_WRITE_FORCE "uspěl" bez zápisu
+ * a přehrání záznamu zapsalo 0 bajtů. Test přepne mapování na samou RAM
+ * (map = 0, bez ROM, CG-ROM, VRAM a mapovaných portů), po sobě vrátí
+ * mapování i obsah paměti.
+ */
+void test_cmd_mem_write_full_64k ( void ) {
+    const uint8_t saved_map = g_memory.map;
+    g_memory.map = 0;
+    memory_reconnect_ram ( );
+    bool all_ram = true;
+    for ( int pg = 0; pg < 16; pg++ ) {
+        if ( memmap_query ( (uint8_t) pg ) != MEMMAP_KIND_RAM ) all_ram = false;
+    };
+    if ( !all_ram ) {
+        g_memory.map = saved_map;
+        memory_reconnect_ram ( );
+        TEST_IGNORE_MESSAGE ( "map 0 is not all RAM" );
+    };
+
+    uint8_t *saved = g_malloc ( 0x10000 );
+    uint8_t *pattern = g_malloc ( 0x10000 );
+    st_DBGAPI_MEM_PARAM sp = { 0x0000, 0x10000, saved };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_READ, &sp, NULL ) );
+
+    /* MEM_WRITE_CHECKED: kontrola regionu přes všech 16 stránek projde. */
+    memset ( pattern, 0x5A, 0x10000 );
+    st_DBGAPI_MEM_WRITE_CHECKED_PARAM cp;
+    memset ( &cp, 0, sizeof ( cp ) );
+    cp.addr = 0x0000;
+    cp.length = 0x10000;
+    cp.data = pattern;
+    bool ok_checked = call_dispatch ( DBGAPI_CMD_MEM_WRITE_CHECKED, &cp, NULL );
+    uint8_t checked_success = cp.success;
+    assert_full_64k ( 0x5A, "mem_write_checked" );
+
+    /* MEM_WRITE_FORCE. */
+    memset ( pattern, 0xA5, 0x10000 );
+    st_DBGAPI_MEM_PARAM fp = { 0x0000, 0x10000, pattern };
+    bool ok_force = call_dispatch ( DBGAPI_CMD_MEM_WRITE_FORCE, &fp, NULL );
+    assert_full_64k ( 0xA5, "mem_write_force" );
+
+    /* Záznam a přehrání zápisu 64 KiB. */
+    memset ( pattern, 0x3C, 0x10000 );
+    st_DBGAPI_MEM_PARAM rp = { 0x0000, 0x10000, pattern };
+    char *args = replay_dbg_args_to_json ( DBGAPI_CMD_MEM_WRITE_FORCE, &rp );
+    TEST_ASSERT_NOT_NULL ( args );
+    char *err = NULL;
+    bool ok_replay = replay_dbg_execute ( "mem_write_force", args, &err );
+    g_free ( args );
+    assert_full_64k ( 0x3C, "replay mem_write_force" );
+
+    st_DBGAPI_MEM_PARAM wp = { 0x0000, 0x10000, saved };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_WRITE, &wp, NULL ) );
+    g_free ( saved );
+    g_free ( pattern );
+    g_memory.map = saved_map;
+    memory_reconnect_ram ( );
+
+    TEST_ASSERT_TRUE ( ok_checked );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, checked_success );
+    TEST_ASSERT_TRUE ( ok_force );
+    TEST_ASSERT_TRUE_MESSAGE ( ok_replay, err ? err : "" );
+    g_free ( err );
+}
+
+
 /* ========================================================================= */
 /*  CMD_STATE_OBSERVE - registry a okna paměti z jednoho okamžiku (M10)       */
 /* ========================================================================= */
@@ -1728,6 +1821,7 @@ int main ( int argc, char *argv[] ) {
     RUN_TEST ( test_cmd_history_get_returns_position );
 
     RUN_TEST ( test_cmd_mem_write_checked_rejected_fails );
+    RUN_TEST ( test_cmd_mem_write_full_64k );
     RUN_TEST ( test_cmd_mem_write_checked_ram_succeeds );
 
     RUN_TEST ( test_cmd_state_observe_windows_regs_hash );

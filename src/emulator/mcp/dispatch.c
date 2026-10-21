@@ -4613,9 +4613,10 @@ static en_MCP_DISPATCH_RESULT _write_cond_err(int64_t req_id, const st_DBGAPI_WR
  *
  * Parametry v `data` poli requestu:
  *  - `addr` (int, 0..65535) - počáteční adresa
- *  - `len`  (int, 1..65535) - počet bajtů; součet addr+len musí být
- *    <= 65536 jinak se neauthorizujeme (= MEM_READ adresuje 16-bit
- *    prostor s wrap-around v emulátoru, ale my odmítáme)
+ *  - `len`  (int, 1..65536) - počet bajtů; součet addr+len musí být
+ *    <= 0x10000 (celých 64 KiB jen od adresy 0), jinak INVALID_PARAMS
+ *    (MEM_READ by adresu za FFFFh přetočil na 0000h, my takový blok
+ *    odmítáme)
  *
  *  - `want_data` (bool, volitelný, default true) - false = jen hash
  *
@@ -4636,7 +4637,7 @@ static en_MCP_DISPATCH_RESULT _handle_mem_read(const st_JSONL_MESSAGE *req,
     JsonObject *data_obj = json_node_get_object(data_node);
     gint64 addr = _obj_int_or(data_obj, "addr", -1);
     gint64 len  = _obj_int_or(data_obj, "len",  -1);
-    if (addr < 0 || addr > 0xFFFF || len <= 0 || len > 0xFFFF ||
+    if (addr < 0 || addr > 0xFFFF || len <= 0 || len > 0x10000 ||
         (addr + len) > 0x10000) {
         return _err_response(req_id, "Invalid parameters",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
@@ -4649,7 +4650,7 @@ static en_MCP_DISPATCH_RESULT _handle_mem_read(const st_JSONL_MESSAGE *req,
     uint8_t *buf = g_malloc0((gsize)len);
     st_DBGAPI_MEM_PARAM param = {
         .addr = (uint16_t)addr,
-        .len  = (uint16_t)len,
+        .len  = (uint32_t)len,
         .buf  = buf,
     };
     if (!_submit_dbgapi(DBGAPI_CMD_MEM_READ, &param, NULL)) {
@@ -4709,7 +4710,8 @@ static int _decode_hex(const char *hex, uint8_t *out, gsize out_max) {
  *  - `addr`     (int, 0..65535) - počáteční adresa
  *  - `data_hex` (string)        - hex reprezentace bajtů ke zápisu
  *    (např. `"DEADBEEF"` = 4 bajty 0xDE, 0xAD, 0xBE, 0xEF). Akceptuje i
- *    mezerou oddělené dvojice (`"DE AD BE EF"`).
+ *    mezerou oddělené dvojice (`"DE AD BE EF"`). Počet bajtů 1..65536,
+ *    `addr` + počet <= 0x10000 (celých 64 KiB jen od adresy 0).
  *
  * Implementace volá `DBGAPI_CMD_MEM_WRITE_CHECKED` (= zápis s region
  * verifikací). Pokud kterákoliv adresa padne do ROM, prohibited nebo
@@ -4771,7 +4773,7 @@ static en_MCP_DISPATCH_RESULT _handle_mem_write(const st_JSONL_MESSAGE *req,
     }
 
     /* Horní limit dekódovaného bloku - drží konzistenci s mem_read
-     * (0..65535) a chrání před monstrózními alokacemi z malicious vstupu. */
+     * (1..65536) a chrání před monstrózními alokacemi z malicious vstupu. */
     const gsize MAX_LEN = 0x10000;
     uint8_t *bytes = g_malloc(MAX_LEN);
     int decoded = _decode_hex(data_hex, bytes, MAX_LEN);
@@ -4795,7 +4797,7 @@ static en_MCP_DISPATCH_RESULT _handle_mem_write(const st_JSONL_MESSAGE *req,
 
     st_DBGAPI_MEM_WRITE_CHECKED_PARAM param = {
         .addr               = (uint16_t)addr,
-        .length             = (uint16_t)decoded,
+        .length             = (uint32_t)decoded,
         .data               = bytes,
         .success            = 0,
         .first_failed_addr  = 0,
@@ -7246,7 +7248,8 @@ static en_MCP_DISPATCH_RESULT _handle_nmi_inject(const st_JSONL_MESSAGE *req,
 /**
  * @brief `mem_write_force` handler - raw memory write bez region check.
  *
- * Parametry: `data.addr` (0..65535), `data.data_hex` (hex string).
+ * Parametry: `data.addr` (0..65535), `data.data_hex` (hex string,
+ * 1..65536 bajtů, `addr` + počet <= 0x10000).
  * Identicky validuje vstup jako `mem_write`, ale forwarduje na
  * DBGAPI_CMD_MEM_WRITE_FORCE (= bez region check), takže zápis
  * proběhne i do ROM oblastí (pokud banking dovolí).
@@ -7310,7 +7313,7 @@ static en_MCP_DISPATCH_RESULT _handle_mem_write_force(const st_JSONL_MESSAGE *re
     }
     st_DBGAPI_MEM_PARAM param = {
         .addr = (uint16_t)addr,
-        .len  = (uint16_t)decoded,
+        .len  = (uint32_t)decoded,
         .buf  = bytes,
         .cond = use_cond ? &cond : NULL,
     };

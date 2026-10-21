@@ -814,8 +814,9 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
         case DBGAPI_CMD_MEM_READ:
             if (data_ptr) {
                 st_DBGAPI_MEM_PARAM *p = (st_DBGAPI_MEM_PARAM *)data_ptr;
-                /* Naplň deterministicky 0xAA + index */
-                for (uint16_t i = 0; i < p->len && p->buf; i++) {
+                /* Naplň deterministicky 0xA0 + (index & 0x0F); index
+                 * uint32_t, len smí být až 0x10000 */
+                for (uint32_t i = 0; i < p->len && p->buf; i++) {
                     p->buf[i] = (uint8_t)(0xA0 + (i & 0x0F));
                 }
             }
@@ -895,14 +896,15 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                 /* Zkopíruj data pro pozdější inspekci testem - dispatch.c
                  * po návratu uvolní původní buffer. */
                 g_stub_state.mem_write_addr    = p->addr;
-                g_stub_state.mem_write_buf_len = p->length;
+                g_stub_state.mem_write_req_len = p->length;
+                g_stub_state.mem_write_buf_len = 0;
                 if (p->data && p->length > 0) {
-                    uint16_t copy_len = p->length;
+                    uint32_t copy_len = p->length;
                     if (copy_len > sizeof(g_stub_state.mem_write_buf)) {
                         copy_len = sizeof(g_stub_state.mem_write_buf);
                     }
                     memcpy(g_stub_state.mem_write_buf, p->data, copy_len);
-                    g_stub_state.mem_write_buf_len = copy_len;
+                    g_stub_state.mem_write_buf_len = (uint16_t)copy_len;
                 }
                 if (g_stub_state.mem_write_fail) {
                     p->success           = 0;
@@ -1560,14 +1562,15 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
             if (data_ptr) {
                 st_DBGAPI_MEM_PARAM *p = (st_DBGAPI_MEM_PARAM *)data_ptr;
                 g_stub_state.mwf_addr = p->addr;
-                g_stub_state.mwf_len  = p->len;
+                g_stub_state.mwf_req_len = p->len;
+                g_stub_state.mwf_len  = 0;
                 if (p->buf && p->len > 0) {
-                    uint16_t copy_len = p->len;
+                    uint32_t copy_len = p->len;
                     if (copy_len > sizeof(g_stub_state.mwf_buf)) {
                         copy_len = sizeof(g_stub_state.mwf_buf);
                     }
                     memcpy(g_stub_state.mwf_buf, p->buf, copy_len);
-                    g_stub_state.mwf_len = copy_len;
+                    g_stub_state.mwf_len = (uint16_t)copy_len;
                 }
             }
             break;

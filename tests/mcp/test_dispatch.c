@@ -478,6 +478,58 @@ void test_mem_write_overflow_rejected(void) {
 }
 
 
+/**
+ * @brief mem_write a mem_write_force s celými 64 KiB (addr 0, 65536 bajtů)
+ *        předají jádru délku 65536 a odpověď ji vrátí.
+ *
+ * Dřív se délka ukládala do uint16_t a 65536 přeteklo na 0: mem_write
+ * hlásil chybu kontroly regionu, mem_write_force ohlásil úspěch
+ * a nezapsal nic. O jeden bajt víc (addr 1) se odmítne.
+ */
+void test_mem_write_full_64k_length(void) {
+    static const char *const cmds[] = { "mem_write", "mem_write_force" };
+    GString *hex = g_string_sized_new(2 * 0x10000 + 2);
+    for (int i = 0; i < 0x10000; i++) g_string_append(hex, "5A");
+
+    for (size_t k = 0; k < G_N_ELEMENTS(cmds); k++) {
+        dispatch_stub_reset();
+        gchar *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":75,\"cmd\":\"%s\","
+                                      "\"data\":{\"addr\":0,\"data_hex\":\"%s\"}}",
+                                      cmds[k], hex->str);
+        st_JSONL_MESSAGE *req = _make_request(line);
+        char *resp = NULL;
+        en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_OK, rc, cmds[k]);
+        uint32_t req_len = (k == 0) ? g_stub_state.mem_write_req_len : g_stub_state.mwf_req_len;
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(0x10000, req_len, cmds[k]);
+
+        JsonParser *parser = NULL;
+        JsonObject *obj = _parse_response_object(resp, &parser);
+        JsonObject *data = json_object_get_object_member(obj, "data");
+        TEST_ASSERT_EQUAL_INT(65536, json_object_get_int_member(data, "length"));
+        g_object_unref(parser);
+        free(resp);
+        jsonl_msg_free(req);
+        g_free(line);
+
+        /* addr 1 + 65536 bajtů přesahuje 0x10000 => odmítnout. */
+        dispatch_stub_reset();
+        line = g_strdup_printf("{\"type\":\"request\",\"req_id\":76,\"cmd\":\"%s\","
+                               "\"data\":{\"addr\":1,\"data_hex\":\"%s\"}}",
+                               cmds[k], hex->str);
+        req = _make_request(line);
+        resp = NULL;
+        rc = mcp_dispatch_request(req, &resp);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, rc, cmds[k]);
+        TEST_ASSERT_EQUAL_INT(0, g_stub_state.call_count);
+        free(resp);
+        jsonl_msg_free(req);
+        g_free(line);
+    }
+    g_string_free(hex, TRUE);
+}
+
+
 void test_bp_add_returns_assigned_id(void) {
     g_stub_state.fill_bp_id = 42;
     st_JSONL_MESSAGE *req = _make_request(
@@ -8323,6 +8375,54 @@ void test_mem_read_sha256_and_want_data(void) {
 
 
 /**
+ * @brief mem_read s celými 64 KiB (addr 0, len 65536) přečte celý blok.
+ *
+ * Dřív handler odmítal len > 65535. SHA-256 a dekódovaný `data_b64`
+ * dokazují, že jádro (stub) vyplnilo všech 65536 bajtů. Blok přesahující
+ * 0x10000 (addr 1 + 65536, addr 0 + 65537) se odmítne bez volání jádra.
+ */
+void test_mem_read_full_64k(void) {
+    dispatch_stub_reset();
+    /* Stub plní bajty 0xA0 + (i & 0x0F). */
+    uint8_t *expect = g_malloc(0x10000);
+    for (int i = 0; i < 0x10000; i++) expect[i] = (uint8_t)(0xA0 + (i & 0x0F));
+    gchar *want = g_compute_checksum_for_data(G_CHECKSUM_SHA256, expect, 0x10000);
+
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9053,\"cmd\":\"mem_read\","
+                             "\"data\":{\"addr\":0,\"len\":65536}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(65536, json_object_get_int_member(d, "len"));
+    TEST_ASSERT_EQUAL_STRING(want, json_object_get_string_member(d, "sha256"));
+    gsize got_len = 0;
+    guchar *got = g_base64_decode(json_object_get_string_member(d, "data_b64"), &got_len);
+    TEST_ASSERT_EQUAL_UINT32(0x10000, (uint32_t)got_len);
+    TEST_ASSERT_EQUAL_MEMORY(expect, got, 0x10000);
+    g_free(got);
+    g_object_unref(parser);
+    free(resp);
+
+    static const char *const bad[] = {
+        "{\"type\":\"request\",\"req_id\":9054,\"cmd\":\"mem_read\","
+        "\"data\":{\"addr\":1,\"len\":65536}}",
+        "{\"type\":\"request\",\"req_id\":9055,\"cmd\":\"mem_read\","
+        "\"data\":{\"addr\":0,\"len\":65537}}",
+    };
+    for (size_t k = 0; k < G_N_ELEMENTS(bad); k++) {
+        dispatch_stub_reset();
+        _rc_call(bad[k], &rc, &parser, &resp);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, rc, bad[k]);
+        TEST_ASSERT_EQUAL_INT(0, g_stub_state.call_count);
+        free(resp);
+    }
+    g_free(want);
+    g_free(expect);
+}
+
+
+/**
  * @brief frame_hash: příkaz se předá emu vláknu (DBGAPI_CMD_FRAME_HASH).
  */
 void test_frame_hash_submits(void) {
@@ -8952,6 +9052,7 @@ int main(void) {
     RUN_TEST(test_mem_write_region_check_fail);
     RUN_TEST(test_mem_write_invalid_hex_rejected);
     RUN_TEST(test_mem_write_overflow_rejected);
+    RUN_TEST(test_mem_write_full_64k_length);
     RUN_TEST(test_bp_add_invalid_addr_rejected);
     RUN_TEST(test_pause_emu_failure_reports_error);
     RUN_TEST(test_non_request_message_rejected);
@@ -9004,6 +9105,7 @@ int main(void) {
     RUN_TEST(test_run_until_addr_deadline);
     RUN_TEST(test_step_completed_flags);
     RUN_TEST(test_mem_read_sha256_and_want_data);
+    RUN_TEST(test_mem_read_full_64k);
     RUN_TEST(test_frame_hash_submits);
     RUN_TEST(test_replay_record_start_params);
     RUN_TEST(test_replay_play_and_stop_modes);
