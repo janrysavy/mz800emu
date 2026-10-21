@@ -236,11 +236,11 @@ void pio8255_write(int addr, uint8_t value)
         int pahalf = value & 0x0f;
         g_pio8255.signal_PA_keybord_column = (pahalf <= 9) ? pahalf : 10;
 
-        // 4. bit Joystick-1 strobe - aktivni pri L
-        g_pio8255.signal_PA_joy1_enabled = (!(value & 0x20)) ? 1 : 0;
-
-        // 5. bit Joystick-2 strobe - aktivni pri L
-        g_pio8255.signal_PA_joy2_enabled = (!(value & 0x40)) ? 1 : 0;
+        // PA4 (maska 10h) strobe JOY1 (IN 0F0h), aktivní v L.
+        // PA5 (maska 20h) strobe JOY2 (IN 0F1h), aktivní v L. PA6 není zapojen.
+        // Zdroj: SM str. 35; ROM @JOYIN (0FA00h) strobuje oba zápisem 0CFh.
+        g_pio8255.signal_PA_joy1_enabled = (!(value & 0x10)) ? 1 : 0;
+        g_pio8255.signal_PA_joy2_enabled = (!(value & 0x20)) ? 1 : 0;
 
         // 7. bit cursor timer reset - aktivni pri L
         if (!(value & 0x80))
@@ -332,6 +332,9 @@ void pio8255_write(int addr, uint8_t value)
                 /* vystupy jsou nastaveny na 0 */
                 g_pio8255.signal_PA = 0x00;
                 g_pio8255.signal_PA_keybord_column = 0x00;
+                /* PA4 = PA5 = 0: strobe obou joysticků aktivní */
+                g_pio8255.signal_PA_joy1_enabled = 1;
+                g_pio8255.signal_PA_joy2_enabled = 1;
                 g_pio8255.signal_pc00 = 0;
                 pio8255_set_pc01(0);
                 g_pio8255.signal_pc02 = 0;

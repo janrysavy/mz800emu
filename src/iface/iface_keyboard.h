@@ -33,6 +33,13 @@ extern "C"
      * záznamu se převezme na hranici snímku, při přehrávání se zahodí.
      * Se stisknutým Alt nedělá nic (klávesové zkratky emulátoru).
      *
+     * Je-li některý port joysticku typu JOY_TYPE_NUM_KEYPAD, klávesy KP_0 až
+     * KP_9 ovládají jen joystick a do matice klávesnice se nedostanou (bez
+     * ohledu na NumLock). Ostatní klávesy numerické klávesnice (+ - * / .
+     * Enter) zůstávají klávesnicí. Bez joysticku na numerické klávesnici
+     * jsou KP_0 až KP_9 při zapnutém NumLock číslice, při vypnutém kurzorové
+     * klávesy a INST.
+     *
      * @param state   Stav kláves SDL (SDL_GetKeyboardState()).
      * @param kmod    Modifikátory SDL.
      * @param numkeys Počet položek @p state; 0 = žádná klávesa (předá klidovou matici).

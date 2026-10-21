@@ -473,6 +473,45 @@ static inline void iface_keyboard_joy_num_keypad_scan(const bool *state, uint8_t
         JOY_STATEBIT_RESET(*joystate, JOY_STATEBIT_TRIG2);
     };
 }
+
+/**
+ * @brief Stav kláves pro sken matice MZ bez kláves joysticku z numerické
+ *        klávesnice (jen UI vlákno).
+ *
+ * Kopie stavu SDL, ve které jsou KP_0 až KP_9 uvolněné. Používá se, když je
+ * některý port joysticku typu JOY_TYPE_NUM_KEYPAD: tyto klávesy pak ovládají
+ * jen joystick a do matice klávesnice se nedostanou (jinak by podle NumLock
+ * zároveň psaly číslice, nebo hýbaly kurzorem a vkládaly INST).
+ */
+static bool s_iface_kbd_state_nokp[SDL_SCANCODE_COUNT];
+
+/** @brief Klávesy numerické klávesnice, které čte joystick NUM_KEYPAD. */
+static const SDL_Scancode s_iface_joy_kp_keys[] = {
+    SDL_SCANCODE_KP_0, SDL_SCANCODE_KP_1, SDL_SCANCODE_KP_2, SDL_SCANCODE_KP_3, SDL_SCANCODE_KP_4,
+    SDL_SCANCODE_KP_5, SDL_SCANCODE_KP_6, SDL_SCANCODE_KP_7, SDL_SCANCODE_KP_8, SDL_SCANCODE_KP_9,
+};
+
+/**
+ * @brief Vrátí stav kláves pro sken matice MZ bez KP_0 až KP_9.
+ *
+ * @param state   Stav kláves SDL.
+ * @param numkeys Počet položek @p state.
+ * @return Ukazatel na s_iface_kbd_state_nokp (platí do dalšího volání),
+ *         nebo @p state, pokud je kratší než SDL_SCANCODE_COUNT (nečekané,
+ *         klávesy se pak neodfiltrují).
+ * @pre UI vlákno.
+ */
+static const bool *iface_keyboard_state_without_joy_kp(const bool *state, int numkeys)
+{
+    if (numkeys < SDL_SCANCODE_COUNT)
+        return state;
+    memcpy(s_iface_kbd_state_nokp, state, sizeof(s_iface_kbd_state_nokp));
+    for (size_t i = 0; i < sizeof(s_iface_joy_kp_keys) / sizeof(s_iface_joy_kp_keys[0]); i++)
+    {
+        s_iface_kbd_state_nokp[s_iface_joy_kp_keys[i]] = false;
+    };
+    return s_iface_kbd_state_nokp;
+}
 #endif
 
 void iface_keyboard_full_scan(const bool *state, SDL_Keymod kmod, int numkeys)
@@ -488,19 +527,9 @@ void iface_keyboard_full_scan(const bool *state, SDL_Keymod kmod, int numkeys)
         return;
     };
 
-    iface_keyboard_scan_col0(state);
-    iface_keyboard_scan_col1(state);
-    iface_keyboard_scan_col2(state);
-    iface_keyboard_scan_col3(state);
-    iface_keyboard_scan_col4(state);
-    iface_keyboard_scan_col5(state, kmod);
-    iface_keyboard_scan_col6(state, kmod);
-    iface_keyboard_scan_col7(state, kmod);
-    iface_keyboard_scan_col8(state);
-    iface_keyboard_scan_col9(state);
-
     int joy_dev = -1;
     uint8_t joy_state = 0xff;
+    const bool *kbd_state = state;
 #if HAVE_JOY
     int device;
     for (device = 0; device < JOY_DEVID_COUNT; device++)
@@ -509,10 +538,23 @@ void iface_keyboard_full_scan(const bool *state, SDL_Keymod kmod, int numkeys)
         {
             joy_dev = device;
             iface_keyboard_joy_num_keypad_scan(state, &joy_state);
+            /* KP_0 až KP_9 patří joysticku, klávesnici MZ se nehlásí. */
+            kbd_state = iface_keyboard_state_without_joy_kp(state, numkeys);
             break;
         };
     };
 #endif
+
+    iface_keyboard_scan_col0(kbd_state);
+    iface_keyboard_scan_col1(kbd_state);
+    iface_keyboard_scan_col2(kbd_state);
+    iface_keyboard_scan_col3(kbd_state);
+    iface_keyboard_scan_col4(kbd_state);
+    iface_keyboard_scan_col5(kbd_state, kmod);
+    iface_keyboard_scan_col6(kbd_state, kmod);
+    iface_keyboard_scan_col7(kbd_state, kmod);
+    iface_keyboard_scan_col8(kbd_state);
+    iface_keyboard_scan_col9(kbd_state);
 
     /* Celá matice (a joystick z numerické klávesnice) najednou: mimo
      * záznam vstupů se zapíše hned, při záznamu až na hranici snímku. */

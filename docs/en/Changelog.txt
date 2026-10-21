@@ -2,6 +2,12 @@
 
 	- MCP - conditional writes: emu_mem_write, emu_mem_write_force and emu_region_write accept expected_sha256 (SHA-256 of the bytes being overwritten, as returned by a read), emu_set_register an expected value and emu_set_cpu_flags an expected object. The emulator compares and writes in one step; if the memory or register changed since it was read (the program runs, the user edited memory in the GUI meanwhile), nothing is written and the error "Precondition failed:" carries the current value. Memory writes return before_sha256 and after_sha256 (with want_hashes also without a condition), register writes the previous value. A refused write is not stored in an input recording and the MCP Activity window shows it as rejected. See emulator://docs/conditional_writes.
 
+	- Joystick Setup window has an Apply button: it applies the settings and keeps the window open, so the changed joystick can be tried right away.
+
+	- BUGFIX: Joystick MZ-800 - the joystick strobe was taken from bits PA5 and PA6 of the 8255 instead of PA4 (joystick 1) and PA5 (joystick 2). A program strobing each joystick separately (OUT 0EFh and 0DFh to port 0D0h) read neither joystick, and a program strobing both with 0CFh (like the joystick routine of the ROM at 0FA00h) read only joystick 1. Now PA4 enables joystick 1 (port 0F0h) and PA5 joystick 2 (port 0F1h), as in the Service Manual and the ROM.
+
+	- BUGFIX: Joystick - with a joystick emulated on the numeric keypad, the keypad keys 0-9 also acted as keys of the MZ keyboard: with NumLock on as the digits, with NumLock off as the cursor keys and INST. Now they control only the joystick, regardless of NumLock. The other keypad keys (+ - * / . Enter) stay keyboard keys; without a joystick on the numeric keypad nothing changes.
+
 	- BUGFIX: MCP - the description of emu_mem_read stated a read length of 1-256 bytes, while the emulator reads up to 65535 bytes (address + length at most 10000h).
 
 	- BUGFIX: Z80 - a stray DD or FD prefix (the byte after it is not an IX or IY instruction, for example DD 00) increased the R register by 3 instead of 2 and the byte after the prefix was read from memory twice. An interrupt could also be accepted between the prefix and the instruction. Now the prefix and the instruction are a single step as on a real CPU: R increases by 2, the byte is read once and a debugger step executes both the prefix and the instruction.

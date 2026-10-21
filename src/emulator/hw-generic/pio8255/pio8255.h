@@ -86,8 +86,8 @@ extern "C" {
         uint64_t vkbd_autotype_start_ticks;
         unsigned signal_PA; /* Vystupni port A */
         unsigned signal_PA_keybord_column; /* vzorkovani klavesnice: 0. - 3. bit (0 - 9), 10 = zadny sloupec (PA0-3 = 10 - 15) */
-        unsigned signal_PA_joy1_enabled; /* vzorkovani JOY1: 4. bit (L) - jen u MZ-800 a MZ-1500 */
-        unsigned signal_PA_joy2_enabled; /* vzorkovani JOY2: 5. bit (L) - jen u MZ-800 a MZ-1500 */
+        unsigned signal_PA_joy1_enabled; /* vzorkování JOY1 (IN 0F0h): 1 = PA4 v L; čte jen IORQ MZ-800 */
+        unsigned signal_PA_joy2_enabled; /* vzorkování JOY2 (IN 0F1h): 1 = PA5 v L; čte jen IORQ MZ-800 */
         unsigned signal_PC; /* Port C: 0 - 3 je vystup, 4 - 7 je vstup */
         unsigned signal_pc00; /* OUT: blokovani zvuku z CTC0 - jen u MZ-800 a MZ-1500 */
         unsigned signal_pc01; /* OUT: data do CMT */

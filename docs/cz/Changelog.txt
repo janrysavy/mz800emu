@@ -2,6 +2,12 @@
 
 	- MCP - podmíněné zápisy: emu_mem_write, emu_mem_write_force a emu_region_write přijímají expected_sha256 (SHA-256 přepisovaných bajtů, jak ho vrací čtení), emu_set_register hodnotu expected a emu_set_cpu_flags objekt expected. Emulátor porovná a zapíše najednou; když se paměť nebo registr od čtení změnil (program běží, uživatel mezitím upravil paměť v GUI), nic nezapíše a vrátí chybu "Precondition failed:" s aktuální hodnotou. Zápisy paměti vracejí before_sha256 a after_sha256 (s want_hashes i bez podmínky), zápisy registrů předchozí hodnotu previous. Odmítnutý zápis se do záznamu vstupů nezapíše a okno MCP Activity ho ukáže jako odmítnutý. Viz emulator://docs/conditional_writes.
 
+	- Okno Joystick Setup má tlačítko Apply: použije nastavení a okno nechá otevřené, takže změněný joystick jde hned vyzkoušet.
+
+	- BUGFIX: Joystick MZ-800 - vzorkování joysticků se řídilo bity PA5 a PA6 obvodu 8255 místo PA4 (joystick 1) a PA5 (joystick 2). Program, který vzorkuje každý joystick zvlášť (OUT 0EFh a 0DFh na port 0D0h), nepřečetl ani jeden joystick, a program, který vzorkuje oba zápisem 0CFh (jako rutina joysticku v ROM na 0FA00h), četl jen joystick 1. Nově PA4 povoluje joystick 1 (port 0F0h) a PA5 joystick 2 (port 0F1h), jak uvádí servisní manuál a ROM.
+
+	- BUGFIX: Joystick - s joystickem emulovaným na numerické klávesnici fungovaly klávesy 0-9 numerické klávesnice zároveň jako klávesy klávesnice MZ: se zapnutým NumLock jako číslice, s vypnutým jako kurzorové klávesy a INST. Nově ovládají jen joystick, bez ohledu na NumLock. Ostatní klávesy numerické klávesnice (+ - * / . Enter) zůstávají klávesnicí; bez joysticku na numerické klávesnici se nic nemění.
+
 	- BUGFIX: MCP - popis nástroje emu_mem_read uváděl délku čtení 1-256 bajtů, emulátor přitom přečte až 65535 bajtů (adresa + délka nejvýš 10000h).
 
 	- BUGFIX: Z80 - osamocený prefix DD nebo FD (bajt za ním není instrukce s IX nebo IY, například DD 00) zvýšil registr R o 3 místo o 2 a bajt za prefixem se z paměti četl dvakrát. Mezi prefixem a instrukcí se navíc mohlo přijmout přerušení. Nově jsou prefix a instrukce jeden krok jako na skutečném procesoru: R se zvýší o 2, bajt se čte jednou a krok v debuggeru provede prefix i instrukci.
