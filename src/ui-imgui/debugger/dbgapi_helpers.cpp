@@ -133,6 +133,7 @@ bool dbg_ui_run_to(uint16_t addr)
 bool dbg_ui_set_reg(uint8_t reg_id, uint16_t value)
 {
     st_DBGAPI_REG_PARAM p;
+    memset(&p, 0, sizeof(p));   /* has_expected = 0: zápis bez podmínky */
     p.reg_id = reg_id;
     p.value = value;
     return dbgapi_ui_submit_cmd_sync(&g_dbgapi_cmdrq_queue,
@@ -148,6 +149,7 @@ bool dbg_ui_mem_write(uint16_t addr, const uint8_t *buf, uint16_t len)
         return false;
 
     st_DBGAPI_MEM_PARAM p;
+    memset(&p, 0, sizeof(p));   /* cond = NULL: zápis bez podmínky */
     p.addr = addr;
     p.len = len;
     /* Cast const-away: dispatch v dbgapi.c jen čte z p.buf, neměnit. */

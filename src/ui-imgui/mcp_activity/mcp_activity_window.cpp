@@ -96,6 +96,7 @@ struct ActivityEntry
     std::string description;
     uint8_t entity_kind;   /**< DBGAPI_ENTITY_KIND_* (0 = NONE). */
     int32_t entity_id;     /**< ID nebo adresa cílové entity. */
+    bool rejected;         /**< Podmíněný zápis odmítnutý nesplněnou podmínkou (nic se nezměnilo). */
 };
 
 /** @brief Ring buffer záznamů (drop-tail-old). */
@@ -214,7 +215,8 @@ extern "C" void mcp_activity_window_log_action(en_DBGAPI_CMD_ORIGIN origin,
                                                 const char *description,
                                                 uint64_t timestamp_us,
                                                 uint8_t entity_kind,
-                                                int32_t entity_id)
+                                                int32_t entity_id,
+                                                bool rejected)
 {
     if (!g_initialized)
     {
@@ -245,6 +247,7 @@ extern "C" void mcp_activity_window_log_action(en_DBGAPI_CMD_ORIGIN origin,
     entry.description = description ? description : "";
     entry.entity_kind = entity_kind;
     entry.entity_id = entity_id;
+    entry.rejected = rejected;
     g_log_ring.push_back(std::move(entry));
 
     g_mutex_unlock(&g_log_mutex);
@@ -289,10 +292,11 @@ extern "C" void mcp_activity_window_log_action(en_DBGAPI_CMD_ORIGIN origin,
                 default:                         origin_str = "user";     break;
             }
 
-            fprintf(f, "%s [%s] %s: %s\n",
+            fprintf(f, "%s [%s] %s: %s%s\n",
                     iso, origin_str,
                     dbgapi_cmd_to_str(cmd),
-                    description ? description : "");
+                    description ? description : "",
+                    rejected ? " (rejected)" : "");
             fclose(f);
         }
         /* Tichý fallback pokud open/write selže (= disk full, perm
@@ -523,6 +527,14 @@ extern "C" void mcp_activity_window_render(bool *p_open)
                 ImGui::SameLine();
             }
             ImGui::Text("%s", entry.description.c_str());
+            if (entry.rejected)
+            {
+                /* observe-cas (M10): podmíněný zápis odmítnut, protože se
+                 * stav od čtení agenta změnil; nic se nezapsalo. */
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "%s",
+                                   _("rejected: state changed since it was read"));
+            }
 
             /* Suppress unused warning pro cmd enum field. */
             (void)entry.cmd;

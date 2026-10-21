@@ -76,10 +76,12 @@ typedef enum en_DBGAPI_MSG
  *                     popis akce (heap, g_free), timestamp_us = wall-clock
  *                     monotonic z g_get_monotonic_time(), entity_kind +
  *                     entity_id = identifikátor cílové entity pro UI routing
- *                     (V1.E.6.A; viz DBGAPI_ENTITY_KIND_* makra)
+ *                     (V1.E.6.A; viz DBGAPI_ENTITY_KIND_* makra),
+ *                     rejected = 1 u podmíněného zápisu odmítnutého
+ *                     nesplněnou podmínkou (observe-cas M10)
  *   - Ostatní:        data nejsou potřeba (msg_data = NULL)
  *
- * Fields cmd, description, timestamp_us, entity_id a entity_kind se používají
+ * Fields cmd, description, timestamp_us, entity_id, entity_kind a rejected se používají
  * pouze pro MCP_ACTION; u ostatních MSG zůstávají nulové (memset přes g_new0).
  * Tento společný tvar zachovává signaturu dispatcher_t (st_DBGAPI_MSG_DATA *),
  * takže neexistující dispatcher signatura nemusí být měněna.
@@ -123,6 +125,9 @@ typedef struct st_DBGAPI_MSG_DATA
     /* --- V1.E.6.A: routing target pro Activity dvojklik (jen MCP_ACTION) --- */
     int32_t entity_id;         /* ID/adresa cílové entity dle entity_kind (0 = NONE) */
     uint8_t entity_kind;       /* DBGAPI_ENTITY_KIND_* (0 = NONE = nesměrovat) */
+
+    /* --- observe-cas (M10): odmítnutý podmíněný zápis (jen MCP_ACTION) --- */
+    uint8_t rejected;          /* 1 = podmíněný zápis odmítnut (stav se změnil), nic se neprovedlo */
 } st_DBGAPI_MSG_DATA;
 
 

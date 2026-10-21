@@ -37,6 +37,7 @@
 
 #include "emulator/debugger/dbgapi_cmdrq.h"
 #include "emulator/debugger/dbgapi_regions.h"
+#include "emulator/state_hash.h"
 #include "emulator/debugger/memsearch/memsearch.h"
 #include "emulator/audio_capture.h"
 /* Pozn.: dbgapi_ui.h NEincludujeme - viz komentář ve stub headeru. */
@@ -310,6 +311,70 @@ void dispatch_stub_reset(void) {
 
 
 /**
+ * @brief Simulace podmíněného zápisu (observe-cas M10) v mocku.
+ *
+ * Paměť (MEM_WRITE_CHECKED, MEM_WRITE_FORCE, REGIONS_WRITE s `cond`):
+ * expected začínající bajtem EEh = nesplněno (before = 11h * 32); jinak
+ * s podmínkou nebo want_hashes before = 22h * 32, after = 33h * 32.
+ * SET_REG: previous = 4321h, expected EEEEh = nesplněno.
+ * SET_CPU_FLAGS: prev_iff1 = 1, prev_r = 42h, ostatní prev 0; s
+ * expect_mask a exp_r = EEh nesplněno.
+ *
+ * @param cmd Příkaz.
+ * @param data_ptr Parametr příkazu (smí být NULL).
+ * @return false = podmínka nesplněna (příkaz neuspěl), true = pokračovat.
+ */
+static bool stub_apply_write_cond(en_DBGAPI_CMD cmd, void *data_ptr) {
+    if (!data_ptr) return true;
+    st_DBGAPI_WRITE_COND *c = NULL;
+    switch (cmd) {
+        case DBGAPI_CMD_MEM_WRITE_CHECKED:
+            c = ((st_DBGAPI_MEM_WRITE_CHECKED_PARAM *)data_ptr)->cond;
+            break;
+        case DBGAPI_CMD_MEM_WRITE_FORCE:
+            c = ((st_DBGAPI_MEM_PARAM *)data_ptr)->cond;
+            break;
+        case DBGAPI_CMD_REGIONS_WRITE:
+            c = ((st_DBGAPI_REGIONS_WRITE_PARAM *)data_ptr)->cond;
+            break;
+        case DBGAPI_CMD_SET_REG: {
+            st_DBGAPI_REG_PARAM *p = (st_DBGAPI_REG_PARAM *)data_ptr;
+            p->previous = 0x4321;
+            p->precondition_failed = (p->has_expected && p->expected == 0xEEEE) ? 1 : 0;
+            return !p->precondition_failed;
+        }
+        case DBGAPI_CMD_SET_CPU_FLAGS: {
+            st_DBGAPI_CPU_FLAGS *p = (st_DBGAPI_CPU_FLAGS *)data_ptr;
+            p->prev_iff1 = 1;
+            p->prev_iff2 = 0;
+            p->prev_im = 0;
+            p->prev_i = 0;
+            p->prev_r = 0x42;
+            p->precondition_failed = (p->expect_mask && p->exp_r == 0xEE) ? 1 : 0;
+            return !p->precondition_failed;
+        }
+        default:
+            return true;
+    }
+    if (!c) return true;
+    c->precondition_failed = 0;
+    c->hashes_valid = 0;
+    c->written = 0;
+    if (!c->has_expected && !c->want_hashes) return true;
+    c->hashes_valid = 1;
+    if (c->has_expected && c->expected[0] == 0xEE) {
+        memset(c->before, 0x11, 32);
+        c->precondition_failed = 1;
+        return false;
+    }
+    memset(c->before, 0x22, 32);
+    memset(c->after, 0x33, 32);
+    c->written = 1;
+    return true;
+}
+
+
+/**
  * @brief Mock implementace `dbgapi_ui_submit_cmd_sync_with_origin`.
  *
  * Zaznamenává parametry do `g_stub_state` a podle scénáře buď fake
@@ -366,6 +431,13 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
         /* I tak započítáme do counteru jen úspěšné volání. Failed
          * call zaznamenáme do separátního stavu by extending state
          * pokud bude potřeba; pro V0.B.6 stačí prostý break. */
+        return false;
+    }
+
+    /* observe-cas: podmíněné zápisy (st_DBGAPI_WRITE_COND, expected u
+     * SET_REG a SET_CPU_FLAGS). Selhání = příkaz vrátí false (u _ex
+     * DBGAPI_SUBMIT_FAILED) s nastaveným precondition_failed. */
+    if (!stub_apply_write_cond(cmd, data_ptr)) {
         return false;
     }
 
@@ -539,6 +611,70 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                     pos += sp[i].length;
                 }
                 smp->frame = (uint64_t)g_stub_state.ms_sample_calls;
+            }
+            break;
+
+        case DBGAPI_CMD_STATE_OBSERVE:
+            /* observe-cas: okno CPU = bajty (adresa + i) & FFh, okno regionu
+             * = 5Ah ^ (offset + i); druh ramdisk_pezik = nedostupný region,
+             * sub_id 99 = okno přes konec regionu (velikost 4096). Registry
+             * 1000h + 100h * i, run_seq 7, snímek 42, v pauze podle
+             * is_running; hash částí vyplní jen cpu a ram ("ab" * 32). */
+            if (data_ptr) {
+                st_DBGAPI_STATE_OBSERVE_PARAM *p = (st_DBGAPI_STATE_OBSERVE_PARAM *)data_ptr;
+                g_stub_state.obs_calls++;
+                for (uint32_t i = 0; i < p->window_count; i++) {
+                    st_DBGAPI_OBSERVE_WINDOW *w = &p->windows[i];
+                    w->status = DBGAPI_OBSERVE_WINDOW_OK;
+                    w->region_size = w->by_region ? 4096u : 0u;
+                    if (w->by_region && w->region_kind == REGION_KIND_RAMDISK_PEZIK) {
+                        w->status = DBGAPI_OBSERVE_WINDOW_UNAVAILABLE;
+                    } else if (w->by_region && w->sub_id == 99) {
+                        w->status = DBGAPI_OBSERVE_WINDOW_OUT_OF_RANGE;
+                    }
+                    for (uint32_t b = 0; b < w->len; b++) {
+                        w->buf[b] = (w->status != DBGAPI_OBSERVE_WINDOW_OK) ? 0
+                                  : w->by_region ? (uint8_t)(0x5A ^ (w->start + b))
+                                                 : (uint8_t)(w->start + b);
+                    }
+                    if (i < 16) g_stub_state.obs_last_win[i] = *w;
+                }
+                memset(&p->panel, 0, sizeof(p->panel));
+                for (int i = 0; i < DBGAPI_REG_COUNT; i++) {
+                    p->panel.regs[i] = (uint16_t)(0x1000 + (i << 8));
+                }
+                p->panel.regs_valid = 1;
+                p->panel.flags_valid = 1;
+                p->panel.flags.im = 1;
+                if (p->which & DBGAPI_CPU_PANEL_WANT_RASTER) {
+                    p->panel.raster.scanline = 12;
+                    p->panel.raster_valid = 1;
+                }
+                p->running = g_stub_state.is_running ? 1 : 0;
+                p->run_seq = 7;
+                p->frame = 42;
+                p->frame_ticks = 26;
+                p->total_cycles = 123456;
+                for (unsigned part = 0; part < DBGAPI_OBSERVE_HASH_PARTS; part++) {
+                    p->hash_ok[part] = 0;
+                    if ((p->hash_mask & (1u << part))
+                        && (part == STATE_HASH_CPU || part == STATE_HASH_RAM)) {
+                        for (int c = 0; c < 64; c++) p->hash_hex[part][c] = (c & 1) ? 'b' : 'a';
+                        p->hash_hex[part][64] = '\0';
+                        p->hash_ok[part] = 1;
+                    }
+                }
+                if (p->want_memory_map) {
+                    memset(&p->memory_map, 0, sizeof(p->memory_map));
+                    g_strlcpy(p->memory_map.platform, "mz800", sizeof(p->memory_map.platform));
+                    p->memory_map.slot_count = 16;
+                    for (int i = 0; i < 16; i++) {
+                        p->memory_map.slots[i].addr_start = (uint16_t)(i * 0x1000);
+                        p->memory_map.slots[i].addr_end = (uint16_t)(i * 0x1000 + 0x0FFF);
+                        p->page_kind[i] = (i == 0) ? 1 /* rom_low */ : 0 /* ram */;
+                    }
+                }
+                g_stub_state.obs_last = *p;
             }
             break;
 

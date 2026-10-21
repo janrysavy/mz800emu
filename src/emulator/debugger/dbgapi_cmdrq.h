@@ -752,6 +752,17 @@ typedef enum en_DBGAPI_CMD
      * hodnot. */
     DBGAPI_CMD_BP_TEST_EVAL,         /* Test Eval výrazu BP bez vedlejších efektů - data_ptr: st_DBGAPI_BP_TEST_EVAL_PARAM* */
 
+    /* observe-cas (M10 debug-gaps) - registry, příznaky, čas a okna
+     * paměti z jednoho průchodu fronty (MCP state_observe). Přidáno na
+     * KONEC enumu kvůli stabilitě číselných hodnot. */
+    DBGAPI_CMD_STATE_OBSERVE,        /* Konzistentní čtení stavu - data_ptr: st_DBGAPI_STATE_OBSERVE_PARAM* */
+
+    /* Zarážka: počet příkazů, sama není příkaz. Nové příkazy patří PŘED
+     * ni. Test tests/debugger/test_replay_dbg_classify.c prochází celý
+     * rozsah 0..DBGAPI_CMD_COUNT-1 a hlídá, že každý příkaz má výslovnou
+     * třídu záznamu vstupů (replay_dbg_classify()). */
+    DBGAPI_CMD_COUNT
+
 } en_DBGAPI_CMD;
 
 /* ============================================================================
@@ -944,19 +955,76 @@ typedef struct st_DBGAPI_CMDRQ_QUEUE
  */
 #define DBGAPI_REG_COUNT 14
 
-/* Parametr pro CMD_SET_REG */
+/**
+ * @brief Podmínka a hashe podmíněného zápisu paměti (observe-cas M10, V1).
+ *
+ * Volitelná příloha parametrů MEM_WRITE_CHECKED, MEM_WRITE_FORCE
+ * (st_DBGAPI_MEM_PARAM) a REGIONS_WRITE. Emu vlákno v tomtéž příkazu
+ * přečte přepisovaný rozsah bez vedlejších efektů, spočítá jeho SHA-256
+ * a s `has_expected` zapíše jen při shodě s `expected`. Při neshodě nic
+ * nezapíše, nastaví `precondition_failed` a příkaz skončí neúspěchem
+ * (rq->success = false), takže ho záznam vstupů nezaznamená a Activity
+ * ho ukáže jako odmítnutý.
+ *
+ * Hash je přesně přes bajty, které zápis přepíše (u REGIONS_WRITE po
+ * ořezu na konec regionu), stejnou definicí jako `sha256` u čtení
+ * (mem_read, region_read, okna state_observe). Kontrola regionu
+ * (MEM_WRITE_CHECKED, zapisovatelnost u REGIONS_WRITE) má přednost:
+ * zápis, který by neprošel kontrolou, skončí její chybou a podmínka se
+ * nevyhodnotí.
+ *
+ * @invariant Výstupy platí jen po vyhodnocení podmínky (hashes_valid).
+ * @note Strukturu vlastní odesílatel (synchronní submit); NULL = zápis
+ *       bez podmínky a bez hashů (dosavadní chování).
+ */
+typedef struct st_DBGAPI_WRITE_COND
+{
+    uint8_t has_expected;        /**< (IN) 1 = zapsat jen při shodě hashe rozsahu s `expected`. */
+    uint8_t want_hashes;         /**< (IN) 1 = vrátit `before` a `after` i bez podmínky. */
+    uint8_t expected[ 32 ];      /**< (IN) Očekávaný SHA-256 přepisovaného rozsahu (binárně). */
+    uint8_t precondition_failed; /**< (OUT) 1 = hash nesouhlasil, nic se nezapsalo. */
+    uint8_t hashes_valid;        /**< (OUT) 1 = `before` platný, po provedeném zápisu i `after`. */
+    uint8_t written;             /**< (OUT) 1 = zápis proběhl a `after` platí. */
+    uint8_t before[ 32 ];        /**< (OUT) SHA-256 rozsahu před zápisem. */
+    uint8_t after[ 32 ];         /**< (OUT) SHA-256 rozsahu po zápisu. */
+} st_DBGAPI_WRITE_COND;
+
+/**
+ * @brief Parametr pro CMD_SET_REG.
+ *
+ * S `has_expected` je zápis podmíněný (observe-cas M10, V1): emu vlákno
+ * porovná aktuální hodnotu registru s `expected` a při neshodě nic
+ * nezapíše, nastaví `precondition_failed` a příkaz skončí neúspěchem.
+ * `previous` je hodnota před zápisem (i bez podmínky).
+ *
+ * @note Odesílatel musí strukturu vynulovat (nebo inicializovat
+ *       agregátem), jinak by `has_expected` nesl náhodnou hodnotu.
+ */
 typedef struct st_DBGAPI_REG_PARAM
 {
-    uint8_t reg_id; /* Identifikátor registru */
-    uint16_t value; /* Nová hodnota */
+    uint8_t reg_id;              /**< (IN) Identifikátor registru (z80_reg_t). */
+    uint16_t value;              /**< (IN) Nová hodnota. */
+    uint8_t has_expected;        /**< (IN) 1 = zapsat jen, když má registr hodnotu `expected`. */
+    uint16_t expected;           /**< (IN) Očekávaná stará hodnota. */
+    uint16_t previous;           /**< (OUT) Hodnota registru před zápisem. */
+    uint8_t precondition_failed; /**< (OUT) 1 = registr měl jinou hodnotu, nic se nezapsalo. */
 } st_DBGAPI_REG_PARAM;
 
-/* Parametr pro CMD_MEM_READ / CMD_MEM_WRITE */
+/**
+ * @brief Parametr pro CMD_MEM_READ / CMD_MEM_WRITE / CMD_MEM_WRITE_FORCE.
+ *
+ * `cond` platí jen pro MEM_WRITE_FORCE (podmíněný zápis, viz
+ * st_DBGAPI_WRITE_COND); ostatní příkazy ho ignorují.
+ *
+ * @note Odesílatel musí strukturu vynulovat (nebo inicializovat
+ *       agregátem), jinak by `cond` byl neplatný ukazatel.
+ */
 typedef struct st_DBGAPI_MEM_PARAM
 {
-    uint16_t addr; /* Počáteční adresa */
-    uint16_t len;  /* Délka bloku v bajtech */
-    uint8_t *buf;  /* Buffer pro data (pro WRITE: vstupní data, pro READ: výstup) */
+    uint16_t addr; /**< Počáteční adresa */
+    uint16_t len;  /**< Délka bloku v bajtech */
+    uint8_t *buf;  /**< Buffer pro data (pro WRITE: vstupní data, pro READ: výstup) */
+    st_DBGAPI_WRITE_COND *cond; /**< (IN/OUT) Podmínka zápisu (jen MEM_WRITE_FORCE), NULL = bez podmínky. */
 } st_DBGAPI_MEM_PARAM;
 
 /* Parametr pro CMD_BP_ADD / CMD_BP_REMOVE */
@@ -1012,6 +1080,20 @@ typedef struct st_DBGAPI_CPU_FLAGS
     uint16_t update_mask;  /**< Bity DBGAPI_CPU_FLAGS_UM_* - selektivní SET */
     uint8_t i_reg;         /**< Interrupt Vector register I (8-bit) */
     uint8_t r_reg;         /**< Memory Refresh register R (8-bit) */
+
+    /* --- Podmíněný SET (observe-cas M10, V1); GET a panel je nevyplňují --- */
+    uint16_t expect_mask;  /**< (IN, SET) Bity DBGAPI_CPU_FLAGS_UM_* polí s podmínkou; UM_R_FULL porovná celý R, UM_R jen bity 0-6. */
+    uint8_t exp_iff1;      /**< (IN, SET) Očekávaný IFF1 (0/1). */
+    uint8_t exp_iff2;      /**< (IN, SET) Očekávaný IFF2 (0/1). */
+    uint8_t exp_im;        /**< (IN, SET) Očekávaný IM (0/1/2). */
+    uint8_t exp_i;         /**< (IN, SET) Očekávaný I. */
+    uint8_t exp_r;         /**< (IN, SET) Očekávaný R. */
+    uint8_t prev_iff1;     /**< (OUT, SET) IFF1 před zápisem. */
+    uint8_t prev_iff2;     /**< (OUT, SET) IFF2 před zápisem. */
+    uint8_t prev_im;       /**< (OUT, SET) IM před zápisem. */
+    uint8_t prev_i;        /**< (OUT, SET) I před zápisem. */
+    uint8_t prev_r;        /**< (OUT, SET) R před zápisem. */
+    uint8_t precondition_failed; /**< (OUT, SET) 1 = některé pole z expect_mask nesouhlasilo, nic se nezapsalo. */
 } st_DBGAPI_CPU_FLAGS;
 
 /**
@@ -1269,6 +1351,9 @@ typedef struct st_DBGAPI_PIOZ80_VEC_PARAM
  * @field first_failed_addr  (OUT) Adresa, na které check selhal (pouze při success=0)
  * @field first_failed_kind  (OUT) en_MEMMAP_REGION_KIND padlé adresy
  *                                 (uint8_t, pouze při success=0)
+ * @field cond               (IN/OUT) Podmínka zápisu (st_DBGAPI_WRITE_COND),
+ *                                 NULL = bez podmínky. Vyhodnotí se až po
+ *                                 kontrole regionu.
  */
 typedef struct st_DBGAPI_MEM_WRITE_CHECKED_PARAM
 {
@@ -1278,6 +1363,7 @@ typedef struct st_DBGAPI_MEM_WRITE_CHECKED_PARAM
     uint8_t  success;
     uint16_t first_failed_addr;
     uint8_t  first_failed_kind;
+    st_DBGAPI_WRITE_COND *cond;
 } st_DBGAPI_MEM_WRITE_CHECKED_PARAM;
 
 /**
@@ -4861,6 +4947,11 @@ typedef struct st_DBGAPI_REGIONS_READ_PARAM
  * `layout_gen` má stejný význam jako u st_DBGAPI_REGIONS_READ_PARAM
  * (0 = bez kontroly); při ID ze starší generace je `out_count`
  * DBGAPI_REGIONS_ERR_STALE (-2) a nic se nezapíše.
+ *
+ * `cond` (NULL = bez podmínky) je podmíněný zápis podle
+ * st_DBGAPI_WRITE_COND: hash přes bajty, které zápis po ořezu na konec
+ * regionu přepíše. Neplatné ID, jiná generace nebo region jen pro čtení
+ * skončí chybou zápisu, podmínka se pak nevyhodnotí.
  */
 typedef struct st_DBGAPI_REGIONS_WRITE_PARAM
 {
@@ -4870,6 +4961,7 @@ typedef struct st_DBGAPI_REGIONS_WRITE_PARAM
     uint32_t len;
     int out_count;
     uint32_t layout_gen;
+    st_DBGAPI_WRITE_COND *cond;
 } st_DBGAPI_REGIONS_WRITE_PARAM;
 
 
@@ -5163,6 +5255,106 @@ typedef struct st_DBGAPI_CMT_TAPE_LIST_PARAM
     uint8_t                         container_type;/**< (OUT) en_CMTEXT_CONTAINER_TYPE. */
     int                             current_block; /**< (OUT) index aktuálního bloku, -1 = žádný. */
 } st_DBGAPI_CMT_TAPE_LIST_PARAM;
+
+
+/* ============================================================================
+ * observe-cas (M10 debug-gaps) - STATE_OBSERVE
+ * ============================================================================ */
+
+/** @brief Nejvýš oken jednoho DBGAPI_CMD_STATE_OBSERVE. */
+#define DBGAPI_OBSERVE_MAX_WINDOWS 16u
+
+/** @brief Nejvýš součet délek oken jednoho DBGAPI_CMD_STATE_OBSERVE [B]. */
+#define DBGAPI_OBSERVE_MAX_TOTAL 65536u
+
+/**
+ * @brief Počet položek hash_hex / hash_ok v st_DBGAPI_STATE_OBSERVE_PARAM.
+ *
+ * Rovná se STATE_HASH_PART_COUNT (state_hash.h); dbgapi.c to hlídá
+ * statickou kontrolou. Hlavička state_hash.h se sem nevkládá.
+ */
+#define DBGAPI_OBSERVE_HASH_PARTS 6u
+
+/**
+ * @brief Počet hodnot en_MEMMAP_REGION_KIND (hw-generic/memory/memory.h).
+ *
+ * Délka tabulky jmen druhů stránek v MCP (`memory_map` v state_observe);
+ * dbgapi.c hlídá shodu s enumem statickou kontrolou.
+ */
+#define DBGAPI_OBSERVE_PAGE_KINDS 14u
+
+/** @brief Výsledek čtení jednoho okna STATE_OBSERVE. */
+typedef enum en_DBGAPI_OBSERVE_WINDOW_STATUS
+{
+    DBGAPI_OBSERVE_WINDOW_OK = 0,       /**< Okno přečteno, `buf` platný. */
+    DBGAPI_OBSERVE_WINDOW_UNAVAILABLE,  /**< Region neexistuje nebo je odpojený; `buf` vynulovaný. */
+    DBGAPI_OBSERVE_WINDOW_OUT_OF_RANGE  /**< Okno sahá za konec regionu; `buf` vynulovaný. */
+} en_DBGAPI_OBSERVE_WINDOW_STATUS;
+
+/**
+ * @brief Jedno okno paměti pro DBGAPI_CMD_STATE_OBSERVE.
+ *
+ * Okno je buď rozsah CPU adres (čtení přes aktuální mapování,
+ * debugger_memory_read_byte(), bez vedlejších efektů), nebo rozsah
+ * regionu určeného druhem a `sub_id` (dbgapi_regions_find_kind() po
+ * obnově výčtu, dbgapi_regions_read()). Okno regionu se tak nikdy
+ * neodkazuje na `region_id` ze staršího výčtu.
+ *
+ * @invariant `len` >= 1; u CPU okna `start` + `len` <= 10000h (kontroluje
+ *            odesílatel). Velikost regionu zná jen emu vlákno, přesah přes
+ *            konec regionu hlásí `status`.
+ * @note `buf` vlastní odesílatel a musí mít aspoň `len` bajtů.
+ */
+typedef struct st_DBGAPI_OBSERVE_WINDOW
+{
+    uint8_t  by_region;    /**< (IN) 0 = CPU adresa, 1 = region (region_kind, sub_id). */
+    int      region_kind;  /**< (IN) en_REGION_KIND (dbgapi_regions.h), jen by_region. */
+    int      sub_id;       /**< (IN) Disambiguator regionu, jen by_region. */
+    uint32_t start;        /**< (IN) CPU adresa 0..FFFFh, nebo offset v regionu. */
+    uint32_t len;          /**< (IN) Počet bajtů. */
+    uint8_t *buf;          /**< (IN/OUT) Buffer odesílatele, po návratu data okna. */
+    uint8_t  status;       /**< (OUT) en_DBGAPI_OBSERVE_WINDOW_STATUS. */
+    uint32_t region_size;  /**< (OUT) Velikost nalezeného regionu (jen by_region), jinak 0. */
+} st_DBGAPI_OBSERVE_WINDOW;
+
+/**
+ * @brief Parametr DBGAPI_CMD_STATE_OBSERVE (čtení bez vedlejších efektů).
+ *
+ * Emu vlákno v jednom průchodu fronty vyplní registry a příznaky (stejná
+ * funkce jako DBGAPI_CMD_GET_CPU_PANEL_BATCH), čas, číslo běhu, okna
+ * paměti, volitelně hashe částí stavu (state_hash_part()) a mapu paměti.
+ * Vše tedy pochází z jednoho okamžiku emulace: za běhu z hranice snímku,
+ * v pauze ze stavu pauzy. Drain na hranici akce BP tento příkaz
+ * nevyřizuje (není na whitelistu), uprostřed instrukce se tedy nečte.
+ *
+ * Hash oken počítá odesílatel z kopie dat (emu vlákno jen kopíruje).
+ * Příkaz uspěje (rq->success), když jsou parametry platné; nedostupné
+ * okno je úspěch se `status` != OK u okna.
+ *
+ * @invariant `window_count` <= DBGAPI_OBSERVE_MAX_WINDOWS, součet `len`
+ *            <= DBGAPI_OBSERVE_MAX_TOTAL (jinak rq->success = false
+ *            a nic se nečte).
+ * @note Strukturu i pole oken alokuje odesílatel (synchronní submit).
+ */
+typedef struct st_DBGAPI_STATE_OBSERVE_PARAM
+{
+    uint32_t which;                       /**< (IN) Bity DBGAPI_CPU_PANEL_WANT_* (volitelné sekce panelu). */
+    uint32_t hash_mask;                   /**< (IN) Bity (1u << en_STATE_HASH_PART) požadovaných hashů částí. */
+    uint8_t  want_memory_map;             /**< (IN) 1 = vyplnit `memory_map` a `page_kind`. */
+    st_DBGAPI_OBSERVE_WINDOW *windows;    /**< (IN/OUT) Pole oken (smí být NULL při window_count 0). */
+    uint32_t window_count;                /**< (IN) Počet oken. */
+
+    st_DBGAPI_CPU_PANEL_BATCH panel;      /**< (OUT) Registry, příznaky a vyžádané sekce panelu. */
+    uint8_t  running;                     /**< (OUT) 1 = emulace běží (čteno na hranici snímku). */
+    uint64_t run_seq;                     /**< (OUT) Číslo běžícího, v pauze posledního běhu (run_log_current()). */
+    uint64_t frame;                       /**< (OUT) Číslo snímku (g_gdg.total_elapsed.screens). */
+    uint32_t frame_ticks;                 /**< (OUT) Takty GDG od začátku snímku. */
+    uint32_t total_cycles;                /**< (OUT) T-stavy CPU (cpu->total_cycles, přetéká jako v jádře). */
+    uint8_t  hash_ok[DBGAPI_OBSERVE_HASH_PARTS];        /**< (OUT) 1 = hash části spočítán. */
+    char     hash_hex[DBGAPI_OBSERVE_HASH_PARTS][65];   /**< (OUT) SHA-256 části, 64 hex znaků a nula. */
+    st_DBGAPI_MEMORY_MAP_PARAM memory_map;              /**< (OUT) Jako DBGAPI_CMD_GET_MEMORY_MAP (want_memory_map). */
+    uint8_t  page_kind[16];               /**< (OUT) en_MEMMAP_REGION_KIND stránek 4 KiB (want_memory_map). */
+} st_DBGAPI_STATE_OBSERVE_PARAM;
 
 
 #ifdef __cplusplus

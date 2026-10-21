@@ -901,6 +901,7 @@ const char *dbgapi_cmd_to_str(en_DBGAPI_CMD cmd)
         case DBGAPI_CMD_RUN_DEADLINE:              return "run_deadline";
         case DBGAPI_CMD_FRAME_HASH:                return "frame_hash";
         case DBGAPI_CMD_BP_TEST_EVAL:              return "bp_test_eval";
+        case DBGAPI_CMD_STATE_OBSERVE:             return "state_observe";
         case DBGAPI_CMD_RESET:                     return "reset";
         case DBGAPI_CMD_GET_REG:                   return "get_reg";
         case DBGAPI_CMD_SET_REG:                   return "set_reg";
@@ -1111,14 +1112,20 @@ const char *dbgapi_cmd_to_str(en_DBGAPI_CMD cmd)
  * watch_get(out_index)->id pak vrátí stabilní runtime ID watch řádku
  * (= pole st_WATCH_ROW.id, monotonní counter).
  *
- * @param rq  Zpracovaný CMDRQ slot (cmd a cmd_origin už nastaveny).
+ * observe-cas (M10): podmíněný zápis, který emu vlákno odmítlo (stav se
+ * od čtení změnil), se vysílá také, s příznakem `rejected`; Activity ho
+ * ukáže jako odmítnutý a toast pro něj nevznikne.
+ *
+ * @param rq        Zpracovaný CMDRQ slot (cmd a cmd_origin už nastaveny).
+ * @param rejected  true = podmíněný zápis odmítnutý pro nesplněnou podmínku.
  */
-static void dbgapi_emit_mcp_action(st_DBGAPI_CMDRQ *rq)
+static void dbgapi_emit_mcp_action(st_DBGAPI_CMDRQ *rq, bool rejected)
 {
     en_DBGAPI_CMD cmd = (en_DBGAPI_CMD)(rq->cmd & DBGAPI_CMD_MASK);
     st_DBGAPI_MSG_DATA *data = g_new0(st_DBGAPI_MSG_DATA, 1);
     data->msg_type = DBGAPI_MSG_MCP_ACTION;
     data->cmd = cmd;
+    data->rejected = rejected ? 1 : 0;
     data->description = g_strdup(dbgapi_cmd_to_str(cmd));
     data->timestamp_us = (uint64_t)g_get_monotonic_time();
 
@@ -1636,6 +1643,627 @@ static void dbgapi_frame_hash_fill ( st_DBGAPI_FRAME_HASH_PARAM *out, const uint
 }
 
 
+/**
+ * @brief Naplní snímek mapování 16 stránek 4 KiB (DBGAPI_CMD_GET_MEMORY_MAP).
+ *
+ * Sdílené plnění pro DBGAPI_CMD_GET_MEMORY_MAP a DBGAPI_CMD_STATE_OBSERVE.
+ * Rozliší jen stránky MemExt (zdroj MEMEXT_RAM / MEMEXT_FLASH a offset
+ * v bance); ostatní stránky mají zdroj 0 (unknown).
+ *
+ * @param[out] p Výstup; přepíše se celý.
+ * @pre Emu vlákno (drain fronty).
+ */
+static void dbgapi_memory_map_fill ( st_DBGAPI_MEMORY_MAP_PARAM *p )
+{
+    memset ( p, 0, sizeof ( *p ) );
+
+    const char *plat = "unknown";
+    switch ( g_mzarch_platform_numeric )
+    {
+        case 700:  plat = "mz700"; break;
+        case 800:  plat = "mz800"; break;
+        case 1500: plat = "mz1500"; break;
+        default:   plat = "unknown"; break;
+    };
+    g_strlcpy ( p->platform, plat, sizeof ( p->platform ) );
+    g_strlcpy ( p->mode_note,
+        "16 slotov 4KB; banking + memext aware (V1.D.1 minimal).",
+        sizeof ( p->mode_note ) );
+
+    for ( int i = 0; i < 16; i++ )
+    {
+        p->slots[ i ].addr_start  = (uint16_t) ( i * 0x1000 );
+        p->slots[ i ].addr_end    =
+            (uint16_t) ( i * 0x1000 + 0x0FFF );
+        p->slots[ i ].source      = 0; /* unknown */
+        p->slots[ i ].ro_rw       = 0;
+        p->slots[ i ].slot_offset = 0;
+
+        /* MEMEXT detekce - vyžaduje connected memext, jinak skip. */
+        if ( MEMEXT_TEST_CONNECTED )
+        {
+            /* g_memext.map[i] = raw bank index. Pro Luftner:
+             * 0..0x7F = RAM, 0x80..0xFF = FLASH. Pro PEHU jen
+             * 0..0x3F (RAM only). */
+            uint32_t rb = g_memext.map[ i ];
+            if ( MEMEXT_TEST_TYPE_LUFTNER )
+            {
+                if ( rb < MEMEXT_LUFTNER_BANKS )
+                {
+                    p->slots[ i ].source = 5; /* MEMEXT_RAM */
+                    p->slots[ i ].ro_rw  = 1;
+                    p->slots[ i ].slot_offset =
+                        rb * MEMEXT_RAW_BANK_SIZE;
+                }
+                else
+                {
+                    p->slots[ i ].source = 6; /* MEMEXT_FLASH */
+                    p->slots[ i ].ro_rw  = 0;
+                    p->slots[ i ].slot_offset =
+                        ( rb - MEMEXT_LUFTNER_BANKS )
+                        * MEMEXT_RAW_BANK_SIZE;
+                };
+            }
+            else if ( MEMEXT_TEST_TYPE_PEHU )
+            {
+                if ( rb < MEMEXT_PEHU_BANKS * 2 )
+                {
+                    p->slots[ i ].source = 5; /* MEMEXT_RAM */
+                    p->slots[ i ].ro_rw  = 1;
+                    p->slots[ i ].slot_offset =
+                        rb * MEMEXT_RAW_BANK_SIZE;
+                };
+            };
+        };
+    };
+    p->slot_count = 16;
+}
+
+
+/**
+ * @brief Naplní snímek panelu CPU (registry, příznaky, volitelné sekce).
+ *
+ * Společné plnění DBGAPI_CMD_GET_CPU_PANEL_BATCH a DBGAPI_CMD_STATE_OBSERVE,
+ * aby obě odpovědi nesly registry a příznaky stejné definice. Regs,
+ * flags, frame_number, user_cycle_origin a vektory PIO-Z80 (s HAVE_PIOZ80)
+ * se plní vždy, sekce IM2, raster a poslední
+ * instrukce jen s odpovídajícím bitem DBGAPI_CPU_PANEL_WANT_* ve @p which.
+ * Paměť (tabulky vektorů, poslední instrukce z historie) se čte bez
+ * vedlejších efektů (debugger_memory_read_byte()).
+ *
+ * @param[out] out   Výstup; přepíše se celý (memset), nevyžádané sekce
+ *                   mají *_valid 0.
+ * @param      which Bity DBGAPI_CPU_PANEL_WANT_*.
+ * @pre Emu vlákno v drainu fronty (CPU mezi instrukcemi);
+ *      `g_mzarch_main.cpu` existuje.
+ */
+static void dbgapi_cpu_panel_fill ( st_DBGAPI_CPU_PANEL_BATCH *out, uint32_t which )
+{
+    memset ( out, 0, sizeof ( *out ) );
+    out->which = which;
+
+    z80_t *cpu = g_mzarch_main.cpu;
+
+    /* === Regs (vždy) === */
+    for ( int i = 0; i < DBGAPI_REG_COUNT; i++ )
+    {
+        out->regs[ i ] = z80_get_reg ( cpu, (z80_reg_t) i );
+    };
+    out->regs_valid = 1;
+
+    /* === Flags (vždy) === */
+    out->flags.iff1         = cpu->iff1 ? 1 : 0;
+    out->flags.iff2         = cpu->iff2 ? 1 : 0;
+    out->flags.im           = cpu->im;
+    out->flags.halted       = cpu->halted ? 1 : 0;
+    out->flags.int_pending  = cpu->int_pending ? 1 : 0;
+    out->flags.nmi_pending  = cpu->nmi_pending ? 1 : 0;
+    out->flags.ei_delay     = cpu->ei_delay ? 1 : 0;
+    out->flags.q            = cpu->q;
+    out->flags.total_cycles = cpu->total_cycles;
+    out->flags.cycles       = cpu->cycles;
+    out->flags.op_tstate    = cpu->op_tstate;
+    out->flags.update_mask  = 0;
+    out->flags.i_reg        = cpu->i;
+    out->flags.r_reg        = cpu->r;
+    out->flags_valid = 1;
+
+    /* === V3.1 core fieldy (vzdy plnene): frame_number a
+     * user_cycle_origin. UI z toho odvozuje Frame cyc
+     * (= total_cycles - snapshot pri zmene frame_number) a
+     * User cyc (= total_cycles - user_cycle_origin) i pokud
+     * "Cycles & raster" sekce je collapsed. */
+    out->frame_number      = (uint32_t) g_gdg.total_elapsed.screens;
+    out->user_cycle_origin = g_debugger.user_cycle_origin;
+
+    /* === V3.3 core: PIO-Z80 interrupt vectors + ISR targets.
+     * Vždy plněné při HAVE_PIOZ80 (MZ-800, MZ-1500), aby UI
+     * sekce VECA/ISRA + VECB/ISRB dostala data v každém ticku.
+     * Pro MZ-700 (HAVE_PIOZ80 == 0) má_pioz80 = 0; UI sekce
+     * se na MZ-700 nezobrazuje. */
+#if HAVE_PIOZ80
+    {
+        out->has_pioz80    = 1;
+        uint8_t va = g_pioz80.port[ PIOZ80_PORT_A ].interrupt_vector;
+        uint8_t vb = g_pioz80.port[ PIOZ80_PORT_B ].interrupt_vector;
+        out->pio_int_vec_a = va;
+        out->pio_int_vec_b = vb;
+        uint16_t vec_a = (uint16_t) ( ( (uint16_t) cpu->i << 8 ) | (uint8_t) ( va & 0xFE ) );
+        uint16_t vec_b = (uint16_t) ( ( (uint16_t) cpu->i << 8 ) | (uint8_t) ( vb & 0xFE ) );
+        out->veca = vec_a;
+        out->vecb = vec_b;
+        {
+            uint8_t lo_a = debugger_memory_read_byte ( vec_a );
+            uint8_t hi_a = debugger_memory_read_byte ( (uint16_t) ( vec_a + 1 ) );
+            out->isra = (uint16_t) ( lo_a | ( hi_a << 8 ) );
+        };
+        {
+            uint8_t lo_b = debugger_memory_read_byte ( vec_b );
+            uint8_t hi_b = debugger_memory_read_byte ( (uint16_t) ( vec_b + 1 ) );
+            out->isrb = (uint16_t) ( lo_b | ( hi_b << 8 ) );
+        };
+    };
+#else
+    out->has_pioz80 = 0;
+#endif
+
+    /* === IM2 ISR vector (volitelne) === */
+    if ( which & DBGAPI_CPU_PANEL_WANT_IM2 )
+    {
+        st_DBGAPI_IM2_VECTOR *im2 = &out->im2;
+#if HAVE_PIOZ80
+        im2->available  = 1;
+        im2->im         = cpu->im;
+        im2->i_register = cpu->i;
+        im2->pio_irq_pending = 0;
+        im2->pio_source      = 0;
+        im2->vector_byte     = 0;
+        if ( g_pioz80.interrupt == PIOZ80_INTERRUPT_PENDING )
+        {
+            for ( int pid = PIOZ80_PORT_A; pid < PIOZ80_PORT_COUNT; pid++ )
+            {
+                st_PIOZ80_PORT *port = &g_pioz80.port[ pid ];
+                if ( port->port_int == PIOZ80_PORT_INT_PENDING
+                     && port->icena == PIOZ80_ICENA_ENABLED )
+                {
+                    im2->pio_irq_pending = 1;
+                    im2->pio_source      = (uint8_t) pid;
+                    im2->vector_byte     = port->interrupt_vector;
+                    break;
+                };
+            };
+        };
+        im2->isr_table_addr =
+            (uint16_t) ( ( (uint16_t) im2->i_register << 8 ) | im2->vector_byte );
+        {
+            uint8_t lo = debugger_memory_read_byte ( im2->isr_table_addr );
+            uint8_t hi = debugger_memory_read_byte ( (uint16_t) ( im2->isr_table_addr + 1 ) );
+            im2->isr_target_addr = (uint16_t) ( lo | ( hi << 8 ) );
+        };
+#else
+        im2->available = 0;
+#endif
+        out->im2_valid = 1;
+    };
+
+    /* === Raster pos + cycles (volitelne) === */
+    if ( which & DBGAPI_CPU_PANEL_WANT_RASTER )
+    {
+        st_DBGAPI_RASTER_POS *r = &out->raster;
+        r->frame_number = (uint32_t) g_gdg.total_elapsed.screens;
+        r->scanline     = (uint16_t) g_gdg.beam_row;
+        r->column_pixel = (uint16_t) VIDEO_GET_SCREEN_COL ( g_gdg.total_elapsed.ticks );
+        r->total_cycles = cpu->total_cycles;
+        r->frame_cycles = cpu->cycles;
+        out->raster_valid = 1;
+    };
+
+    /* === Last instruction (volitelne) === */
+    if ( which & DBGAPI_CPU_PANEL_WANT_LAST_INSTR )
+    {
+        st_DBGAPI_LAST_INSTR *li = &out->last_instr;
+        unsigned pos = debugger_history_position ( g_debugger_history.position );
+        st_DEBUGGER_HISTORY_ROW *row = &g_debugger_history.row[ pos ];
+        bool empty = ( g_debugger_history.position == 0
+                       && row->addr == 0
+                       && row->byte[ 0 ] == 0
+                       && row->byte[ 1 ] == 0
+                       && row->byte[ 2 ] == 0
+                       && row->byte[ 3 ] == 0 );
+        if ( empty )
+        {
+            li->valid = 0;
+        }
+        else
+        {
+            li->valid = 1;
+            li->addr  = row->addr;
+            for ( int b = 0; b < 4; b++ )
+                li->bytes[ b ] = row->byte[ b ];
+            z80_dasm_inst_t inst;
+            int len = z80_dasm ( &inst,
+                                 dbgapi_last_instr_read_cb,
+                                 row,
+                                 row->addr );
+            if ( len < 1 ) len = 1;
+            if ( len > 4 ) len = 4;
+            li->length = (uint8_t) len;
+        };
+        out->last_instr_valid = 1;
+    };
+}
+
+
+G_STATIC_ASSERT ( DBGAPI_OBSERVE_HASH_PARTS == (unsigned) STATE_HASH_PART_COUNT );
+G_STATIC_ASSERT ( DBGAPI_OBSERVE_PAGE_KINDS == (unsigned) MEMMAP_KIND_UNMAPPED + 1u );
+
+/**
+ * @brief Přečte jedno okno STATE_OBSERVE bez vedlejších efektů.
+ *
+ * Okno CPU čte přes aktuální mapování (debugger_memory_read_byte(), bez
+ * MEM_R BP). Okno regionu dohledá podle druhu a `sub_id` ve výčtu
+ * obnoveném volajícím a čte dbgapi_regions_read(). Nedostupný region
+ * a přesah přes jeho konec okno vynulují a nastaví `status`.
+ *
+ * @param w Okno; `buf` má aspoň `len` bajtů.
+ * @pre Emu vlákno; u okna regionu proběhl dbgapi_regions_refresh().
+ */
+static void dbgapi_observe_read_window ( st_DBGAPI_OBSERVE_WINDOW *w )
+{
+    w->status = (uint8_t) DBGAPI_OBSERVE_WINDOW_OK;
+    w->region_size = 0;
+    if ( !w->by_region )
+    {
+        for ( uint32_t i = 0; i < w->len; i++ )
+        {
+            w->buf[ i ] = debugger_memory_read_byte ( (uint16_t) ( w->start + i ) );
+        };
+        return;
+    };
+    st_REGION_DESC d;
+    if ( !dbgapi_regions_find_kind ( (en_REGION_KIND) w->region_kind, w->sub_id, &d )
+         || !d.connected )
+    {
+        w->status = (uint8_t) DBGAPI_OBSERVE_WINDOW_UNAVAILABLE;
+    }
+    else if ( w->start >= d.size || w->len > d.size - w->start )
+    {
+        w->region_size = d.size;
+        w->status = (uint8_t) DBGAPI_OBSERVE_WINDOW_OUT_OF_RANGE;
+    }
+    else
+    {
+        w->region_size = d.size;
+        if ( dbgapi_regions_read ( d.id, w->start, w->buf, w->len ) != (int) w->len )
+        {
+            w->status = (uint8_t) DBGAPI_OBSERVE_WINDOW_UNAVAILABLE;
+        };
+    };
+    if ( w->status != (uint8_t) DBGAPI_OBSERVE_WINDOW_OK )
+    {
+        memset ( w->buf, 0, w->len );
+    };
+}
+
+
+/**
+ * @brief Vyplní výsledek DBGAPI_CMD_STATE_OBSERVE.
+ *
+ * Registry a příznaky (dbgapi_cpu_panel_fill()), stav běhu, číslo běhu,
+ * čas, okna paměti, vyžádané hashe částí stavu (state_hash_part())
+ * a mapu paměti, vše v jednom volání v emu vlákně, tedy z jednoho
+ * okamžiku emulace. Nic se nezapisuje.
+ *
+ * @param p Parametr odesílatele.
+ * @return false = neplatné parametry (počet oken, součet délek, okno bez
+ *         bufferu, nulová délka, CPU okno přes 0FFFFh); nic se nečte.
+ * @pre Emu vlákno v drainu na hranici snímku nebo v pauze.
+ */
+static bool dbgapi_state_observe_fill ( st_DBGAPI_STATE_OBSERVE_PARAM *p )
+{
+    if ( p->window_count > DBGAPI_OBSERVE_MAX_WINDOWS ) return false;
+    if ( p->window_count > 0 && !p->windows ) return false;
+    uint64_t total = 0;
+    for ( uint32_t i = 0; i < p->window_count; i++ )
+    {
+        const st_DBGAPI_OBSERVE_WINDOW *w = &p->windows[ i ];
+        if ( !w->buf || w->len == 0 ) return false;
+        if ( !w->by_region && (uint64_t) w->start + w->len > 0x10000u ) return false;
+        total += w->len;
+    };
+    if ( total > DBGAPI_OBSERVE_MAX_TOTAL ) return false;
+
+    dbgapi_cpu_panel_fill ( &p->panel, p->which );
+    p->running = EMULATOR_TEST_PAUSED ? 0 : 1;
+    p->run_seq = run_log_current ( NULL );
+    p->frame = (uint64_t) g_gdg.total_elapsed.screens;
+    p->frame_ticks = (uint32_t) g_gdg.total_elapsed.ticks;
+    p->total_cycles = g_mzarch_main.cpu->total_cycles;
+
+    bool regions_fresh = false;
+    for ( uint32_t i = 0; i < p->window_count; i++ )
+    {
+        st_DBGAPI_OBSERVE_WINDOW *w = &p->windows[ i ];
+        if ( w->by_region && !regions_fresh )
+        {
+            /* Čerstvé příznaky connected a ID podle aktuální sestavy HW. */
+            dbgapi_regions_refresh ( );
+            regions_fresh = true;
+        };
+        dbgapi_observe_read_window ( w );
+    };
+
+    for ( unsigned part = 0; part < DBGAPI_OBSERVE_HASH_PARTS; part++ )
+    {
+        p->hash_ok[ part ] = 0;
+        p->hash_hex[ part ][ 0 ] = '\0';
+        if ( p->hash_mask & ( 1u << part ) )
+        {
+            p->hash_ok[ part ] = state_hash_part ( (en_STATE_HASH_PART) part,
+                                                  p->hash_hex[ part ] ) ? 1 : 0;
+        };
+    };
+
+    if ( p->want_memory_map )
+    {
+        dbgapi_memory_map_fill ( &p->memory_map );
+        for ( uint8_t page = 0; page < 16; page++ )
+        {
+            p->page_kind[ page ] = (uint8_t) memmap_query ( page );
+        };
+    };
+    return true;
+}
+
+
+/**
+ * @brief SHA-256 rozsahu CPU adres přes aktuální mapování (bez vedlejších efektů).
+ *
+ * Čte debugger_memory_read_byte() (memory_read_byte_no_se, bez MEM_R BP),
+ * stejně jako MEM_READ, takže hash odpovídá `sha256` z mem_read téhož
+ * rozsahu.
+ *
+ * @param addr Počáteční adresa.
+ * @param len  Počet bajtů (addr + len <= 10000h, jinak se adresa přetočí).
+ * @param[out] out 32 bajtů hashe.
+ * @pre Emu vlákno.
+ */
+static void dbgapi_hash_cpu_range ( uint16_t addr, uint32_t len, uint8_t out[ 32 ] )
+{
+    GChecksum *cs = g_checksum_new ( G_CHECKSUM_SHA256 );
+    uint8_t chunk[ 256 ];
+    uint32_t done = 0;
+    while ( done < len )
+    {
+        uint32_t n = len - done;
+        if ( n > sizeof ( chunk ) ) n = sizeof ( chunk );
+        for ( uint32_t i = 0; i < n; i++ )
+        {
+            chunk[ i ] = debugger_memory_read_byte ( (uint16_t) ( addr + done + i ) );
+        };
+        g_checksum_update ( cs, chunk, n );
+        done += n;
+    };
+    gsize dlen = 32;
+    g_checksum_get_digest ( cs, out, &dlen );
+    g_checksum_free ( cs );
+}
+
+
+/**
+ * @brief Vyhodnotí podmínku zápisu nad hashem rozsahu před zápisem.
+ *
+ * @param c Podmínka (NULL = bez podmínky, vrací true).
+ * @param before SHA-256 přepisovaného rozsahu, nebo NULL, pokud podmínka
+ *        nic nepožaduje (pak se nic nepočítalo).
+ * @return true = zapisovat; false = hash nesouhlasí s `expected`
+ *         (nastaví precondition_failed, nic se nesmí zapsat).
+ * @post Bez požadavku (has_expected i want_hashes 0) zůstanou výstupy
+ *       nulové; jinak `before` a hashes_valid platí.
+ */
+static bool dbgapi_write_cond_check ( st_DBGAPI_WRITE_COND *c, const uint8_t *before )
+{
+    if ( !c ) return true;
+    c->precondition_failed = 0;
+    c->hashes_valid = 0;
+    c->written = 0;
+    if ( !before ) return true;
+    memcpy ( c->before, before, 32 );
+    c->hashes_valid = 1;
+    if ( c->has_expected && memcmp ( before, c->expected, 32 ) != 0 )
+    {
+        c->precondition_failed = 1;
+        return false;
+    };
+    return true;
+}
+
+
+/**
+ * @brief Má podmínka zápisu spočítat hash před zápisem?
+ * @param c Podmínka nebo NULL.
+ * @return true = has_expected nebo want_hashes.
+ */
+static inline bool dbgapi_write_cond_wants_hash ( const st_DBGAPI_WRITE_COND *c )
+{
+    return c && ( c->has_expected || c->want_hashes );
+}
+
+
+/**
+ * @brief Podmínka a hash před zápisem pro rozsah CPU adres.
+ *
+ * @param c Podmínka nebo NULL.
+ * @param addr Počáteční adresa zápisu.
+ * @param len Délka zápisu.
+ * @return true = zapisovat; false = podmínka nesplněna.
+ * @pre Emu vlákno, mezi kontrolou a zápisem se stav nemění.
+ */
+static bool dbgapi_write_cond_before_cpu ( st_DBGAPI_WRITE_COND *c, uint16_t addr, uint32_t len )
+{
+    if ( !dbgapi_write_cond_wants_hash ( c ) ) return dbgapi_write_cond_check ( c, NULL );
+    uint8_t h[ 32 ];
+    dbgapi_hash_cpu_range ( addr, len, h );
+    return dbgapi_write_cond_check ( c, h );
+}
+
+
+/**
+ * @brief Hash po zápisu pro rozsah CPU adres.
+ * @param c Podmínka nebo NULL (pak nic).
+ * @param addr Počáteční adresa zápisu.
+ * @param len Délka zápisu.
+ */
+static void dbgapi_write_cond_after_cpu ( st_DBGAPI_WRITE_COND *c, uint16_t addr, uint32_t len )
+{
+    if ( !c || !c->hashes_valid ) return;
+    dbgapi_hash_cpu_range ( addr, len, c->after );
+    c->written = 1;
+}
+
+
+/**
+ * @brief Hash bajtů regionu (bez vedlejších efektů, dbgapi_regions_read_gen()).
+ *
+ * @param region_id ID regionu.
+ * @param layout_gen Generace výčtu (0 = bez kontroly).
+ * @param offset Začátek v regionu.
+ * @param len Požadovaná délka.
+ * @param[out] out 32 bajtů hashe přes skutečně přečtené bajty.
+ * @return Počet přečtených bajtů (po ořezu na konec regionu), < 0 = chyba
+ *         čtení (neplatné ID, starší generace); hash pak neplatí.
+ */
+static int dbgapi_hash_region_range ( int region_id, uint32_t layout_gen, uint32_t offset,
+                                      uint32_t len, uint8_t out[ 32 ] )
+{
+    uint8_t *buf = g_malloc ( len ? len : 1 );
+    int n = dbgapi_regions_read_gen ( region_id, layout_gen, offset, buf, len );
+    if ( n >= 0 )
+    {
+        GChecksum *cs = g_checksum_new ( G_CHECKSUM_SHA256 );
+        g_checksum_update ( cs, buf, (gssize) n );
+        gsize dlen = 32;
+        g_checksum_get_digest ( cs, out, &dlen );
+        g_checksum_free ( cs );
+    };
+    g_free ( buf );
+    return n;
+}
+
+
+/**
+ * @brief Podmínka a hash před zápisem do regionu (REGIONS_WRITE).
+ *
+ * Neplatné ID, starší generace a region jen pro čtení podmínku
+ * nevyhodnotí (vrací true): zápis pak skončí vlastní chybou, která má
+ * přednost před podmínkou.
+ *
+ * @param p Parametr zápisu (p->cond smí být NULL).
+ * @return true = pokračovat zápisem; false = podmínka nesplněna.
+ * @pre Emu vlákno.
+ */
+static bool dbgapi_write_cond_before_region ( st_DBGAPI_REGIONS_WRITE_PARAM *p )
+{
+    st_DBGAPI_WRITE_COND *c = p->cond;
+    if ( !dbgapi_write_cond_wants_hash ( c ) ) return dbgapi_write_cond_check ( c, NULL );
+    (void) dbgapi_write_cond_check ( c, NULL );
+    uint8_t h[ 32 ];
+    if ( dbgapi_hash_region_range ( p->region_id, p->layout_gen, p->offset, p->len, h ) < 0 )
+        return true;
+    st_REGION_DESC d;
+    if ( !dbgapi_regions_get ( p->region_id, &d ) || !d.writable || !d.connected )
+        return true;
+    return dbgapi_write_cond_check ( c, h );
+}
+
+
+/**
+ * @brief Hash po zápisu do regionu přes skutečně zapsané bajty.
+ * @param p Parametr zápisu po dbgapi_regions_write_gen() (out_count).
+ */
+static void dbgapi_write_cond_after_region ( st_DBGAPI_REGIONS_WRITE_PARAM *p )
+{
+    st_DBGAPI_WRITE_COND *c = p->cond;
+    if ( !c || !c->hashes_valid || p->out_count < 0 ) return;
+    if ( dbgapi_hash_region_range ( p->region_id, p->layout_gen, p->offset,
+                                    (uint32_t) p->out_count, c->after ) >= 0 )
+    {
+        c->written = 1;
+    };
+}
+
+
+/**
+ * @brief Skončil příkaz zápisu nesplněnou podmínkou (observe-cas M10)?
+ *
+ * Rozliší odmítnutý podmíněný zápis od ostatních neúspěchů, aby ho
+ * Activity ukázala jako "rejected". Příkaz odmítnutý branou záznamu
+ * vstupů má příznak nulový (obsluha neproběhla).
+ *
+ * @param rq Zpracovaný slot.
+ * @return true = MEM_WRITE_CHECKED, MEM_WRITE_FORCE, REGIONS_WRITE,
+ *         SET_REG nebo SET_CPU_FLAGS s nesplněnou podmínkou.
+ */
+static bool dbgapi_cmd_precondition_failed ( const st_DBGAPI_CMDRQ *rq )
+{
+    if ( !rq->data_ptr ) return false;
+    switch ( (en_DBGAPI_CMD) ( rq->cmd & DBGAPI_CMD_MASK ) )
+    {
+        case DBGAPI_CMD_MEM_WRITE_CHECKED:
+        {
+            const st_DBGAPI_MEM_WRITE_CHECKED_PARAM *p = rq->data_ptr;
+            return p->cond && p->cond->precondition_failed;
+        }
+        case DBGAPI_CMD_MEM_WRITE_FORCE:
+        {
+            const st_DBGAPI_MEM_PARAM *p = rq->data_ptr;
+            return p->cond && p->cond->precondition_failed;
+        }
+        case DBGAPI_CMD_REGIONS_WRITE:
+        {
+            const st_DBGAPI_REGIONS_WRITE_PARAM *p = rq->data_ptr;
+            return p->cond && p->cond->precondition_failed;
+        }
+        case DBGAPI_CMD_SET_REG:
+            return ( (const st_DBGAPI_REG_PARAM *) rq->data_ptr )->precondition_failed != 0;
+        case DBGAPI_CMD_SET_CPU_FLAGS:
+            return ( (const st_DBGAPI_CPU_FLAGS *) rq->data_ptr )->precondition_failed != 0;
+        default:
+            return false;
+    };
+}
+
+
+/**
+ * @brief Vyhodnotí podmínku SET_CPU_FLAGS a vyplní předchozí hodnoty.
+ *
+ * @param p Parametr SET_CPU_FLAGS.
+ * @param cpu CPU.
+ * @return true = zapisovat; false = některé pole z expect_mask má jinou
+ *         hodnotu (precondition_failed = 1).
+ * @post prev_* nesou hodnoty před zápisem (vždy).
+ */
+static bool dbgapi_cpu_flags_cond_check ( st_DBGAPI_CPU_FLAGS *p, const z80_t *cpu )
+{
+    p->prev_iff1 = cpu->iff1 ? 1 : 0;
+    p->prev_iff2 = cpu->iff2 ? 1 : 0;
+    p->prev_im = cpu->im;
+    p->prev_i = cpu->i;
+    p->prev_r = cpu->r;
+    p->precondition_failed = 0;
+    uint16_t m = p->expect_mask;
+    bool ok = true;
+    if ( ( m & DBGAPI_CPU_FLAGS_UM_IFF1 ) && p->prev_iff1 != ( p->exp_iff1 ? 1 : 0 ) ) ok = false;
+    if ( ( m & DBGAPI_CPU_FLAGS_UM_IFF2 ) && p->prev_iff2 != ( p->exp_iff2 ? 1 : 0 ) ) ok = false;
+    if ( ( m & DBGAPI_CPU_FLAGS_UM_IM ) && p->prev_im != p->exp_im ) ok = false;
+    if ( ( m & DBGAPI_CPU_FLAGS_UM_I ) && p->prev_i != p->exp_i ) ok = false;
+    if ( ( m & DBGAPI_CPU_FLAGS_UM_R_FULL ) && p->prev_r != p->exp_r ) ok = false;
+    else if ( ( m & DBGAPI_CPU_FLAGS_UM_R ) && ( p->prev_r & 0x7F ) != ( p->exp_r & 0x7F ) ) ok = false;
+    if ( !ok ) p->precondition_failed = 1;
+    return ok;
+}
+
+
 void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
 {
     if (!rq)
@@ -2021,6 +2649,18 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 st_DBGAPI_REG_PARAM *p = (st_DBGAPI_REG_PARAM *)rq->data_ptr;
                 if (p->reg_id <= (uint8_t)Z80_REG_IR)
                 {
+                    /* Podmíněný zápis (observe-cas M10): stará hodnota
+                     * vždy do previous, při neshodě s expected nic
+                     * nezapsat a skončit neúspěchem (replay ho tak
+                     * nezaznamená, Activity ho ukáže jako odmítnutý). */
+                    p->previous = z80_get_reg ( g_mzarch_main.cpu, (z80_reg_t)p->reg_id );
+                    p->precondition_failed = 0;
+                    if (p->has_expected && p->previous != p->expected)
+                    {
+                        p->precondition_failed = 1;
+                        rq->success = false;
+                        break;
+                    };
                     if ((z80_reg_t)p->reg_id == Z80_REG_IR)
                     {
                         /* Celý pár I:R (I = horní bajt, R = dolní bajt). */
@@ -2546,6 +3186,14 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 z80_t *cpu = g_mzarch_main.cpu;
                 bool ok = true;
 
+                /* Podmíněný zápis (observe-cas M10): prev_* vždy, při
+                 * neshodě polí z expect_mask nic nezapsat. */
+                if (!dbgapi_cpu_flags_cond_check(p, cpu))
+                {
+                    rq->success = false;
+                    break;
+                };
+
                 if (p->update_mask & DBGAPI_CPU_FLAGS_UM_IFF1)
                 {
                     cpu->iff1 = p->iff1 ? 1 : 0;
@@ -2765,9 +3413,9 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
              * Volitelné sekce (IM2/raster/last_instr) jen pokud caller
              * nastavil odpovídající WANT_* bit ve which-mask.
              *
-             * Implementace: jednoduchý copy-paste z původních samostatných
-             * handlerů aby zůstaly identické sémantiky (per-arch HAVE_PIOZ80
-             * gating, banking-aware mem read, history empty detekce).
+             * Plnění je ve sdílené dbgapi_cpu_panel_fill() (per-arch
+             * HAVE_PIOZ80 gating, banking-aware mem read, history empty
+             * detekce).
              */
             if (rq->result_ptr)
             {
@@ -2777,161 +3425,7 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 if (rq->data_ptr)
                     which = *((uint32_t *)rq->data_ptr);
 
-                /* Hlavní část - vyplnit core fieldy a vynulovat optional
-                 * valid flagy pro případ, že caller nepředal which-mask. */
-                memset(out, 0, sizeof(*out));
-                out->which = which;
-
-                z80_t *cpu = g_mzarch_main.cpu;
-
-                /* === Regs (vždy) === */
-                for (int i = 0; i < DBGAPI_REG_COUNT; i++)
-                {
-                    out->regs[i] = z80_get_reg ( cpu, (z80_reg_t)i );
-                };
-                out->regs_valid = 1;
-
-                /* === Flags (vždy) === */
-                out->flags.iff1         = cpu->iff1 ? 1 : 0;
-                out->flags.iff2         = cpu->iff2 ? 1 : 0;
-                out->flags.im           = cpu->im;
-                out->flags.halted       = cpu->halted ? 1 : 0;
-                out->flags.int_pending  = cpu->int_pending ? 1 : 0;
-                out->flags.nmi_pending  = cpu->nmi_pending ? 1 : 0;
-                out->flags.ei_delay     = cpu->ei_delay ? 1 : 0;
-                out->flags.q            = cpu->q;
-                out->flags.total_cycles = cpu->total_cycles;
-                out->flags.cycles       = cpu->cycles;
-                out->flags.op_tstate    = cpu->op_tstate;
-                out->flags.update_mask  = 0;
-                out->flags.i_reg        = cpu->i;
-                out->flags.r_reg        = cpu->r;
-                out->flags_valid = 1;
-
-                /* === V3.1 core fieldy (vzdy plnene): frame_number a
-                 * user_cycle_origin. UI z toho odvozuje Frame cyc
-                 * (= total_cycles - snapshot pri zmene frame_number) a
-                 * User cyc (= total_cycles - user_cycle_origin) i pokud
-                 * "Cycles & raster" sekce je collapsed. */
-                out->frame_number      = (uint32_t)g_gdg.total_elapsed.screens;
-                out->user_cycle_origin = g_debugger.user_cycle_origin;
-
-                /* === V3.3 core: PIO-Z80 interrupt vectors + ISR targets.
-                 * Vždy plněné při HAVE_PIOZ80 (MZ-800, MZ-1500), aby UI
-                 * sekce VECA/ISRA + VECB/ISRB dostala data v každém ticku.
-                 * Pro MZ-700 (HAVE_PIOZ80 == 0) má_pioz80 = 0; UI sekce
-                 * se na MZ-700 nezobrazuje. */
-#if HAVE_PIOZ80
-                {
-                    out->has_pioz80    = 1;
-                    uint8_t va = g_pioz80.port[PIOZ80_PORT_A].interrupt_vector;
-                    uint8_t vb = g_pioz80.port[PIOZ80_PORT_B].interrupt_vector;
-                    out->pio_int_vec_a = va;
-                    out->pio_int_vec_b = vb;
-                    uint16_t vec_a = (uint16_t)(((uint16_t)cpu->i << 8) | (uint8_t)(va & 0xFE));
-                    uint16_t vec_b = (uint16_t)(((uint16_t)cpu->i << 8) | (uint8_t)(vb & 0xFE));
-                    out->veca = vec_a;
-                    out->vecb = vec_b;
-                    {
-                        uint8_t lo_a = debugger_memory_read_byte(vec_a);
-                        uint8_t hi_a = debugger_memory_read_byte((uint16_t)(vec_a + 1));
-                        out->isra = (uint16_t)(lo_a | (hi_a << 8));
-                    };
-                    {
-                        uint8_t lo_b = debugger_memory_read_byte(vec_b);
-                        uint8_t hi_b = debugger_memory_read_byte((uint16_t)(vec_b + 1));
-                        out->isrb = (uint16_t)(lo_b | (hi_b << 8));
-                    };
-                };
-#else
-                out->has_pioz80 = 0;
-#endif
-
-                /* === IM2 ISR vector (volitelne) === */
-                if (which & DBGAPI_CPU_PANEL_WANT_IM2)
-                {
-                    st_DBGAPI_IM2_VECTOR *im2 = &out->im2;
-#if HAVE_PIOZ80
-                    im2->available  = 1;
-                    im2->im         = cpu->im;
-                    im2->i_register = cpu->i;
-                    im2->pio_irq_pending = 0;
-                    im2->pio_source      = 0;
-                    im2->vector_byte     = 0;
-                    if (g_pioz80.interrupt == PIOZ80_INTERRUPT_PENDING)
-                    {
-                        for (int pid = PIOZ80_PORT_A; pid < PIOZ80_PORT_COUNT; pid++)
-                        {
-                            st_PIOZ80_PORT *port = &g_pioz80.port[pid];
-                            if (port->port_int == PIOZ80_PORT_INT_PENDING
-                                && port->icena == PIOZ80_ICENA_ENABLED)
-                            {
-                                im2->pio_irq_pending = 1;
-                                im2->pio_source      = (uint8_t)pid;
-                                im2->vector_byte     = port->interrupt_vector;
-                                break;
-                            };
-                        };
-                    };
-                    im2->isr_table_addr =
-                        (uint16_t)(((uint16_t)im2->i_register << 8) | im2->vector_byte);
-                    {
-                        uint8_t lo = debugger_memory_read_byte(im2->isr_table_addr);
-                        uint8_t hi = debugger_memory_read_byte((uint16_t)(im2->isr_table_addr + 1));
-                        im2->isr_target_addr = (uint16_t)(lo | (hi << 8));
-                    };
-#else
-                    im2->available = 0;
-#endif
-                    out->im2_valid = 1;
-                };
-
-                /* === Raster pos + cycles (volitelne) === */
-                if (which & DBGAPI_CPU_PANEL_WANT_RASTER)
-                {
-                    st_DBGAPI_RASTER_POS *r = &out->raster;
-                    r->frame_number = (uint32_t)g_gdg.total_elapsed.screens;
-                    r->scanline     = (uint16_t)g_gdg.beam_row;
-                    r->column_pixel = (uint16_t)VIDEO_GET_SCREEN_COL(g_gdg.total_elapsed.ticks);
-                    r->total_cycles = cpu->total_cycles;
-                    r->frame_cycles = cpu->cycles;
-                    out->raster_valid = 1;
-                };
-
-                /* === Last instruction (volitelne) === */
-                if (which & DBGAPI_CPU_PANEL_WANT_LAST_INSTR)
-                {
-                    st_DBGAPI_LAST_INSTR *li = &out->last_instr;
-                    unsigned pos = debugger_history_position(g_debugger_history.position);
-                    st_DEBUGGER_HISTORY_ROW *row = &g_debugger_history.row[pos];
-                    bool empty = (g_debugger_history.position == 0
-                                  && row->addr == 0
-                                  && row->byte[0] == 0
-                                  && row->byte[1] == 0
-                                  && row->byte[2] == 0
-                                  && row->byte[3] == 0);
-                    if (empty)
-                    {
-                        li->valid = 0;
-                    }
-                    else
-                    {
-                        li->valid = 1;
-                        li->addr  = row->addr;
-                        for (int b = 0; b < 4; b++)
-                            li->bytes[b] = row->byte[b];
-                        z80_dasm_inst_t inst;
-                        int len = z80_dasm ( &inst,
-                                             dbgapi_last_instr_read_cb,
-                                             row,
-                                             row->addr );
-                        if (len < 1) len = 1;
-                        if (len > 4) len = 4;
-                        li->length = (uint8_t)len;
-                    };
-                    out->last_instr_valid = 1;
-                };
-
+                dbgapi_cpu_panel_fill(out, which);
                 rq->success = true;
             }
             else
@@ -3068,12 +3562,23 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                     break;
                 };
 
+                /* Fáze 1b: podmínka zápisu (observe-cas M10) až po
+                 * kontrole regionu, aby nezapisovatelný cíl hlásil vždy
+                 * chybu regionu a ne "stav se změnil". */
+                if (!dbgapi_write_cond_before_cpu(p->cond, p->addr, p->length))
+                {
+                    p->success = 0;
+                    rq->success = false;
+                    break;
+                };
+
                 /* Fáze 2: vlastní zápis (region check prošel). */
                 for (uint32_t i = 0; i < p->length; i++)
                 {
                     debugger_memory_write_byte(
                         (uint16_t)(p->addr + i), p->data[i]);
                 };
+                dbgapi_write_cond_after_cpu(p->cond, p->addr, p->length);
                 p->success = 1;
                 p->first_failed_addr = 0;
                 p->first_failed_kind = 0;
@@ -4126,11 +4631,18 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 rq->success = false;
                 break;
             };
+            /* Podmíněný zápis (observe-cas M10). */
+            if ( !dbgapi_write_cond_before_cpu ( p->cond, p->addr, p->len ) )
+            {
+                rq->success = false;
+                break;
+            };
             for ( uint32_t i = 0; i < p->len; i++ )
             {
                 debugger_memory_write_byte (
                     (uint16_t) ( p->addr + i ), p->buf[ i ] );
             };
+            dbgapi_write_cond_after_cpu ( p->cond, p->addr, p->len );
             rq->success = true;
             break;
         }
@@ -4857,6 +5369,18 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                           && memsearch_sample_fill ( (const st_MEMSEARCH_SPAN *) p->spans,
                                                      p->span_count,
                                                      (st_MEMSEARCH_SAMPLE *) p->sample );
+            break;
+        }
+
+        /* --- Konzistentní čtení stavu (observe-cas M10) ---
+         * Registry, příznaky, čas, číslo běhu, okna paměti, hashe částí
+         * a mapa paměti z jednoho průchodu fronty: drain na hranici
+         * snímku nebo v pauze (na hranici akce BP se nevyřizuje). Okna se
+         * čtou bez vedlejších efektů, hash oken počítá odesílatel. */
+        case DBGAPI_CMD_STATE_OBSERVE:
+        {
+            st_DBGAPI_STATE_OBSERVE_PARAM *p = (st_DBGAPI_STATE_OBSERVE_PARAM *) rq->data_ptr;
+            rq->success = ( p != NULL ) && dbgapi_state_observe_fill ( p );
             break;
         }
 
@@ -6452,68 +6976,7 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 rq->success = false;
                 break;
             };
-            memset ( p, 0, sizeof ( *p ) );
-
-            const char *plat = "unknown";
-            switch ( g_mzarch_platform_numeric )
-            {
-                case 700:  plat = "mz700"; break;
-                case 800:  plat = "mz800"; break;
-                case 1500: plat = "mz1500"; break;
-                default:   plat = "unknown"; break;
-            };
-            g_strlcpy ( p->platform, plat, sizeof ( p->platform ) );
-            g_strlcpy ( p->mode_note,
-                "16 slotov 4KB; banking + memext aware (V1.D.1 minimal).",
-                sizeof ( p->mode_note ) );
-
-            for ( int i = 0; i < 16; i++ )
-            {
-                p->slots[ i ].addr_start  = (uint16_t) ( i * 0x1000 );
-                p->slots[ i ].addr_end    =
-                    (uint16_t) ( i * 0x1000 + 0x0FFF );
-                p->slots[ i ].source      = 0; /* unknown */
-                p->slots[ i ].ro_rw       = 0;
-                p->slots[ i ].slot_offset = 0;
-
-                /* MEMEXT detekce - vyžaduje connected memext, jinak skip. */
-                if ( MEMEXT_TEST_CONNECTED )
-                {
-                    /* g_memext.map[i] = raw bank index. Pro Luftner:
-                     * 0..0x7F = RAM, 0x80..0xFF = FLASH. Pro PEHU jen
-                     * 0..0x3F (RAM only). */
-                    uint32_t rb = g_memext.map[ i ];
-                    if ( MEMEXT_TEST_TYPE_LUFTNER )
-                    {
-                        if ( rb < MEMEXT_LUFTNER_BANKS )
-                        {
-                            p->slots[ i ].source = 5; /* MEMEXT_RAM */
-                            p->slots[ i ].ro_rw  = 1;
-                            p->slots[ i ].slot_offset =
-                                rb * MEMEXT_RAW_BANK_SIZE;
-                        }
-                        else
-                        {
-                            p->slots[ i ].source = 6; /* MEMEXT_FLASH */
-                            p->slots[ i ].ro_rw  = 0;
-                            p->slots[ i ].slot_offset =
-                                ( rb - MEMEXT_LUFTNER_BANKS )
-                                * MEMEXT_RAW_BANK_SIZE;
-                        };
-                    }
-                    else if ( MEMEXT_TEST_TYPE_PEHU )
-                    {
-                        if ( rb < MEMEXT_PEHU_BANKS * 2 )
-                        {
-                            p->slots[ i ].source = 5; /* MEMEXT_RAM */
-                            p->slots[ i ].ro_rw  = 1;
-                            p->slots[ i ].slot_offset =
-                                rb * MEMEXT_RAW_BANK_SIZE;
-                        };
-                    };
-                };
-            };
-            p->slot_count = 16;
+            dbgapi_memory_map_fill ( p );
             rq->success = true;
             break;
         }
@@ -7966,8 +8429,17 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 rq->success = false;
                 break;
             };
+            /* Podmíněný zápis (observe-cas M10); chyby ID, generace
+             * a zapisovatelnosti mají přednost (podmínka se nevyhodnotí). */
+            if ( !dbgapi_write_cond_before_region ( p ) )
+            {
+                p->out_count = 0;
+                rq->success = false;
+                break;
+            };
             p->out_count = dbgapi_regions_write_gen (
                 p->region_id, p->layout_gen, p->offset, p->data, p->len );
+            dbgapi_write_cond_after_region ( p );
             rq->success = ( p->out_count >= 0 );
             break;
         }
@@ -8458,10 +8930,19 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
     /* MCP_ACTION broadcast hook - po úspěšném zpracování CMDRQ od MCP
      * klienta emitujeme notifikaci do UI (= budoucí Activity Log panel
      * V1.C). Pro chybové průchody (success == false) broadcast neposíláme,
-     * aby Activity Log nezaplevelily failed pokusy. */
-    if (rq->success && rq->cmd_origin == DBGAPI_CMD_ORIGIN_MCP)
+     * aby Activity Log nezaplevelily failed pokusy. Výjimkou je podmíněný
+     * zápis odmítnutý nesplněnou podmínkou (observe-cas M10): člověk má
+     * vidět, že agent zapsat chtěl a stav se mu mezitím změnil. */
+    if (rq->cmd_origin == DBGAPI_CMD_ORIGIN_MCP)
     {
-        dbgapi_emit_mcp_action(rq);
+        if (rq->success)
+        {
+            dbgapi_emit_mcp_action(rq, false);
+        }
+        else if (!rp_refused && dbgapi_cmd_precondition_failed(rq))
+        {
+            dbgapi_emit_mcp_action(rq, true);
+        };
     };
 }
 

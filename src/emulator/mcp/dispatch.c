@@ -65,6 +65,7 @@
 #include "../debugger/trace/ramlog_hook.h"
 #include "../debugger/memsearch/memsearch.h"
 #include "../debugger/run_control/run_log.h"
+#include "../state_hash.h"
 #include <math.h>
 /* CMTSPEED_CUSTOM pro cmt_tape_block_speed s vlastními pulzy */
 #include "libs/cmtspeed/cmtspeed.h"
@@ -777,6 +778,9 @@ static en_MCP_DISPATCH_RESULT _handle_get_last_instr(
     const st_JSONL_MESSAGE *req, char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_get_cpu_panel_batch(
     const st_JSONL_MESSAGE *req, char **out_response);
+/* observe-cas (M10) - konzistentní čtení registrů a oken paměti */
+static en_MCP_DISPATCH_RESULT _handle_state_observe(
+    const st_JSONL_MESSAGE *req, char **out_response);
 /* V1.E.3 - debugger state Tools (Commit 1: 3 Tools) */
 static en_MCP_DISPATCH_RESULT _handle_debugger_activate(
     const st_JSONL_MESSAGE *req, char **out_response);
@@ -1248,6 +1252,9 @@ static const st_MCP_CMD_MAP_ENTRY g_cmd_map[] = {
     { "replay_status",            DBGAPI_CMD_NONE,                    _handle_replay_status            },
     { "replay_rewind",            DBGAPI_CMD_NONE,                    _handle_replay_rewind            },
     { "replay_seek",              DBGAPI_CMD_NONE,                    _handle_replay_seek              },
+    /* observe-cas (M10 debug-gaps) - registry, příznaky a okna paměti
+     * z jednoho okamžiku (jeden průchod fronty dbgapi). */
+    { "state_observe",            DBGAPI_CMD_STATE_OBSERVE,           _handle_state_observe            },
     /* sentinel */
     { NULL,              DBGAPI_CMD_NONE,              NULL                  },
 };
@@ -1343,6 +1350,15 @@ static JsonArray *_pulses_us_array(const double us[4]) {
     }
     return arr;
 }
+
+
+/**
+ * @brief Stabilní prefix chyby nesplněné podmínky zápisu (observe-cas M10).
+ *
+ * Podmíněný zápis (`expected_sha256`, `expected`) se v emu vlákně neprovedl,
+ * protože stav se od čtení klienta změnil; viz docs/agent/error_handling.md.
+ */
+#define MCP_PRECONDITION_PREFIX "Precondition failed: "
 
 
 /**
@@ -2137,10 +2153,15 @@ static bool _parse_reg_name(const char *name, uint8_t *out_id) {
  *  - `value` (int, 0..65535) - nová hodnota (pro 8bitové registry I/R
  *    je relevantní jen dolní bajt, pro IR registr backend nastavuje
  *    jen R, I se zachová)
+ *  - `expected` (int, 0..65535, volitelný; observe-cas M10) - zapsat jen,
+ *    když má registr právě tuto hodnotu (porovnání a zápis v emu vlákně
+ *    v jednom příkazu); jinak chyba `Precondition failed: register <reg>
+ *    changed (expected=0x...., current=0x....)` a nic se nezapíše
  *
  * Response payload pri uspechu:
  *  - `reg` (string) - echo
  *  - `value` (int) - echo
+ *  - `previous` (int) - hodnota registru před zápisem
  *
  * Side effects: mění CPU state, klient by měl typicky následně volat
  * `get_registers` pro verifikaci.
@@ -2175,13 +2196,37 @@ static en_MCP_DISPATCH_RESULT _handle_set_register(const st_JSONL_MESSAGE *req,
         .reg_id = reg_id,
         .value  = (uint16_t)value,
     };
+    if (json_object_has_member(data_obj, "expected")) {
+        JsonNode *en = json_object_get_member(data_obj, "expected");
+        gint64 ev = -1;
+        if (en && JSON_NODE_HOLDS_VALUE(en) && json_node_get_value_type(en) == G_TYPE_INT64) {
+            ev = json_node_get_int(en);
+        }
+        if (ev < 0 || ev > 0xFFFF) {
+            return _err_response(req_id, "Invalid parameters: expected must be in range 0..65535",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        param.has_expected = 1;
+        param.expected = (uint16_t)ev;
+    }
     if (!_submit_dbgapi(DBGAPI_CMD_SET_REG, &param, NULL)) {
+        if (param.precondition_failed && s_submit_track.last_status == DBGAPI_SUBMIT_FAILED) {
+            /* observe-cas M10: registr má jinou hodnotu, nic se nezapsalo. */
+            gchar *msg = g_strdup_printf(MCP_PRECONDITION_PREFIX "register %s changed "
+                                         "(expected=0x%04X, current=0x%04X)",
+                                         reg_name, param.expected, param.previous);
+            en_MCP_DISPATCH_RESULT rc = _err_response(req_id, msg, MCP_DISPATCH_EMU_ERROR,
+                                                      out_response);
+            g_free(msg);
+            return rc;
+        }
         return _err_response(req_id, "SET_REG failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
     JsonObject *data = json_object_new();
     json_object_set_string_member(data, "reg", reg_name);
     json_object_set_int_member(data, "value", value);
+    json_object_set_int_member(data, "previous", (gint64)param.previous);
     return _ok_response(req_id, data, out_response);
 }
 
@@ -2583,6 +2628,145 @@ static en_MCP_DISPATCH_RESULT _handle_get_cpu_flags(
 }
 
 
+/** @brief Pole `set_cpu_flags` s bitem update_mask (pořadí výstupů). */
+static const struct {
+    const char *name;   /**< Klíč v JSON. */
+    uint16_t bit;       /**< DBGAPI_CPU_FLAGS_UM_*. */
+} s_cpu_flag_fields[] = {
+    { "iff1", DBGAPI_CPU_FLAGS_UM_IFF1 },
+    { "iff2", DBGAPI_CPU_FLAGS_UM_IFF2 },
+    { "im",   DBGAPI_CPU_FLAGS_UM_IM },
+    { "i",    DBGAPI_CPU_FLAGS_UM_I },
+    { "r",    DBGAPI_CPU_FLAGS_UM_R_FULL },
+};
+
+/**
+ * @brief Hodnota pole `set_cpu_flags` podle bitu z dané sady (exp_* / prev_*).
+ * @param p Parametr.
+ * @param bit DBGAPI_CPU_FLAGS_UM_*.
+ * @param prev true = prev_*, false = exp_*.
+ * @return Hodnota pole.
+ */
+static uint8_t _cpu_flag_value(const st_DBGAPI_CPU_FLAGS *p, uint16_t bit, bool prev) {
+    switch (bit) {
+        case DBGAPI_CPU_FLAGS_UM_IFF1: return prev ? p->prev_iff1 : p->exp_iff1;
+        case DBGAPI_CPU_FLAGS_UM_IFF2: return prev ? p->prev_iff2 : p->exp_iff2;
+        case DBGAPI_CPU_FLAGS_UM_IM:   return prev ? p->prev_im   : p->exp_im;
+        case DBGAPI_CPU_FLAGS_UM_I:    return prev ? p->prev_i    : p->exp_i;
+        default:                       return prev ? p->prev_r    : p->exp_r;
+    }
+}
+
+/**
+ * @brief Přečte volitelný objekt `expected` u `set_cpu_flags` (observe-cas M10).
+ *
+ * Klíče `iff1`, `iff2` (bool nebo 0/1), `im` (0..2), `i`, `r` (0..255);
+ * smí být jen pole, která požadavek zároveň zapisuje. `r` se porovná
+ * celým bajtem (MCP zapisuje R celý, UM_R_FULL).
+ *
+ * @param obj Parametry požadavku.
+ * @param[in,out] p Parametr SET_CPU_FLAGS s hotovou update_mask; doplní
+ *                expect_mask a exp_*.
+ * @return NULL = OK, jinak statický text chyby parametrů.
+ */
+static const char *_parse_cpu_flags_expected(JsonObject *obj, st_DBGAPI_CPU_FLAGS *p) {
+    if (!json_object_has_member(obj, "expected")) return NULL;
+    JsonNode *en = json_object_get_member(obj, "expected");
+    if (!en || !JSON_NODE_HOLDS_OBJECT(en)) return "expected must be an object";
+    JsonObject *eo = json_node_get_object(en);
+    GList *keys = json_object_get_members(eo);
+    const char *err = NULL;
+    for (GList *k = keys; k && !err; k = k->next) {
+        const char *key = (const char *)k->data;
+        unsigned f = 0;
+        while (f < G_N_ELEMENTS(s_cpu_flag_fields) && strcmp(s_cpu_flag_fields[f].name, key) != 0) f++;
+        if (f == G_N_ELEMENTS(s_cpu_flag_fields)) {
+            err = "expected has an unknown field (iff1, iff2, im, i, r)";
+            break;
+        }
+        uint16_t bit = s_cpu_flag_fields[f].bit;
+        if (!(p->update_mask & bit)) {
+            err = "expected may only contain fields that the request writes";
+            break;
+        }
+        JsonNode *v = json_object_get_member(eo, key);
+        gint64 iv = -1;
+        if (v && JSON_NODE_HOLDS_VALUE(v)) {
+            GType t = json_node_get_value_type(v);
+            if (t == G_TYPE_BOOLEAN && (bit == DBGAPI_CPU_FLAGS_UM_IFF1 || bit == DBGAPI_CPU_FLAGS_UM_IFF2)) {
+                iv = json_node_get_boolean(v) ? 1 : 0;
+            } else if (t == G_TYPE_INT64) {
+                iv = json_node_get_int(v);
+            }
+        }
+        gint64 max = (bit == DBGAPI_CPU_FLAGS_UM_IFF1 || bit == DBGAPI_CPU_FLAGS_UM_IFF2) ? 1
+                   : (bit == DBGAPI_CPU_FLAGS_UM_IM) ? 2 : 0xFF;
+        if (iv < 0 || iv > max) {
+            err = "expected value out of range (iff1/iff2 0..1, im 0..2, i/r 0..255)";
+            break;
+        }
+        switch (bit) {
+            case DBGAPI_CPU_FLAGS_UM_IFF1: p->exp_iff1 = (uint8_t)iv; break;
+            case DBGAPI_CPU_FLAGS_UM_IFF2: p->exp_iff2 = (uint8_t)iv; break;
+            case DBGAPI_CPU_FLAGS_UM_IM:   p->exp_im   = (uint8_t)iv; break;
+            case DBGAPI_CPU_FLAGS_UM_I:    p->exp_i    = (uint8_t)iv; break;
+            default:                       p->exp_r    = (uint8_t)iv; break;
+        }
+        p->expect_mask |= bit;
+    }
+    g_list_free(keys);
+    return err;
+}
+
+/**
+ * @brief Objekt `previous` odpovědi `set_cpu_flags`: hodnoty zapsaných polí před zápisem.
+ * @param p Parametr po návratu z emu vlákna.
+ * @return Nový JsonObject (vlastnictví předává).
+ */
+static JsonObject *_cpu_flags_previous_json(const st_DBGAPI_CPU_FLAGS *p) {
+    JsonObject *o = json_object_new();
+    for (unsigned f = 0; f < G_N_ELEMENTS(s_cpu_flag_fields); f++) {
+        if (p->update_mask & s_cpu_flag_fields[f].bit) {
+            json_object_set_int_member(o, s_cpu_flag_fields[f].name,
+                                       (gint64)_cpu_flag_value(p, s_cpu_flag_fields[f].bit, true));
+        }
+    }
+    return o;
+}
+
+/**
+ * @brief Chyba nesplněné podmínky `set_cpu_flags` s hodnotami polí, která nesouhlasí.
+ *
+ * Text: `Precondition failed: cpu flags changed (iff1: expected=1,
+ * current=0; r: expected=0x12, current=0x34)`.
+ *
+ * @param req_id ID požadavku.
+ * @param p Parametr po návratu z emu vlákna (precondition_failed).
+ * @param[out] out_response Odpověď.
+ */
+static en_MCP_DISPATCH_RESULT _cpu_flags_cond_err(int64_t req_id, const st_DBGAPI_CPU_FLAGS *p,
+                                                  char **out_response) {
+    GString *s = g_string_new(MCP_PRECONDITION_PREFIX "cpu flags changed (");
+    bool first = true;
+    for (unsigned f = 0; f < G_N_ELEMENTS(s_cpu_flag_fields); f++) {
+        uint16_t bit = s_cpu_flag_fields[f].bit;
+        if (!(p->expect_mask & bit)) continue;
+        uint8_t ev = _cpu_flag_value(p, bit, false);
+        uint8_t cv = _cpu_flag_value(p, bit, true);
+        if (ev == cv) continue;
+        bool hex = (bit == DBGAPI_CPU_FLAGS_UM_I || bit == DBGAPI_CPU_FLAGS_UM_R_FULL);
+        g_string_append_printf(s, hex ? "%s%s: expected=0x%02X, current=0x%02X"
+                                      : "%s%s: expected=%u, current=%u",
+                               first ? "" : "; ", s_cpu_flag_fields[f].name, ev, cv);
+        first = false;
+    }
+    g_string_append(s, ")");
+    en_MCP_DISPATCH_RESULT rc = _err_response(req_id, s->str, MCP_DISPATCH_EMU_ERROR, out_response);
+    g_string_free(s, TRUE);
+    return rc;
+}
+
+
 /**
  * @brief `set_cpu_flags` handler - selektivní zápis IFF1/IFF2/IM/I/R.
  *
@@ -2597,9 +2781,14 @@ static en_MCP_DISPATCH_RESULT _handle_get_cpu_flags(
  * Update_mask se sestavuje automaticky podle přítomnosti polí v JSON.
  * Pokud žádné z polí není přítomno, handler vrací invalid params.
  *
+ * Volitelně `expected` (objekt, observe-cas M10): očekávané hodnoty jen
+ * zapisovaných polí; při neshodě se nic nezapíše a vrátí se chyba
+ * `Precondition failed: cpu flags changed (...)` s hodnotami polí.
+ *
  * Response payload:
  *  - `updated` (array of string) - jména polí, která byla zapsána
  *  - `values` (object) - mapping field -> finální hodnota (echo).
+ *  - `previous` (object) - zapsaná pole -> hodnota před zápisem.
  *
  * Bezpečnost: zápis IFF/IM/I/R během running emulace je technically
  * race; backend běží v safepointu mezi instrukcemi, takže atomicita
@@ -2684,7 +2873,19 @@ static en_MCP_DISPATCH_RESULT _handle_set_cpu_flags(
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
 
+    const char *eerr = _parse_cpu_flags_expected(data_obj, &param);
+    if (eerr) {
+        gchar *msg = g_strdup_printf("Invalid parameters: %s", eerr);
+        en_MCP_DISPATCH_RESULT rc = _err_response(req_id, msg, MCP_DISPATCH_INVALID_PARAMS,
+                                                  out_response);
+        g_free(msg);
+        return rc;
+    }
+
     if (!_submit_dbgapi(DBGAPI_CMD_SET_CPU_FLAGS, &param, NULL)) {
+        if (param.precondition_failed && s_submit_track.last_status == DBGAPI_SUBMIT_FAILED) {
+            return _cpu_flags_cond_err(req_id, &param, out_response);
+        }
         return _err_response(req_id, "SET_CPU_FLAGS failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
@@ -2716,6 +2917,7 @@ static en_MCP_DISPATCH_RESULT _handle_set_cpu_flags(
     }
     json_object_set_array_member(data,  "updated", updated);
     json_object_set_object_member(data, "values",  values);
+    json_object_set_object_member(data, "previous", _cpu_flags_previous_json(&param));
     return _ok_response(req_id, data, out_response);
 }
 
@@ -2782,6 +2984,107 @@ static en_MCP_DISPATCH_RESULT _handle_get_last_instr(
     }
     json_object_set_string_member(data, "bytes_hex", hex_buf);
     return _ok_response(req_id, data, out_response);
+}
+
+
+/**
+ * @brief Doplní do odpovědi `regs` a `flags` ze snímku panelu CPU.
+ *
+ * Společné pro `get_cpu_panel_batch` a `state_observe`: `regs` má jména
+ * jako `get_registers` (AF..IR, alternativní sada s podtržítkem), `flags`
+ * stejné schéma jako `get_cpu_flags`.
+ *
+ * @param data Odpověď, do které se přidají objekty `regs` a `flags`.
+ * @param out  Snímek panelu (regs_valid a flags_valid jsou vždy 1).
+ */
+static void _cpu_panel_core_to_json(JsonObject *data,
+                                    const st_DBGAPI_CPU_PANEL_BATCH *out) {
+    /* regs (vždy naplněné) - shoduje se s pojmenováním z get_registers. */
+    JsonObject *regs = json_object_new();
+    static const char *const reg_names[14] = {
+        "AF","BC","DE","HL","AF_","BC_","DE_","HL_",
+        "IX","IY","SP","PC","WZ","IR"
+    };
+    for (int i = 0; i < 14; i++) {
+        json_object_set_int_member(regs, reg_names[i], (gint64)out->regs[i]);
+    }
+    json_object_set_object_member(data, "regs", regs);
+
+    /* flags (vždy naplněné) - shoduje se s get_cpu_flags response. */
+    JsonObject *flags = json_object_new();
+    json_object_set_boolean_member(flags, "iff1",        out->flags.iff1 ? TRUE : FALSE);
+    json_object_set_boolean_member(flags, "iff2",        out->flags.iff2 ? TRUE : FALSE);
+    json_object_set_int_member(flags,    "im",           (gint64)out->flags.im);
+    json_object_set_boolean_member(flags, "halted",      out->flags.halted ? TRUE : FALSE);
+    json_object_set_boolean_member(flags, "int_pending", out->flags.int_pending ? TRUE : FALSE);
+    json_object_set_boolean_member(flags, "nmi_pending", out->flags.nmi_pending ? TRUE : FALSE);
+    json_object_set_boolean_member(flags, "ei_delay",    out->flags.ei_delay ? TRUE : FALSE);
+    json_object_set_int_member(flags,    "q",            (gint64)out->flags.q);
+    json_object_set_int_member(flags,    "total_cycles", (gint64)out->flags.total_cycles);
+    json_object_set_int_member(flags,    "frame_cycles", (gint64)out->flags.cycles);
+    json_object_set_int_member(flags,    "op_tstate",    (gint64)out->flags.op_tstate);
+    json_object_set_int_member(flags,    "i",            (gint64)out->flags.i_reg);
+    json_object_set_int_member(flags,    "r",            (gint64)out->flags.r_reg);
+    json_object_set_object_member(data, "flags", flags);
+}
+
+
+/**
+ * @brief Doplní do odpovědi volitelné sekce panelu CPU (`im2`, `raster`, `last_instr`).
+ *
+ * Sekce se přidá jen tehdy, když je ve snímku platná (*_valid), tj. byla
+ * vyžádaná bitem DBGAPI_CPU_PANEL_WANT_*. Společné pro
+ * `get_cpu_panel_batch` a `state_observe`.
+ *
+ * @param data Odpověď.
+ * @param out  Snímek panelu.
+ */
+static void _cpu_panel_sections_to_json(JsonObject *data,
+                                        const st_DBGAPI_CPU_PANEL_BATCH *out) {
+    if (out->im2_valid) {
+        JsonObject *im2 = json_object_new();
+        json_object_set_boolean_member(im2, "available",
+                                        out->im2.available ? TRUE : FALSE);
+        json_object_set_int_member(im2, "im",         (gint64)out->im2.im);
+        json_object_set_int_member(im2, "i",          (gint64)out->im2.i_register);
+        json_object_set_int_member(im2, "vec",        (gint64)out->im2.vector_byte);
+        json_object_set_int_member(im2, "isr_addr",   (gint64)out->im2.isr_table_addr);
+        json_object_set_int_member(im2, "isr_target", (gint64)out->im2.isr_target_addr);
+        json_object_set_boolean_member(im2, "pio_irq_pending",
+                                        out->im2.pio_irq_pending ? TRUE : FALSE);
+        json_object_set_int_member(im2, "pio_source", (gint64)out->im2.pio_source);
+        json_object_set_object_member(data, "im2", im2);
+    }
+    if (out->raster_valid) {
+        JsonObject *raster = json_object_new();
+        json_object_set_int_member(raster, "frame_number", (gint64)out->raster.frame_number);
+        json_object_set_int_member(raster, "scanline",     (gint64)out->raster.scanline);
+        json_object_set_int_member(raster, "column_pixel", (gint64)out->raster.column_pixel);
+        json_object_set_int_member(raster, "total_cycles", (gint64)out->raster.total_cycles);
+        json_object_set_int_member(raster, "frame_cycles", (gint64)out->raster.frame_cycles);
+        json_object_set_object_member(data, "raster", raster);
+    }
+    if (out->last_instr_valid) {
+        JsonObject *li = json_object_new();
+        json_object_set_boolean_member(li, "valid",
+                                        out->last_instr.valid ? TRUE : FALSE);
+        json_object_set_int_member(li, "addr",   (gint64)out->last_instr.addr);
+        json_object_set_int_member(li, "length", (gint64)out->last_instr.length);
+        char hex_buf[16] = {0};
+        if (out->last_instr.valid && out->last_instr.length > 0) {
+            int n = out->last_instr.length;
+            if (n > 4) n = 4;
+            int hex_pos = 0;
+            for (int b = 0; b < n; b++) {
+                hex_pos += g_snprintf(hex_buf + hex_pos,
+                                      sizeof(hex_buf) - hex_pos,
+                                      (b == 0) ? "%02X" : " %02X",
+                                      out->last_instr.bytes[b]);
+            }
+        }
+        json_object_set_string_member(li, "bytes_hex", hex_buf);
+        json_object_set_object_member(data, "last_instr", li);
+    }
 }
 
 
@@ -2854,34 +3157,7 @@ static en_MCP_DISPATCH_RESULT _handle_get_cpu_panel_batch(
     }
 
     JsonObject *data = json_object_new();
-
-    /* regs (vždy naplněné) - shoduje se s pojmenováním z get_registers. */
-    JsonObject *regs = json_object_new();
-    static const char *const reg_names[14] = {
-        "AF","BC","DE","HL","AF_","BC_","DE_","HL_",
-        "IX","IY","SP","PC","WZ","IR"
-    };
-    for (int i = 0; i < 14; i++) {
-        json_object_set_int_member(regs, reg_names[i], (gint64)out.regs[i]);
-    }
-    json_object_set_object_member(data, "regs", regs);
-
-    /* flags (vždy naplněné) - shoduje se s get_cpu_flags response. */
-    JsonObject *flags = json_object_new();
-    json_object_set_boolean_member(flags, "iff1",        out.flags.iff1 ? TRUE : FALSE);
-    json_object_set_boolean_member(flags, "iff2",        out.flags.iff2 ? TRUE : FALSE);
-    json_object_set_int_member(flags,    "im",           (gint64)out.flags.im);
-    json_object_set_boolean_member(flags, "halted",      out.flags.halted ? TRUE : FALSE);
-    json_object_set_boolean_member(flags, "int_pending", out.flags.int_pending ? TRUE : FALSE);
-    json_object_set_boolean_member(flags, "nmi_pending", out.flags.nmi_pending ? TRUE : FALSE);
-    json_object_set_boolean_member(flags, "ei_delay",    out.flags.ei_delay ? TRUE : FALSE);
-    json_object_set_int_member(flags,    "q",            (gint64)out.flags.q);
-    json_object_set_int_member(flags,    "total_cycles", (gint64)out.flags.total_cycles);
-    json_object_set_int_member(flags,    "frame_cycles", (gint64)out.flags.cycles);
-    json_object_set_int_member(flags,    "op_tstate",    (gint64)out.flags.op_tstate);
-    json_object_set_int_member(flags,    "i",            (gint64)out.flags.i_reg);
-    json_object_set_int_member(flags,    "r",            (gint64)out.flags.r_reg);
-    json_object_set_object_member(data, "flags", flags);
+    _cpu_panel_core_to_json(data, &out);
 
     /* Core fieldy vždy. */
     json_object_set_int_member(data, "frame_number",      (gint64)out.frame_number);
@@ -2897,50 +3173,7 @@ static en_MCP_DISPATCH_RESULT _handle_get_cpu_panel_batch(
     json_object_set_int_member(data, "isrb",              (gint64)out.isrb);
 
     /* Volitelné sub-objekty - přítomné jen pokud valid. */
-    if (out.im2_valid) {
-        JsonObject *im2 = json_object_new();
-        json_object_set_boolean_member(im2, "available",
-                                        out.im2.available ? TRUE : FALSE);
-        json_object_set_int_member(im2, "im",         (gint64)out.im2.im);
-        json_object_set_int_member(im2, "i",          (gint64)out.im2.i_register);
-        json_object_set_int_member(im2, "vec",        (gint64)out.im2.vector_byte);
-        json_object_set_int_member(im2, "isr_addr",   (gint64)out.im2.isr_table_addr);
-        json_object_set_int_member(im2, "isr_target", (gint64)out.im2.isr_target_addr);
-        json_object_set_boolean_member(im2, "pio_irq_pending",
-                                        out.im2.pio_irq_pending ? TRUE : FALSE);
-        json_object_set_int_member(im2, "pio_source", (gint64)out.im2.pio_source);
-        json_object_set_object_member(data, "im2", im2);
-    }
-    if (out.raster_valid) {
-        JsonObject *raster = json_object_new();
-        json_object_set_int_member(raster, "frame_number", (gint64)out.raster.frame_number);
-        json_object_set_int_member(raster, "scanline",     (gint64)out.raster.scanline);
-        json_object_set_int_member(raster, "column_pixel", (gint64)out.raster.column_pixel);
-        json_object_set_int_member(raster, "total_cycles", (gint64)out.raster.total_cycles);
-        json_object_set_int_member(raster, "frame_cycles", (gint64)out.raster.frame_cycles);
-        json_object_set_object_member(data, "raster", raster);
-    }
-    if (out.last_instr_valid) {
-        JsonObject *li = json_object_new();
-        json_object_set_boolean_member(li, "valid",
-                                        out.last_instr.valid ? TRUE : FALSE);
-        json_object_set_int_member(li, "addr",   (gint64)out.last_instr.addr);
-        json_object_set_int_member(li, "length", (gint64)out.last_instr.length);
-        char hex_buf[16] = {0};
-        if (out.last_instr.valid && out.last_instr.length > 0) {
-            int n = out.last_instr.length;
-            if (n > 4) n = 4;
-            int hex_pos = 0;
-            for (int b = 0; b < n; b++) {
-                hex_pos += g_snprintf(hex_buf + hex_pos,
-                                      sizeof(hex_buf) - hex_pos,
-                                      (b == 0) ? "%02X" : " %02X",
-                                      out.last_instr.bytes[b]);
-            }
-        }
-        json_object_set_string_member(li, "bytes_hex", hex_buf);
-        json_object_set_object_member(data, "last_instr", li);
-    }
+    _cpu_panel_sections_to_json(data, &out);
 
     return _ok_response(req_id, data, out_response);
 }
@@ -4272,6 +4505,109 @@ static void _read_result_to_json(JsonObject *resp, const uint8_t *buf, gsize len
 }
 
 
+/* ------------------------------------------------------------------ */
+/* Podmíněné zápisy (observe-cas M10, V1)                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @brief SHA-256 (32 bajtů) jako 64 hex znaků malými písmeny.
+ * @param d Hash.
+ * @param[out] out Buffer aspoň 65 znaků.
+ */
+static void _sha256_to_hex(const uint8_t d[32], char out[65]) {
+    static const char hx[] = "0123456789abcdef";
+    for (int i = 0; i < 32; i++) {
+        out[2 * i]     = hx[d[i] >> 4];
+        out[2 * i + 1] = hx[d[i] & 0x0F];
+    }
+    out[64] = '\0';
+}
+
+/**
+ * @brief Přečte volitelné `expected_sha256` a `want_hashes` zápisu paměti.
+ *
+ * `expected_sha256` = 64 hex znaků (velikost písmen libovolná), SHA-256
+ * přesně přepisovaného rozsahu, stejný jako `sha256` z `mem_read` /
+ * `region_read` / okna `state_observe` téhož rozsahu.
+ *
+ * @param obj Parametry požadavku.
+ * @param[out] c Podmínka (vynuluje se).
+ * @param[out] used true = klient podmínku nebo hashe chce (předat `c`
+ *             emu vláknu), false = zápis beze změny chování.
+ * @return NULL = OK, jinak statický text chyby parametrů.
+ */
+static const char *_parse_write_cond(JsonObject *obj, st_DBGAPI_WRITE_COND *c, bool *used) {
+    memset(c, 0, sizeof(*c));
+    *used = false;
+    if (json_object_has_member(obj, "expected_sha256")) {
+        JsonNode *n = json_object_get_member(obj, "expected_sha256");
+        if (!n || !JSON_NODE_HOLDS_VALUE(n) || json_node_get_value_type(n) != G_TYPE_STRING) {
+            return "expected_sha256 must be a string of 64 hex digits";
+        }
+        const char *h = json_node_get_string(n);
+        if (strlen(h) != 64) return "expected_sha256 must be a string of 64 hex digits";
+        for (int i = 0; i < 32; i++) {
+            int hi = g_ascii_xdigit_value(h[2 * i]);
+            int lo = g_ascii_xdigit_value(h[2 * i + 1]);
+            if (hi < 0 || lo < 0) return "expected_sha256 must be a string of 64 hex digits";
+            c->expected[i] = (uint8_t)((hi << 4) | lo);
+        }
+        c->has_expected = 1;
+        *used = true;
+    }
+    if (json_object_has_member(obj, "want_hashes")) {
+        JsonNode *n = json_object_get_member(obj, "want_hashes");
+        if (!n || !JSON_NODE_HOLDS_VALUE(n) || json_node_get_value_type(n) != G_TYPE_BOOLEAN) {
+            return "want_hashes must be a boolean";
+        }
+        if (json_node_get_boolean(n)) {
+            c->want_hashes = 1;
+            *used = true;
+        }
+    }
+    return NULL;
+}
+
+/**
+ * @brief Doplní do odpovědi zápisu `before_sha256` a `after_sha256`.
+ * @param resp Odpověď.
+ * @param c Podmínka po návratu z emu vlákna (bez hashů nic nepřidá).
+ */
+static void _write_cond_to_json(JsonObject *resp, const st_DBGAPI_WRITE_COND *c) {
+    char hex[65];
+    if (!c->hashes_valid) return;
+    _sha256_to_hex(c->before, hex);
+    json_object_set_string_member(resp, "before_sha256", hex);
+    if (c->written) {
+        _sha256_to_hex(c->after, hex);
+        json_object_set_string_member(resp, "after_sha256", hex);
+    }
+}
+
+/**
+ * @brief Chybová odpověď nesplněné podmínky zápisu paměti.
+ *
+ * Text: `Precondition failed: memory changed (expected_sha256=<hex>,
+ * current_sha256=<hex>)`; hodnoty jsou jen v textu, drát u chyby `data`
+ * nenese.
+ *
+ * @param req_id ID požadavku.
+ * @param c Podmínka po návratu z emu vlákna (precondition_failed).
+ * @param[out] out_response Odpověď.
+ */
+static en_MCP_DISPATCH_RESULT _write_cond_err(int64_t req_id, const st_DBGAPI_WRITE_COND *c,
+                                              char **out_response) {
+    char want[65], cur[65];
+    _sha256_to_hex(c->expected, want);
+    _sha256_to_hex(c->before, cur);
+    gchar *msg = g_strdup_printf(MCP_PRECONDITION_PREFIX "memory changed "
+                                 "(expected_sha256=%s, current_sha256=%s)", want, cur);
+    en_MCP_DISPATCH_RESULT rc = _err_response(req_id, msg, MCP_DISPATCH_EMU_ERROR, out_response);
+    g_free(msg);
+    return rc;
+}
+
+
 /**
  * @brief `mem_read` handler - čte blok paměti.
  *
@@ -4380,12 +4716,25 @@ static int _decode_hex(const char *hex, uint8_t *out, gsize out_max) {
  * unmapped regionu, žádný bajt se nezapíše a handler vrátí success=false
  * s polem `first_failed_addr` v error payloadu.
  *
+ * Volitelně (observe-cas M10, podmíněný zápis):
+ *  - `expected_sha256` (string, 64 hex) - zapsat jen, když SHA-256
+ *    přepisovaného rozsahu (addr..addr+délka-1, přes aktuální mapování)
+ *    souhlasí; kontrola i zápis proběhnou v emu vlákně v jednom příkazu
+ *  - `want_hashes` (bool) - vrátit `before_sha256` / `after_sha256`
+ *    i bez podmínky
+ *
  * Response data (success):
  *  - `addr`   (int) - echo
  *  - `length` (int) - počet zapsaných bajtů
+ *  - `before_sha256`, `after_sha256` (string) - jen s `expected_sha256`
+ *    nebo `want_hashes`
  *
  * Response data (failure region check):
  *  - JSONL `success=false` + `error="MEM_WRITE region check failed"`
+ *    (kontrola regionu má přednost před podmínkou)
+ *
+ * Response (nesplněná podmínka): `Precondition failed: memory changed
+ * (expected_sha256=..., current_sha256=...)`, nic se nezapsalo.
  *
  * Pozn.: V0.B.3 neimplementuje žádný `force_rom` override (= scope V1+).
  * AI klient by si měl tuto destruktivní operaci nechat odsouhlasit
@@ -4432,6 +4781,18 @@ static en_MCP_DISPATCH_RESULT _handle_mem_write(const st_JSONL_MESSAGE *req,
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
 
+    st_DBGAPI_WRITE_COND cond;
+    bool use_cond = false;
+    const char *cerr = _parse_write_cond(data_obj, &cond, &use_cond);
+    if (cerr) {
+        g_free(bytes);
+        gchar *msg = g_strdup_printf("Invalid parameters: %s", cerr);
+        en_MCP_DISPATCH_RESULT rc = _err_response(req_id, msg, MCP_DISPATCH_INVALID_PARAMS,
+                                                  out_response);
+        g_free(msg);
+        return rc;
+    }
+
     st_DBGAPI_MEM_WRITE_CHECKED_PARAM param = {
         .addr               = (uint16_t)addr,
         .length             = (uint16_t)decoded,
@@ -4439,6 +4800,7 @@ static en_MCP_DISPATCH_RESULT _handle_mem_write(const st_JSONL_MESSAGE *req,
         .success            = 0,
         .first_failed_addr  = 0,
         .first_failed_kind  = 0,
+        .cond               = use_cond ? &cond : NULL,
     };
     bool submit_ok = _submit_dbgapi(DBGAPI_CMD_MEM_WRITE_CHECKED, &param, NULL);
     g_free(bytes);
@@ -4449,6 +4811,11 @@ static en_MCP_DISPATCH_RESULT _handle_mem_write(const st_JSONL_MESSAGE *req,
     if (!submit_ok && s_submit_track.last_status != DBGAPI_SUBMIT_FAILED) {
         return _err_response(req_id, "MEM_WRITE failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    /* Nesplněná podmínka (observe-cas M10): kontrola regionu prošla,
+     * ale rozsah má jiný hash než expected_sha256; nic se nezapsalo. */
+    if (!submit_ok && use_cond && cond.precondition_failed) {
+        return _write_cond_err(req_id, &cond, out_response);
     }
     if (!param.success) {
         /* Region check abortoval celý zápis. Klient dostane structured
@@ -4465,6 +4832,7 @@ static en_MCP_DISPATCH_RESULT _handle_mem_write(const st_JSONL_MESSAGE *req,
     JsonObject *resp = json_object_new();
     json_object_set_int_member(resp, "addr",   addr);
     json_object_set_int_member(resp, "length", decoded);
+    if (use_cond) _write_cond_to_json(resp, &cond);
     return _ok_response(req_id, resp, out_response);
 }
 
@@ -6882,8 +7250,12 @@ static en_MCP_DISPATCH_RESULT _handle_nmi_inject(const st_JSONL_MESSAGE *req,
  * Identicky validuje vstup jako `mem_write`, ale forwarduje na
  * DBGAPI_CMD_MEM_WRITE_FORCE (= bez region check), takže zápis
  * proběhne i do ROM oblastí (pokud banking dovolí).
+ * Volitelně `expected_sha256` a `want_hashes` jako u `mem_write`
+ * (podmíněný zápis, observe-cas M10).
  *
- * Response: `{"addr": <int>, "length": <int>}`.
+ * Response: `{"addr": <int>, "length": <int>}`, s podmínkou nebo
+ * `want_hashes` navíc `before_sha256` a `after_sha256`. Nesplněná
+ * podmínka = chyba `Precondition failed: memory changed (...)`.
  *
  * @warning Velmi destruktivní - obchází ochranu ROM/VRAM zapisů.
  *          Doporučeno jen pro fault injection v test scenariu.
@@ -6925,13 +7297,29 @@ static en_MCP_DISPATCH_RESULT _handle_mem_write_force(const st_JSONL_MESSAGE *re
         return _err_response(req_id, "Invalid parameters",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
+    st_DBGAPI_WRITE_COND cond;
+    bool use_cond = false;
+    const char *cerr = _parse_write_cond(data_obj, &cond, &use_cond);
+    if (cerr) {
+        g_free(bytes);
+        gchar *msg = g_strdup_printf("Invalid parameters: %s", cerr);
+        en_MCP_DISPATCH_RESULT rc = _err_response(req_id, msg, MCP_DISPATCH_INVALID_PARAMS,
+                                                  out_response);
+        g_free(msg);
+        return rc;
+    }
     st_DBGAPI_MEM_PARAM param = {
         .addr = (uint16_t)addr,
         .len  = (uint16_t)decoded,
         .buf  = bytes,
+        .cond = use_cond ? &cond : NULL,
     };
     bool ok = _submit_dbgapi(DBGAPI_CMD_MEM_WRITE_FORCE, &param, NULL);
     g_free(bytes);
+    if (!ok && use_cond && cond.precondition_failed
+        && s_submit_track.last_status == DBGAPI_SUBMIT_FAILED) {
+        return _write_cond_err(req_id, &cond, out_response);
+    }
     if (!ok) {
         return _err_response(req_id, "MEM_WRITE_FORCE failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
@@ -6939,6 +7327,7 @@ static en_MCP_DISPATCH_RESULT _handle_mem_write_force(const st_JSONL_MESSAGE *re
     JsonObject *resp = json_object_new();
     json_object_set_int_member(resp, "addr",   (gint64)addr);
     json_object_set_int_member(resp, "length", (gint64)decoded);
+    if (use_cond) _write_cond_to_json(resp, &cond);
     return _ok_response(req_id, resp, out_response);
 }
 
@@ -15034,12 +15423,18 @@ static en_MCP_DISPATCH_RESULT _handle_get_platform_info(
  *
  * Parametry: `region_id` (= z poslední `regions_list`), `offset`
  * (= 0..size-1), `data_b64` (= base64 bajty, max 65536 dekódovaných),
- * volitelně `layout_gen` (jako u `region_read`).
+ * volitelně `layout_gen` (jako u `region_read`), `expected_sha256`
+ * a `want_hashes` (podmíněný zápis, observe-cas M10: hash bajtů, které
+ * zápis po ořezu na konec regionu přepíše, stejný jako `sha256`
+ * z `region_read` téhož rozsahu).
  *
  * Response: `{region_id, offset, length, written}`. `length` = skutečně
  * zapsaná délka (= clamped). `written` = true pokud aspoň 1 bajt
  * prošel; false pokud region read-only nebo disconnected. ID ze starší
- * sestavy HW = chyba "stale region id", nic se nezapíše.
+ * sestavy HW = chyba "stale region id", nic se nezapíše. S podmínkou
+ * nebo `want_hashes` navíc `before_sha256` a `after_sha256`; nesplněná
+ * podmínka = chyba `Precondition failed: memory changed (...)` (chyby
+ * ID, generace a zapisovatelnosti mají přednost).
  *
  * **Destruktivní.** Backend respektuje writable flagy:
  * REGION_KIND_MEMEXT_FLASH a REGION_KIND_PROHIBITED_SHADOW vrátí error.
@@ -15083,6 +15478,17 @@ static en_MCP_DISPATCH_RESULT _handle_region_write(
         return _err_response(req_id, "Invalid parameters (data_b64 decode)",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
+    st_DBGAPI_WRITE_COND cond;
+    bool use_cond = false;
+    const char *cerr = _parse_write_cond(obj, &cond, &use_cond);
+    if (cerr) {
+        g_free(decoded);
+        gchar *msg = g_strdup_printf("Invalid parameters: %s", cerr);
+        en_MCP_DISPATCH_RESULT rc = _err_response(req_id, msg, MCP_DISPATCH_INVALID_PARAMS,
+                                                  out_response);
+        g_free(msg);
+        return rc;
+    }
     st_DBGAPI_REGIONS_WRITE_PARAM param = {
         .region_id = (int)region_id,
         .offset = (uint32_t)offset,
@@ -15090,8 +15496,15 @@ static en_MCP_DISPATCH_RESULT _handle_region_write(
         .len = (uint32_t)decoded_len,
         .out_count = 0,
         .layout_gen = layout_gen,
+        .cond = use_cond ? &cond : NULL,
     };
-    if (!_submit_dbgapi(DBGAPI_CMD_REGIONS_WRITE, &param, NULL)) {
+    bool submit_ok = _submit_dbgapi(DBGAPI_CMD_REGIONS_WRITE, &param, NULL);
+    if (!submit_ok && use_cond && cond.precondition_failed
+        && s_submit_track.last_status == DBGAPI_SUBMIT_FAILED) {
+        g_free(decoded);
+        return _write_cond_err(req_id, &cond, out_response);
+    }
+    if (!submit_ok) {
         /* Stejná logika jako region_read: param.out_count rozliší bad
          * region/read-only (-1, příkaz proběhl) a ID ze starší sestavy HW
          * (DBGAPI_REGIONS_ERR_STALE) od emu nedostupný (0, neproběhl).
@@ -15113,6 +15526,7 @@ static en_MCP_DISPATCH_RESULT _handle_region_write(
     json_object_set_int_member(data, "offset", offset);
     json_object_set_int_member(data, "length", param.out_count);
     json_object_set_boolean_member(data, "written", param.out_count > 0);
+    if (use_cond) _write_cond_to_json(data, &cond);
     g_free(decoded);
     return _ok_response(req_id, data, out_response);
 }
@@ -16992,6 +17406,423 @@ static const st_REGION_DESC *_ms_find_region(const st_REGION_DESC *regs, int cou
     }
     return NULL;
 }
+
+/* ------------------------------------------------------------------ */
+/* state_observe (observe-cas, M10 debug-gaps)                         */
+/* ------------------------------------------------------------------ */
+
+/** @brief Nejdelší štítek okna `name` (znaků bez nuly). */
+#define MCP_OBSERVE_NAME_MAX 64
+
+/**
+ * @brief Jména druhů stránek pro `memory_map` v `state_observe`.
+ *
+ * Index = hodnota en_MEMMAP_REGION_KIND (hw-generic/memory/memory.h),
+ * pořadí musí sedět s enumem. Počet hlídá DBGAPI_OBSERVE_PAGE_KINDS
+ * (kontrola v dbgapi.c proti enumu, tady proti tabulce).
+ */
+static const char *const s_observe_page_kind_names[] = {
+    "ram", "rom_low", "rom_high", "cgrom", "vram_i", "vram_ii",
+    "vram_text", "cgram", "pcg_1", "pcg_2", "pcg_3", "mapped_ports",
+    "prohibited", "unmapped",
+};
+G_STATIC_ASSERT(G_N_ELEMENTS(s_observe_page_kind_names) == DBGAPI_OBSERVE_PAGE_KINDS);
+
+/**
+ * @brief Části stavu přijímané v parametru `hashes` (bez `screen`, ten má `frame_hash`).
+ */
+static const struct {
+    const char *name;           /**< Jméno v MCP (= state_hash_part_name()). */
+    en_STATE_HASH_PART part;    /**< Část state_hash. */
+} s_observe_hash_parts[] = {
+    { "cpu",    STATE_HASH_CPU },
+    { "ram",    STATE_HASH_RAM },
+    { "vram",   STATE_HASH_VRAM },
+    { "memext", STATE_HASH_MEMEXT },
+    { "pcg",    STATE_HASH_PCG },
+};
+
+/** @brief Sekce parametru `include` v pořadí bitů masky. */
+static const char *const s_observe_sections[] = { "raster", "im2", "last_instr", "memory_map" };
+
+/**
+ * @brief Údaje okna `state_observe`, které potřebuje jen dispatch vlákno.
+ *
+ * Doplňuje st_DBGAPI_OBSERVE_WINDOW o štítek a volbu dat.
+ */
+typedef struct st_MCP_OBSERVE_WIN_META {
+    char  name[MCP_OBSERVE_NAME_MAX + 1]; /**< Štítek okna, prázdný = bez štítku. */
+    bool  want_data;                      /**< true = vrátit i `data_b64`. */
+} st_MCP_OBSERVE_WIN_META;
+
+/**
+ * @brief Celé číslo z parametrů, přísně (jen JSON integer).
+ *
+ * @param obj Objekt parametrů.
+ * @param key Klíč.
+ * @param def Výchozí hodnota pro chybějící klíč.
+ * @param[out] out Hodnota.
+ * @return false = klíč je přítomen, ale není celé číslo.
+ */
+static bool _observe_int(JsonObject *obj, const char *key, gint64 def, gint64 *out) {
+    *out = def;
+    if (!json_object_has_member(obj, key)) return true;
+    JsonNode *n = json_object_get_member(obj, key);
+    if (!n || !JSON_NODE_HOLDS_VALUE(n) || json_node_get_value_type(n) != G_TYPE_INT64) {
+        return false;
+    }
+    *out = json_node_get_int(n);
+    return true;
+}
+
+/**
+ * @brief Přečte jedno okno z parametru `windows[i]`.
+ *
+ * Forma CPU: `{addr, len}`, forma regionu: `{region: {kind, sub_id},
+ * offset, length}`; volitelně `name` a `want_data`.
+ *
+ * @param node Prvek pole `windows`.
+ * @param def_want_data Výchozí `want_data` (globální parametr).
+ * @param[out] w Okno pro emu vlákno (bez `buf`).
+ * @param[out] meta Štítek a volba dat.
+ * @return NULL = OK, jinak statický popis chyby (anglicky, do textu chyby).
+ */
+static const char *_observe_parse_window(JsonNode *node, bool def_want_data,
+                                         st_DBGAPI_OBSERVE_WINDOW *w,
+                                         st_MCP_OBSERVE_WIN_META *meta) {
+    memset(w, 0, sizeof(*w));
+    memset(meta, 0, sizeof(*meta));
+    meta->want_data = def_want_data;
+    if (!node || !JSON_NODE_HOLDS_OBJECT(node)) return "window must be an object";
+    JsonObject *o = json_node_get_object(node);
+    if (json_object_has_member(o, "name")) {
+        JsonNode *n = json_object_get_member(o, "name");
+        if (!JSON_NODE_HOLDS_VALUE(n) || json_node_get_value_type(n) != G_TYPE_STRING) {
+            return "name must be a string";
+        }
+        const char *nm = json_node_get_string(n);
+        if (strlen(nm) > MCP_OBSERVE_NAME_MAX) return "name is longer than 64 characters";
+        g_strlcpy(meta->name, nm, sizeof(meta->name));
+    }
+    if (json_object_has_member(o, "want_data")) {
+        JsonNode *n = json_object_get_member(o, "want_data");
+        if (!JSON_NODE_HOLDS_VALUE(n) || json_node_get_value_type(n) != G_TYPE_BOOLEAN) {
+            return "want_data must be a boolean";
+        }
+        meta->want_data = json_node_get_boolean(n) ? true : false;
+    }
+    bool has_addr = json_object_has_member(o, "addr");
+    bool has_region = json_object_has_member(o, "region");
+    if (has_addr == has_region) return "a window needs exactly one of addr or region";
+    gint64 a, l;
+    if (has_addr) {
+        if (!_observe_int(o, "addr", -1, &a) || !_observe_int(o, "len", -1, &l)) {
+            return "addr and len must be integers";
+        }
+        if (a < 0 || a > 0xFFFF) return "addr must be in range 0..65535";
+        if (l < 1 || l > (gint64)DBGAPI_OBSERVE_MAX_TOTAL) return "len must be in range 1..65536";
+        if (a + l > 0x10000) return "addr + len exceeds 0x10000";
+        w->by_region = 0;
+        w->start = (uint32_t)a;
+        w->len = (uint32_t)l;
+        return NULL;
+    }
+    JsonNode *rn = json_object_get_member(o, "region");
+    if (!rn || !JSON_NODE_HOLDS_OBJECT(rn)) return "region must be an object {kind, sub_id}";
+    JsonObject *ro = json_node_get_object(rn);
+    JsonNode *kn = json_object_get_member(ro, "kind");
+    if (!kn || !JSON_NODE_HOLDS_VALUE(kn) || json_node_get_value_type(kn) != G_TYPE_STRING) {
+        return "region.kind must be a string";
+    }
+    int kind = _region_kind_from_str(json_node_get_string(kn));
+    if (kind < 0) return "unknown region kind (see regions_list)";
+    gint64 sub;
+    if (!_observe_int(ro, "sub_id", 0, &sub) || sub < 0 || sub > G_MAXINT) {
+        return "region.sub_id must be a non-negative integer";
+    }
+    if (!_observe_int(o, "offset", 0, &a) || !_observe_int(o, "length", -1, &l)) {
+        return "offset and length must be integers";
+    }
+    if (a < 0 || a > 0xFFFFFFFFLL) return "offset must be in range 0..0xFFFFFFFF";
+    if (l < 1 || l > (gint64)DBGAPI_OBSERVE_MAX_TOTAL) return "length must be in range 1..65536";
+    w->by_region = 1;
+    w->region_kind = kind;
+    w->sub_id = (int)sub;
+    w->start = (uint32_t)a;
+    w->len = (uint32_t)l;
+    return NULL;
+}
+
+/**
+ * @brief Přečte pole jmen a převede ho na masku podle tabulky.
+ *
+ * @param obj Parametry.
+ * @param key Klíč pole (`include`, `hashes`); chybějící klíč = prázdná maska.
+ * @param names Tabulka povolených jmen.
+ * @param n_names Počet jmen (nejvýš 32).
+ * @param[out] mask Bit k = jméno names[k] je v poli.
+ * @return false = hodnota není pole řetězců nebo obsahuje neznámé jméno.
+ */
+static bool _observe_name_list(JsonObject *obj, const char *key,
+                               const char *const *names, unsigned n_names,
+                               uint32_t *mask) {
+    *mask = 0;
+    if (!json_object_has_member(obj, key)) return true;
+    JsonNode *n = json_object_get_member(obj, key);
+    if (!n || !JSON_NODE_HOLDS_ARRAY(n)) return false;
+    JsonArray *arr = json_node_get_array(n);
+    for (guint i = 0; i < json_array_get_length(arr); i++) {
+        JsonNode *e = json_array_get_element(arr, i);
+        if (!JSON_NODE_HOLDS_VALUE(e) || json_node_get_value_type(e) != G_TYPE_STRING) return false;
+        const char *v = json_node_get_string(e);
+        unsigned k = 0;
+        while (k < n_names && strcmp(names[k], v) != 0) k++;
+        if (k == n_names) return false;
+        *mask |= 1u << k;
+    }
+    return true;
+}
+
+/**
+ * @brief Doplní do odpovědi `state_observe` objekt `memory_map`.
+ *
+ * Schéma jako `get_memory_map` (`platform`, `slots` po 4 KiB s `source`,
+ * `ro_rw`, `slot_offset`), u každého slotu navíc `kind`: druh stránky
+ * podle aktuálního mapování (en_MEMMAP_REGION_KIND, stejný údaj, podle
+ * kterého `mem_write` kontroluje zapisovatelnost).
+ *
+ * @param data Odpověď.
+ * @param p Vyplněný výsledek STATE_OBSERVE s want_memory_map.
+ */
+static void _observe_memory_map_to_json(JsonObject *data,
+                                        const st_DBGAPI_STATE_OBSERVE_PARAM *p) {
+    JsonObject *mo = json_object_new();
+    json_object_set_string_member(mo, "platform", p->memory_map.platform);
+    JsonArray *sa = json_array_new();
+    for (int i = 0; i < p->memory_map.slot_count && i < 16; i++) {
+        const st_DBGAPI_MEMORY_MAP_SLOT *sl = &p->memory_map.slots[i];
+        JsonObject *so = json_object_new();
+        json_object_set_int_member(so, "addr_start", (gint64)sl->addr_start);
+        json_object_set_int_member(so, "addr_end", (gint64)sl->addr_end);
+        uint8_t k = p->page_kind[i];
+        json_object_set_string_member(so, "kind",
+            (k < G_N_ELEMENTS(s_observe_page_kind_names)) ? s_observe_page_kind_names[k]
+                                                          : "unknown");
+        json_object_set_string_member(so, "source", _memory_source_str(sl->source));
+        json_object_set_string_member(so, "ro_rw", sl->ro_rw ? "rw" : "r");
+        json_object_set_int_member(so, "slot_offset", (gint64)sl->slot_offset);
+        json_array_add_object_element(sa, so);
+    }
+    json_object_set_array_member(mo, "slots", sa);
+    json_object_set_object_member(data, "memory_map", mo);
+}
+
+/**
+ * @brief Převede okna `state_observe` na pole odpovědi.
+ *
+ * Okno nese echo vstupu (`name`, `addr`/`len` nebo `region`/`offset`/
+ * `length`), `sha256` přečtených bajtů (stejný jako `mem_read` /
+ * `region_read` téhož rozsahu) a `data_b64` s want_data. Nedostupné okno
+ * má délku 0, `error: "region_unavailable"` a žádný hash.
+ *
+ * @param data Odpověď (přidá `windows` a `complete`).
+ * @param wins Okna po návratu z emu vlákna.
+ * @param meta Štítky a volby dat oken.
+ * @param n Počet oken.
+ */
+static void _observe_windows_to_json(JsonObject *data, const st_DBGAPI_OBSERVE_WINDOW *wins,
+                                     const st_MCP_OBSERVE_WIN_META *meta, guint n) {
+    bool complete = true;
+    JsonArray *wa = json_array_new();
+    for (guint i = 0; i < n; i++) {
+        const st_DBGAPI_OBSERVE_WINDOW *w = &wins[i];
+        JsonObject *wo = json_object_new();
+        if (meta[i].name[0]) json_object_set_string_member(wo, "name", meta[i].name);
+        if (w->by_region) {
+            JsonObject *ro = json_object_new();
+            json_object_set_string_member(ro, "kind", _region_kind_to_str(w->region_kind));
+            json_object_set_int_member(ro, "sub_id", w->sub_id);
+            json_object_set_object_member(wo, "region", ro);
+            json_object_set_int_member(wo, "offset", (gint64)w->start);
+        } else {
+            json_object_set_int_member(wo, "addr", (gint64)w->start);
+        }
+        const char *len_key = w->by_region ? "length" : "len";
+        if (w->status == DBGAPI_OBSERVE_WINDOW_OK) {
+            json_object_set_int_member(wo, len_key, (gint64)w->len);
+            _read_result_to_json(wo, w->buf, (gsize)w->len, meta[i].want_data);
+        } else {
+            json_object_set_int_member(wo, len_key, 0);
+            json_object_set_string_member(wo, "error", "region_unavailable");
+            complete = false;
+        }
+        json_array_add_object_element(wa, wo);
+    }
+    json_object_set_array_member(data, "windows", wa);
+    json_object_set_boolean_member(data, "complete", complete ? TRUE : FALSE);
+}
+
+/**
+ * @brief `state_observe` handler - registry, příznaky a okna paměti z jednoho okamžiku.
+ *
+ * Parametry v `data`:
+ *  - `windows` (pole 0..16, povinné): okno CPU `{addr, len}` (aktuální
+ *    mapování, addr + len <= 10000h) nebo regionu `{region: {kind, sub_id},
+ *    offset, length}` (druh jako v `regions_list`, bez `region_id`, takže
+ *    okno platí i po změně sestavy HW); volitelně `name` (štítek do
+ *    64 znaků, vrací se zpět) a `want_data`. Součet délek nejvýš 65536 B.
+ *  - `want_data` (bool, default true): výchozí volba dat pro okna.
+ *  - `include` (pole): volitelné sekce `raster`, `im2`, `last_instr`
+ *    (schéma `get_cpu_panel_batch`), `memory_map`.
+ *  - `hashes` (pole): hashe částí stavu `cpu`, `ram`, `vram`, `memext`,
+ *    `pcg` (state_hash.h, stejná definice jako replay a result.json).
+ *
+ * Vše čte emu vlákno v jednom průchodu fronty (DBGAPI_CMD_STATE_OBSERVE):
+ * za běhu na hranici snímku, v pauze okamžitě. Hash oken (SHA-256) počítá
+ * dispatch vlákno z kopie dat.
+ *
+ * Response: `run_seq`, `running`, `stable` (= !running), `drain`
+ * (`frame` za běhu, `paused`), `time` {`frame`, `frame_ticks`,
+ * `total_cycles`}, `regs`, `flags`, `windows`, `complete` (false =
+ * některé okno nedostupné), volitelně `hashes` (nedostupná část = null),
+ * `raster`, `im2`, `last_instr`, `memory_map`.
+ *
+ * Chyby: neplatné parametry a okno regionu přes jeho konec =
+ * `Invalid parameters: ...`; nic se nevrací, stav se nemění.
+ */
+static en_MCP_DISPATCH_RESULT _handle_state_observe(const st_JSONL_MESSAGE *req,
+                                                    char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    if (!data_node || json_node_get_node_type(data_node) != JSON_NODE_OBJECT) {
+        return _err_response(req_id, "Invalid parameters: data must be an object",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    JsonObject *obj = json_node_get_object(data_node);
+    JsonNode *wn = json_object_get_member(obj, "windows");
+    if (!wn || !JSON_NODE_HOLDS_ARRAY(wn)) {
+        return _err_response(req_id, "Invalid parameters: windows must be an array",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    JsonArray *warr = json_node_get_array(wn);
+    guint n_win = json_array_get_length(warr);
+    if (n_win > DBGAPI_OBSERVE_MAX_WINDOWS) {
+        return _err_response(req_id, "Invalid parameters: at most 16 windows",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    bool want_data = true;
+    if (!_parse_want_data(obj, &want_data)) {
+        return _err_response(req_id, "Invalid parameters: want_data must be a boolean",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    uint32_t sections = 0;
+    if (!_observe_name_list(obj, "include", s_observe_sections,
+                            G_N_ELEMENTS(s_observe_sections), &sections)) {
+        return _err_response(req_id, "Invalid parameters: include must be a list of "
+                             "raster, im2, last_instr, memory_map",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    const char *hash_names[G_N_ELEMENTS(s_observe_hash_parts)];
+    for (unsigned i = 0; i < G_N_ELEMENTS(s_observe_hash_parts); i++) {
+        hash_names[i] = s_observe_hash_parts[i].name;
+    }
+    uint32_t hash_sel = 0;
+    if (!_observe_name_list(obj, "hashes", hash_names, G_N_ELEMENTS(hash_names), &hash_sel)) {
+        return _err_response(req_id, "Invalid parameters: hashes must be a list of "
+                             "cpu, ram, vram, memext, pcg",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+
+    st_DBGAPI_STATE_OBSERVE_PARAM *p = g_new0(st_DBGAPI_STATE_OBSERVE_PARAM, 1);
+    st_DBGAPI_OBSERVE_WINDOW *wins = g_new0(st_DBGAPI_OBSERVE_WINDOW, n_win ? n_win : 1);
+    st_MCP_OBSERVE_WIN_META *meta = g_new0(st_MCP_OBSERVE_WIN_META, n_win ? n_win : 1);
+    uint8_t *bufs = NULL;
+    en_MCP_DISPATCH_RESULT rc;
+    gchar *msg = NULL;
+    uint64_t total = 0;
+    for (guint i = 0; i < n_win && !msg; i++) {
+        const char *perr = _observe_parse_window(json_array_get_element(warr, i), want_data,
+                                                 &wins[i], &meta[i]);
+        if (perr) msg = g_strdup_printf("Invalid parameters: windows[%u]: %s", i, perr);
+        total += wins[i].len;
+    }
+    if (!msg && total > DBGAPI_OBSERVE_MAX_TOTAL) {
+        msg = g_strdup("Invalid parameters: the sum of window lengths exceeds 65536 bytes");
+    }
+    if (msg) {
+        rc = _err_response(req_id, msg, MCP_DISPATCH_INVALID_PARAMS, out_response);
+        goto out;
+    }
+    bufs = g_malloc0(total ? (gsize)total : 1);
+    uint64_t pos = 0;
+    for (guint i = 0; i < n_win; i++) {
+        wins[i].buf = bufs + pos;
+        pos += wins[i].len;
+    }
+    p->which = ((sections & 1u) ? DBGAPI_CPU_PANEL_WANT_RASTER : 0)
+             | ((sections & 2u) ? DBGAPI_CPU_PANEL_WANT_IM2 : 0)
+             | ((sections & 4u) ? DBGAPI_CPU_PANEL_WANT_LAST_INSTR : 0);
+    p->want_memory_map = (sections & 8u) ? 1 : 0;
+    for (unsigned i = 0; i < G_N_ELEMENTS(s_observe_hash_parts); i++) {
+        if (hash_sel & (1u << i)) p->hash_mask |= 1u << (unsigned)s_observe_hash_parts[i].part;
+    }
+    p->windows = n_win ? wins : NULL;
+    p->window_count = n_win;
+
+    if (!_submit_dbgapi(DBGAPI_CMD_STATE_OBSERVE, p, NULL)) {
+        rc = _err_response(req_id, "STATE_OBSERVE failed",
+                           MCP_DISPATCH_EMU_ERROR, out_response);
+        goto out;
+    }
+    for (guint i = 0; i < n_win && !msg; i++) {
+        if (wins[i].status == DBGAPI_OBSERVE_WINDOW_OUT_OF_RANGE) {
+            msg = g_strdup_printf("Invalid parameters: windows[%u]: offset + length "
+                                  "exceeds the region size %u", i, wins[i].region_size);
+        }
+    }
+    if (msg) {
+        rc = _err_response(req_id, msg, MCP_DISPATCH_INVALID_PARAMS, out_response);
+        goto out;
+    }
+
+    JsonObject *data = json_object_new();
+    json_object_set_int_member(data, "run_seq", (gint64)p->run_seq);
+    json_object_set_boolean_member(data, "running", p->running ? TRUE : FALSE);
+    json_object_set_boolean_member(data, "stable", p->running ? FALSE : TRUE);
+    json_object_set_string_member(data, "drain", p->running ? "frame" : "paused");
+    JsonObject *tm = json_object_new();
+    json_object_set_int_member(tm, "frame", (gint64)p->frame);
+    json_object_set_int_member(tm, "frame_ticks", (gint64)p->frame_ticks);
+    json_object_set_int_member(tm, "total_cycles", (gint64)p->total_cycles);
+    json_object_set_object_member(data, "time", tm);
+    _cpu_panel_core_to_json(data, &p->panel);
+    _cpu_panel_sections_to_json(data, &p->panel);
+    _observe_windows_to_json(data, wins, meta, n_win);
+    if (hash_sel) {
+        JsonObject *ho = json_object_new();
+        for (unsigned i = 0; i < G_N_ELEMENTS(s_observe_hash_parts); i++) {
+            if (!(hash_sel & (1u << i))) continue;
+            unsigned part = (unsigned)s_observe_hash_parts[i].part;
+            if (part < DBGAPI_OBSERVE_HASH_PARTS && p->hash_ok[part]) {
+                json_object_set_string_member(ho, s_observe_hash_parts[i].name, p->hash_hex[part]);
+            } else {
+                json_object_set_null_member(ho, s_observe_hash_parts[i].name);
+            }
+        }
+        json_object_set_object_member(data, "hashes", ho);
+    }
+    if (p->want_memory_map) _observe_memory_map_to_json(data, p);
+    rc = _ok_response(req_id, data, out_response);
+
+out:
+    g_free(msg);
+    g_free(bufs);
+    g_free(meta);
+    g_free(wins);
+    g_free(p);
+    return rc;
+}
+
 
 /**
  * @brief Načte klíč bajtu (`kind`, `sub_id`, `offset`) z parametrů freeze_*.

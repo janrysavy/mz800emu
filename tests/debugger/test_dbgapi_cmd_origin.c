@@ -31,6 +31,7 @@
 #include "debugger/debugger.h"
 #include "emulator/emulator.h"
 #include "mzarch/mzarch.h"
+#include "libs/cpu-z80/z80.h"
 
 #include <glib.h>
 #include <string.h>
@@ -233,6 +234,38 @@ void test_mcp_origin_failed_command_no_broadcast(void) {
 }
 
 
+void test_mcp_conditional_write_rejected_broadcast(void) {
+    /* observe-cas M10: podmíněný zápis registru odmítnutý nesplněnou
+     * podmínkou se vyšle s rejected = 1 (Activity "rejected"), úspěšný
+     * s rejected = 0. Jiný neúspěch (viz test výše) se nevysílá. */
+    z80_set_reg(g_mzarch_main.cpu, Z80_REG_BC, 0x4000);
+    st_DBGAPI_REG_PARAM p = { (uint8_t)Z80_REG_BC, 0x1234, 1, 0x9999, 0, 0 };
+    bool ok = call_dispatch_with_origin(DBGAPI_CMD_SET_REG,
+                                         DBGAPI_CMD_ORIGIN_MCP, &p, NULL);
+    TEST_ASSERT_FALSE(ok);
+    TEST_ASSERT_EQUAL_INT(1, s_mock.call_count);
+    TEST_ASSERT_NOT_NULL(s_mock.last_data);
+    TEST_ASSERT_EQUAL_UINT8(1, s_mock.last_data->rejected);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_SET_REG, s_mock.last_data->cmd);
+    mock_dispatcher_reset();
+
+    p.expected = 0x4000;
+    ok = call_dispatch_with_origin(DBGAPI_CMD_SET_REG,
+                                    DBGAPI_CMD_ORIGIN_MCP, &p, NULL);
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_INT(1, s_mock.call_count);
+    TEST_ASSERT_EQUAL_UINT8(0, s_mock.last_data->rejected);
+    mock_dispatcher_reset();
+
+    /* Odmítnutý zápis z GUI (USER) se nevysílá. */
+    p.expected = 0x9999;
+    ok = call_dispatch_with_origin(DBGAPI_CMD_SET_REG,
+                                    DBGAPI_CMD_ORIGIN_USER, &p, NULL);
+    TEST_ASSERT_FALSE(ok);
+    TEST_ASSERT_EQUAL_INT(0, s_mock.call_count);
+}
+
+
 /* ========================================================================= */
 /*  dbgapi_cmd_to_str (přes description payload)                              */
 /* ========================================================================= */
@@ -376,6 +409,7 @@ int main(int argc, char *argv[]) {
     RUN_TEST(test_test_origin_no_broadcast);
     RUN_TEST(test_internal_origin_no_broadcast);
     RUN_TEST(test_mcp_origin_failed_command_no_broadcast);
+    RUN_TEST(test_mcp_conditional_write_rejected_broadcast);
 
     RUN_TEST(test_cmd_to_str_known_commands);
 

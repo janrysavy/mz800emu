@@ -19,11 +19,11 @@ documented separately in [Resources overview](resources-overview.md).
 | `emu_run` | no | Blocking resume for N frames (1..1000) |
 | `emu_reset` | no | Power-on reset of CPU + peripherals |
 | `emu_get_registers` | no | 14 Z80 registers (AF..IR) |
-| `emu_set_register` | **YES** | Write 16-bit value to register - **destructive** |
+| `emu_set_register` | **YES** | Write 16-bit value to register (optionally only if it still holds `expected`) - **destructive** |
 | `emu_dasm` | no | Disassemble N instructions from an address (banking-aware) |
 | `emu_history_get` | no | 32 most recently executed instructions (ring buffer) |
 | `emu_mem_read` | no | Reads bytes from Z80 memory (base64 + SHA-256, or the hash only) |
-| `emu_mem_write` | **YES** | Writes bytes into RAM - region checked, **destructive** |
+| `emu_mem_write` | **YES** | Writes bytes into RAM - region checked, optionally only if the bytes still have `expected_sha256`, **destructive** |
 | `emu_bp_add` | no | Adds a breakpoint (exec, or typed memw/memr/ior/iow + condition) |
 | `emu_bp_list` | no | Lists breakpoints (id/addr/addr_end/addr_match_mode/addr_mask/enabled + type/zone/bank_id/bank_id_end/bank_match_mode/bank_id_mask/hits/condition) |
 | `emu_bp_remove` | no | Removes a specific BP by ID |
@@ -153,9 +153,10 @@ documented separately in [Resources overview](resources-overview.md).
 | `emu_get_im2_vector` | no | Tool variant of the IM2 ISR vector snapshot (PIO-Z80 platforms) |
 | `emu_get_raster_pos` | no | Current GDG raster position + Z80 cycle counters |
 | `emu_get_cpu_flags` | no | Auxiliary CPU state (IFF/IM/HALT/INT/NMI/EI delay/Q/cycle counters/I/R) |
-| `emu_set_cpu_flags` | **YES** | Selective write of IFF1/IFF2/IM/I/R (update_mask from field presence) |
+| `emu_set_cpu_flags` | **YES** | Selective write of IFF1/IFF2/IM/I/R (update_mask from field presence), optionally only if the fields still hold `expected`; returns `previous` |
 | `emu_get_last_instr` | no | Most recently completed Z80 instruction from the history ring (addr + bytes + length) |
 | `emu_get_cpu_panel_batch` | no | Atomic batch: regs + flags + raster + IM2 + last_instr in one round-trip |
+| `emu_state_observe` | no | Registers, flags, run number, time and up to 16 memory windows (CPU or region) from one moment, SHA-256 per window |
 | `emu_debugger_activate` | **YES** | Programmatically activate the debugger (side effect: cpuhist + mhmap recording in WITH_WINDOW preset) |
 | `emu_debugger_deactivate` | **YES** | Programmatically deactivate the debugger (recording off) |
 | `emu_is_debugger_active` | no | Read-only probe for `TEST_DEBUGGER_ACTIVE` |
@@ -260,6 +261,10 @@ The `error` text also tells whether the emulator executed the command:
   result is unknown (it may still complete later). Check the state
   before retrying.
 - `Emulator is shutting down ...` - not executed, stop sending requests.
+- `Precondition failed: ...` - a conditional write (`expected_sha256`,
+  `expected`) was checked by the emulator thread and **nothing was
+  written**: the memory or register differs from what you read. The
+  current value is in the text; read again before deciding.
 - any other text (e.g. `bp_remove failed (unknown id?)`) - the command
   was executed and failed (or the parameters were rejected); retrying
   unchanged does not help.
@@ -418,6 +423,14 @@ Overwrites a single 16-bit Z80 register. Arguments:
 - `value` (int, 0..65535) - new value. `IR` writes the complete I:R
   pair: I is the high byte, R the low byte including bit 7 (like
   LD I,A plus LD R,A).
+- `expected` (int, 0..65535, optional) - conditional write
+  (compare-and-swap): write only if the register still holds this
+  value. Compared and written in one step in the emulator thread;
+  otherwise `Precondition failed: register <reg> changed (expected=...,
+  current=...)` and nothing is written.
+
+Returns `{"reg", "value", "previous"}` - `previous` is the value before
+the write.
 
 **Destructive operation.** Writing to `PC` changes the execution
 path; writing to `SP` invalidates the current call stack. Save a
@@ -443,11 +456,56 @@ is respected (= you read what the CPU would see at that address).
 
 Writes bytes to a Z80 address. **Destructive**. Arguments:
 
-- `address` (int, 0..0xFFFF) - start address
-- `data` (base64 string) - bytes to write
+- `addr` (int, 0..0xFFFF) - start address
+- `data_hex` (hex string, e.g. `"DEADBEEF"` or `"DE AD BE EF"`) - bytes
+  to write
+- `expected_sha256` (string, optional) - conditional write: write only
+  if the SHA-256 of exactly the bytes being overwritten still equals
+  this value (the `sha256` of `emu_mem_read` or of an
+  `emu_state_observe` window of the same range). Checked and written in
+  one step in the emulator thread; otherwise `Precondition failed:
+  memory changed (...)` and nothing is written.
+- `want_hashes` (bool, optional) - return `before_sha256` and
+  `after_sha256` also without a condition
 
 Enforces a region check (= RAM only). If the address is not in RAM,
-the tool fails with `MEM_WRITE region check failed`.
+the tool fails with `MEM_WRITE region check failed` (the region check
+comes before the condition). Returns `{"addr", "length"}`, with a
+condition or `want_hashes` also `before_sha256` and `after_sha256`.
+The address goes through the current memory map; for a write that must
+hit one physical cell use `emu_region_write`. Recipe:
+`emulator://docs/conditional_writes`.
+
+### `emu_state_observe`
+
+Reads registers, flags, run number (`run_seq`), emulated time and up to
+16 memory windows in **one pass of the emulator thread**, so everything
+comes from the same moment - also while the emulator runs (then the
+moment is the start of a frame and the call waits up to one frame).
+Two separate calls (`emu_get_cpu_panel_batch` + `emu_mem_read`) always
+see two different frames while running. Arguments:
+
+- `windows` (list, 0..16 items, at most 65536 bytes in total) - each item
+  is a CPU range `{"addr": <int>, "len": <int>}` (current memory map) or
+  a physical region `{"region": {"kind": "<kind>", "sub_id": <int>},
+  "offset": <int>, "length": <int>}` (kinds from `emu_regions_list`, no
+  region id, so the window stays valid after a hardware change);
+  optional `name` (echoed back) and `want_data`
+- `include` (list, optional) - `raster`, `im2`, `last_instr`,
+  `memory_map`
+- `hashes` (list, optional) - SHA-256 of state parts `cpu`, `ram`,
+  `vram`, `memext`, `pcg` (same definition as the replay hashes)
+- `want_data` (bool, default true) - false = only `sha256` per window
+
+Returns `run_seq`, `running`, `stable` (true only in pause), `drain`
+(`frame` / `paused`), `time` (`frame`, `frame_ticks`, `total_cycles`),
+`regs`, `flags`, `windows` (echo, `sha256` - the same value as
+`emu_mem_read` / `emu_region_read` of the range - and `data_b64`),
+`complete` and the requested sections. A region that is not connected
+gives the window `error: "region_unavailable"` and `complete: false`; the
+call still succeeds. Invalid windows (too many, too long, past the end of
+the address space or region, unknown kind) are `Invalid parameters`.
+Reads have no side effects. Details: `emulator://docs/state_observe`.
 
 ### `emu_bp_add`
 
@@ -907,8 +965,11 @@ Args:
 
 - `addr` (int, 0..65535)
 - `data_hex` (string, even-length hex)
+- `expected_sha256`, `want_hashes` (optional) - conditional write, as
+  for `emu_mem_write`
 
-Returns `{"addr": <int>, "length": <int>}`. To actually patch ROM
+Returns `{"addr": <int>, "length": <int>}` (plus `before_sha256` /
+`after_sha256` with a condition or `want_hashes`). To actually patch ROM
 (= bypass the ROM mapping), banking must be switched first via
 `emu_io_write` on ports 0xE0..0xE4.
 
@@ -2667,10 +2728,20 @@ Args:
   the end of the region)
 - `layout_gen` (int, optional) - as for `emu_region_read`; with an `id`
   from an older list nothing is written
+- `expected_sha256` (string, optional) - conditional write: write only
+  if the SHA-256 of the bytes being overwritten (after clamping at the
+  region end) still equals this value, e.g. the `sha256` of
+  `emu_region_read` or of an `emu_state_observe` region window of the
+  same range; otherwise `Precondition failed: memory changed (...)` and
+  nothing is written. Errors of the id, `layout_gen` and read-only
+  regions come first.
+- `want_hashes` (bool, optional) - return the hashes also without a
+  condition
 
 Returns `{"region_id", "offset", "length", "written"}` - `length` is the
 number of bytes actually written (after clamping), `written` = at least
-one byte was written.
+one byte was written; with a condition or `want_hashes` also
+`before_sha256` and `after_sha256`.
 
 Read-only regions (`memext_flash`, `prohibited_shadow`), a disconnected
 region or an invalid `region_id` / `offset` return a parameter error

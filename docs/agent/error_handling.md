@@ -49,12 +49,15 @@ limit (see below).
 | `Emulator busy: command only partially executed` | **Partly** - the tool consists of several internal steps; an earlier step ran, a later one timed out. | Do **not** blindly retry. Re-read the relevant state first (`emulator://breakpoints`, `emulator://cpu/registers`, ...), then decide. |
 | `Emulator is shutting down` | **No** | Stop sending requests. |
 | `emulator process exited (...)` / `emulator connection closed (...)` (bundled Python wrapper) | **Unknown** - the emulator process ended (e.g. crashed) or the TCP connection dropped while the request was pending. Pipe mode: all emulator state is lost. TCP mode: only the connection was lost, the GUI emulator may still run with its state. | Do not retry blindly. Pipe mode: the next call starts a fresh emulator and reports `restarted: true`; restore your state (e.g. `emu_snapshot_load`) before continuing. TCP mode: the next call reconnects; re-read the state you depend on. |
+| `Precondition failed:` | **No** - the emulator thread checked the condition of a conditional write (`expected_sha256`, `expected`) and changed nothing: the memory or register differs from what you read. The current value is in the text, e.g. `Precondition failed: memory changed (expected_sha256=..., current_sha256=...)`, `Precondition failed: register HL changed (expected=0x1234, current=0x5678)`. | Do not retry unchanged. Read again (`emu_state_observe`, `emu_mem_read`), decide whether the write still makes sense, then write with the new hash or value. See `emulator://docs/conditional_writes`. |
 | `Invalid parameters`, `Missing required field: ...`, `Invalid id`, `Unknown command`, `frames must be ...` | **No** - rejected before reaching the emulator. | Fix the request; retrying unchanged fails again. |
 | anything else, e.g. `bp_remove failed (unknown id?)`, `Pause failed`, `BP_LIST failed` | **Yes** - the emulator executed the command and it failed (unknown ID, invalid data, ...). | Retrying unchanged does not help. Inspect state (e.g. `emulator://breakpoints` for BP IDs). |
 
-The prefixes `Emulator busy:` and `Emulator is shutting down` are a
-stable contract; match on them, not on the rest of the sentence. Such
-an error (except `command still running`) ends with the tool's
+The prefixes `Emulator busy:`, `Emulator is shutting down` and
+`Precondition failed:` are a stable contract; match on them, not on the
+rest of the sentence. A `Precondition failed:` error carries the current
+values only in its text (there is no `data` object on errors). An
+`Emulator busy:` error (except `command still running`) ends with the tool's
 original message in square brackets,
 e.g. `Emulator busy: command not executed (...); safe to retry
 [bp_remove failed (unknown id?)]` - the bracketed part is kept for

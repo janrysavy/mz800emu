@@ -833,6 +833,44 @@ if(Python3_FOUND)
                    "(Python ${Python3_VERSION})")
 
     # -----------------------------------------------------------
+    # state_observe - registry a okna paměti z jednoho okamžiku (pipe)
+    # -----------------------------------------------------------
+    # Za běhu konzistence registru a slova v paměti (kontrola, že dvě
+    # samostatná volání neshodu zachytí), v pauze run_seq a hash okna
+    # proti mem_read, okna regionů podle druhu, limity, sekce a hashe.
+    add_test(
+        NAME    mcp_state_observe
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_state_observe.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_state_observe PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_state_observe "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Podmíněné zápisy - expected_sha256 a expected (pipe + CLI)
+    # -----------------------------------------------------------
+    # mem_write, mem_write_force, region_write, set_register a
+    # set_cpu_flags s podmínkou v pauze i za běhu; odmítnutý zápis se
+    # nezaznamená do záznamu vstupů a --replay-verify skončí kódem 0.
+    add_test(
+        NAME    mcp_conditional_writes
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_conditional_writes.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_conditional_writes PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger"
+        TIMEOUT 180
+    )
+    message(STATUS "  tests/mcp: registered mcp_conditional_writes "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
     # Záznam a přehrání vstupů (pipe + headless CLI)
     # -----------------------------------------------------------
     # Záznam kláves a zápisů debuggeru, odmítnutí zásahu mimo hranici

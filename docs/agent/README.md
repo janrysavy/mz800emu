@@ -36,6 +36,8 @@ paragraph is the description.
 | `emulator://docs/ramlog` | `ramlog.md` |
 | `emulator://docs/memsearch_workflow` | `memsearch_workflow.md` |
 | `emulator://docs/unattended_runs` | `unattended_runs.md` |
+| `emulator://docs/state_observe` | `state_observe.md` |
+| `emulator://docs/conditional_writes` | `conditional_writes.md` |
 
 This table is informative only - the actual resource list is built by
 scanning this directory, so it always matches the files present.

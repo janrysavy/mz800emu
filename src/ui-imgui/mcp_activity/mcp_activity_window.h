@@ -144,6 +144,9 @@ void mcp_activity_window_render(bool *p_open);
  *                     (= g_get_monotonic_time() z emit-site).
  * @param entity_kind  DBGAPI_ENTITY_KIND_* (0 = NONE = bez routingu).
  * @param entity_id    ID nebo adresa cílové entity (význam dle entity_kind).
+ * @param rejected     true = podmíněný zápis odmítnutý nesplněnou podmínkou
+ *                     (observe-cas M10); řádek se zobrazí jako odmítnutý
+ *                     a do souboru logu se připíše " (rejected)".
  *
  * @pre mcp_activity_window_init() byl zavolán.
  * @post Pokud Pause vypnut, v ring bufferu je o jeden záznam víc
@@ -154,7 +157,8 @@ void mcp_activity_window_log_action(en_DBGAPI_CMD_ORIGIN origin,
                                      const char *description,
                                      uint64_t timestamp_us,
                                      uint8_t entity_kind,
-                                     int32_t entity_id);
+                                     int32_t entity_id,
+                                     bool rejected);
 
 #ifdef __cplusplus
 } /* extern "C" */

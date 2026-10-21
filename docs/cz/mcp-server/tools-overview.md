@@ -19,11 +19,11 @@ dokumentu [Resources overview](resources-overview.md).
 | `emu_run` | ne | Blokující resume na N framů (1..1000) |
 | `emu_reset` | ne | Power-on reset CPU + periferií |
 | `emu_get_registers` | ne | 14 Z80 registrů (AF..IR) |
-| `emu_set_register` | **ANO** | Zápis 16-bit hodnoty do registru - **destruktivní** |
+| `emu_set_register` | **ANO** | Zápis 16-bit hodnoty do registru (volitelně jen při staré hodnotě `expected`) - **destruktivní** |
 | `emu_dasm` | ne | Disassembluje N instrukcí od adresy (banking-aware) |
 | `emu_history_get` | ne | 32 posledních provedených instrukcí (ring buffer) |
 | `emu_mem_read` | ne | Čte bajty z Z80 paměti (base64 + SHA-256, nebo jen hash) |
-| `emu_mem_write` | **ANO** | Zápis bajtů do RAM - region check, **destruktivní** |
+| `emu_mem_write` | **ANO** | Zápis bajtů do RAM - region check, volitelně jen při hashi `expected_sha256`, **destruktivní** |
 | `emu_bp_add` | ne | Přidá breakpoint (exec, nebo typed memw/memr/ior/iow + condition) |
 | `emu_bp_list` | ne | Vypíše breakpointy (id/addr/addr_end/addr_match_mode/addr_mask/enabled + type/zone/bank_id/bank_id_end/bank_match_mode/bank_id_mask/hits/condition) |
 | `emu_bp_remove` | ne | Odebere konkrétní BP podle ID |
@@ -153,9 +153,10 @@ dokumentu [Resources overview](resources-overview.md).
 | `emu_get_im2_vector` | ne | Tool varianta IM2 ISR vector snapshotu (PIO-Z80 platformy) |
 | `emu_get_raster_pos` | ne | Aktuální GDG raster pos + Z80 cycle countery |
 | `emu_get_cpu_flags` | ne | Doplňkový CPU state (IFF/IM/HALT/INT/NMI/EI delay/Q/cycle countery/I/R) |
-| `emu_set_cpu_flags` | **ANO** | Selektivní zápis IFF1/IFF2/IM/I/R (update_mask z přítomnosti polí) |
+| `emu_set_cpu_flags` | **ANO** | Selektivní zápis IFF1/IFF2/IM/I/R (update_mask z přítomnosti polí), volitelně jen při starých hodnotách `expected`; vrací `previous` |
 | `emu_get_last_instr` | ne | Poslední dokončená Z80 instrukce z history ringu (addr + bytes + length) |
 | `emu_get_cpu_panel_batch` | ne | Atomic batch: regs + flags + raster + IM2 + last_instr v 1 round-tripu |
+| `emu_state_observe` | ne | Registry, příznaky, číslo běhu, čas a až 16 oken paměti (CPU nebo region) z jednoho okamžiku, SHA-256 u každého okna |
 | `emu_debugger_activate` | **ANO** | Programaticky zapne debugger (= side effect: cpuhist + mhmap recording v WITH_WINDOW režimu) |
 | `emu_debugger_deactivate` | **ANO** | Programaticky vypne debugger (= recording off) |
 | `emu_is_debugger_active` | ne | Read-only probe `TEST_DEBUGGER_ACTIVE` |
@@ -258,6 +259,10 @@ Text v `error` zároveň říká, zda emulátor příkaz provedl:
   (příkaz může doběhnout později). Před opakováním zkontrolujte stav.
 - `Emulator is shutting down ...` - neprovedeno, další požadavky už
   neposílejte.
+- `Precondition failed: ...` - podmíněný zápis (`expected_sha256`,
+  `expected`) emulační vlákno zkontrolovalo a **nic nezapsalo**: paměť
+  nebo registr se liší od toho, co klient přečetl. Aktuální hodnota je
+  v textu; před dalším rozhodnutím je potřeba číst znovu.
 - jakýkoliv jiný text (např. `bp_remove failed (unknown id?)`) - příkaz
   se provedl a selhal (nebo byly odmítnuty parametry); opakování beze
   změny nepomůže.
@@ -410,6 +415,14 @@ Přepíše 16-bitovou hodnotu jednoho Z80 registru. Argumenty:
   `DE2`, `HL_` / `HL2`, `IX`, `IY`, `SP`, `PC`, `WZ`, `IR`.
 - `value` (int, 0..65535) - nová hodnota. `IR` zapíše celý pár I:R:
   I je horní bajt, R dolní bajt včetně bitu 7 (jako LD I,A a LD R,A).
+- `expected` (int, 0..65535, volitelný) - podmíněný zápis
+  (compare-and-swap): zapíše jen tehdy, když má registr pořád tuto
+  hodnotu. Porovnání i zápis proběhnou v emulačním vlákně najednou,
+  jinak chyba `Precondition failed: register <reg> changed (expected=...,
+  current=...)` a nic se nezapíše.
+
+Vrací `{"reg", "value", "previous"}` - `previous` je hodnota před
+zápisem.
 
 **Destruktivní operace.** Zápis do `PC` mění tok provádění, zápis
 do `SP` invaliduje aktuální call stack. Před experimenty doporučeno
@@ -436,11 +449,56 @@ se to, co by CPU vidělo na dané adrese).
 
 Zapíše bajty na Z80 adresu. **Destruktivní**. Argumenty:
 
-- `address` (int, 0..0xFFFF) - start adresa
-- `data` (base64 string) - bajty k zápisu
+- `addr` (int, 0..0xFFFF) - start adresa
+- `data_hex` (hex řetězec, např. `"DEADBEEF"` nebo `"DE AD BE EF"`) -
+  bajty k zápisu
+- `expected_sha256` (string, volitelný) - podmíněný zápis: zapíše jen
+  tehdy, když SHA-256 právě přepisovaných bajtů pořád odpovídá této
+  hodnotě (`sha256` z `emu_mem_read` nebo z okna `emu_state_observe`
+  téhož rozsahu). Kontrola i zápis proběhnou v emulačním vlákně
+  najednou, jinak chyba `Precondition failed: memory changed (...)`
+  a nic se nezapíše.
+- `want_hashes` (bool, volitelný) - vrátí `before_sha256`
+  a `after_sha256` i bez podmínky
 
 Aplikuje region check (= jen RAM). Pokud adresa není v RAM,
-tool selže s `MEM_WRITE region check failed`.
+tool selže s `MEM_WRITE region check failed` (region check má přednost
+před podmínkou). Vrací `{"addr", "length"}`, s podmínkou nebo
+`want_hashes` navíc `before_sha256` a `after_sha256`. Adresa jde přes
+aktuální mapování paměti; zápis, který musí trefit jednu fyzickou
+buňku, patří do `emu_region_write`. Recept:
+`emulator://docs/conditional_writes`.
+
+### `emu_state_observe`
+
+Přečte registry, příznaky, číslo běhu (`run_seq`), emulovaný čas a až
+16 oken paměti v **jednom průchodu emulačního vlákna**, takže vše
+pochází z jednoho okamžiku - i za běhu (pak je okamžikem začátek snímku
+a volání čeká nejvýš jeden snímek). Dvě samostatná volání
+(`emu_get_cpu_panel_batch` + `emu_mem_read`) vidí za běhu vždy dva různé
+snímky. Argumenty:
+
+- `windows` (seznam 0..16 položek, celkem nejvýš 65536 bajtů) - položka
+  je rozsah CPU adres `{"addr": <int>, "len": <int>}` (aktuální
+  mapování) nebo fyzický region `{"region": {"kind": "<druh>", "sub_id":
+  <int>}, "offset": <int>, "length": <int>}` (druhy z `emu_regions_list`,
+  bez ID regionu, takže okno platí i po změně sestavy HW); volitelně
+  `name` (vrací se zpět) a `want_data`
+- `include` (seznam, volitelný) - `raster`, `im2`, `last_instr`,
+  `memory_map`
+- `hashes` (seznam, volitelný) - SHA-256 částí stavu `cpu`, `ram`,
+  `vram`, `memext`, `pcg` (stejná definice jako hashe záznamu vstupů)
+- `want_data` (bool, default true) - false = u oken jen `sha256`
+
+Vrací `run_seq`, `running`, `stable` (true jen v pauze), `drain`
+(`frame` / `paused`), `time` (`frame`, `frame_ticks`, `total_cycles`),
+`regs`, `flags`, `windows` (echo, `sha256` - stejná hodnota jako
+`emu_mem_read` / `emu_region_read` rozsahu - a `data_b64`), `complete`
+a vyžádané sekce. Nepřipojený region dá oknu `error:
+"region_unavailable"` a `complete: false`, volání ale uspěje. Neplatná
+okna (moc oken, moc bajtů, přes konec adresního prostoru nebo regionu,
+neznámý druh) jsou `Invalid parameters`. Čtení je bez vedlejších efektů.
+Podrobně: `emulator://docs/state_observe`.
 
 ### `emu_bp_add`
 
@@ -884,8 +942,11 @@ Argumenty:
 
 - `addr` (int, 0..65535)
 - `data_hex` (string, even-length hex)
+- `expected_sha256`, `want_hashes` (volitelné) - podmíněný zápis jako
+  u `emu_mem_write`
 
-Vrací `{"addr": <int>, "length": <int>}`. Pro skutečný "patch ROM"
+Vrací `{"addr": <int>, "length": <int>}` (s podmínkou nebo
+`want_hashes` navíc `before_sha256` / `after_sha256`). Pro skutečný "patch ROM"
 zápis (= bypass ROM mappingu) je nutné dřív přepnout banking přes
 `emu_io_write` na porty 0xE0..0xE4.
 
@@ -2606,10 +2667,18 @@ Args:
   regionu se zkrátí)
 - `layout_gen` (int, volitelný) - jako u `emu_region_read`; s `id` ze
   staršího výčtu se nic nezapíše
+- `expected_sha256` (string, volitelný) - podmíněný zápis: zapíše jen
+  tehdy, když SHA-256 přepisovaných bajtů (po zkrácení na konci regionu)
+  pořád odpovídá této hodnotě, např. `sha256` z `emu_region_read` nebo
+  z okna regionu v `emu_state_observe`; jinak chyba `Precondition failed:
+  memory changed (...)` a nic se nezapíše. Chyby ID, `layout_gen`
+  a regionu jen pro čtení mají přednost.
+- `want_hashes` (bool, volitelný) - hashe i bez podmínky
 
 Vrací `{"region_id", "offset", "length", "written"}` - `length` je počet
 skutečně zapsaných bajtů (po zkrácení), `written` = zapsal se aspoň
-jeden bajt.
+jeden bajt; s podmínkou nebo `want_hashes` navíc `before_sha256`
+a `after_sha256`.
 
 Regiony jen pro čtení (`memext_flash`, `prohibited_shadow`), odpojený
 region nebo neplatný `region_id` / `offset` vrátí chybu parametrů

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-19 14:37+0200\n"
+"POT-Creation-Date: 2026-10-21 07:25+0200\n"
 "PO-Revision-Date: 2026-03-11 22:00+0100\n"
 "Last-Translator: Claude Code\n"
 "Language-Team: Español\n"
@@ -63,7 +63,7 @@ msgstr ""
 "Instrucción = '%s'\n"
 
 #: src/emulator/emulator.c:451
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:421
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:425
 #: src/ui-imgui/videorec/videorec_menu.cpp:140
 msgid "PAUSED"
 msgstr "PAUSADO"
@@ -526,7 +526,7 @@ msgstr "Capturar audio (%s) inicia y detiene la captura."
 
 #: src/ui-imgui/audiocap/audio_capture_ui.cpp:249
 #: src/ui-imgui/cmt/ImGuiCmt.cpp:175
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2419
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2421
 #: src/ui-imgui/dsk/dsk_create_window.cpp:104
 #: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:109
 #: src/ui-imgui/joy/joy_setup_window.cpp:564
@@ -551,7 +551,7 @@ msgstr "OK"
 #: src/ui-imgui/ramdisk/pezik_settings_window.cpp:289
 #: src/ui-imgui/rom/rom_settings_window.cpp:323
 #: src/ui-imgui/screenshot/screenshot_ui.cpp:447
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:139
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:127
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:176
 #: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:93
@@ -1626,7 +1626,7 @@ msgstr ""
 
 #: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1854
 #: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2425
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:667
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:686
 #: src/ui-imgui/debugger/watch/watch_window.cpp:444
 msgid "Mode:"
 msgstr "Modo:"
@@ -1910,7 +1910,7 @@ msgid "Auto-generated name##bpt_panel"
 msgstr "Nombre auto-generado##bpt_panel"
 
 #: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2295
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2646
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2647
 #: src/ui-imgui/debugger/vars/vars_window.cpp:812
 #: src/ui-imgui/debugger/watch/watch_window.cpp:488
 msgid "Name:"
@@ -1975,111 +1975,117 @@ msgstr ""
 msgid "(action empty - BP halts the emulator)"
 msgstr "(acción vacía - BP detiene el emulador)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2517
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2519
 msgid "Test Eval##bpt_panel"
 msgstr "Test eval##bpt_panel"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2576
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2535
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:172
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:190
+msgid "The emulator did not respond in time."
+msgstr "El emulador no respondió a tiempo."
+
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2577
 msgid "Enabled##bpt_panel_top"
 msgstr "Habilitado##bpt_panel_top"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2587
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2588
 #, c-format
 msgid "Hits: %llu events"
 msgstr "Aciertos: %llu eventos"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2597
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2598
 msgid "Reset###bpt_hits"
 msgstr "Restablecer###bpt_hits"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2609
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2610
 msgid "BP Options"
 msgstr "Opciones de BP"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2614
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2615
 msgid "Name / Parent"
 msgstr "Nombre / Padre"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2619
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2620
 msgid "Trigger logic"
 msgstr "Lógica de disparador"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2624
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2625
 msgid "Action on trigger"
 msgstr "Acción al disparar"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2629
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2630
 msgid "Live Eval Test (optional)"
 msgstr "Test de evaluación en vivo (opcional)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2642
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2643
 msgid "Enabled (cascade)##bpt_grp_panel"
 msgstr "Habilitado (cascada)##bpt_grp_panel"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2671
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2672
 #, c-format
 msgid "Children: %d BP (%d enabled)"
 msgstr "Hijos: %d BP (%d habilitados)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2687
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2691
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2688
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2692
 msgid "Discard changes?##bpt_discard"
 msgstr "¿Descartar cambios?##bpt_discard"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2694
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2695
 msgid "Editor has unsaved changes. Discard them?"
 msgstr "El editor tiene cambios sin guardar. ¿Descartarlos?"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2696
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2697
 msgid "Discard##bpt_disc"
 msgstr "Descartar##bpt_disc"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2706
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2707
 msgid "Cancel##bpt_disc"
 msgstr "Cancelar##bpt_disc"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2714
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2718
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2715
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2719
 msgid "Discard and close?##bpt_close"
 msgstr "¿Descartar y cerrar?##bpt_close"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2721
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2722
 msgid "Editor has unsaved changes. Close anyway?"
 msgstr "El editor tiene cambios sin guardar. ¿Cerrar de todos modos?"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2723
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2724
 msgid "Close##bpt_clo"
 msgstr "Cerrar##bpt_clo"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2730
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2731
 msgid "Cancel##bpt_clo"
 msgstr "Cancelar##bpt_clo"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2775
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2776
 msgid "Edit Group"
 msgstr "Editar grupo"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2780
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2781
 msgid "New Group"
 msgstr "Nuevo grupo"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2834
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2835
 msgid "Edit BP"
 msgstr "Editar BP"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2839
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2840
 msgid "New BP"
 msgstr "Nuevo BP"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2891
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2892
 msgid "Cancel##bpt_panel_btn"
 msgstr "Cancelar##bpt_panel_btn"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3048
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3049
 msgid "OK##bpt_panel_btn"
 msgstr "OK##bpt_panel_btn"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3062
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3063
 msgid "(check ranges: end >= start)"
 msgstr "(verifique rangos: end >= start)"
 
@@ -2294,7 +2300,7 @@ msgstr "Añadir##bpt"
 #: src/ui-imgui/debugger/breakpoints/bpt_window.cpp:1456
 #: src/ui-imgui/debugger/membrowser/membrowser_annot_dialog.cpp:144
 #: src/ui-imgui/memext/memext_save_dialog.cpp:189
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:119
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:117
 msgid "Save"
 msgstr "Guardar"
 
@@ -4152,23 +4158,23 @@ msgstr "Paleta###GDGMZ800Palette"
 msgid "Border###GDGMZ800Border"
 msgstr "Borde###GDGMZ800Border"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:624
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:643
 msgid "Select CDL meta.json file"
 msgstr "Seleccionar archivo CDL meta.json"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:669
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:688
 msgid "Off##mhmap_mode"
 msgstr "Desactivado##mhmap_mode"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:676
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:695
 msgid "Do not record. Hot path stays bit-identical with vanilla emulator."
 msgstr "No grabar. Hot path permanece bit-idéntico al emulador vanilla."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:679
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:698
 msgid "With Window##mhmap_mode"
 msgstr "Con ventana##mhmap_mode"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:686
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:705
 msgid ""
 "Record only when the main debugger window is open\n"
 "(NOT this Memory Heatmap window)."
@@ -4176,11 +4182,11 @@ msgstr ""
 "Grabar solo cuando la ventana principal del depurador está abierta\n"
 "(NO esta ventana Memory Heatmap)."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:690
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:709
 msgid "Always##mhmap_mode"
 msgstr "Siempre##mhmap_mode"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:697
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:716
 msgid ""
 "Always record while the emulator is running\n"
 "(independent of any debugger window)."
@@ -4188,167 +4194,167 @@ msgstr ""
 "Grabar siempre mientras el emulador está en ejecución\n"
 "(independiente de cualquier ventana del depurador)."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:747
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:766
 msgid "Save CDL meta.json file"
 msgstr "Guardar archivo CDL meta.json"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:817
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:836
 msgid "Export on Exit##mhmap_top"
 msgstr "Exportar al salir##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:823
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:842
 msgid "Reset##mhmap_top"
 msgstr "Restablecer##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:830
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:849
 msgid "Export...##mhmap_top"
 msgstr "Exportar...##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:836
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:855
 msgid "Import...##mhmap_top"
 msgstr "Importar...##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:848
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:867
 msgid "Hide panel##mhmap_top"
 msgstr "Ocultar panel##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:849
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:868
 msgid "Show panel##mhmap_top"
 msgstr "Mostrar panel##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:877
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:896
 #, c-format
 msgid "Status: Recording active (mhmap_mode=%s)"
 msgstr "Estado: registro activo (mhmap_mode=%s)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:881
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:900
 #, c-format
 msgid "Status: Recording inactive (mhmap_mode=%s)"
 msgstr "Estado: registro inactivo (mhmap_mode=%s)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:953
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:972
 msgid "Show"
 msgstr "Mostrar"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:955
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:974
 msgid "Live##mhmap_show"
 msgstr "Live##mhmap_show"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:961
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:980
 msgid "Imported##mhmap_show"
 msgstr "Importado##mhmap_show"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:968
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:987
 msgid "(no import loaded)"
 msgstr "(no se cargó ninguna importación)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:975
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:994
 msgid "Drop##mhmap_imp"
 msgstr "Descartar##mhmap_imp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:985
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1004
 msgid "Drop imported data (free buffer, switch back to Live)"
 msgstr "Descartar datos importados (liberar buffer, volver a Live)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:989
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1008
 msgid "Add##mhmap_imp"
 msgstr "Añadir##mhmap_imp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:997
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1016
 msgid "Add imported counters to Live (saturates at UINT32_MAX)"
 msgstr "Añadir contadores importados a Live (satura en UINT32_MAX)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1001
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1020
 msgid "Sub##mhmap_imp"
 msgstr "Restar##mhmap_imp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1009
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1028
 msgid "Subtract imported counters from Live (clamps at 0)"
 msgstr "Restar contadores importados de Live (limitado a 0)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1013
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1032
 msgid "Selected cell"
 msgstr "Celda seleccionada"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1017
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1036
 msgid "(none - click a cell)"
 msgstr "(ninguna - haga clic en una celda)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1024
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1043
 msgid "(out of range)"
 msgstr "(fuera de rango)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1050
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1069
 msgid "Region statistics"
 msgstr "Estadísticas de región"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1078
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1097
 msgid "Reset region only##mhmap_side"
 msgstr "Restablecer solo la región##mhmap_side"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1113
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1132
 msgid "RGB mode color mapping"
 msgstr "Mapeo de colores en modo RGB"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1119
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1138
 msgid "R counter##mhmap_col"
 msgstr "Contador R##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1128
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1147
 msgid "W counter##mhmap_col"
 msgstr "Contador W##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1137
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1156
 msgid "X counter##mhmap_col"
 msgstr "Contador X##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1146
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1165
 msgid "S counter##mhmap_col"
 msgstr "Contador S##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1154
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1173
 msgid "Reset to defaults##mhmap_col"
 msgstr "Restablecer a predeterminados##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1169
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1188
 msgid "Color:##mhmap_color_btn"
 msgstr "Color:##mhmap_color_btn"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1175
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1194
 msgid "Click to customize R/W/X/S colors used in RGB mode"
 msgstr "Clic para personalizar los colores R/W/X/S usados en modo RGB"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1182
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1201
 msgid "RGB##mhmap_color"
 msgstr "RGB##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1187
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1206
 msgid "R##mhmap_color"
 msgstr "R##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1192
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1211
 msgid "W##mhmap_color"
 msgstr "W##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1197
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1216
 msgid "X##mhmap_color"
 msgstr "X##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1205
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1224
 msgid "S##mhmap_color"
 msgstr "S##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1212
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1231
 msgid "Stack write counter (V5). Disabled when 'Show S' is off."
 msgstr ""
 "Contador de escrituras a Stack (V5). Deshabilitado cuando 'Show S' está "
 "desactivado."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1220
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1239
 msgid "Show S##mhmap_show_s"
 msgstr "Mostrar S##mhmap_show_s"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1232
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1251
 msgid ""
 "Toggle visibility of stack write (S) category in RGB blending and as a "
 "standalone color mode."
@@ -4356,89 +4362,89 @@ msgstr ""
 "Alternar visibilidad de la categoría de escrituras a stack (S) en mezcla RGB "
 "y como modo de color independiente."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1239
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1258
 msgid "Scale:"
 msgstr "Escala:"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1242
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1261
 msgid "Linear##mhmap_scale"
 msgstr "Lineal##mhmap_scale"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1247
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1266
 msgid "Log##mhmap_scale"
 msgstr "Log##mhmap_scale"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1256
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1275
 msgid "Threshold:"
 msgstr "Umbral:"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1270
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1289
 msgid "Zoom:"
 msgstr "Zoom:"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1287
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1306
 msgid "Cell pixel size. Hint: Ctrl + mouse wheel over the grid to zoom in/out."
 msgstr ""
 "Tamaño de píxel de celda. Sugerencia: Ctrl + rueda del ratón sobre la "
 "cuadrícula para acercar/alejar."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1361
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1380
 msgid "Show all##mhmap_menu"
 msgstr "Mostrar todo##mhmap_menu"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1365
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1384
 msgid "Hide all##mhmap_menu"
 msgstr "Ocultar todo##mhmap_menu"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1372
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1391
 msgid "Groups##mhmap_menu"
 msgstr "Grupos##mhmap_menu"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1374
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1393
 msgid "Only bus + ram##mhmap_grp"
 msgstr "Solo bus + ram##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1380
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1399
 msgid "Only ROM##mhmap_grp"
 msgstr "Solo ROM##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1386
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1405
 msgid "Only VRAM (all)##mhmap_grp"
 msgstr "Solo VRAM (todo)##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1391
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1410
 msgid "Only VRAM 320 modes##mhmap_grp"
 msgstr "Solo VRAM modos 320##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1396
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1415
 msgid "Only VRAM 640 modes##mhmap_grp"
 msgstr "Solo VRAM modos 640##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1401
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1420
 msgid "Only PCG (MZ-1500)##mhmap_grp"
 msgstr "Solo PCG (MZ-1500)##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1406
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1425
 msgid "Only IORQ##mhmap_grp"
 msgstr "Solo IORQ##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1411
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1430
 msgid "Only Memext##mhmap_grp"
 msgstr "Solo Memext##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1453
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1472
 msgid "(no regions available for this architecture)"
 msgstr "(no hay regiones disponibles para esta arquitectura)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1458
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1477
 msgid "...##mhmap_menu_btn"
 msgstr "...##mhmap_menu_btn"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1464
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1483
 msgid "Show / hide regions, predefined groups"
 msgstr "Mostrar / ocultar regiones, grupos predefinidos"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1607
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1626
 msgid "Memory Heatmap##mhmap_main"
 msgstr "Heatmap de memoria##mhmap_main"
 
@@ -6370,11 +6376,6 @@ msgstr "Clic: contraer al modo compacto"
 msgid "Not enough memory for the sample."
 msgstr "No hay memoria suficiente para la muestra."
 
-#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:172
-#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:190
-msgid "The emulator did not respond in time."
-msgstr "El emulador no respondió a tiempo."
-
 #: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:190
 msgid "This memory space is not present in the current configuration."
 msgstr "Este espacio de memoria no está presente en la configuración actual."
@@ -6458,7 +6459,7 @@ msgid "Show in Memory Browser"
 msgstr "Mostrar en el explorador de memoria"
 
 #: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:414
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1416
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1418
 msgid "Add to Watch"
 msgstr "Añadir a Watch"
 
@@ -6813,7 +6814,7 @@ msgstr "Búsqueda en memoria###memsearch_window"
 
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:110
 #: src/ui-imgui/memext/memext_load_dialog.cpp:107
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:101
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:259
 #: src/ui-imgui/topmenu/replay_window.cpp:223
 #: src/ui-imgui/topmenu/replay_window.cpp:229
@@ -8297,7 +8298,7 @@ msgstr ""
 "Consejo: RET pc muestra dónde ocurrió la divergencia. Ábralo en disasm para "
 "investigar el patrón de llamada."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1337
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1339
 #, c-format
 msgid ""
 "Left-click: focus primary Disassembly at $%04X.\n"
@@ -8306,17 +8307,17 @@ msgstr ""
 "Clic izquierdo: enfocar Disassembly principal en $%04X.\n"
 "Clic derecho: más destinos de enfoque y copia."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1392
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1394
 #: src/ui-imgui/debugger/sections/dbg_stack_panel.cpp:1462
 msgid "Focus in Disassembly (main)"
 msgstr "Enfocar en Disassembly (principal)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1395
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1397
 #: src/ui-imgui/debugger/sections/dbg_stack_panel.cpp:1465
 msgid "Focus in Disassembly"
 msgstr "Enfocar en Disassembly"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1423
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1425
 msgid ""
 "Creates/updates a $vars entry as a static snapshot.\n"
 "Open Vars window to view and edit."
@@ -8324,11 +8325,11 @@ msgstr ""
 "Crea/actualiza una entrada $vars como snapshot estático.\n"
 "Abra la ventana Vars para ver y editar."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1439
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1441
 msgid "Add breakpoint at"
 msgstr "Añadir breakpoint en"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1448
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1450
 msgid ""
 "Creates an execution breakpoint at the address held\n"
 "in the register. No-op if an existing BP occupies it."
@@ -8336,98 +8337,98 @@ msgstr ""
 "Crea un breakpoint de ejecución en la dirección guardada\n"
 "en el registro. Sin operación si un BP existente lo ocupa."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1462
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1464
 msgid "Copy hex"
 msgstr "Copiar hex"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1472
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1474
 msgid "Copy dec"
 msgstr "Copiar dec"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1488
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1490
 msgid "Copy bin"
 msgstr "Copiar bin"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1621
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1623
 msgid "Click to edit. Right-click for options."
 msgstr "Clic para editar. Clic derecho para opciones."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1625
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1627
 msgid "Click to pause and edit"
 msgstr "Clic para pausar y editar"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1729
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1731
 msgid "Click to toggle"
 msgstr "Clic para alternar"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1731
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1733
 msgid "Click to pause and toggle"
 msgstr "Clic para pausar y alternar"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1781
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1783
 msgid "Select interrupt mode"
 msgstr "Seleccionar modo de interrupción"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1783
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1785
 msgid "Click to pause and change IM"
 msgstr "Clic para pausar y cambiar IM"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1981
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1983
 msgid "S = Sign flag (bit 7 of last result)"
 msgstr "S = Sign flag (bit 7 del último resultado)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1982
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1984
 msgid "Z = Zero flag (result == 0)"
 msgstr "Z = Zero flag (resultado == 0)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1983
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1985
 msgid "Undocumented copy of bit 5 of result"
 msgstr "Copia no documentada del bit 5 del resultado"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1984
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1986
 msgid "H = Half carry flag (carry from bit 3 to 4, used by DAA)"
 msgstr "H = Half carry flag (acarreo de bit 3 a 4, usado por DAA)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1985
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1987
 msgid "Undocumented copy of bit 3 of result"
 msgstr "Copia no documentada del bit 3 del resultado"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1986
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1988
 msgid "P/V = Parity (logic ops) / Overflow (arithmetic)"
 msgstr "P/V = Paridad (ops lógicas) / Overflow (aritmética)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1987
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1989
 msgid "N = Negative flag (last op was subtract, used by DAA)"
 msgstr "N = Negative flag (última operación fue resta, usado por DAA)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1988
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1990
 msgid "C = Carry flag"
 msgstr "C = Carry flag"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2159
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2161
 msgid "(refresh pending)"
 msgstr "(actualización pendiente)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2274
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2276
 msgid "Click to edit value"
 msgstr "Clic para editar valor"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2282
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2284
 msgid "Set0###cpu_user_cyc_set0"
 msgstr "Set0###cpu_user_cyc_set0"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2289
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2291
 msgid "Set User cyc to zero (= origin to current total)"
 msgstr "Establecer ciclos de usuario a cero (= origen al total actual)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2410
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2412
 #, c-format
 msgid "Cannot write ISR target: address $%04X points to read-only memory (%s)."
 msgstr ""
 "No se puede escribir destino ISR: la dirección $%04X apunta a memoria de "
 "solo lectura (%s)."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2416
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2418
 msgid "Change the bank mapping or edit VEC so it points to RAM."
 msgstr "Cambie el mapeo de banco o edite VEC para que apunte a RAM."
 
@@ -10743,7 +10744,7 @@ msgstr "Volver a escanear dispositivos"
 msgid "Joystick"
 msgstr "Joystick"
 
-#: src/ui-imgui/main_window.cpp:109
+#: src/ui-imgui/main_window.cpp:110
 msgid "No audio device - running without sound"
 msgstr "No hay dispositivo de audio - funcionando sin sonido"
 
@@ -10808,69 +10809,73 @@ msgstr "Ef. desv. est.:"
 msgid "Print to console"
 msgstr "Imprimir en consola"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:324
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:328
 msgid "MCP Activity###mcp_activity_window"
 msgstr "Actividad MCP###mcp_activity_window"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:333
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:337
 msgid "Clear##mcp_act_clear"
 msgstr "Borrar##mcp_act_clear"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:344
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:348
 msgid "Pause##mcp_act_pause"
 msgstr "Pausar##mcp_act_pause"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:353
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:357
 msgid "Auto-scroll##mcp_act_scroll"
 msgstr "Auto-desplazamiento##mcp_act_scroll"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:360
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:364
 msgid "Filter description..."
 msgstr "Filtrar descripción..."
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:371
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:375
 msgid "Origin:"
 msgstr "Origen:"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:373
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:377
 msgid "USER##mcp_act_org_user"
 msgstr "USER##mcp_act_org_user"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:375
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:379
 msgid "AI##mcp_act_org_mcp"
 msgstr "AI##mcp_act_org_mcp"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:377
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:381
 msgid "TEST##mcp_act_org_test"
 msgstr "TEST##mcp_act_org_test"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:379
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:383
 msgid "SYS##mcp_act_org_sys"
 msgstr "SYS##mcp_act_org_sys"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:415
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:419
 msgid "Entries (shown / total)"
 msgstr "Entradas (mostradas / total)"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:435
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:439
 msgid "Time##mcp_act_col_time"
 msgstr "Hora##mcp_act_col_time"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:437
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:441
 msgid "Origin##mcp_act_col_orig"
 msgstr "Origen##mcp_act_col_orig"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:439
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:443
 msgid "Cmd##mcp_act_col_cmd"
 msgstr "Comando##mcp_act_col_cmd"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:441
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:445
 msgid "Description##mcp_act_col_desc"
 msgstr "Descripción##mcp_act_col_desc"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:521
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:525
 msgid "Open the related window"
 msgstr "Abrir la ventana relacionada"
+
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:536
+msgid "rejected: state changed since it was read"
+msgstr "rechazado: el estado cambió desde que se leyó"
 
 #: src/ui-imgui/mcp_activity/mcp_settings_dialog.cpp:79
 msgid "127.0.0.1 (localhost only)"
@@ -11717,7 +11722,9 @@ msgstr "Detener serie de fotogramas"
 msgid ""
 "The frame series saves a PNG of every changed emulated frame into a new "
 "folder."
-msgstr "La serie guarda un PNG de cada fotograma emulado que cambia en una carpeta nueva."
+msgstr ""
+"La serie guarda un PNG de cada fotograma emulado que cambia en una carpeta "
+"nueva."
 
 #: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:157
 msgid "Snapshot Preview"
@@ -11741,7 +11748,7 @@ msgid "Emulator"
 msgstr "Emulador"
 
 #: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:197
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:105
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:103
 msgid "Description"
 msgstr "Descripción"
 
@@ -11757,57 +11764,57 @@ msgstr "No se pueden leer los metadatos de la instantánea"
 msgid "Load Snapshot"
 msgstr "Cargar instantánea"
 
-#: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:262
-msgid "Snapshot loaded"
-msgstr "Instantánea cargada"
-
-#: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:267
-msgid "Load failed"
-msgstr "Error al cargar"
-
 #: src/ui-imgui/snapshot/snapshot_notification.cpp:87
 msgid "Snapshot Error"
 msgstr "Error de instantánea"
 
-#: src/ui-imgui/snapshot/snapshot_quicksave_handler.cpp:73
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:63
+msgid "Snapshot saved"
+msgstr "Instantánea guardada"
+
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:64
+msgid "Save failed"
+msgstr "Error al guardar"
+
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:71
+msgid "Snapshot loaded"
+msgstr "Instantánea cargada"
+
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:72
+msgid "Load failed"
+msgstr "Error al cargar"
+
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:79
 msgid "Quick Save OK"
 msgstr "Guardado rápido OK"
 
-#: src/ui-imgui/snapshot/snapshot_quicksave_handler.cpp:76
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:80
 msgid "Quick Save failed"
 msgstr "Error en guardado rápido"
 
-#: src/ui-imgui/snapshot/snapshot_quicksave_handler.cpp:88
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:87
 msgid "Quick Load OK"
 msgstr "Carga rápida OK"
 
-#: src/ui-imgui/snapshot/snapshot_quicksave_handler.cpp:92
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:88
 msgid "Quick Load failed"
 msgstr "Error en carga rápida"
 
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:63
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:96
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:100
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:61
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:94
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:98
 msgid "Save Snapshot"
 msgstr "Guardar instantánea"
 
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:110
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:108
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:88
 msgid "Include RAM disk content"
 msgstr "Incluir contenido del disco RAM"
 
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:112
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:110
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:89
 msgid "Include MEMEXT content"
 msgstr "Incluir contenido MEMEXT"
-
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:125
-msgid "Snapshot saved"
-msgstr "Instantánea guardada"
-
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:129
-msgid "Save failed"
-msgstr "Error al guardar"
 
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:59
 msgid "Snapshot Settings"

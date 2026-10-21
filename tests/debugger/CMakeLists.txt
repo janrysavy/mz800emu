@@ -119,6 +119,14 @@ mz_add_test(dbgapi_cmd_origin
     LABELS   "emu;debugger"
 )
 
+# Každý příkaz dbgapi má výslovnou třídu záznamu vstupů (replay_dbg_classify,
+# N48): nový příkaz bez zařazení test shodí.
+mz_add_test(replay_dbg_classify
+    TYPE     EMU
+    SOURCES  test_replay_dbg_classify.c
+    LABELS   "emu;debugger;replay"
+)
+
 mz_add_test(dbgapi_submit_timeout
     TYPE     EMU
     SOURCES  test_dbgapi_submit_timeout.c

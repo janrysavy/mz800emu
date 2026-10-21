@@ -1116,6 +1116,33 @@ def _data_or_error(resp: dict[str, Any]) -> dict[str, Any]:
     return {"error": resp.get("error", "emu returned no data")}
 
 
+def _write_cond_payload(payload: dict[str, Any],
+                        expected_sha256: Optional[str],
+                        want_hashes: bool) -> Optional[str]:
+    """Doplní do požadavku zápisu podmínku ``expected_sha256`` a ``want_hashes``.
+
+    Podmíněný zápis (observe-cas M10): emulátor zapíše jen tehdy, když
+    SHA-256 přepisovaného rozsahu souhlasí s ``expected_sha256``; kontrola
+    i zápis proběhnou v emu vlákně v jednom příkazu.
+
+    Args:
+        payload: data požadavku (doplní se na místě).
+        expected_sha256: 64 hex znaků, nebo None (bez podmínky).
+        want_hashes: True = vrátit ``before_sha256`` / ``after_sha256``.
+
+    Returns:
+        None = OK, jinak text chyby pro klienta (anglicky).
+    """
+    if expected_sha256 is not None:
+        if (not isinstance(expected_sha256, str) or len(expected_sha256) != 64
+                or any(c not in "0123456789abcdefABCDEF" for c in expected_sha256)):
+            return "expected_sha256 must be 64 hex digits"
+        payload["expected_sha256"] = expected_sha256
+    if want_hashes:
+        payload["want_hashes"] = True
+    return None
+
+
 async def _shutdown_emu() -> None:
     """Graceful shutdown emu backendu a uzavření transportu.
 
@@ -1373,7 +1400,8 @@ async def emu_get_registers() -> str:
 
 
 @mcp.tool()
-async def emu_set_register(reg: str, value: int) -> str:
+async def emu_set_register(reg: str, value: int,
+                           expected: Optional[int] = None) -> str:
     """Write a 16-bit value to a Z80 register.
 
     Accepts the same case-insensitive register names returned by
@@ -1394,10 +1422,24 @@ async def emu_set_register(reg: str, value: int) -> str:
         reg: register name (case-insensitive).
         value: 16-bit value 0..65535 (for ``IR``: I in the high
             byte, R in the low byte).
+        expected: conditional write (compare-and-swap) - write only if
+            the register still holds this value; compared and written in
+            one step in the emulator thread. On a mismatch nothing is
+            written and the error is ``Precondition failed: register <reg>
+            changed (expected=0x...., current=0x....)``.
+
+    Returns:
+        JSON ``{"reg", "value", "previous"}`` - ``previous`` is the value
+        before the write.
     """
     if not (0 <= value <= 0xFFFF):
         return json.dumps({"error": "value must be in range 0..65535"})
-    resp = await _send_request("set_register", {"reg": reg, "value": value})
+    payload: dict[str, Any] = {"reg": reg, "value": value}
+    if expected is not None:
+        if not (0 <= expected <= 0xFFFF):
+            return json.dumps({"error": "expected must be in range 0..65535"})
+        payload["expected"] = expected
+    resp = await _send_request("set_register", payload)
     return json.dumps(_data_or_error(resp))
 
 
@@ -1459,9 +1501,14 @@ async def emu_mem_read(addr: int, length: int = 16, want_data: bool = True) -> s
     banking via IORQ ports 0xE0..0xE6 and key ROM entry points; live
     banking snapshot is in ``emulator://memory/map``.
 
+    To read registers together with memory from the same moment (the
+    emulator may run between two calls), use ``emu_state_observe``.
+
     Args:
         addr: Z80 memory address (0-65535).
-        length: number of bytes to read (1-256). Defaults to 16.
+        length: number of bytes to read (1-65535, ``addr + length`` at
+            most 0x10000). Defaults to 16. Above a few KiB prefer
+            ``want_data=False`` to keep the response small.
         want_data: False = only ``sha256``, no ``data_b64``.
     """
     resp = await _send_request("mem_read", {"addr": addr, "len": length,
@@ -1470,7 +1517,9 @@ async def emu_mem_read(addr: int, length: int = 16, want_data: bool = True) -> s
 
 
 @mcp.tool()
-async def emu_mem_write(addr: int, data_hex: str) -> str:
+async def emu_mem_write(addr: int, data_hex: str,
+                        expected_sha256: Optional[str] = None,
+                        want_hashes: bool = False) -> str:
     """Write bytes to Z80 memory at a given address.
 
     WARNING: This is a destructive operation. Writes to ROM, CG-ROM,
@@ -1495,11 +1544,28 @@ async def emu_mem_write(addr: int, data_hex: str) -> str:
             accepted; both upper and lower case digits. The decoded byte
             count plus addr must not exceed 0x10000.
 
+        expected_sha256: conditional write - write only if the SHA-256 of
+            exactly the bytes being overwritten still equals this value
+            (take it from ``emu_mem_read(addr, len, want_data=False)`` or
+            a ``emu_state_observe`` window of the same range). The check
+            and the write run together in the emulator thread. If the
+            memory changed, nothing is written and the error starts with
+            ``Precondition failed:``. The region check runs first.
+            Note: the address goes through the current memory map; if the
+            banking changed but the bytes happen to be equal, the write
+            lands elsewhere - use ``emu_region_write`` for a physical cell.
+        want_hashes: also return ``before_sha256`` and ``after_sha256``
+            without a condition.
+
     Returns:
-        On success: JSON ``{"addr": <int>, "length": <int>}``.
+        On success: JSON ``{"addr": <int>, "length": <int>}``, with a
+        condition or ``want_hashes`` also ``before_sha256`` and
+        ``after_sha256``.
         On failure: JSON ``{"error": "<text>"}`` with a region check
         diagnostic (e.g. ``"MEM_WRITE region check failed at 0x0000
-        (kind=1)"``).
+        (kind=1)"``) or ``"Precondition failed: memory changed
+        (expected_sha256=..., current_sha256=...)"``. See
+        ``emulator://docs/conditional_writes``.
     """
     if not isinstance(data_hex, str) or not data_hex:
         return json.dumps({"error": "data_hex must be a non-empty string"})
@@ -1510,8 +1576,11 @@ async def emu_mem_write(addr: int, data_hex: str) -> str:
         return json.dumps({"error": "data_hex must have even number of hex digits"})
     if any(c not in "0123456789abcdefABCDEF" for c in stripped):
         return json.dumps({"error": "data_hex contains non-hex characters"})
-    resp = await _send_request(
-        "mem_write", {"addr": addr, "data_hex": data_hex})
+    payload: dict[str, Any] = {"addr": addr, "data_hex": data_hex}
+    err = _write_cond_payload(payload, expected_sha256, want_hashes)
+    if err:
+        return json.dumps({"error": err})
+    resp = await _send_request("mem_write", payload)
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "mem_write failed")})
     return json.dumps(_data_or_error(resp))
@@ -3227,7 +3296,9 @@ async def emu_nmi_inject() -> str:
 
 
 @mcp.tool()
-async def emu_mem_write_force(addr: int, data_hex: str) -> str:
+async def emu_mem_write_force(addr: int, data_hex: str,
+                              expected_sha256: Optional[str] = None,
+                              want_hashes: bool = False) -> str:
     """Write bytes to Z80 memory without region-write checks.
 
     Unlike ``emu_mem_write`` (which refuses to write into ROM, CG-ROM,
@@ -3242,18 +3313,25 @@ async def emu_mem_write_force(addr: int, data_hex: str) -> str:
     Args:
         addr: Z80 address (0-65535).
         data_hex: hex string of bytes (even length, e.g. ``"3E01C9"``).
+        expected_sha256: conditional write, same as ``emu_mem_write``.
+        want_hashes: also return ``before_sha256`` and ``after_sha256``.
 
     Returns:
-        JSON ``{"addr": <int>, "length": <int>}`` on success or
-        ``{"error": "..."}`` on failure.
+        JSON ``{"addr": <int>, "length": <int>}`` (plus the hashes with a
+        condition or ``want_hashes``) on success or ``{"error": "..."}``
+        on failure; ``Precondition failed:`` = memory changed, nothing
+        written.
     """
     if not isinstance(addr, int) or addr < 0 or addr > 0xFFFF:
         return json.dumps({"error": "addr must be 0..65535"})
     if not isinstance(data_hex, str) or not data_hex or len(data_hex) % 2 != 0:
         return json.dumps(
             {"error": "data_hex must be a non-empty even-length hex string"})
-    resp = await _send_request(
-        "mem_write_force", {"addr": addr, "data_hex": data_hex})
+    payload: dict[str, Any] = {"addr": addr, "data_hex": data_hex}
+    err = _write_cond_payload(payload, expected_sha256, want_hashes)
+    if err:
+        return json.dumps({"error": err})
+    resp = await _send_request("mem_write_force", payload)
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "mem_write_force failed")})
@@ -5585,7 +5663,8 @@ async def emu_get_cpu_flags() -> str:
 @mcp.tool()
 async def emu_set_cpu_flags(iff1: int = -1, iff2: int = -1,
                             im: int = -1, i: int = -1,
-                            r: int = -1) -> str:
+                            r: int = -1,
+                            expected: Optional[dict[str, int]] = None) -> str:
     """Selectively update Z80 interrupt-related state (IFF1/IFF2/IM/I/R).
 
     WARNING: This is a destructive operation. Each argument is optional
@@ -5606,15 +5685,21 @@ async def emu_set_cpu_flags(iff1: int = -1, iff2: int = -1,
         r: Memory Refresh register (0..255). All 8 bits are written,
             including bit 7, the same as the LD R,A instruction (the
             refresh counter itself only increments bits 0-6).
+        expected: conditional write - expected current values of the
+            fields being written, e.g. ``{"iff1": 1}`` together with
+            ``iff1=0`` (only fields this call writes; ``r`` compares the
+            whole byte). On a mismatch nothing is written and the error
+            starts with ``Precondition failed: cpu flags changed``.
 
     Returns:
-        JSON ``{"updated": ["iff1", "im", ...], "values": {...}}``
-        where ``updated`` lists the field names that were written and
-        ``values`` echoes their final values. ``{"error": "..."}``
+        JSON ``{"updated": ["iff1", "im", ...], "values": {...},
+        "previous": {...}}`` where ``updated`` lists the field names that
+        were written, ``values`` echoes their final values and
+        ``previous`` their values before the write. ``{"error": "..."}``
         is returned when no field is provided or the IM value is out
         of range.
     """
-    payload: dict[str, int] = {}
+    payload: dict[str, Any] = {}
     if iff1 >= 0:
         if iff1 not in (0, 1):
             return json.dumps({"error": "iff1 must be 0 or 1"})
@@ -5639,6 +5724,8 @@ async def emu_set_cpu_flags(iff1: int = -1, iff2: int = -1,
         return json.dumps(
             {"error": "no field specified - provide at least one of "
                        "iff1/iff2/im/i/r"})
+    if expected:
+        payload["expected"] = dict(expected)
     resp = await _send_request("set_cpu_flags", payload)
     return json.dumps(_data_or_error(resp))
 
@@ -5707,6 +5794,65 @@ async def emu_get_cpu_panel_batch(want_im2: bool = False,
     if want_last_instr:
         payload["want_last_instr"] = True
     resp = await _send_request("get_cpu_panel_batch", payload or None)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_state_observe(windows: list[dict[str, Any]],
+                            include: list[str] | None = None,
+                            hashes: list[str] | None = None,
+                            want_data: bool = True) -> str:
+    """Read registers, flags and several memory windows from ONE moment.
+
+    Use this instead of ``emu_get_cpu_panel_batch`` + ``emu_mem_read``
+    whenever registers and memory must belong together (a pointer and the
+    data it points to, a counter and its register copy). Two separate
+    calls always come from two different moments while the emulator runs;
+    this tool reads everything in one pass of the emulator thread. While
+    running the moment is the start of a video frame (the call waits up
+    to one frame, about 20 ms); in pause it is the paused state.
+
+    Each window is either a CPU address range read through the current
+    memory map, ``{"addr": 0x3000, "len": 2}``, or a physical region from
+    ``emu_regions_list`` addressed by kind and sub_id (not by region id,
+    so it stays valid after a hardware change),
+    ``{"region": {"kind": "vram_phys_plane", "sub_id": 0}, "offset": 0,
+    "length": 256}``. Optional per window: ``name`` (echoed back, max 64
+    characters) and ``want_data``. At most 16 windows and 65536 bytes in
+    total. Reads have no side effects.
+
+    Each returned window has ``sha256`` (same as ``emu_mem_read`` /
+    ``emu_region_read`` of the same range - pass it as ``expected_sha256``
+    to a conditional write) and ``data_b64`` unless ``want_data`` is
+    false. A region that is not connected gives the window
+    ``error: "region_unavailable"`` and ``complete: false``; the call
+    still succeeds. Prefer ``want_data=False`` above a few KiB to keep the
+    response small. See ``emulator://docs/state_observe``.
+
+    Args:
+        windows: list of 0..16 windows (see above).
+        include: optional sections ``raster``, ``im2``, ``last_instr``
+            (schema of ``emu_get_cpu_panel_batch``) and ``memory_map``
+            (16 slots of 4 KiB with the page ``kind`` of the current
+            banking).
+        hashes: optional SHA-256 of whole state parts ``cpu``, ``ram``,
+            ``vram``, ``memext``, ``pcg`` (same definition as replay and
+            ``result.json``; a part that does not exist is ``null``).
+        want_data: default for windows without their own ``want_data``.
+
+    Returns:
+        JSON object with ``run_seq``, ``running``, ``stable`` (true only
+        in pause), ``drain`` (``frame`` or ``paused``), ``time``
+        (``frame``, ``frame_ticks``, ``total_cycles``), ``regs``,
+        ``flags``, ``windows``, ``complete`` and the requested optional
+        sections.
+    """
+    payload: dict[str, Any] = {"windows": windows, "want_data": bool(want_data)}
+    if include:
+        payload["include"] = include
+    if hashes:
+        payload["hashes"] = hashes
+    resp = await _send_request("state_observe", payload)
     return json.dumps(_data_or_error(resp))
 
 
@@ -6250,7 +6396,9 @@ async def emu_region_read(region_id: int, offset: int = 0,
 
 @mcp.tool()
 async def emu_region_write(region_id: int, offset: int,
-                           data_b64: str, layout_gen: int = 0) -> str:
+                           data_b64: str, layout_gen: int = 0,
+                           expected_sha256: Optional[str] = None,
+                           want_hashes: bool = False) -> str:
     """Write raw bytes into a physical memory region (bypass Z80
     banking).
 
@@ -6270,10 +6418,22 @@ async def emu_region_write(region_id: int, offset: int,
         data_b64: Base64-encoded bytes (max 65536 bytes per call).
         layout_gen: As for ``emu_region_read``; with an ``id`` from an
             older list nothing is written.
+        expected_sha256: conditional write - write only if the SHA-256 of
+            the bytes being overwritten (after clipping at the region
+            end) still equals this value, e.g. the ``sha256`` of
+            ``emu_region_read`` or of a ``emu_state_observe`` region window
+            of the same range. Checked and written in one step in the
+            emulator thread; on a mismatch nothing is written and the
+            error starts with ``Precondition failed:``. A physical region
+            is not affected by banking, so this is the safest conditional
+            write. Errors of the id, ``layout_gen`` and read-only regions
+            come first.
+        want_hashes: also return ``before_sha256`` and ``after_sha256``.
 
     Returns:
-        JSON ``{"region_id", "offset", "length", "written"}``. On
-        error ``{"error": "..."}``.
+        JSON ``{"region_id", "offset", "length", "written"}`` (plus
+        ``before_sha256`` / ``after_sha256`` with a condition or
+        ``want_hashes``). On error ``{"error": "..."}``.
     """
     if region_id < 0:
         return json.dumps({"error": "region_id must be >= 0"})
@@ -6283,9 +6443,13 @@ async def emu_region_write(region_id: int, offset: int,
         return json.dumps({"error": "data_b64 must be non-empty"})
     if layout_gen < 0:
         return json.dumps({"error": "layout_gen must be >= 0"})
-    params = {"region_id": region_id, "offset": offset, "data_b64": data_b64}
+    params: dict[str, Any] = {"region_id": region_id, "offset": offset,
+                              "data_b64": data_b64}
     if layout_gen:
         params["layout_gen"] = layout_gen
+    err = _write_cond_payload(params, expected_sha256, want_hashes)
+    if err:
+        return json.dumps({"error": err})
     resp = await _send_request("region_write", params)
     return json.dumps(_data_or_error(resp))
 

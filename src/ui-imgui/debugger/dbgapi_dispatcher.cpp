@@ -207,13 +207,19 @@ static void dispatcher_default_listener_cb(en_DBGAPI_MSG msg,
                                                 data->description,
                                                 data->timestamp_us,
                                                 data->entity_kind,
-                                                data->entity_id);
+                                                data->entity_id,
+                                                data->rejected != 0);
                 /* V1.C.3 - selektivní toast pro destruktivní MCP akce.
                  * Funkce sama filtruje (= USER/TEST/INTERNAL no-op a
-                 * read-only cmds no-op), takže bezpodmínečné volání je OK. */
-                action_toast_show(DBGAPI_CMD_ORIGIN_MCP,
-                                  data->cmd,
-                                  data->description);
+                 * read-only cmds no-op), takže bezpodmínečné volání je OK.
+                 * Odmítnutý podmíněný zápis (observe-cas M10) nic nezměnil,
+                 * toast pro něj nevzniká, stačí řádek v Activity. */
+                if (!data->rejected)
+                {
+                    action_toast_show(DBGAPI_CMD_ORIGIN_MCP,
+                                      data->cmd,
+                                      data->description);
+                };
 #endif
             };
             break;
