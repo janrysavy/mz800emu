@@ -264,6 +264,7 @@ static void dbgapi_cmt_pulses_to_us ( const st_MZTAPE_PULSES_LENGTH *pulses, dou
 #include "libs/cfgfile/cfgelement.h"
 #include "libs/cfgfile/cfgcommon.h"
 #include "debugger/trace/ramlog_hook.h"
+#include "debugger/coverage/coverage_hook.h"
 
 
 #if CFG_HWEXT_HAVE_FDC
@@ -1037,6 +1038,7 @@ const char *dbgapi_cmd_to_str(en_DBGAPI_CMD cmd)
         case DBGAPI_CMD_TRACE_SNAPSHOT:            return "trace_snapshot";
         case DBGAPI_CMD_TRACE_RESOLVE:             return "trace_resolve";
         case DBGAPI_CMD_RAMLOG:                    return "ramlog";
+        case DBGAPI_CMD_COVERAGE:                  return "coverage";
         case DBGAPI_CMD_MEMSEARCH_SAMPLE:          return "memsearch_sample";
         case DBGAPI_CMD_FREEZE_LIST:               return "freeze_list";
         /* V1.D.1 - Core + CPU extras Resources */
@@ -2702,6 +2704,13 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                                     g_mzarch_main.cpu->cpu_ctrl_event_data );
                             };
                         };
+                    };
+                    /* Pokrytí kódu: změna PC nebo AF hostitelem mezi
+                     * instrukcemi mění tok programu mimo něj. */
+                    if ( ( (z80_reg_t)p->reg_id == Z80_REG_PC || (z80_reg_t)p->reg_id == Z80_REG_AF )
+                         && p->value != p->previous )
+                    {
+                        coverage_note_host_state_edit ( );
                     };
                     rq->success = true;
                 }
@@ -6654,6 +6663,59 @@ void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq)
                 eventlog_decode_detail ( &e, p->out_event_texts[ i ], DBGAPI_EVENT_TEXT_MAX );
             };
             rq->success = true;
+            break;
+        }
+
+        case DBGAPI_CMD_COVERAGE:
+        {
+            /* Pokrytí kódu (coverage_hook.h): start/stop přepíná callbacky
+             * CPU a masku háčků po instrukci, proto jen v emu vlákně
+             * (drain). Snímek kopíruje data z jednoho okamžiku. */
+            st_DBGAPI_COVERAGE_PARAM *p = (st_DBGAPI_COVERAGE_PARAM *) rq->data_ptr;
+            if ( !p )
+            {
+                rq->success = false;
+                break;
+            };
+            p->out_error[ 0 ] = 0;
+            switch ( p->op )
+            {
+                case DBGAPI_COVERAGE_OP_START:
+                    if ( !coverage_hook_start ( &p->cfg, p->reset ) )
+                    {
+                        g_strlcpy ( p->out_error, "Not enough memory for the coverage table", sizeof ( p->out_error ) );
+                    };
+                    break;
+                case DBGAPI_COVERAGE_OP_STOP:
+                    coverage_hook_stop ( );
+                    break;
+                case DBGAPI_COVERAGE_OP_RESET:
+                    coverage_reset ( );
+                    break;
+                case DBGAPI_COVERAGE_OP_MARK:
+                    p->out_epoch = coverage_mark ( );
+                    break;
+                case DBGAPI_COVERAGE_OP_STATUS:
+                    break;
+                case DBGAPI_COVERAGE_OP_SNAPSHOT:
+                {
+                    if ( !p->snap )
+                    {
+                        g_strlcpy ( p->out_error, "Missing snapshot buffer", sizeof ( p->out_error ) );
+                        break;
+                    };
+                    if ( !coverage_snapshot_take ( p->snap ) )
+                    {
+                        g_strlcpy ( p->out_error, "Not enough memory for the coverage snapshot", sizeof ( p->out_error ) );
+                    };
+                    break;
+                }
+                default:
+                    g_strlcpy ( p->out_error, "Unknown coverage operation", sizeof ( p->out_error ) );
+                    break;
+            };
+            coverage_get_status ( &p->out_status );
+            rq->success = ( p->out_error[ 0 ] == 0 );
             break;
         }
 

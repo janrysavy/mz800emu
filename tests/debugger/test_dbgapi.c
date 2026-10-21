@@ -22,6 +22,8 @@
 #include "debugger/dbgapi_emu.h"
 #include "debugger/dbgapi_regions.h"
 #include "debugger/replay_dbg.h"
+#include "debugger/coverage/coverage_hook.h"
+#include "debugger/trace/ramlog.h"
 #include "state_hash.h"
 #include "debugger/breakpoints.h"
 #include "debugger/bptmap.h"
@@ -1228,6 +1230,113 @@ static void assert_full_64k ( uint8_t value, const char *what ) {
  * (map = 0, bez ROM, CG-ROM, VRAM a mapovaných portů), po sobě vrátí
  * mapování i obsah paměti.
  */
+/**
+ * @brief Volání DBGAPI_CMD_COVERAGE s danou operací.
+ * @param op    Operace.
+ * @param level Úroveň (START).
+ * @param snap  Cíl snímku (SNAPSHOT), jinak NULL.
+ * @param st    Výstup stavu po operaci.
+ * @return rq->success.
+ */
+static bool coverage_cmd ( en_DBGAPI_COVERAGE_OP op, en_COVERAGE_LEVEL level,
+                           st_COVERAGE_SNAPSHOT *snap, st_COVERAGE_STATUS *st ) {
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset ( &p, 0, sizeof ( p ) );
+    p.op = op;
+    p.cfg.level = level;
+    p.cfg.key = COVERAGE_KEY_OPCODE;
+    p.cfg.capacity = 64;
+    p.reset = true;
+    p.snap = snap;
+    bool ok = call_dispatch ( DBGAPI_CMD_COVERAGE, &p, NULL );
+    if ( st ) *st = p.out_status;
+    return ok;
+}
+
+
+/**
+ * @brief DBGAPI_CMD_COVERAGE a háček po instrukci nad skutečnou pamětí a CPU.
+ *
+ * START branch zapne bit masky háčků bez logovacích callbacků, krok JR NZ
+ * (bajty z paměti po kroku) dá výsledek podle F. START detail vynutí
+ * logovací callbacky; krok bere bajty ze záznamu fetch, buňka je RAM (nebo
+ * banka MemExt) na adrese kroku; chybějící bajt v záznamu =
+ * fetch_fallback. STOP vrátí
+ * masku i callbacky.
+ */
+void test_cmd_coverage_hook ( void ) {
+    z80_t *cpu = g_mzarch_main.cpu;
+    z80_mread_cb cb_before = cpu->mread_cb;
+    static const uint8_t jrnz[] = { 0x20, 0x10 };
+    st_DBGAPI_MEM_PARAM mp = { .addr = 0x3000, .len = 2, .buf = (uint8_t *) jrnz };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_WRITE_FORCE, &mp, NULL ) );
+
+    st_COVERAGE_STATUS st;
+    TEST_ASSERT_TRUE ( coverage_cmd ( DBGAPI_COVERAGE_OP_START, COVERAGE_LEVEL_BRANCH, NULL, &st ) );
+    TEST_ASSERT_TRUE ( st.active );
+    TEST_ASSERT_TRUE ( g_mzarch_post_insn_hooks & MZARCH_POST_INSN_COVERAGE );
+    TEST_ASSERT_EQUAL_INT ( 0, g_coverage_need_fetch );
+    TEST_ASSERT_TRUE ( cpu->mread_cb == cb_before );
+
+    cpu->af.l = 0x00;   /* NZ -> skok */
+    st_MZARCH_INSN_INFO insn = { .pc = 0x3000, .next_pc = 0x3012, .tstates = 12, .wait = 0 };
+    coverage_hook_on_instruction ( &insn );
+
+    st_COVERAGE_SNAPSHOT *snap = g_new0 ( st_COVERAGE_SNAPSHOT, 1 );
+    TEST_ASSERT_TRUE ( coverage_cmd ( DBGAPI_COVERAGE_OP_SNAPSHOT, COVERAGE_LEVEL_BRANCH, snap, &st ) );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x01, snap->exec[ 0x3000 >> 3 ] );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x01, snap->taken[ 0x3000 >> 3 ] );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x00, snap->not_taken[ 0x3000 >> 3 ] );
+    TEST_ASSERT_NULL ( snap->units );
+    TEST_ASSERT_EQUAL_UINT32 ( 1, st.branches_taken_only );
+
+    /* detail: bajty ze záznamu fetch (v paměti jiný obsah, rozhoduje fetch) */
+    TEST_ASSERT_TRUE ( coverage_cmd ( DBGAPI_COVERAGE_OP_START, COVERAGE_LEVEL_DETAIL, NULL, &st ) );
+    TEST_ASSERT_EQUAL_INT ( 1, g_coverage_need_fetch );
+    TEST_ASSERT_TRUE ( TEST_DEBUGGER_NEED_DEBUG_CALLBACKS );
+    TEST_ASSERT_TRUE ( cpu->mread_cb != cb_before );
+    g_debugger_insn_fetch.addr = 0x3000;
+    g_debugger_insn_fetch.count = 2;
+    g_debugger_insn_fetch.byte[ 0 ] = 0x28;   /* JR Z */
+    g_debugger_insn_fetch.byte[ 1 ] = 0x10;
+    cpu->af.l = 0x00;   /* NZ -> JR Z propadne */
+    insn.next_pc = 0x3002;
+    coverage_hook_on_instruction ( &insn );
+    g_debugger_insn_fetch.count = 1;          /* operand chybí -> fallback */
+    coverage_hook_on_instruction ( &insn );
+
+    TEST_ASSERT_TRUE ( coverage_cmd ( DBGAPI_COVERAGE_OP_SNAPSHOT, COVERAGE_LEVEL_DETAIL, snap, &st ) );
+    TEST_ASSERT_EQUAL_UINT32 ( 1, snap->n_units );
+    TEST_ASSERT_NOT_NULL ( snap->units );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x28, snap->units[ 0 ].key[ 0 ] );
+    TEST_ASSERT_EQUAL_UINT32 ( 2, snap->units[ 0 ].not_taken );
+    /* Stránka 3 čte z hlavní RAM, nebo s připojeným MemExt z jeho banky 0. */
+    uint8_t space = COVERAGE_CELL_SPACE ( snap->units[ 0 ].cell );
+    TEST_ASSERT_TRUE ( space == RAMLOG_SPACE_RAM || space == RAMLOG_SPACE_MEMEXT );
+    TEST_ASSERT_EQUAL_HEX32 ( 0x3000, COVERAGE_CELL_OFFSET ( snap->units[ 0 ].cell ) );
+    TEST_ASSERT_TRUE ( snap->units[ 0 ].flags & COVERAGE_F_FETCH_FALLBACK );
+    TEST_ASSERT_EQUAL_UINT64 ( 1, st.fetch_fallback );
+    TEST_ASSERT_FALSE ( st.complete );
+    coverage_snapshot_clear ( snap );
+    g_free ( snap );
+
+    st_COVERAGE_STATUS mk;
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset ( &p, 0, sizeof ( p ) );
+    p.op = DBGAPI_COVERAGE_OP_MARK;
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_COVERAGE, &p, NULL ) );
+    TEST_ASSERT_EQUAL_UINT32 ( 1, p.out_epoch );
+
+    TEST_ASSERT_TRUE ( coverage_cmd ( DBGAPI_COVERAGE_OP_STOP, COVERAGE_LEVEL_DETAIL, NULL, &mk ) );
+    TEST_ASSERT_FALSE ( mk.active );
+    TEST_ASSERT_TRUE ( mk.has_data );
+    TEST_ASSERT_FALSE ( g_mzarch_post_insn_hooks & MZARCH_POST_INSN_COVERAGE );
+    TEST_ASSERT_EQUAL_INT ( 0, g_coverage_need_fetch );
+    TEST_ASSERT_TRUE ( cpu->mread_cb == cb_before );
+    coverage_free ( );
+}
+
+
 void test_cmd_mem_write_full_64k ( void ) {
     const uint8_t saved_map = g_memory.map;
     g_memory.map = 0;
@@ -1822,6 +1931,7 @@ int main ( int argc, char *argv[] ) {
 
     RUN_TEST ( test_cmd_mem_write_checked_rejected_fails );
     RUN_TEST ( test_cmd_mem_write_full_64k );
+    RUN_TEST ( test_cmd_coverage_hook );
     RUN_TEST ( test_cmd_mem_write_checked_ram_succeeds );
 
     RUN_TEST ( test_cmd_state_observe_windows_regs_hash );

@@ -474,7 +474,6 @@ uint8_t memory_read_cb(z80_t *cpu, uint16_t addr, int m1_state, void *user_data)
  * Callback pro cteni bajtu se synchronizaci + debugging historie.
  */
 uint8_t memory_read_with_logging_cb(z80_t *cpu, uint16_t addr, int m1_state, void *user_data) {
-    (void)cpu;
     (void)user_data;
 
     /* Klasifikace přístupu (X vs R) - viz mz800_memory.c pro detailní popis
@@ -486,9 +485,9 @@ uint8_t memory_read_with_logging_cb(z80_t *cpu, uint16_t addr, int m1_state, voi
     } else if (m1_state) {
         /* M1 prefix opcode uvnitř téže instrukce (DD/FD/ED/CB ...). */
         access_kind = MHMAP_ACCESS_X;
-    } else if (g_debugger_history.byte_position < DEBUGGER_MAX_INSTR_BYTES
-               && addr == (uint16_t)(g_mzarch_main.instruction_addr + g_debugger_history.byte_position)) {
-        /* Sekvenční immediate operand bajt. */
+    } else if ((uint16_t)cpu->pc == (uint16_t)(addr + 1)) {
+        /* Operand instrukce (FETCH z PC, PC už posunuté); datové čtení
+         * hned za instrukcí má cpu->pc == addr (N60). */
         access_kind = MHMAP_ACCESS_X;
     } else {
         access_kind = MHMAP_ACCESS_R;

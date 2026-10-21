@@ -190,6 +190,24 @@ void test_cputrack_start_stop_basic ( void )
 }
 
 
+/**
+ * @brief Přepočet aktivity podle režimu přepne bit cputrack v masce háčků
+ *        po instrukci (brána hlavní smyčky čte jen masku).
+ */
+void test_cputrack_recompute_sets_post_insn_mask ( void )
+{
+    g_cputrack_config.mode = TLOG_MODE_ALWAYS;
+    cputrack_recompute_active ( 0 );
+    TEST_ASSERT_EQUAL_INT ( 1, g_cputrack_active );
+    TEST_ASSERT_TRUE ( g_mzarch_post_insn_hooks & MZARCH_POST_INSN_CPUTRACK );
+
+    g_cputrack_config.mode = TLOG_MODE_OFF;
+    cputrack_recompute_active ( 0 );
+    TEST_ASSERT_EQUAL_INT ( 0, g_cputrack_active );
+    TEST_ASSERT_FALSE ( g_mzarch_post_insn_hooks & MZARCH_POST_INSN_CPUTRACK );
+}
+
+
 void test_cputrack_start_idempotent ( void )
 {
     TEST_ASSERT_EQUAL_INT ( 0, activate_cputrack ( ) );
@@ -611,6 +629,7 @@ int main ( int argc, char *argv[] )
     /* Lifecycle */
     RUN_TEST ( test_cputrack_start_stop_basic );
     RUN_TEST ( test_cputrack_start_idempotent );
+    RUN_TEST ( test_cputrack_recompute_sets_post_insn_mask );
     RUN_TEST ( test_cputrack_stop_idempotent );
 
     /* Initial dumps + meta */

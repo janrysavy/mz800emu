@@ -67,6 +67,7 @@
 #include "trace/marklog.h"
 #include "trace/ramlog.h"
 #include "trace/ramlog_hook.h"
+#include "coverage/coverage_hook.h"
 #include "trace/eventlog.h"
 #include "trace/eventlog_trigger.h"
 #include "io_activity.h"
@@ -241,6 +242,11 @@ void debugger_exit ( void ) {
     hwlog_finalize ( );
     /* Záznam zápisů do paměti - jen paměť, nic se neukládá. */
     ramlog_free ( );
+    /* Pokrytí kódu - jen paměť, nic se neukládá. */
+    coverage_on_exit ( );
+    coverage_free ( );
+    g_free ( g_coverage_ini.save_on_exit );
+    g_coverage_ini.save_on_exit = NULL;
     /* Triggery okna Events (Pause / Auto-mark on match) - vypnout a uvolnit
      * jejich filtry dřív, než zanikne ring. Běží na emu vlákně (emulator_quit),
      * callback triggeru proto souběžně neběží. */
@@ -812,6 +818,10 @@ void debugger_init ( void ) {
      * v ramlog_recompute_active (state_changed níže). */
     ramlog_cfg_init ( );
     ramlog_apply_cli_options ( );
+    /* Pokrytí kódu: [COVERAGE] + --coverage*; spuštění v
+     * coverage_recompute_active (state_changed níže). */
+    coverage_cfg_init ( );
+    coverage_apply_cli_options ( );
 
     /* Event Viewer (mutant event-viewer Vlna 1 Commit 1) - in-memory ring
      * pro Events okno. Volá se po marklog_init() aby cfg propagate proběhl

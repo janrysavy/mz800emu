@@ -225,6 +225,7 @@ extern "C"
      *       logovací čtecí callback ale potřebuje kvůli bajtům instrukce
      *       načteným při fetch (g_debugger_insn_fetch): po z80_step už paměť
      *       může obsahovat jiné bajty (samomodifikace, přepnutí bankingu).
+     *       Totéž platí pro pokrytí kódu v úrovni detail (g_coverage_need_fetch).
      * @note g_io_window_tracking_active je gating flag pro io_activity +
      *       io_history hooky v port_*_with_logging_cb (V1.5 Sprint 1+2).
      *       Bez něj v tomto makru by se default callbacks nepřepnuly na
@@ -239,6 +240,7 @@ extern "C"
     || (g_cputrack_active != 0) \
     || (g_io_window_tracking_active != 0) \
     || (g_eventlog_active != 0) \
+    || (g_coverage_need_fetch != 0) \
     || (g_bptmap.per_type_active[ BPTMAP_IDX_MEM_W ] != 0) \
     || (g_bptmap.per_type_active[ BPTMAP_IDX_MEM_R ] != 0) \
     || (g_bptmap.per_type_active[ BPTMAP_IDX_IORQ_R ] != 0) \
@@ -248,6 +250,7 @@ extern int g_iorqlog_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS 
 extern int g_cputrack_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS (bajty fetch pro cputrack) */
 extern uint8_t g_io_window_tracking_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS */
 extern int g_eventlog_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS (event-viewer V1) */
+extern int g_coverage_need_fetch; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS (pokrytí kódu detail: bajty fetch) */
 
 #define DEBUGGER_HISTORY_POSMASK 0x1f
 #define DEBUGGER_HISTORY_LENGTH (DEBUGGER_HISTORY_POSMASK + 1)

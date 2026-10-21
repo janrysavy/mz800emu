@@ -29,6 +29,8 @@
 #include "screenshot/screenshot.h"
 #include "screenshot/screenshot_capture.h"
 #include "snapshot/snapshot.h"
+#include "debugger/coverage/coverage.h"
+#include "debugger/coverage/coverage_export.h"
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "debugger/breakpoints.h"
@@ -448,6 +450,29 @@ static void am_json_trigger(JsonBuilder *b)
 
 
 /**
+ * @brief Objekt `coverage`: stav pokrytí kódu (coverage_status_to_json()).
+ *
+ * `null`, pokud v běhu žádná data pokrytí nevznikla (i v buildu bez
+ * debuggeru). Jinak úroveň, úplnost (`complete`, `dropped`, ...), počty
+ * jednotek a instrukcí a souhrn větví `branches`.
+ */
+static void am_json_coverage(JsonBuilder *b)
+{
+    st_COVERAGE_STATUS st;
+    coverage_get_status(&st);
+    json_builder_set_member_name(b, "coverage");
+    if (!st.has_data)
+    {
+        json_builder_add_null_value(b);
+        return;
+    };
+    JsonNode *n = json_node_new(JSON_NODE_OBJECT);
+    json_node_take_object(n, coverage_status_to_json(&st));
+    json_builder_add_value(b, n);
+}
+
+
+/**
  * @brief Objekt `replay`: výsledek přehrávání / záznamu vstupů (replay.h).
  *
  * `null`, pokud se v běhu záznam ani přehrávání nepoužily. Jinak `mode`
@@ -630,7 +655,8 @@ static void am_json_files(JsonBuilder *b, bool screenshot_ok, bool snapshot_ok)
  * @brief Zapíše `result.json` atomicky (dočasný soubor + přejmenování).
  *
  * @param path Cesta.
- * @param machine true = se stavem stroje (`time`, `cpu`, `raster`, `hashes`);
+ * @param machine true = se stavem stroje (`time`, `cpu`, `raster`, `hashes`,
+ *        `coverage`);
  *        false = jen základ (chyba před startem emulace).
  * @param screenshot_ok, snapshot_ok Viz am_json_files().
  * @return true = zapsáno.
@@ -650,6 +676,7 @@ static bool am_write_result_file(const char *path, bool machine, bool screenshot
     if (machine)
     {
         am_json_machine(b);
+        am_json_coverage(b);
     };
     am_json_files(b, screenshot_ok, snapshot_ok);
     json_builder_end_object(b);

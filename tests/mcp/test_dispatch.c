@@ -38,6 +38,7 @@
 #include "emulator/mcp/cooperation.h"
 #include "emulator/debugger/dbgapi_cmdrq.h"
 #include "emulator/debugger/dbgapi_regions.h"
+#include "emulator/debugger/trace/trace_reader.h"
 #include "emulator/state_hash.h"
 #include "emulator/snapshot/snapshot.h"
 #include "emulator/hw-generic/gdg/gdgclk.h"
@@ -127,8 +128,10 @@
  * vstupů, na KONEC cmd_map[]) = 210 + 2 = 212.
  * observe-cas doplnil state_observe (registry a okna paměti z jednoho
  * okamžiku, na KONEC cmd_map[]) = 212 + 1 = 213.
+ * coverage doplnil coverage_start, _stop, _reset, _status, _mark, _read
+ * a _export (pokrytí kódu, na KONEC cmd_map[]) = 213 + 7 = 220.
  */
-#define MCP_EXPECTED_CMD_COUNT 213
+#define MCP_EXPECTED_CMD_COUNT 220
 
 
 /* ====================================================================== */
@@ -9013,6 +9016,230 @@ void test_cond_set_cpu_flags(void) {
         g_free(line);
     }
 }
+
+
+/* ---------------- Pokrytí kódu (coverage_*) ---------------- */
+
+/** @brief Chybová zpráva z odpovědi (nová kopie, g_free). */
+static gchar *_cov_error_text(const char *resp) {
+    JsonParser *parser = NULL;
+    JsonObject *obj = _parse_response_object(resp, &parser);
+    gchar *e = g_strdup(json_object_get_string_member(obj, "error"));
+    g_object_unref(parser);
+    return e;
+}
+
+
+/**
+ * @brief coverage_start: parametry dojdou do jádra, odpověď je stav.
+ */
+void test_coverage_start_params(void) {
+    dispatch_stub_reset();
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9400,\"cmd\":\"coverage_start\","
+                             "\"data\":{\"level\":\"detail\",\"key\":\"full_bytes\",\"capacity\":100,"
+                             "\"reset\":true,\"reset_on_discontinuity\":true}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_COVERAGE_OP_START, g_stub_state.cov_last.op);
+    TEST_ASSERT_EQUAL_INT(COVERAGE_LEVEL_DETAIL, g_stub_state.cov_last.cfg.level);
+    TEST_ASSERT_EQUAL_INT(COVERAGE_KEY_FULL_BYTES, g_stub_state.cov_last.cfg.key);
+    TEST_ASSERT_EQUAL_UINT32(100, g_stub_state.cov_last.cfg.capacity);
+    TEST_ASSERT_TRUE(g_stub_state.cov_last.reset);
+    TEST_ASSERT_TRUE(g_stub_state.cov_last.cfg.reset_on_discontinuity);
+    TEST_ASSERT_EQUAL_STRING("detail", json_object_get_string_member(d, "level"));
+    TEST_ASSERT_EQUAL_INT(5, json_object_get_int_member(d, "generation"));
+    TEST_ASSERT_TRUE(json_object_has_member(d, "branches"));
+    g_object_unref(parser);
+    free(resp);
+
+    /* Výchozí hodnoty: branch, opcode, 65536, bez resetu. */
+    parser = NULL;
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9401,\"cmd\":\"coverage_start\"}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(COVERAGE_LEVEL_BRANCH, g_stub_state.cov_last.cfg.level);
+    TEST_ASSERT_EQUAL_UINT32(COVERAGE_DEFAULT_CAPACITY, g_stub_state.cov_last.cfg.capacity);
+    TEST_ASSERT_FALSE(g_stub_state.cov_last.reset);
+    g_object_unref(parser);
+    free(resp);
+
+    parser = NULL;
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9402,\"cmd\":\"coverage_mark\"}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_COVERAGE_OP_MARK, g_stub_state.cov_last.op);
+    TEST_ASSERT_EQUAL_INT(3, json_object_get_int_member(d, "epoch"));
+    g_object_unref(parser);
+    free(resp);
+}
+
+
+/** @brief coverage_start s neplatnými parametry neodešle nic do jádra. */
+void test_coverage_start_invalid(void) {
+    static const char *const bad[] = {
+        "{\"level\":\"full\"}",
+        "{\"key\":\"bytes\"}",
+        "{\"capacity\":0}",
+        "{\"capacity\":1048577}",
+        "{\"reset\":1}",
+        "{\"level\":7}",
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(bad); i++) {
+        dispatch_stub_reset();
+        en_MCP_DISPATCH_RESULT rc;
+        JsonParser *parser = NULL;
+        char *resp = NULL;
+        gchar *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":9410,"
+                                      "\"cmd\":\"coverage_start\",\"data\":%s}", bad[i]);
+        (void)_rc_call(line, &rc, &parser, &resp);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, rc, bad[i]);
+        TEST_ASSERT_EQUAL_INT(0, g_stub_state.cov_calls);
+        free(resp);
+        g_free(line);
+    }
+}
+
+
+/** @brief Všechny řádky coverage_read jako JSON pole (stránkami po @p limit). */
+static JsonArray *_cov_read_all(const char *columns, const char *filter, int limit) {
+    JsonArray *all = json_array_new();
+    gchar *cursor = NULL;
+    for (int guard = 0; guard < 100; guard++) {
+        en_MCP_DISPATCH_RESULT rc;
+        JsonParser *parser = NULL;
+        char *resp = NULL;
+        gchar *cur = cursor ? g_strdup_printf(",\"cursor\":\"%s\"", cursor) : g_strdup("");
+        gchar *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":9420,\"cmd\":\"coverage_read\","
+                                      "\"data\":{\"limit\":%d%s%s%s%s%s}}", limit,
+                                      columns ? ",\"columns\":" : "", columns ? columns : "",
+                                      filter ? ",\"filter\":" : "", filter ? filter : "", cur);
+        JsonObject *d = _rc_call(line, &rc, &parser, &resp);
+        g_free(line);
+        g_free(cur);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_OK, rc, resp);
+        JsonArray *rows = json_object_get_array_member(d, "rows");
+        for (guint i = 0; i < json_array_get_length(rows); i++) {
+            json_array_add_element(all, json_node_copy(json_array_get_element(rows, i)));
+        }
+        g_free(cursor);
+        cursor = g_strdup(json_object_get_string_member(d, "next_cursor"));
+        gboolean end = json_object_get_boolean_member(d, "end_of_data");
+        g_object_unref(parser);
+        free(resp);
+        if (end) break;
+    }
+    g_free(cursor);
+    return all;
+}
+
+
+/** @brief Hodnota sloupce @p col řádku @p row (pole). */
+static JsonNode *_cov_cell(JsonArray *rows, guint row, guint col) {
+    return json_array_get_element(json_array_get_array_element(rows, row), col);
+}
+
+
+/**
+ * @brief coverage_read úrovně branch: stavy, epocha, filtry, stránkování po 1.
+ */
+void test_coverage_read_branch(void) {
+    dispatch_stub_reset();
+    g_stub_state.cov_level = COVERAGE_LEVEL_BRANCH;
+    JsonArray *rows = _cov_read_all(NULL, NULL, 1);
+    TEST_ASSERT_EQUAL_UINT(4, json_array_get_length(rows));
+    /* výchozí sloupce: pc, state, int_entry, first_epoch */
+    TEST_ASSERT_EQUAL_INT(0x1000, json_node_get_int(_cov_cell(rows, 0, 0)));
+    TEST_ASSERT_EQUAL_STRING("none", json_node_get_string(_cov_cell(rows, 0, 1)));
+    TEST_ASSERT_EQUAL_STRING("taken_only", json_node_get_string(_cov_cell(rows, 1, 1)));
+    TEST_ASSERT_EQUAL_INT(2, json_node_get_int(_cov_cell(rows, 2, 3)));
+    TEST_ASSERT_EQUAL_STRING("both", json_node_get_string(_cov_cell(rows, 3, 1)));
+    json_array_unref(rows);
+
+    rows = _cov_read_all("[\"pc\"]", "{\"state\":\"partial\"}", 100);
+    TEST_ASSERT_EQUAL_UINT(1, json_array_get_length(rows));
+    TEST_ASSERT_EQUAL_INT(0x1001, json_node_get_int(_cov_cell(rows, 0, 0)));
+    json_array_unref(rows);
+
+    rows = _cov_read_all("[\"pc\"]", "{\"new_since_epoch\":2}", 100);
+    TEST_ASSERT_EQUAL_UINT(1, json_array_get_length(rows));
+    TEST_ASSERT_EQUAL_INT(0x1002, json_node_get_int(_cov_cell(rows, 0, 0)));
+    json_array_unref(rows);
+}
+
+
+/**
+ * @brief coverage_read úrovně detail: řazení (PC, buňka), filtr prostoru,
+ *        operand, příznaky; stránkování po 1 uvnitř téže adresy.
+ */
+void test_coverage_read_detail(void) {
+    dispatch_stub_reset();
+    g_stub_state.cov_level = COVERAGE_LEVEL_DETAIL;
+    JsonArray *rows = _cov_read_all("[\"pc\",\"space\",\"key\",\"exec\",\"state\",\"operand\",\"flags\"]", NULL, 1);
+    TEST_ASSERT_EQUAL_UINT(4, json_array_get_length(rows));
+    TEST_ASSERT_EQUAL_INT(0x1000, json_node_get_int(_cov_cell(rows, 0, 0)));
+    TEST_ASSERT_EQUAL_STRING("3E", json_node_get_string(_cov_cell(rows, 0, 2)));
+    TEST_ASSERT_EQUAL_INT(5, json_node_get_int(_cov_cell(rows, 0, 5)));
+    TEST_ASSERT_EQUAL_STRING("operand_varied",
+        json_array_get_string_element(json_node_get_array(_cov_cell(rows, 0, 6)), 0));
+    TEST_ASSERT_EQUAL_INT(0x1003, json_node_get_int(_cov_cell(rows, 2, 0)));
+    TEST_ASSERT_EQUAL_STRING("ram", json_node_get_string(_cov_cell(rows, 2, 1)));
+    TEST_ASSERT_EQUAL_INT(4, json_node_get_int(_cov_cell(rows, 2, 3)));
+    TEST_ASSERT_EQUAL_STRING("rom", json_node_get_string(_cov_cell(rows, 3, 1)));
+    TEST_ASSERT_EQUAL_STRING("both", json_node_get_string(_cov_cell(rows, 3, 4)));
+    json_array_unref(rows);
+
+    rows = _cov_read_all("[\"pc\",\"exec\"]", "{\"space\":\"rom\"}", 100);
+    TEST_ASSERT_EQUAL_UINT(1, json_array_get_length(rows));
+    TEST_ASSERT_EQUAL_INT(2, json_node_get_int(_cov_cell(rows, 0, 1)));
+    json_array_unref(rows);
+}
+
+
+/** @brief coverage_read: neznámý sloupec, filtr space u branch, kurzor jiné generace. */
+void test_coverage_read_errors(void) {
+    struct { en_COVERAGE_LEVEL level; const char *data; const char *want; } cases[] = {
+        { COVERAGE_LEVEL_BRANCH, "{\"columns\":[\"key\"]}", "unknown column 'key'" },
+        { COVERAGE_LEVEL_BRANCH, "{\"filter\":{\"space\":\"ram\"}}", "filter space needs level detail" },
+        { COVERAGE_LEVEL_DETAIL, "{\"filter\":{\"state\":\"half\"}}", "unknown state" },
+        { COVERAGE_LEVEL_DETAIL, "{\"limit\":0}", "limit must be 1..5000" },
+        { COVERAGE_LEVEL_DETAIL, "{\"cursor\":\"x\"}", "invalid cursor" },
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(cases); i++) {
+        dispatch_stub_reset();
+        g_stub_state.cov_level = cases[i].level;
+        en_MCP_DISPATCH_RESULT rc;
+        JsonParser *parser = NULL;
+        char *resp = NULL;
+        gchar *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":9430,"
+                                      "\"cmd\":\"coverage_read\",\"data\":%s}", cases[i].data);
+        (void)_rc_call(line, &rc, &parser, &resp);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, rc, cases[i].data);
+        gchar *e = _cov_error_text(resp);
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(e, cases[i].want), e);
+        g_free(e);
+        free(resp);
+        g_free(line);
+    }
+
+    /* Kurzor jiné generace dat (stub hlásí 5). */
+    dispatch_stub_reset();
+    char *cur = trace_cursor_encode("coverage", 4, 0);
+    gchar *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":9431,"
+                                  "\"cmd\":\"coverage_read\",\"data\":{\"cursor\":\"%s\"}}", cur);
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    (void)_rc_call(line, &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    gchar *e = _cov_error_text(resp);
+    TEST_ASSERT_TRUE_MESSAGE(g_str_has_prefix(e, "segment_replaced:"), e);
+    g_free(e);
+    free(resp);
+    g_free(line);
+    g_free(cur);
+}
+
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -9106,6 +9333,11 @@ int main(void) {
     RUN_TEST(test_step_completed_flags);
     RUN_TEST(test_mem_read_sha256_and_want_data);
     RUN_TEST(test_mem_read_full_64k);
+    RUN_TEST(test_coverage_start_params);
+    RUN_TEST(test_coverage_start_invalid);
+    RUN_TEST(test_coverage_read_branch);
+    RUN_TEST(test_coverage_read_detail);
+    RUN_TEST(test_coverage_read_errors);
     RUN_TEST(test_frame_hash_submits);
     RUN_TEST(test_replay_record_start_params);
     RUN_TEST(test_replay_play_and_stop_modes);

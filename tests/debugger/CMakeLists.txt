@@ -391,6 +391,25 @@ mz_add_test(profiler_pc
     LABELS   "emu;debugger"
 )
 
+# Pokrytí kódu, dekodér kroku Z80 (coverage_decode.h): délky a výsledky
+# podmínek proti skutečnému kroku jádra z80_step a proti z80_dasm.
+mz_add_test(coverage_decode
+    TYPE     STANDALONE
+    SOURCES  test_coverage_decode.c
+             ${CMAKE_SOURCE_DIR}/src/emulator/debugger/coverage/coverage_decode.c
+    LIBS     mzlib_cpu_z80 mzlib_dasm_z80
+    LABELS   "standalone;debugger"
+)
+
+# Pokrytí kódu, jádro (coverage.h): úrovně branch a detail nad syntetickými
+# kroky - stavy větví, verze kódu, kapacita, nečinný HALT, epochy.
+mz_add_test(coverage
+    TYPE     STANDALONE
+    SOURCES  test_coverage.c
+             ${CMAKE_SOURCE_DIR}/src/emulator/debugger/coverage/coverage_decode.c
+    LABELS   "standalone;debugger"
+)
+
 mz_add_test(mhmap_resolve
     TYPE     EMU
     SOURCES  test_mhmap_resolve.c

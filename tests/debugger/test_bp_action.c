@@ -26,6 +26,7 @@
 #include "debugger/symbols/sym_db.h"
 #include "emulator/emulator.h"     /* g_emulator.paused - gating snapshotu */
 #include "debugger/trace/ramlog.h" /* ramlog_start/stop: stav záznamu zápisů */
+#include "debugger/coverage/coverage_hook.h" /* coverage_start/stop/mark: stav pokrytí */
 #include "hw-generic/memory/memory.h" /* memory_write_byte_no_bp - zápis přes debugger cestu */
 #include "libs/cpu-z80/z80.h"
 
@@ -875,6 +876,37 @@ static void test_fwd_ramlog_execute ( void ) {
     ramlog_free ( );
 }
 
+/* --- coverage --- */
+/**
+ * @brief coverage_start [branch|detail], coverage_stop, coverage_mark:
+ *        parsování a provedení (úroveň, maska háčků, epocha).
+ */
+static void test_fwd_coverage ( void ) {
+    assert_parse_ok ( "coverage_start" );
+    assert_parse_ok ( "coverage_start branch" );
+    assert_parse_ok ( "coverage_start detail" );
+    assert_parse_ok ( "coverage_stop" );
+    assert_parse_ok ( "coverage_mark" );
+    assert_parse_fails ( "coverage_start full" );
+    assert_parse_fails ( "coverage_start detail 5" );
+
+    st_COVERAGE_STATUS st;
+    exec_action ( "coverage_start detail" );
+    coverage_get_status ( &st );
+    TEST_ASSERT_TRUE ( st.active );
+    TEST_ASSERT_EQUAL_INT ( COVERAGE_LEVEL_DETAIL, st.level );
+    TEST_ASSERT_TRUE ( g_mzarch_post_insn_hooks & MZARCH_POST_INSN_COVERAGE );
+    exec_action ( "coverage_mark" );
+    coverage_get_status ( &st );
+    TEST_ASSERT_EQUAL_UINT32 ( 1, st.epoch );
+    exec_action ( "coverage_stop" );
+    coverage_get_status ( &st );
+    TEST_ASSERT_FALSE ( st.active );
+    TEST_ASSERT_TRUE ( st.has_data );
+    TEST_ASSERT_FALSE ( g_mzarch_post_insn_hooks & MZARCH_POST_INSN_COVERAGE );
+    coverage_free ( );
+}
+
 /* --- chybové stavy --- */
 static void test_fwd_parse_errors ( void ) {
     /* trace bez kanálu / neznámý kanál. */
@@ -1231,6 +1263,7 @@ int main ( int argc, char *argv[] ) {
     RUN_TEST ( test_fwd_snapshot_parse );
     RUN_TEST ( test_fwd_ramlog_parse );
     RUN_TEST ( test_fwd_ramlog_execute );
+    RUN_TEST ( test_fwd_coverage );
     RUN_TEST ( test_fwd_parse_errors );
     RUN_TEST ( test_fwd_classify_continue );
     RUN_TEST ( test_fwd_vision_0017_combo_parse );

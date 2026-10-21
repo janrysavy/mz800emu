@@ -43,11 +43,12 @@ BP, který zaloguje a zastaví: `log "A=%X", A; stop`, nebo kratší
 
 ## Příkazy
 
-Action mini-DSL poskytuje 24 příkazů: 13 základních (log, continue,
+Action mini-DSL poskytuje 27 příkazů: 13 základních (log, continue,
 disable_self, enable, disable, poke, set, mark, přiřazení `$name`,
-clear_vars, if, stop, exit) a 11 forward příkazů pro řízení záznamu (cdl_start, cdl_stop,
+clear_vars, if, stop, exit) a 14 forward příkazů pro řízení záznamu (cdl_start, cdl_stop,
 cdl_reset, cdl_export, trace_start, trace_stop, trace_save, snapshot,
-ramlog_start, ramlog_stop, ramlog_clear - viz sekce "Forward příkazy"
+ramlog_start, ramlog_stop, ramlog_clear, coverage_start, coverage_stop,
+coverage_mark - viz sekce "Forward příkazy"
 níže).
 
 ### `log "fmt"[, expr...]`
@@ -421,6 +422,24 @@ ramlog_stop
 Funkce výrazu `lastwriter(addr)` vrací adresu instrukce, která naposledy
 zapsala buňku na `addr`, např.
 `if lastwriter(0x4000) == 0x3009 then ramlog_stop`.
+
+### `coverage_start [branch|detail]`, `coverage_stop`, `coverage_mark`
+
+Ovládají pokrytí kódu (které instrukce se vykonaly a kterým směrem šly
+podmíněné skoky; čte se přes MCP, viz nástroje `emu_coverage_*`
+v [Přehledu MCP nástrojů](../../mcp-server/tools-overview.md)).
+`coverage_start` bez argumentu sbírá úroveň `branch`, `coverage_start
+detail` úroveň `detail`; data sebraná dřív se stejným nastavením se
+doplňují. `coverage_stop` sběr zastaví (data zůstanou čitelná),
+`coverage_mark` začne novou epochu, takže lze vypsat kód, který se poprvé
+vykonal až po značce.
+
+```
+coverage_start
+coverage_start detail
+coverage_mark
+coverage_stop
+```
 
 Všechny šablony názvu (`cdl_export` / `trace_save` / `snapshot`) sdílejí
 stejný renderer jako `log`, takže lze generovat číslované soubory pomocí

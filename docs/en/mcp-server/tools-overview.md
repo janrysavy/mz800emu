@@ -107,6 +107,13 @@ documented separately in [Resources overview](resources-overview.md).
 | `emu_profiler_pc_get` | no | Busiest instruction addresses with the nearest symbol (sort, limit, address range) |
 | `emu_profiler_pc_export` | no | All executed addresses to a CSV file |
 | `emu_profiler_pc_bitmap` | no | Executed addresses as an 8 KiB base64 bitmap (code coverage) |
+| `emu_coverage_start` | no | Start code coverage: level `branch` (by PC) or `detail` (by physical cell and code version) |
+| `emu_coverage_stop` | no | Stop code coverage (data stay readable) |
+| `emu_coverage_reset` | no | Clear the code coverage data |
+| `emu_coverage_status` | no | Code coverage state, completeness and branch summary |
+| `emu_coverage_mark` | no | New coverage epoch (what runs for the first time after the mark) |
+| `emu_coverage_read` | no | Page of coverage rows: branch states, counters, code versions (cursor, filter, character budget) |
+| `emu_coverage_export` | no | All coverage rows into a JSON or CSV file |
 | `emu_audio_capture_start` | yes (creates files) | Audio capture into a folder and/or memory: channel level changes, PSG writes, reference.wav and sdl.wav (frames, file selection, memory, pcm) |
 | `emu_audio_capture_stop` | no | Stop the audio capture and finish its files |
 | `emu_audio_capture_status` | no | Audio capture status (frames, events, PSG writes, samples, SDL blocks, folder, stop reason, memory) |
@@ -1764,6 +1771,103 @@ Operand bytes get no bit, an idle HALT adds nothing, a block instruction
 marks its start; memory banks and versions of self-modified code at one
 address are not told apart. Works while collecting and after
 `emu_profiler_pc_stop`; it neither pauses nor advances the emulation.
+
+## Code coverage tools
+
+Code coverage answers which instructions ran, which way every
+conditional instruction went (`JR` / `JP` / `CALL` / `RET` with a
+condition, `DJNZ`, `LDIR` / `CPIR` / `INIR` / `OTIR` and the
+decrementing forms) and, at the `detail` level, which version of the
+code ran where. The result of a condition is derived from the CPU state
+after the step (flags, B, PC back on a repeating block instruction), so
+`JR Z,$+2` counts correctly although both results end at the same
+address.
+
+- `branch` - by logical PC: executed addresses, conditional
+  instructions and their results, first instruction of an interrupt
+  handler. Measured cost in MAX SPEED: about +16 to +29 % emulation time.
+- `detail` - adds one unit per (physical cell of the first byte, PC,
+  code version) with counters `exec`, `taken`, `not_taken`, the last
+  operand and the last next PC. The same PC in RAM and ROM, or in
+  another MemExt bank, is a different unit; a self-modified operand
+  stays one unit flagged `operand_varied` (key `opcode`), with key
+  `full_bytes` every operand value is its own unit. The bytes are taken
+  as the CPU fetched them, which needs the slower memory path.
+  Measured cost: about +78 to +115 % emulation time.
+- An idle HALT is not counted; reset, snapshot load and replay seek /
+  rewind keep the data and increase `discontinuities`.
+- The same collection can be started from the command line
+  (`--coverage`, `--coverage-save-on-exit`, see
+  [Headless mode](headless-mode.md)), from the INI section `[COVERAGE]`
+  and from a breakpoint action (`coverage_start`, `coverage_stop`,
+  `coverage_mark`).
+
+Recipe for AI clients: `emulator://docs/coverage`.
+
+Typical use:
+
+```
+emu_coverage_start(level="branch", reset=true)
+emu_run(frames=500)
+emu_coverage_read(filter={"state": "partial"})   # branches that went one way only
+emu_coverage_stop()
+```
+
+All tools return the status `{"active", "has_data", "level", "key",
+"reset_on_discontinuity", "complete", "units", "capacity", "dropped",
+"fetch_fallback", "saturated", "discontinuities", "host_state_edits",
+"epoch", "generation", "instructions", "halt_idle", "branches":
+{"decisions", "both", "taken_only", "not_taken_only"}}` (plus the fields
+below). `complete` is false when a unit did not fit (`dropped`), a byte
+was not in the fetch record (`fetch_fallback`) or a counter saturated.
+
+### `emu_coverage_start`
+
+Arguments (all optional): `level` (`branch` default, `detail`), `key`
+(`opcode` default, `full_bytes`; detail only), `capacity` (detail units,
+1..1048576, default 65536, 32 bytes each), `reset` (default false:
+continue existing data with the same settings), `reset_on_discontinuity`
+(default false).
+
+### `emu_coverage_stop`, `emu_coverage_reset`, `emu_coverage_status`
+
+Stop collecting (data stay readable) / clear the data (new
+`generation`, collection continues if it ran) / status only.
+
+### `emu_coverage_mark`
+
+Start a new epoch; the status carries its number in `epoch`. Every
+address and unit remembers the epoch in which it first ran.
+
+### `emu_coverage_read`
+
+A page of rows sorted by PC. Rows are arrays in the order of `columns`.
+
+- `branch` rows (executed addresses): `pc`, `state`, `int_entry`,
+  `first_epoch`.
+- `detail` rows (units): `pc`, `space` (`ram`, `memext`, `rom`, `vram`,
+  `pcg`, `bus` = no physical cell, offset is the CPU address), `offset`,
+  `key` (opcode bytes in hex), `len`, `exec`, `taken`, `not_taken`,
+  `state`, `operand` (null without an operand), `next_pc`,
+  `first_epoch`, `flags`.
+- `state`: `none` (not conditional), `unobserved`, `taken_only`,
+  `not_taken_only`, `both`.
+
+Arguments: `cursor` (`next_cursor` of the previous page), `columns`,
+`filter` (`pc_from`, `pc_to`, `space`, `state` - one name or a list,
+also `partial` and `decision` -, `new_since_epoch`, `flags`), `limit`
+(1..5000, default 500), `max_chars` (1000..45000, default 20000). Adds
+`columns`, `rows`, `returned`, `page_full`, `end_of_data` and
+`next_cursor`. After `emu_coverage_reset` or a new start an older
+cursor fails with `segment_replaced:`.
+
+### `emu_coverage_export`
+
+All rows into a file. Arguments: `path` (required, overwritten; the
+folder must exist) and `format` (`json` default, `csv`). JSON:
+`{"format": "mz800emu-coverage/1", "status", "columns", "rows":
+[{...}]}`; CSV: header with the column names, flags separated by `|`.
+Adds `path`, `format` and `rows`.
 
 ## Audio capture tools
 

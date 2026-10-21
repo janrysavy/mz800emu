@@ -59,6 +59,7 @@
 #include "debugger/trace/cputrack.h"
 #include "debugger/trace/ramlog.h"
 #include "debugger/profiler_pc.h"
+#include "debugger/coverage/coverage_hook.h"
 #include "debugger/trace/intlog.h"
 #include "debugger/trace/eventlog.h"
 #include "debugger/callstack.h"
@@ -81,6 +82,23 @@
 #define iface_sdl_update_window_in_beam_interval(a, b)
 
 st_mzarch_main g_mzarch_main;
+
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+uint32_t g_mzarch_post_insn_hooks = 0;
+
+
+void mzarch_post_insn_hooks_recompute(void)
+{
+    uint32_t mask = 0;
+    if (TEST_TRACE_CPUTRACK_ACTIVE)
+        mask |= MZARCH_POST_INSN_CPUTRACK;
+    if (TEST_PROFILER_PC_ACTIVE)
+        mask |= MZARCH_POST_INSN_PROFILER_PC;
+    if (g_coverage_active)
+        mask |= MZARCH_POST_INSN_COVERAGE;
+    g_mzarch_post_insn_hooks = mask;
+}
+#endif
 
 /*******************************************************************************
  *
@@ -894,6 +912,13 @@ static inline void mzarch_main_process_interrupt(void)
             {
                 cputrack_on_interrupt_accept((uint16_t)cpu->pc, (uint32_t)interrupt_tstates);
             };
+            /* Pokrytí kódu: první instrukce obsluhy (příští krok) dostane
+             * příznak INT_ENTRY. Cesta přijetí přerušení, ne instrukční
+             * smyčka (stejná výjimka jako ramlog výše). */
+            if (g_coverage_active)
+            {
+                g_coverage_pending_flags |= COVERAGE_F_INT_ENTRY;
+            };
 #endif
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
@@ -1300,6 +1325,9 @@ static void mzarch_main_reset(void)
     if ( g_bp_event_active[ BP_EVENT_CPU_RESET ] ) {
         bp_event_fire ( BP_EVENT_CPU_RESET, 0 );
     }
+    /* Pokrytí kódu: reset je nespojitost běhu (data se nemažou, jen se
+     * započte; s reset_on_discontinuity se smažou). */
+    coverage_note_discontinuity ( );
 #endif
 
     // TODO: tohle se nedeje
@@ -1366,25 +1394,36 @@ static void mzarch_main_reset(void)
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 /**
- * @brief Háčky po dokončení instrukce (cputrack, profiler podle PC).
+ * @brief Rozbočovač háčků po dokončení instrukce (cputrack, profiler podle PC, pokrytí kódu).
  *
- * Hlavní smyčka sem vstupuje jedinou podmínkou
- * `TEST_TRACE_CPUTRACK_ACTIVE | TEST_PROFILER_PC_ACTIVE`; teprve tady se
- * rozhoduje, který háček je aktivní. Atribut noinline drží tělo hlavní
- * smyčky kompaktní (viz cputrack.h @section hot_path_compactness).
+ * Hlavní smyčka sem vstupuje jedinou podmínkou `g_mzarch_post_insn_hooks`
+ * (maska MZARCH_POST_INSN_*); teprve tady se podle bitů rozhoduje, který
+ * háček je aktivní. Informaci o instrukci (st_MZARCH_INSN_INFO) spočítá
+ * jednou pro všechny konzumenty. Atribut noinline drží tělo hlavní smyčky
+ * kompaktní (viz cputrack.h @section hot_path_compactness).
  *
- * @param pc      Adresa začátku instrukce.
- * @param tstates T-stavy instrukce včetně WAIT.
- * @param wait    Čekací stavy instrukce.
+ * @param hooks   Kopie masky g_mzarch_post_insn_hooks z brány (nenulová).
+ *
+ * @pre Volá se z emu vlákna hned po z80_step(), před blokem událostí
+ *      (přijetí přerušení); cpu->pc je PC po kroku.
  */
 __attribute__((noinline))
-static void mzarch_main_post_instruction_hooks(uint16_t pc, uint32_t tstates, uint32_t wait)
+static void mzarch_main_post_instruction_hooks(uint32_t hooks)
 {
-    if ( TEST_TRACE_CPUTRACK_ACTIVE ) {
-        cputrack_hot_path_hook ( pc, tstates, wait );
+    const st_MZARCH_INSN_INFO insn = {
+        .pc = (uint16_t) g_mzarch_main.instruction_addr,
+        .next_pc = (uint16_t) g_mzarch_main.cpu->pc,
+        .tstates = (uint32_t) g_mzarch_main.instruction_tstates,
+        .wait = g_mzarch_main.instruction_wait_tstates,
+    };
+    if ( hooks & MZARCH_POST_INSN_CPUTRACK ) {
+        cputrack_hot_path_hook ( insn.pc, insn.tstates, insn.wait );
     }
-    if ( TEST_PROFILER_PC_ACTIVE ) {
-        profiler_pc_on_instruction ( pc, tstates, wait );
+    if ( hooks & MZARCH_POST_INSN_PROFILER_PC ) {
+        profiler_pc_on_instruction ( insn.pc, insn.tstates, insn.wait );
+    }
+    if ( hooks & MZARCH_POST_INSN_COVERAGE ) {
+        coverage_hook_on_instruction ( &insn );
     }
 }
 #endif
@@ -1585,24 +1624,23 @@ void mzarch_main(void)
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
         /* Háčky po instrukci (trace-suite cputrack, profiler podle PC) -
-         * 1 událost na dokončenou CPU instrukci. Oba příznaky se testují
-         * jedinou podmínkou (bitové OR, jedna větev), branch predictor se
-         * naučí "vždy false" v default OFF stavu. Detail v
+         * 1 událost na dokončenou CPU instrukci. Brána čte jedinou
+         * proměnnou, masku g_mzarch_post_insn_hooks (přepočítávanou při
+         * startu a stopu konzumentů), branch predictor se naučí "vždy
+         * false" v default OFF stavu. Detail v
          * docs/cz/debugger/Trace_Suite.md a profiler_pc.h.
          *
          * wait_extra_tstates = g_mzarch_main.instruction_wait_tstates,
          * akumulovany v INSIDEOP_MREQ_MZ700_VRAMCTRL a INSIDEOP_IORQ_PSG_WRITE
          * paths (jediná místa volající z80_add_wait_states v hot loop).
          * V T-states units (z80 ISA), saturated na 0xFFFFFFFF. */
-        if ( TEST_TRACE_CPUTRACK_ACTIVE | TEST_PROFILER_PC_ACTIVE ) {
+        uint32_t post_insn_hooks = g_mzarch_post_insn_hooks;
+        if ( post_insn_hooks ) {
             /* RPFIX: celá práce háčků je vynesena do NOINLINE helperu,
              * aby tělo této hot smyčky zůstalo kompaktní (stabilnější
              * code-layout / icache - viz cputrack.h @section hot_path_compactness).
              * V OFF stavu se sem řízení vůbec nedostane. */
-            mzarch_main_post_instruction_hooks (
-                (uint16_t) g_mzarch_main.instruction_addr,
-                (uint32_t) g_mzarch_main.instruction_tstates,
-                g_mzarch_main.instruction_wait_tstates );
+            mzarch_main_post_instruction_hooks ( post_insn_hooks );
         }
 
         /* D.4 - SP-change polling (SP_THRESHOLD BP + stack regions).

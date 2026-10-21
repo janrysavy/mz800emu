@@ -38,6 +38,9 @@
  *   ramlog_start [from, to]  - spustit záznam zápisů do paměti (bez argumentů
  *                              celá paměť; výrazy se vyhodnotí při hitu)
  *   ramlog_stop / ramlog_clear - zastavit / vyprázdnit záznam zápisů
+ *   coverage_start [branch|detail] - spustit pokrytí kódu (bez argumentu branch,
+ *                              pokračuje do stávajících dat)
+ *   coverage_stop / coverage_mark - zastavit pokrytí / nová epocha (značka)
  *   stop ["fmt" [, args]]    - zastavit emulaci (BP stop), volitelná hláška
  *                              na stdout jako u log ("[BP-STOP] ...")
  *   exit <expr> [, "fmt" [, args]] - konec běhu s kódem <expr> (0-255,

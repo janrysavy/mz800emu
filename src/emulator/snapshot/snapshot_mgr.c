@@ -29,6 +29,7 @@
 #include <time.h>
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "debugger/trace/ramlog.h"
+#include "debugger/coverage/coverage.h"
 #endif
 
 
@@ -612,6 +613,9 @@ static en_SNAPSHOT_RESULT snapshot_load_through_io(snapshot_io_t *io)
     /* Záznam zápisů: záznamy patří k předchozímu stavu - vyprázdnit (nový
      * segment, běžící záznam pokračuje). */
     ramlog_clear();
+    /* Pokrytí kódu: načtení snapshotu (i rewind a seek přehrávání) je
+     * nespojitost běhu; data se nemažou, jen se započte. */
+    coverage_note_discontinuity();
 #endif
 
     return SNAPSHOT_OK;

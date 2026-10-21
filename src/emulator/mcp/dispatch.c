@@ -63,6 +63,8 @@
 #include "../audio_capture.h"
 #include "../audio_analysis.h"
 #include "../debugger/trace/ramlog_hook.h"
+#include "../debugger/coverage/coverage.h"
+#include "../debugger/coverage/coverage_export.h"
 #include "../debugger/memsearch/memsearch.h"
 #include "../debugger/run_control/run_log.h"
 #include "../state_hash.h"
@@ -781,6 +783,14 @@ static en_MCP_DISPATCH_RESULT _handle_get_cpu_panel_batch(
 /* observe-cas (M10) - konzistentní čtení registrů a oken paměti */
 static en_MCP_DISPATCH_RESULT _handle_state_observe(
     const st_JSONL_MESSAGE *req, char **out_response);
+/* coverage (M11) - pokrytí kódu */
+static en_MCP_DISPATCH_RESULT _handle_coverage_start(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_coverage_stop(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_coverage_reset(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_coverage_status(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_coverage_mark(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_coverage_read(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_coverage_export(const st_JSONL_MESSAGE *req, char **out_response);
 /* V1.E.3 - debugger state Tools (Commit 1: 3 Tools) */
 static en_MCP_DISPATCH_RESULT _handle_debugger_activate(
     const st_JSONL_MESSAGE *req, char **out_response);
@@ -1255,6 +1265,16 @@ static const st_MCP_CMD_MAP_ENTRY g_cmd_map[] = {
     /* observe-cas (M10 debug-gaps) - registry, příznaky a okna paměti
      * z jednoho okamžiku (jeden průchod fronty dbgapi). */
     { "state_observe",            DBGAPI_CMD_STATE_OBSERVE,           _handle_state_observe            },
+    /* coverage (M11 debug-gaps) - pokrytí kódu (instrukce, větve, verze
+     * kódu). Přidáno na KONEC tabulky kvůli stabilitě pozičního indexu
+     * v hello supported_commands. */
+    { "coverage_start",           DBGAPI_CMD_COVERAGE,                _handle_coverage_start           },
+    { "coverage_stop",            DBGAPI_CMD_COVERAGE,                _handle_coverage_stop            },
+    { "coverage_reset",           DBGAPI_CMD_COVERAGE,                _handle_coverage_reset           },
+    { "coverage_status",          DBGAPI_CMD_COVERAGE,                _handle_coverage_status          },
+    { "coverage_mark",            DBGAPI_CMD_COVERAGE,                _handle_coverage_mark            },
+    { "coverage_read",            DBGAPI_CMD_COVERAGE,                _handle_coverage_read            },
+    { "coverage_export",          DBGAPI_CMD_COVERAGE,                _handle_coverage_export          },
     /* sentinel */
     { NULL,              DBGAPI_CMD_NONE,              NULL                  },
 };
@@ -19020,5 +19040,443 @@ static en_MCP_DISPATCH_RESULT _handle_replay_status(const st_JSONL_MESSAGE *req,
     st_REPLAY_STATUS st;
     replay_get_status(&st);
     return _ok_response(req_id, _replay_status_to_json(&st), out_response);
+}
+
+
+/* ---------------- Pokrytí kódu (coverage, M11 debug-gaps) ---------------- */
+
+/** @brief Výchozí počet řádků stránky coverage_read. */
+#define COVERAGE_READ_DEFAULT_LIMIT 500
+/** @brief Nejvyšší počet řádků stránky coverage_read. */
+#define COVERAGE_READ_MAX_LIMIT 5000
+/** @brief Rezerva znaků na obálku stránky (stav, kurzor) nad řádky. */
+#define COVERAGE_READ_ENVELOPE_CHARS 600
+
+/** @brief Filtr coverage_read (naparsovaný). */
+typedef struct st_COV_FILTER {
+    uint16_t pc_from;       /**< Nejnižší adresa (včetně). */
+    uint16_t pc_to;         /**< Nejvyšší adresa (včetně). */
+    bool has_space;         /**< Filtr prostoru buňky (detail). */
+    uint8_t space;          /**< Prostor (coverage_space_parse). */
+    unsigned state_mask;    /**< Bity COVERAGE_STATE_*, 0 = všechny stavy. */
+    bool has_epoch;         /**< Filtr epochy vzniku. */
+    uint32_t epoch_from;    /**< first_epoch >= epoch_from. */
+    uint16_t flags_any;     /**< Řádek musí mít aspoň jeden z příznaků (0 = bez filtru). */
+} st_COV_FILTER;
+
+/**
+ * @brief Provede DBGAPI_CMD_COVERAGE.
+ * @return false = příkaz se nepodařilo předat; jinak true a chyba operace v p->out_error.
+ */
+static bool _cov_submit(st_DBGAPI_COVERAGE_PARAM *p) {
+    p->out_error[0] = '\0';
+    bool ok = _submit_dbgapi(DBGAPI_CMD_COVERAGE, p, NULL);
+    return ok || p->out_error[0];
+}
+
+/** @brief Provede operaci bez dat a odpoví stavem (u MARK s novou `epoch`). */
+static en_MCP_DISPATCH_RESULT _cov_op_response(int64_t req_id, st_DBGAPI_COVERAGE_PARAM *p,
+                                               char **out_response) {
+    if (!_cov_submit(p)) {
+        return _err_response(req_id, "coverage command failed", MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    if (p->out_error[0]) {
+        return _err_response(req_id, p->out_error, MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    return _ok_response(req_id, coverage_status_to_json(&p->out_status), out_response);
+}
+
+/**
+ * @brief `coverage_start` handler - spustí sběr pokrytí kódu.
+ *
+ * Parametry (volitelné): `level` ("branch" výchozí | "detail"), `key`
+ * ("opcode" výchozí | "full_bytes", jen detail), `capacity` (1..1048576
+ * jednotek, výchozí 65536, jen detail), `reset` (bool, výchozí false =
+ * pokračovat do stávajících dat se stejným nastavením),
+ * `reset_on_discontinuity` (bool, výchozí false). Response: stav.
+ */
+static en_MCP_DISPATCH_RESULT _handle_coverage_start(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_COVERAGE_OP_START;
+    p.cfg.level = COVERAGE_LEVEL_BRANCH;
+    p.cfg.key = COVERAGE_KEY_OPCODE;
+    p.cfg.capacity = COVERAGE_DEFAULT_CAPACITY;
+    int hl = _videorec_member(obj, "level", G_TYPE_STRING);
+    int hk = _videorec_member(obj, "key", G_TYPE_STRING);
+    int hc = _videorec_member(obj, "capacity", G_TYPE_INT64);
+    int hr = _videorec_member(obj, "reset", G_TYPE_BOOLEAN);
+    int hd = _videorec_member(obj, "reset_on_discontinuity", G_TYPE_BOOLEAN);
+    if (hl < 0 || hk < 0 || hc < 0 || hr < 0 || hd < 0) {
+        return _err_response(req_id, "Invalid parameters: level and key must be strings, capacity an integer, "
+                             "reset and reset_on_discontinuity booleans",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (hl) {
+        const char *l = json_object_get_string_member(obj, "level");
+        if (g_strcmp0(l, "branch") == 0) p.cfg.level = COVERAGE_LEVEL_BRANCH;
+        else if (g_strcmp0(l, "detail") == 0) p.cfg.level = COVERAGE_LEVEL_DETAIL;
+        else return _err_response(req_id, "Invalid parameters: level must be branch or detail",
+                                  MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (hk) {
+        const char *k = json_object_get_string_member(obj, "key");
+        if (g_strcmp0(k, "opcode") == 0) p.cfg.key = COVERAGE_KEY_OPCODE;
+        else if (g_strcmp0(k, "full_bytes") == 0) p.cfg.key = COVERAGE_KEY_FULL_BYTES;
+        else return _err_response(req_id, "Invalid parameters: key must be opcode or full_bytes",
+                                  MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (hc) {
+        gint64 c = json_object_get_int_member(obj, "capacity");
+        if (c < 1 || c > (gint64)COVERAGE_MAX_CAPACITY) {
+            return _err_response(req_id, "Invalid parameters: capacity must be 1..1048576",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        p.cfg.capacity = (uint32_t)c;
+    }
+    p.reset = hr ? json_object_get_boolean_member(obj, "reset") : false;
+    p.cfg.reset_on_discontinuity = hd ? json_object_get_boolean_member(obj, "reset_on_discontinuity") : false;
+    return _cov_op_response(req_id, &p, out_response);
+}
+
+/** @brief `coverage_stop` handler - zastaví sběr, data zůstanou čitelná. */
+static en_MCP_DISPATCH_RESULT _handle_coverage_stop(const st_JSONL_MESSAGE *req, char **out_response) {
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_COVERAGE_OP_STOP;
+    return _cov_op_response(jsonl_msg_get_req_id(req), &p, out_response);
+}
+
+/** @brief `coverage_reset` handler - smaže data (nová generace), sběr běží dál, pokud běžel. */
+static en_MCP_DISPATCH_RESULT _handle_coverage_reset(const st_JSONL_MESSAGE *req, char **out_response) {
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_COVERAGE_OP_RESET;
+    return _cov_op_response(jsonl_msg_get_req_id(req), &p, out_response);
+}
+
+/** @brief `coverage_status` handler - stav sběru a úplnost dat. */
+static en_MCP_DISPATCH_RESULT _handle_coverage_status(const st_JSONL_MESSAGE *req, char **out_response) {
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_COVERAGE_OP_STATUS;
+    return _cov_op_response(jsonl_msg_get_req_id(req), &p, out_response);
+}
+
+/** @brief `coverage_mark` handler - nová epocha; stav obsahuje její číslo (`epoch`). */
+static en_MCP_DISPATCH_RESULT _handle_coverage_mark(const st_JSONL_MESSAGE *req, char **out_response) {
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_COVERAGE_OP_MARK;
+    return _cov_op_response(jsonl_msg_get_req_id(req), &p, out_response);
+}
+
+/**
+ * @brief Snímek dat pokrytí z emu vlákna.
+ * @return Nový snímek (_cov_snapshot_free()), nebo NULL při chybě.
+ */
+static st_COVERAGE_SNAPSHOT *_cov_snapshot(void) {
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_COVERAGE_OP_SNAPSHOT;
+    p.snap = g_new0(st_COVERAGE_SNAPSHOT, 1);
+    if (!_cov_submit(&p) || p.out_error[0]) {
+        coverage_snapshot_clear(p.snap);
+        g_free(p.snap);
+        return NULL;
+    }
+    return p.snap;
+}
+
+/** @brief Uvolní snímek z _cov_snapshot(). */
+static void _cov_snapshot_free(st_COVERAGE_SNAPSHOT *s) {
+    if (!s) return;
+    coverage_snapshot_clear(s);
+    g_free(s);
+}
+
+/**
+ * @brief Naparsuje filtr coverage_read.
+ * @param fo     Objekt `filter` (smí být NULL).
+ * @param detail Data jsou úrovně detail (filtr `space` jinak nedává smysl).
+ * @param out    Výstup.
+ * @return NULL OK, jinak statická chybová zpráva.
+ */
+static const char *_cov_parse_filter(JsonObject *fo, bool detail, st_COV_FILTER *out) {
+    memset(out, 0, sizeof(*out));
+    out->pc_to = 0xFFFF;
+    if (!fo) return NULL;
+    int hf = _videorec_member(fo, "pc_from", G_TYPE_INT64);
+    int ht = _videorec_member(fo, "pc_to", G_TYPE_INT64);
+    int hs = _videorec_member(fo, "space", G_TYPE_STRING);
+    int he = _videorec_member(fo, "new_since_epoch", G_TYPE_INT64);
+    if (hf < 0 || ht < 0 || hs < 0 || he < 0) {
+        return "pc_from, pc_to and new_since_epoch must be integers, space a string";
+    }
+    gint64 from = hf ? json_object_get_int_member(fo, "pc_from") : 0;
+    gint64 to = ht ? json_object_get_int_member(fo, "pc_to") : 0xFFFF;
+    if (from < 0 || to < from || to > 0xFFFF) return "filter must satisfy 0 <= pc_from <= pc_to <= 65535";
+    out->pc_from = (uint16_t)from;
+    out->pc_to = (uint16_t)to;
+    if (hs) {
+        if (!detail) return "filter space needs level detail";
+        if (!coverage_space_parse(json_object_get_string_member(fo, "space"), &out->space)) {
+            return "space must be ram, vram, pcg, memext, rom or bus";
+        }
+        out->has_space = true;
+    }
+    if (he) {
+        gint64 e = json_object_get_int_member(fo, "new_since_epoch");
+        if (e < 0 || e > COVERAGE_EPOCH_MAX) return "new_since_epoch must be 0..65535";
+        out->has_epoch = true;
+        out->epoch_from = (uint32_t)e;
+    }
+    if (json_object_has_member(fo, "state") && !json_node_is_null(json_object_get_member(fo, "state"))) {
+        JsonNode *sn = json_object_get_member(fo, "state");
+        if (JSON_NODE_HOLDS_VALUE(sn) && json_node_get_value_type(sn) == G_TYPE_STRING) {
+            out->state_mask = coverage_state_bits(json_node_get_string(sn));
+            if (!out->state_mask) return "unknown state (none, unobserved, taken_only, not_taken_only, both, partial, decision)";
+        } else if (JSON_NODE_HOLDS_ARRAY(sn)) {
+            JsonArray *a = json_node_get_array(sn);
+            for (guint i = 0; i < json_array_get_length(a); i++) {
+                JsonNode *e = json_array_get_element(a, i);
+                unsigned b = (JSON_NODE_HOLDS_VALUE(e) && json_node_get_value_type(e) == G_TYPE_STRING)
+                             ? coverage_state_bits(json_node_get_string(e)) : 0;
+                if (!b) return "unknown state (none, unobserved, taken_only, not_taken_only, both, partial, decision)";
+                out->state_mask |= b;
+            }
+        } else {
+            return "state must be a string or an array of strings";
+        }
+    }
+    if (json_object_has_member(fo, "flags") && !json_node_is_null(json_object_get_member(fo, "flags"))) {
+        JsonNode *fn = json_object_get_member(fo, "flags");
+        if (!JSON_NODE_HOLDS_ARRAY(fn)) return "flags must be an array of flag names";
+        JsonArray *a = json_node_get_array(fn);
+        for (guint i = 0; i < json_array_get_length(a); i++) {
+            JsonNode *e = json_array_get_element(a, i);
+            const char *nm = (JSON_NODE_HOLDS_VALUE(e) && json_node_get_value_type(e) == G_TYPE_STRING)
+                             ? json_node_get_string(e) : NULL;
+            uint16_t bit = coverage_flag_from_name(nm);
+            if (!bit) return "unknown flag name";
+            out->flags_any |= bit;
+        }
+    }
+    return NULL;
+}
+
+/** @brief Řádek vyhovuje filtru. */
+static bool _cov_row_match(const st_COVERAGE_SNAPSHOT *s, const st_COVERAGE_ROW *r, const st_COV_FILTER *f) {
+    if (r->pc < f->pc_from || r->pc > f->pc_to) return false;
+    if (f->has_space && (!r->unit || COVERAGE_CELL_SPACE(r->unit->cell) != f->space)) return false;
+    if (f->has_epoch && coverage_row_epoch(s, r) < f->epoch_from) return false;
+    if (f->state_mask && !(f->state_mask & coverage_state_bits(coverage_row_state(s, r)))) return false;
+    if (f->flags_any && !(f->flags_any & coverage_row_flags(s, r))) return false;
+    return true;
+}
+
+/** @brief Délka JSON textu uzlu (místo, které zabere ve stránce). */
+static size_t _cov_node_chars(JsonNode *n) {
+    gchar *t = json_to_string(n, FALSE);
+    size_t l = t ? strlen(t) : 0;
+    g_free(t);
+    return l;
+}
+
+/**
+ * @brief `coverage_read` handler - stránka řádků pokrytí.
+ *
+ * Řádek = adresa (úroveň branch, jen vykonané adresy) nebo jednotka
+ * (detail), seřazené podle PC (u detail dál podle buňky a klíče).
+ * Parametry: `cursor` (z `next_cursor`), `columns` (pole jmen, výchozí
+ * všechny sloupce úrovně), `filter` (`pc_from`, `pc_to`, `space`,
+ * `state`, `new_since_epoch`, `flags`), `limit` (1..5000, výchozí 500),
+ * `max_chars` (1000..45000, výchozí 20000). Kurzor má tvar `t1.` jako
+ * trace_read (kanál "coverage", segment = generace dat, seq = PC << 16 |
+ * pořadí řádku v rámci PC). Řádky přidané za běhu sběru na adresu před
+ * kurzorem se v dalších stránkách neobjeví (čtení od začátku je ukáže).
+ * Po coverage_reset nebo novém startu chyba `segment_replaced:`.
+ */
+static en_MCP_DISPATCH_RESULT _handle_coverage_read(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *d = _videorec_data_obj(req);
+    gint64 limit = _obj_int_or(d, "limit", COVERAGE_READ_DEFAULT_LIMIT);
+    if (limit < 1 || limit > COVERAGE_READ_MAX_LIMIT) {
+        return _err_response(req_id, "Invalid parameters: limit must be 1..5000", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    gint64 max_chars = _obj_int_or(d, "max_chars", TRACE_READ_DEFAULT_MAX_CHARS);
+    if (max_chars < 1000 || max_chars > TRACE_READ_MAX_MAX_CHARS) {
+        return _err_response(req_id, "Invalid parameters: max_chars must be 1000..45000", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    const char *cursor = (d && _obj_is_string(d, "cursor")) ? json_object_get_string_member(d, "cursor") : NULL;
+    bool have_cursor = cursor && cursor[0];
+    unsigned cur_gen = 0;
+    uint64_t cur_seq = 0;
+    if (have_cursor && !trace_cursor_decode(cursor, "coverage", &cur_gen, &cur_seq)) {
+        return _err_response(req_id, "Invalid parameters: invalid cursor", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+
+    st_COVERAGE_SNAPSHOT *snap = _cov_snapshot();
+    if (!snap) {
+        return _err_response(req_id, "coverage snapshot failed", MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    size_t n = 0, n_all = 0, n_cols = 0;
+    st_COVERAGE_ROW *rows = coverage_rows_build(snap, &n);
+    bool detail = (snap->status.level == COVERAGE_LEVEL_DETAIL);
+    const char *const *all = coverage_columns(snap->status.level, &n_all);
+    const char *perr = NULL;
+    char *owned_err = NULL;
+    const char **cols = NULL;
+    JsonObject *resp = NULL;
+
+    if (have_cursor && cur_gen != snap->status.generation) {
+        owned_err = g_strdup_printf("segment_replaced: coverage data generation %u replaced by %u; read again from the start",
+                                    cur_gen, (unsigned)snap->status.generation);
+        goto out;
+    }
+
+    /* Sloupce */
+    if (d && json_object_has_member(d, "columns") && !json_node_is_null(json_object_get_member(d, "columns"))) {
+        JsonNode *cn = json_object_get_member(d, "columns");
+        if (!JSON_NODE_HOLDS_ARRAY(cn)) {
+            perr = "Invalid parameters: columns must be an array of strings";
+            goto out;
+        }
+        JsonArray *ca = json_node_get_array(cn);
+        cols = g_new0(const char *, json_array_get_length(ca) + 1);
+        for (guint i = 0; i < json_array_get_length(ca); i++) {
+            JsonNode *e = json_array_get_element(ca, i);
+            const char *nm = (JSON_NODE_HOLDS_VALUE(e) && json_node_get_value_type(e) == G_TYPE_STRING)
+                             ? json_node_get_string(e) : "";
+            const char *found = NULL;
+            for (size_t k = 0; k < n_all; k++) {
+                if (strcmp(nm, all[k]) == 0) found = all[k];
+            }
+            if (!found) {
+                owned_err = g_strdup_printf("Invalid parameters: unknown column '%s' for level %s",
+                                            nm, coverage_level_name(snap->status.level));
+                goto out;
+            }
+            cols[n_cols++] = found;
+        }
+    } else {
+        cols = g_new0(const char *, n_all + 1);
+        for (size_t k = 0; k < n_all; k++) cols[n_cols++] = all[k];
+    }
+
+    /* Filtr */
+    JsonObject *fo = NULL;
+    if (d && json_object_has_member(d, "filter") && !json_node_is_null(json_object_get_member(d, "filter"))) {
+        JsonNode *fn = json_object_get_member(d, "filter");
+        if (!JSON_NODE_HOLDS_OBJECT(fn)) {
+            perr = "Invalid parameters: filter must be an object";
+            goto out;
+        }
+        fo = json_node_get_object(fn);
+    }
+    st_COV_FILTER f;
+    const char *ferr = _cov_parse_filter(fo, detail, &f);
+    if (ferr) {
+        owned_err = g_strdup_printf("Invalid parameters: %s", ferr);
+        goto out;
+    }
+
+    /* Začátek stránky podle kurzoru: první řádek s (pc, k) >= (seq >> 16, seq & FFFF). */
+    size_t i = 0;
+    if (have_cursor) {
+        uint32_t cpc = (uint32_t)(cur_seq >> 16);
+        uint32_t ck = (uint32_t)(cur_seq & 0xFFFFu);
+        while (i < n && (rows[i].pc < cpc || (rows[i].pc == cpc && rows[i].k < ck))) i++;
+    }
+
+    JsonArray *out_rows = json_array_new();
+    size_t chars = COVERAGE_READ_ENVELOPE_CHARS;
+    gint64 returned = 0;
+    bool page_full = false;
+    while (i < n) {
+        if (!_cov_row_match(snap, &rows[i], &f)) {
+            i++;
+            continue;
+        }
+        JsonArray *ra = json_array_new();
+        for (size_t c = 0; c < n_cols; c++) json_array_add_element(ra, coverage_row_column(snap, &rows[i], cols[c]));
+        JsonNode *rn = json_node_new(JSON_NODE_ARRAY);
+        json_node_take_array(rn, ra);
+        size_t row_chars = _cov_node_chars(rn) + 1;
+        if (returned > 0 && (returned >= limit || chars + row_chars > (size_t)max_chars)) {
+            json_node_free(rn);
+            page_full = true;
+            break;
+        }
+        json_array_add_element(out_rows, rn);
+        chars += row_chars;
+        returned++;
+        i++;
+    }
+
+    resp = coverage_status_to_json(&snap->status);
+    JsonArray *ca = json_array_new();
+    for (size_t c = 0; c < n_cols; c++) json_array_add_string_element(ca, cols[c]);
+    json_object_set_array_member(resp, "columns", ca);
+    json_object_set_array_member(resp, "rows", out_rows);
+    json_object_set_int_member(resp, "returned", returned);
+    json_object_set_boolean_member(resp, "page_full", page_full);
+    json_object_set_boolean_member(resp, "end_of_data", i >= n);
+    uint64_t next_seq = (i < n) ? (((uint64_t)rows[i].pc << 16) | rows[i].k) : ((uint64_t)0x10000 << 16);
+    char *nc = trace_cursor_encode("coverage", (unsigned)snap->status.generation, next_seq);
+    json_object_set_string_member(resp, "next_cursor", nc);
+    g_free(nc);
+
+out:
+    g_free(cols);
+    g_free(rows);
+    _cov_snapshot_free(snap);
+    if (owned_err) {
+        return _trace_err_owned(req_id, owned_err, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (perr) {
+        return _err_response(req_id, perr, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    return _ok_response(req_id, resp, out_response);
+}
+
+/**
+ * @brief `coverage_export` handler - všechny řádky pokrytí do souboru.
+ *
+ * Parametry: `path` (povinný, soubor se přepíše), `format` ("json"
+ * výchozí | "csv"); obsah viz coverage_export_write(). Filtr se
+ * nepoužije. Response: stav + `path`, `format`, `rows`. Chyba zápisu =>
+ * EMU_ERROR s textem.
+ */
+static en_MCP_DISPATCH_RESULT _handle_coverage_export(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    if (_videorec_member(obj, "path", G_TYPE_STRING) != 1 || !json_object_get_string_member(obj, "path")[0]) {
+        return _err_response(req_id, "Invalid parameters: path must be a non-empty string", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    int hf = _videorec_member(obj, "format", G_TYPE_STRING);
+    const char *fmt = (hf == 1) ? json_object_get_string_member(obj, "format") : "json";
+    if (hf < 0 || (g_strcmp0(fmt, "json") != 0 && g_strcmp0(fmt, "csv") != 0)) {
+        return _err_response(req_id, "Invalid parameters: format must be json or csv", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    const char *path = json_object_get_string_member(obj, "path");
+    st_COVERAGE_SNAPSHOT *snap = _cov_snapshot();
+    if (!snap) {
+        return _err_response(req_id, "coverage snapshot failed", MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    size_t rows = 0;
+    char *err = NULL;
+    bool ok = coverage_export_write(snap, path, g_strcmp0(fmt, "csv") == 0, &rows, &err);
+    JsonObject *resp = ok ? coverage_status_to_json(&snap->status) : NULL;
+    _cov_snapshot_free(snap);
+    if (!ok) {
+        return _trace_err_owned(req_id, err, MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    json_object_set_string_member(resp, "path", path);
+    json_object_set_string_member(resp, "format", fmt);
+    json_object_set_int_member(resp, "rows", (gint64)rows);
+    return _ok_response(req_id, resp, out_response);
 }
 #endif /* MZ800EMU_CFG_MCP_SERVER_ENABLED */

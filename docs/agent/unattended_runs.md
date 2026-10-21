@@ -49,6 +49,11 @@ echo $?            # 0 pass, 1 fail, 2 timeout, 3 error
   registers with the hidden Z80 state) are deterministic: two runs with
   the same options and the same files give the same values, so a script
   can compare them with a reference run.
+- Code coverage of the run: `--coverage branch` (or `detail`) collects
+  from the start, `result.json` then has `coverage` (status: `complete`,
+  `units`, `branches` with `both` / `taken_only` / `not_taken_only`;
+  `null` without coverage) and `--coverage-save-on-exit cov.json` (or
+  `.csv`) writes all rows - see `emulator://docs/coverage`.
 - `trigger.hits` counts the breakpoint hits after the skipped ones
   (`skip=2` -> `hits` 1 on the third pass).
 - In an unattended run the saved default breakpoint set (`.bpt`) and

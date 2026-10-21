@@ -164,6 +164,15 @@ line).
 - `replay`: `null`, or the result of the replay used in the run (`path`,
   `outcome`: `ended`, `desync`, `recorded`, ..., `outcome_frame`,
   `frames`, `deviated`, `desync_parts`, `message`).
+- `coverage`: `null` without code coverage data, otherwise the coverage
+  status as returned by `emu_coverage_status` (`level`, `complete`,
+  `units`, `instructions`, `branches`, ...). Collect coverage from the
+  start with `--coverage branch` or `--coverage detail` (or `[COVERAGE]
+  mode` in the INI), write all rows at the end with
+  `--coverage-save-on-exit FILE` (`.csv` = CSV, otherwise JSON, see
+  [MCP tools overview](tools-overview.md); a relative path is relative to
+  the working directory). `--coverage-key` and `--coverage-capacity` set
+  the `detail` level.
 - `trigger.hits`: hits of the breakpoint counted after the skipped ones.
 - `time.frames` and `time.gdg_ticks` count from the start of the run;
   `frames_total` and `gdg_ticks_total` from the start of the emulation.

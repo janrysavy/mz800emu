@@ -84,6 +84,7 @@ void profiler_pc_set_active ( bool enable )
         pp_restart_timing ( );
     };
     g_profiler_pc_active = enable ? 1 : 0;
+    mzarch_post_insn_hooks_recompute ( );
 }
 
 

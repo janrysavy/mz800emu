@@ -155,6 +155,14 @@ Běh ukončený breakpointem má například `"reason" : "exit_action"` a
 - `replay`: `null`, nebo výsledek záznamu použitého v běhu (`path`,
   `outcome`: `ended`, `desync`, `recorded`, ..., `outcome_frame`,
   `frames`, `deviated`, `desync_parts`, `message`).
+- `coverage`: `null` bez dat pokrytí kódu, jinak stav pokrytí stejný jako
+  z `emu_coverage_status` (`level`, `complete`, `units`, `instructions`,
+  `branches`, ...). Pokrytí od startu sbírá `--coverage branch` nebo
+  `--coverage detail` (nebo `[COVERAGE] mode` v INI), všechny řádky na
+  konci zapíše `--coverage-save-on-exit SOUBOR` (`.csv` = CSV, jinak
+  JSON, viz [Přehled MCP tools](tools-overview.md); relativní cesta je
+  vůči pracovnímu adresáři). `--coverage-key` a `--coverage-capacity`
+  nastavují úroveň `detail`.
 - `trigger.hits`: zásahy breakpointu počítané až po přeskočených.
 - `time.frames` a `time.gdg_ticks` se počítají od začátku běhu,
   `frames_total` a `gdg_ticks_total` od začátku emulace. `emulated_seconds`

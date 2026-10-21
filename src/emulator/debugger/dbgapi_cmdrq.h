@@ -38,6 +38,7 @@
 #include "audio_capture.h"
 #include "debugger/trace/tlog_common.h"
 #include "debugger/trace/ramlog.h"
+#include "debugger/coverage/coverage.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -756,6 +757,11 @@ typedef enum en_DBGAPI_CMD
      * paměti z jednoho průchodu fronty (MCP state_observe). Přidáno na
      * KONEC enumu kvůli stabilitě číselných hodnot. */
     DBGAPI_CMD_STATE_OBSERVE,        /* Konzistentní čtení stavu - data_ptr: st_DBGAPI_STATE_OBSERVE_PARAM* */
+
+    /* coverage (M11 debug-gaps) - pokrytí kódu: start/stop přepínají
+     * callbacky CPU a masku háčků po instrukci, proto jen v emu vlákně.
+     * Přidáno na KONEC enumu kvůli stabilitě číselných hodnot. */
+    DBGAPI_CMD_COVERAGE,             /* Start/stop/reset/značka/stav/snímek pokrytí - data_ptr: st_DBGAPI_COVERAGE_PARAM* */
 
     /* Zarážka: počet příkazů, sama není příkaz. Nové příkazy patří PŘED
      * ni. Test tests/debugger/test_replay_dbg_classify.c prochází celý
@@ -3097,6 +3103,36 @@ typedef struct st_DBGAPI_RAMLOG_PARAM
     st_RAMLOG_STATUS out_status;  /**< OUT: stav po operaci. */
     char out_error[ 128 ];        /**< OUT: anglický text chyby, "" = OK. */
 } st_DBGAPI_RAMLOG_PARAM;
+
+
+/** @brief Operace příkazu DBGAPI_CMD_COVERAGE. */
+typedef enum en_DBGAPI_COVERAGE_OP
+{
+    DBGAPI_COVERAGE_OP_START = 0, /**< coverage_hook_start(cfg, reset): spustit sběr (callbacky, maska háčků). */
+    DBGAPI_COVERAGE_OP_STOP,      /**< coverage_hook_stop(): zastavit sběr, data zůstanou. */
+    DBGAPI_COVERAGE_OP_RESET,     /**< coverage_reset(): smazat data, sběr běží dál, pokud běžel. */
+    DBGAPI_COVERAGE_OP_MARK,      /**< coverage_mark(): nová epocha (out_epoch). */
+    DBGAPI_COVERAGE_OP_STATUS,    /**< Jen stav. */
+    DBGAPI_COVERAGE_OP_SNAPSHOT,  /**< Kopie bitmap, epoch a jednotek do snap (čtení dat). */
+} en_DBGAPI_COVERAGE_OP;
+
+/**
+ * @brief Parametr pro DBGAPI_CMD_COVERAGE.
+ *
+ * Handler vždy vyplní out_status (stav po operaci) a out_error.
+ *
+ * @invariant rq->success == false <=> out_error != "".
+ */
+typedef struct st_DBGAPI_COVERAGE_PARAM
+{
+    en_DBGAPI_COVERAGE_OP op;          /**< IN: operace. */
+    st_COVERAGE_CONFIG cfg;            /**< IN (START): nastavení sběru. */
+    bool reset;                        /**< IN (START): začít s prázdnými daty. */
+    st_COVERAGE_SNAPSHOT *snap;        /**< IN (SNAPSHOT): cíl kopie (coverage_snapshot_take()), strukturu alokuje volající, pole units uvolní coverage_snapshot_clear(). */
+    uint32_t out_epoch;                /**< OUT (MARK): nová epocha. */
+    st_COVERAGE_STATUS out_status;     /**< OUT: stav po operaci. */
+    char out_error[ 128 ];             /**< OUT: chyba v angličtině ("" = OK). */
+} st_DBGAPI_COVERAGE_PARAM;
 
 
 /**

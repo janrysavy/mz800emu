@@ -630,6 +630,7 @@ static const st_RECLIFE_DESC s_cputrack_reclife = {
 void cputrack_recompute_active ( int debugger_active )
 {
     reclife_recompute_active ( &s_cputrack_reclife, debugger_active );
+    mzarch_post_insn_hooks_recompute ( );
 }
 
 

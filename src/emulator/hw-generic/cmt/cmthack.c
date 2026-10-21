@@ -59,6 +59,7 @@
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "debugger/trace/eventlog.h"
 #include "debugger/trace/ramlog.h"
+#include "debugger/coverage/coverage_hook.h"
 #include "mzarch/mzarch.h"
 /**
  * @brief Záznam zápisů: načtení CMT hackem se zdrojem CMT_HACK, insn_pc = PC
@@ -204,6 +205,10 @@ void cmthack_result(en_LOADRET result)
  */
 void cmthack_load_file(void)
 {
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* Pokrytí kódu: hack zasáhl během právě vykonávané instrukce (OUT). */
+    coverage_hook_note_cmt_trap();
+#endif
     /* Přehrání vstupů: soubor ze záznamu místo dialogu (i bez GUI). */
     char *replay_file = NULL;
     if (replay_cmthack_playback(&replay_file))
@@ -359,6 +364,10 @@ void cmthack_load_mzf_filename(const char *filename)
  */
 void cmthack_read_mzf_body(void)
 {
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* Pokrytí kódu: hack zasáhl během právě vykonávané instrukce (OUT). */
+    coverage_hook_note_cmt_trap();
+#endif
     unsigned reg_hl;
     unsigned reg_bc;
 

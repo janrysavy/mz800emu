@@ -60,6 +60,7 @@
 #include "debugger/trace/iorqlog.h"
 #include "debugger/trace/intlog.h"
 #include "debugger/trace/ramlog_hook.h"
+#include "debugger/coverage/coverage_hook.h"
 #include "debugger/trace/hwlog.h"
 #include "debugger/trace/marklog.h"
 #include "debugger/bptmap.h"
@@ -255,6 +256,7 @@ void mzarch_platform_fn_debugger_state_changed(bool active)
     hwlog_recompute_active(active);
     marklog_recompute_active(active);
     ramlog_recompute_active(active);
+    coverage_recompute_active();
 
     bool need_debug = TEST_DEBUGGER_NEED_DEBUG_CALLBACKS;
 

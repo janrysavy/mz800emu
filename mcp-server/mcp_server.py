@@ -3959,6 +3959,173 @@ async def emu_trace_status(channel: str = "") -> str:
 
 
 @mcp.tool()
+async def emu_coverage_start(level: str = "branch", key: str = "opcode",
+                             capacity: int = 65536, reset: bool = False,
+                             reset_on_discontinuity: bool = False) -> str:
+    """Start code coverage: which instructions ran and which branches went which way.
+
+    ``level="branch"`` keys by logical PC: executed addresses and, for every
+    conditional instruction (JR/JP/CALL/RET cc, DJNZ, LDIR/CPIR/INIR/OTIR
+    and their decrementing forms), whether the condition was true
+    (``taken``: jump, call, return, next block iteration) and/or false.
+    About +16-29 % emulation time (measured). The bytes are decoded from memory after
+    the step.
+
+    ``level="detail"`` adds one unit per (physical cell of the first byte,
+    PC, code version) with counters ``exec``, ``taken``, ``not_taken``,
+    the last operand and the last next PC. The same PC in RAM and in ROM,
+    or in another MemExt bank, is a different unit. ``key="opcode"``: a
+    new version only when the opcode bytes change (self-modified operands
+    stay one unit flagged ``operand_varied``); ``key="full_bytes"``: the
+    first 4 bytes of the step including operands. Bytes come from the
+    instruction fetch (exactly what the CPU read), which forces the slow
+    memory callbacks: about +78-115 % emulation time (measured).
+
+    Reset, snapshot load and replay seek/rewind do not clear the data, they
+    are counted in ``discontinuities`` (``reset_on_discontinuity=true``
+    clears instead). Read with ``emu_coverage_read``; recipe in
+    ``emulator://docs/coverage``.
+
+    Args:
+        level: ``"branch"`` or ``"detail"``.
+        key: ``"opcode"`` or ``"full_bytes"`` (detail only).
+        capacity: Detail units (1-1048576, 32 B each); a unit that does not
+            fit is counted in ``dropped`` and ``complete`` turns false.
+        reset: True = start with empty data; False = continue the existing
+            data if level, key and capacity are the same.
+        reset_on_discontinuity: Clear the data on reset / snapshot load.
+
+    Returns:
+        Status (see ``emu_coverage_status``) or ``{"error": ...}``.
+    """
+    resp = await _send_request("coverage_start", {
+        "level": level, "key": key, "capacity": capacity, "reset": bool(reset),
+        "reset_on_discontinuity": bool(reset_on_discontinuity)})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_coverage_stop() -> str:
+    """Stop code coverage collection; the data stay readable.
+
+    Returns:
+        Status (see ``emu_coverage_status``).
+    """
+    resp = await _send_request("coverage_stop", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_coverage_reset() -> str:
+    """Clear the coverage data (new ``generation``); a running collection continues.
+
+    Returns:
+        Status (see ``emu_coverage_status``).
+    """
+    resp = await _send_request("coverage_reset", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_coverage_status() -> str:
+    """Code coverage status and completeness.
+
+    Fields: ``active``, ``level``, ``key``, ``units`` (detail: units,
+    branch: executed addresses), ``capacity``, ``complete`` (nothing
+    dropped, all bytes from the fetch, no saturated counter), ``dropped``,
+    ``fetch_fallback``, ``saturated``, ``discontinuities``,
+    ``host_state_edits`` (PC or AF changed by the debugger),
+    ``instructions`` (steps without idle HALT), ``halt_idle``, ``epoch``,
+    ``generation`` and ``branches`` {``decisions``, ``both``,
+    ``taken_only``, ``not_taken_only``}.
+
+    Returns:
+        Status JSON.
+    """
+    resp = await _send_request("coverage_status", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_coverage_mark() -> str:
+    """Start a new coverage epoch ("from now on").
+
+    Every address and unit remembers the epoch in which it first ran;
+    ``emu_coverage_read(filter={"new_since_epoch": N})`` then lists only
+    code that ran for the first time after the mark (e.g. what a key press
+    or a game level added).
+
+    Returns:
+        Status with the new ``epoch``.
+    """
+    resp = await _send_request("coverage_mark", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_coverage_read(cursor: str = "", columns: list[str] | None = None,
+                            filter: dict[str, Any] | None = None,
+                            limit: int = 500, max_chars: int = 20000) -> str:
+    """Read code coverage rows page by page, sorted by PC.
+
+    branch rows (executed addresses): ``pc``, ``state``, ``int_entry``,
+    ``first_epoch``. detail rows (units): ``pc``, ``space``, ``offset``,
+    ``key`` (opcode bytes in hex), ``len``, ``exec``, ``taken``,
+    ``not_taken``, ``state``, ``operand`` (last operand, null without one),
+    ``next_pc``, ``first_epoch``, ``flags``. ``state`` is ``none``
+    (unconditional), ``unobserved``, ``taken_only``, ``not_taken_only`` or
+    ``both``. Rows are arrays in the order of ``columns``.
+
+    Args:
+        cursor: ``next_cursor`` of the previous page; empty = from the start.
+            After ``emu_coverage_reset`` or a new start an old cursor fails
+            with ``segment_replaced:``.
+        columns: Subset of the columns of the level (default all).
+        filter: ``pc_from``, ``pc_to``, ``space`` (detail: ram, vram, pcg,
+            memext, rom, bus), ``state`` (one name or a list; also
+            ``"partial"`` = one branch only, ``"decision"`` = any
+            conditional), ``new_since_epoch``, ``flags`` (list, any of:
+            decision, operand_varied, int_entry, cmt_trap, fetch_fallback,
+            saturated, halt, cell_bus, prefix_split, key_truncated).
+        limit: Rows per page (1-5000).
+        max_chars: Page size limit in characters (1000-45000).
+
+    Returns:
+        Status fields plus ``columns``, ``rows``, ``returned``,
+        ``page_full``, ``end_of_data`` and ``next_cursor``.
+    """
+    data: dict[str, Any] = {"limit": limit, "max_chars": max_chars}
+    if cursor:
+        data["cursor"] = cursor
+    if columns:
+        data["columns"] = list(columns)
+    if filter:
+        data["filter"] = dict(filter)
+    resp = await _send_request("coverage_read", data)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_coverage_export(path: str, format: str = "json") -> str:
+    """Write all coverage rows into a file (overwritten).
+
+    ``format="json"``: ``{"format": "mz800emu-coverage/1", "status",
+    "columns", "rows": [{...}]}``; ``format="csv"``: header and rows, flags
+    separated by ``|``. Two JSON exports of two runs can be compared to
+    find code that ran in only one of them.
+
+    Args:
+        path: Target file path (as seen by the emulator process).
+        format: ``"json"`` or ``"csv"``.
+
+    Returns:
+        Status plus ``path``, ``format`` and ``rows``.
+    """
+    resp = await _send_request("coverage_export", {"path": path, "format": format})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
 async def emu_trace_read(channel: str, cursor: str = "", start: str = "oldest",
                          limit: int = 200, format: str = "rows",
                          columns: list[str] | None = None,

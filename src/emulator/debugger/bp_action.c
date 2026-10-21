@@ -53,6 +53,7 @@
 #include "dbgapi_cmdrq.h"          /* trace: dbgapi_trace_lifecycle + en_DBGAPI_TRACE_* */
 #include "debugger/trace/ramlog.h"
 #include "debugger/trace/ramlog_hook.h"   /* ramlog_start/stop: ramlog_hook_start/stop */
+#include "debugger/coverage/coverage_hook.h" /* coverage_start/stop/mark */
 #include "replay.h"                 /* záznam vstupů: zápisy akcí mimo záznam */
 
 
@@ -101,7 +102,10 @@ typedef enum {
     FWD_SNAPSHOT,     /**< snapshot "<file>"[, args] - snapshot_save(rendered) */
     FWD_RAMLOG_START, /**< ramlog_start [<from>, <to>] - ramlog_hook_start (bez argumentů celá paměť) */
     FWD_RAMLOG_STOP,  /**< ramlog_stop - ramlog_hook_stop */
-    FWD_RAMLOG_CLEAR  /**< ramlog_clear - ramlog_clear (nový segment) */
+    FWD_RAMLOG_CLEAR, /**< ramlog_clear - ramlog_clear (nový segment) */
+    FWD_COVERAGE_START, /**< coverage_start [branch|detail] - coverage_hook_start (pokračuje do dat) */
+    FWD_COVERAGE_STOP,  /**< coverage_stop - coverage_hook_stop */
+    FWD_COVERAGE_MARK   /**< coverage_mark - coverage_mark (nová epocha) */
 } fwd_op_t;
 
 
@@ -185,6 +189,7 @@ struct bp_action_stmt_s {
         struct {
             fwd_op_t                op;     /**< která lifecycle operace */
             en_DBGAPI_TRACE_CHANNEL channel; /**< jen pro FWD_TRACE_* */
+            uint8_t                 coverage_level; /**< jen pro FWD_COVERAGE_START: en_COVERAGE_LEVEL */
             /* Jméno souboru jako printf-style šablona (sdílí renderer s `log`):
              * relevantní pro FWD_CDL_EXPORT / FWD_TRACE_SAVE / FWD_SNAPSHOT.
              * NULL = příkaz bez cesty (cdl start/stop/reset, trace start/stop). */
@@ -973,6 +978,46 @@ static bool parse_fwd_ramlog_start ( const char *args_str, bp_action_stmt_t *out
  * Pro start/stop bere jen jméno kanálu. Pro save bere kanál, pak povinný
  * string-literál cesty (+ volitelné expr argumenty šablony jako u `log`).
  */
+/**
+ * @brief Parsuje `coverage_start [branch|detail]`.
+ *
+ * Bez argumentu úroveň branch. Akce pokračuje do stávajících dat se
+ * stejným nastavením (jako MCP coverage_start bez `reset`).
+ *
+ * @param args_str Text za klíčovým slovem.
+ * @param out Cílový statement (STMT_FWD, FWD_COVERAGE_START).
+ * @param errbuf Buffer pro chybovou hlášku.
+ * @param errbuf_size Velikost bufferu.
+ * @return true OK, false syntaktická chyba (hláška v errbuf).
+ */
+static bool parse_fwd_coverage_start ( const char *args_str, bp_action_stmt_t *out,
+                                       char *errbuf, size_t errbuf_size ) {
+    const char *p = skip_ws ( args_str );
+    out->kind = STMT_FWD;
+    out->fwd.op = FWD_COVERAGE_START;
+    out->fwd.fmt = NULL;
+    out->fwd.n_args = 0;
+    out->fwd.coverage_level = COVERAGE_LEVEL_BRANCH;
+    if ( *p ) {
+        char lvl[BP_ACTION_VAR_NAME_MAX + 1] = {0};
+        if ( read_ident ( &p, lvl, sizeof ( lvl ) ) == 0 ) {
+            return ac_err ( errbuf, errbuf_size, "coverage_start: expected branch or detail" );
+        };
+        if ( strcmp ( lvl, "detail" ) == 0 ) {
+            out->fwd.coverage_level = COVERAGE_LEVEL_DETAIL;
+        } else if ( strcmp ( lvl, "branch" ) != 0 ) {
+            return ac_err ( errbuf, errbuf_size,
+                            "coverage_start: unknown level '%s' (expected branch or detail)", lvl );
+        };
+        p = skip_ws ( p );
+        if ( *p ) {
+            return ac_err ( errbuf, errbuf_size, "coverage_start: unexpected trailing text '%s'", p );
+        };
+    };
+    return true;
+}
+
+
 static bool parse_fwd_trace ( const char *args_str, fwd_op_t op,
                                bp_action_stmt_t *out,
                                const char *what,
@@ -1301,6 +1346,19 @@ static bool parse_stmt ( const char *src,
     };
     if ( match_keyword ( p, "ramlog_clear" ) ) {
         out->kind = STMT_FWD; out->fwd.op = FWD_RAMLOG_CLEAR;
+        out->fwd.fmt = NULL;  out->fwd.n_args = 0;
+        return true;
+    };
+    if ( match_keyword ( p, "coverage_start" ) ) {
+        return parse_fwd_coverage_start ( skip_ws ( p + 14 ), out, errbuf, errbuf_size );
+    };
+    if ( match_keyword ( p, "coverage_stop" ) ) {
+        out->kind = STMT_FWD; out->fwd.op = FWD_COVERAGE_STOP;
+        out->fwd.fmt = NULL;  out->fwd.n_args = 0;
+        return true;
+    };
+    if ( match_keyword ( p, "coverage_mark" ) ) {
+        out->kind = STMT_FWD; out->fwd.op = FWD_COVERAGE_MARK;
         out->fwd.fmt = NULL;  out->fwd.n_args = 0;
         return true;
     };
@@ -2195,6 +2253,27 @@ static void execute_fwd ( const bp_action_stmt_t *s,
             break;
         case FWD_RAMLOG_CLEAR:
             ramlog_clear ( );
+            break;
+        case FWD_COVERAGE_START: {
+            /* Jako MCP coverage_start bez resetu: pokračuje do stávajících
+             * dat se stejným nastavením, jinak založí nová. Běží v emu
+             * vlákně; u úrovně detail platí bajty z fetch až od příští
+             * celé instrukce (rozpracovaná může mít fetch_fallback). */
+            st_COVERAGE_CONFIG cfg;
+            memset ( &cfg, 0, sizeof ( cfg ) );
+            cfg.level = (en_COVERAGE_LEVEL) s->fwd.coverage_level;
+            cfg.key = COVERAGE_KEY_OPCODE;
+            cfg.capacity = COVERAGE_DEFAULT_CAPACITY;
+            if ( !coverage_hook_start ( &cfg, false ) ) {
+                fprintf ( stderr, "[BP-ACTION] coverage_start failed (out of memory)\n" );
+            };
+            break;
+        };
+        case FWD_COVERAGE_STOP:
+            coverage_hook_stop ( );
+            break;
+        case FWD_COVERAGE_MARK:
+            (void) coverage_mark ( );
             break;
     };
 }

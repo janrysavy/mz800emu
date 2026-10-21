@@ -66,6 +66,12 @@ static const char *const MODE_VALUES[] = { "off", "window", "always", NULL };
 /* Režim ringu záznamu zápisů pro --ramlog-ring. */
 static const char *const RAMLOG_RING_VALUES[] = { "ring", "fill", NULL };
 
+/* Úroveň pokrytí kódu pro --coverage. */
+static const char *const COVERAGE_VALUES[] = { "off", "branch", "detail", NULL };
+
+/* Klíč verze kódu pro --coverage-key. */
+static const char *const COVERAGE_KEY_VALUES[] = { "opcode", "full_bytes", NULL };
+
 /* FDC voličí pro --fdc-bus-xlate. */
 static const char *const FDC_BUS_XLATE_VALUES[] = { "invert", "passthrough", NULL };
 
@@ -163,6 +169,17 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
     { "--ramlog-hi",             SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<addr>",
       "Last CPU address recorded by the RAM write log. Dec or 0x hex. Default 0xFFFF "
       "(with --ramlog-lo 0 = all memory, no filter)." },
+    /* Pokrytí kódu (coverage). */
+    { "--coverage",              SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        COVERAGE_VALUES, "<off|branch|detail>",
+      "Collect code coverage from start: branch = executed addresses and branch results by PC, "
+      "detail = also code versions by physical cell with counters (slower). Read it over MCP "
+      "(coverage_read) or save it with --coverage-save-on-exit." },
+    { "--coverage-key",          SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        COVERAGE_KEY_VALUES, "<opcode|full_bytes>",
+      "Code version key of the detail level: opcode bytes (default) or the first 4 bytes including operands." },
+    { "--coverage-capacity",     SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_UINT,        NULL,        "<N>",
+      "Detail level size in units, 32 bytes each (1-1048576, default 65536)." },
+    { "--coverage-save-on-exit", SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<file>",
+      "Write all coverage rows into <file> when the emulator exits (.csv = CSV, otherwise JSON)." },
     /* trace-suite iorqlog options. */
     { "--iorqlog-mode",         SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        MODE_VALUES, "<off|window|always>",
       "Set the IORQ log recording mode (trace-suite iorqlog)." },

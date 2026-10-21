@@ -60,6 +60,8 @@ For the authoritative document with all corner cases see
 | `snapshot "fmt"[, expr...]` | Save `.mzs` snapshot (works from a continuing BP too) | `snapshot "snap-%X.mzs", PC` |
 | `ramlog_start [<from>, <to>]` | Start the RAM write log: all memory, or one range of CPU addresses (expressions evaluated at hit) | `ramlog_start HL, HL + 15` |
 | `ramlog_stop` / `ramlog_clear` | Stop / empty the RAM write log | `ramlog_stop` |
+| `coverage_start [branch\|detail]` | Start code coverage (default `branch`); continues existing data with the same settings | `coverage_start detail` |
+| `coverage_stop` / `coverage_mark` | Stop code coverage / start a new coverage epoch | `coverage_mark` |
 
 ## `log` format specifiers
 
@@ -308,6 +310,20 @@ BP, no client round-trip.
 Use `lastwriter(addr)` in conditions (`emulator://docs/bp_dsl`), e.g.
 `if lastwriter(0x4000) == 0x3009 then ramlog_stop`. Recipe:
 `emulator://docs/ramlog`.
+
+### Code coverage
+
+| Command | Effect |
+|---------|--------|
+| `coverage_start` | Same as `emu_coverage_start(level="branch")` without `reset`: continues existing data with the same settings, otherwise starts new data |
+| `coverage_start detail` | The same with `level="detail"` (key `opcode`, default capacity) |
+| `coverage_stop` | Same as `emu_coverage_stop` (data stay readable) |
+| `coverage_mark` | Same as `emu_coverage_mark`: new epoch, filter `new_since_epoch` then lists only code that ran after the mark |
+
+Typical use: a breakpoint on the start of a level does `coverage_mark`,
+the agent then reads what the level added. Started at `detail` inside an
+instruction (a MEM_R / MEM_W breakpoint), that one step may count as
+`fetch_fallback`. Recipe: `emulator://docs/coverage`.
 
 ### Filename templates and `$vars`
 

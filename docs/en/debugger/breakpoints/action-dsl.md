@@ -45,11 +45,12 @@ A BP that logs and then stops: `log "A=%X", A; stop`, or shorter
 
 ## Commands
 
-The action mini-DSL provides 24 commands: 13 basic ones (log, continue,
+The action mini-DSL provides 27 commands: 13 basic ones (log, continue,
 disable_self, enable, disable, poke, set, mark, `$name` assignment,
-clear_vars, if, stop, exit) and 11 forward commands for recording control (cdl_start,
+clear_vars, if, stop, exit) and 14 forward commands for recording control (cdl_start,
 cdl_stop, cdl_reset, cdl_export, trace_start, trace_stop, trace_save,
-snapshot, ramlog_start, ramlog_stop, ramlog_clear - see the "Forward
+snapshot, ramlog_start, ramlog_stop, ramlog_clear, coverage_start,
+coverage_stop, coverage_mark - see the "Forward
 commands" section below).
 
 ### `log "fmt"[, expr...]`
@@ -435,6 +436,24 @@ ramlog_stop
 The expression function `lastwriter(addr)` returns the address of the
 instruction that last wrote the cell at `addr`, e.g.
 `if lastwriter(0x4000) == 0x3009 then ramlog_stop`.
+
+### `coverage_start [branch|detail]`, `coverage_stop`, `coverage_mark`
+
+Control code coverage (which instructions ran and which way the
+conditional jumps went; read over MCP, see the `emu_coverage_*` tools
+in [MCP tools overview](../../mcp-server/tools-overview.md)).
+`coverage_start` without an argument collects the level `branch`,
+`coverage_start detail` the level `detail`; data collected before with
+the same settings are continued. `coverage_stop` stops collecting (the
+data stay readable), `coverage_mark` starts a new epoch, so that the
+code that runs for the first time after the mark can be listed.
+
+```
+coverage_start
+coverage_start detail
+coverage_mark
+coverage_stop
+```
 
 All file-name templates (`cdl_export` / `trace_save` / `snapshot`)
 share the same renderer as `log`, so you can generate numbered files

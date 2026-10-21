@@ -31,6 +31,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <glib.h>
@@ -522,6 +523,69 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                 }
                 for (size_t i = 0; i < p->n_events; i++) {
                     g_snprintf(p->out_event_texts[i], DBGAPI_EVENT_TEXT_MAX, "EV%u", p->events[i * 32 + 16]);
+                }
+            }
+            break;
+
+        case DBGAPI_CMD_COVERAGE:
+            /* coverage: zapamatuje vstup; START nastaví úroveň dat stubu.
+             * Snímek: vykonané 1000h-1003h, na 1001h JR (jen skok), na
+             * 1003h DJNZ (obě větve); detail = 4 jednotky (1003h dvě verze
+             * v RAM a v ROM), generace 5, epocha 2 u 1002h. */
+            if (data_ptr) {
+                st_DBGAPI_COVERAGE_PARAM *p = (st_DBGAPI_COVERAGE_PARAM *)data_ptr;
+                g_stub_state.cov_calls++;
+                g_stub_state.cov_last = *p;
+                g_stub_state.cov_last.snap = NULL;
+                p->out_error[0] = '\0';
+                if (p->op == DBGAPI_COVERAGE_OP_START) g_stub_state.cov_level = p->cfg.level;
+                memset(&p->out_status, 0, sizeof(p->out_status));
+                p->out_status.active = (p->op != DBGAPI_COVERAGE_OP_STOP);
+                p->out_status.has_data = true;
+                p->out_status.level = g_stub_state.cov_level;
+                p->out_status.key = p->cfg.key;
+                p->out_status.capacity = (g_stub_state.cov_level == COVERAGE_LEVEL_DETAIL) ? 64 : 0;
+                p->out_status.units = 4;
+                p->out_status.complete = true;
+                p->out_status.generation = 5;
+                p->out_status.epoch = (p->op == DBGAPI_COVERAGE_OP_MARK) ? 3 : 2;
+                p->out_status.decisions = 2;
+                p->out_status.branches_both = 1;
+                p->out_status.branches_taken_only = 1;
+                if (p->op == DBGAPI_COVERAGE_OP_MARK) p->out_epoch = 3;
+                if (p->op == DBGAPI_COVERAGE_OP_SNAPSHOT && p->snap) {
+                    st_COVERAGE_SNAPSHOT *s = p->snap;
+                    s->status = p->out_status;   /* jako coverage_snapshot_take() */
+                    s->exec[0x1000 >> 3] = 0x0F;
+                    s->decision[0x1000 >> 3] = 0x0A;
+                    s->taken[0x1000 >> 3] = 0x0A;
+                    s->not_taken[0x1000 >> 3] = 0x08;
+                    s->first_epoch[0x1002] = 2;
+                    s->units = NULL;
+                    s->n_units = 0;
+                    if (g_stub_state.cov_level == COVERAGE_LEVEL_DETAIL) {
+                        static const struct { uint16_t pc; uint8_t space; uint8_t k0; uint8_t k1; uint8_t klen;
+                                              uint8_t len; uint16_t flags; uint32_t ex, tk, nt; } u[] = {
+                            { 0x1003, 4, 0x10, 0x00, 1, 2, COVERAGE_F_DECISION, 2, 1, 1 },
+                            { 0x1000, 0, 0x3E, 0x00, 1, 2, COVERAGE_F_OPERAND_VARIED, 3, 0, 0 },
+                            { 0x1003, 0, 0x10, 0x00, 1, 2, COVERAGE_F_DECISION, 4, 3, 1 },
+                            { 0x1001, 0, 0x18, 0x00, 1, 2, 0, 1, 0, 0 },
+                        };
+                        s->n_units = 4;
+                        s->units = calloc(4, sizeof(st_COVERAGE_UNIT)); /* uvolní coverage_snapshot_clear() */
+                        for (int i = 0; i < 4; i++) {
+                            s->units[i].pc = u[i].pc;
+                            s->units[i].cell = COVERAGE_CELL(u[i].space, u[i].pc);
+                            s->units[i].key[0] = u[i].k0;
+                            s->units[i].key_len = u[i].klen;
+                            s->units[i].insn_len = u[i].len;
+                            s->units[i].flags = u[i].flags;
+                            s->units[i].exec = u[i].ex;
+                            s->units[i].taken = u[i].tk;
+                            s->units[i].not_taken = u[i].nt;
+                            s->units[i].operand_last = 0x0005;
+                        }
+                    }
                 }
             }
             break;

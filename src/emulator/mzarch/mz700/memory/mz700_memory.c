@@ -461,12 +461,11 @@ uint8_t memory_read_with_logging_cb ( z80_t *cpu, uint16_t addr, int m1_state, v
      * Pravidlo:
      *  1) is_m1_start (m1_state && addr == instruction_addr) = M1 první bajt.
      *  2) m1_state = M1 prefix opcode uvnitř téže instrukce (např. CB po DD).
-     *  3) addr == instruction_addr + byte_position = sekvenční operand bajt.
-     *  4) jinak = data read (např. LD A,(HL) čte z HL po M1, kde HL nesedí
-     *     na instruction_addr+1).
-     *
-     * Bez podmínky (3) by single-bajt instrukce typu LD A,(HL) klasifikovaly
-     * následující data read jako X (byte_position=1, < 4), což je chybně.
+     *  3) cpu->pc == addr + 1 = operand instrukce: jádro ho čte z PC
+     *     (FETCH, rPC++), PC je v okamžiku čtení už za ním.
+     *  4) jinak = data read (RD, PC neposouvá). I čtení hned za dosud
+     *     načtenými bajty instrukce (POP ze SP = PC, LD A,(nn) s nn = PC)
+     *     je data: cpu->pc == addr (N60, viz mz800_memory.c).
      *
      * g_debugger_history.byte_position musí být udržován NEZÁVISLE na stavu
      * CPU Instruction History (jinak při cpuhist=OFF + mhmap=ALWAYS by zůstal na 0).
@@ -480,10 +479,8 @@ uint8_t memory_read_with_logging_cb ( z80_t *cpu, uint16_t addr, int m1_state, v
         /* M1 prefix opcode uvnitř téže instrukce (DD, FD, ED, CB; DD CB,
          * FD CB). instruction_addr stále drží první bajt instrukce. */
         access_kind = MHMAP_ACCESS_X;
-    } else if ( g_debugger_history.byte_position < DEBUGGER_MAX_INSTR_BYTES
-                && addr == (uint16_t)( g_mzarch_main.instruction_addr + g_debugger_history.byte_position ) ) {
-        /* Sekvenční immediate operand bajt - addr navazuje na konec
-         * instrukčního streamu. */
+    } else if ( (uint16_t) cpu->pc == (uint16_t) ( addr + 1 ) ) {
+        /* Operand instrukce (FETCH z PC, PC už posunuté). */
         access_kind = MHMAP_ACCESS_X;
     } else {
         access_kind = MHMAP_ACCESS_R;

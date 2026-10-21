@@ -238,6 +238,59 @@ extern "C"
      */
     extern void mzarch_forced_full_screen_refresh(void);
 
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /**
+     * @name Maska háčků po instrukci
+     *
+     * Hlavní smyčka po každém z80_step() čte jedinou proměnnou
+     * g_mzarch_post_insn_hooks; nulová = žádný háček, žádná další práce.
+     * Bity přepočítává mzarch_post_insn_hooks_recompute() na studených
+     * cestách (start a stop diagnostiky), nikdy instrukční smyčka.
+     * Nový konzument = nový bit + jeho test v recompute a v rozbočovači
+     * mzarch_main_post_instruction_hooks() (mzarch.c).
+     * @{
+     */
+#define MZARCH_POST_INSN_CPUTRACK    (1u << 0) /**< trace-suite cputrack (g_cputrack_active) */
+#define MZARCH_POST_INSN_PROFILER_PC (1u << 1) /**< profiler podle PC (g_profiler_pc_active) */
+#define MZARCH_POST_INSN_COVERAGE    (1u << 2) /**< pokrytí kódu (g_coverage_active, coverage_hook.h) */
+
+    /**
+     * @brief Informace o právě dokončené instrukci pro háčky po instrukci.
+     *
+     * Rozbočovač ji spočítá jednou po z80_step() a předá ji všem aktivním
+     * konzumentům, aby si ji nepočítal každý zvlášť.
+     *
+     * @invariant `pc` je adresa začátku kroku (g_mzarch_main.instruction_addr),
+     *            `next_pc` je cpu->pc po kroku, před případným přijetím
+     *            přerušení (přerušení se přijímá až v bloku událostí).
+     * @note Platí jen po dobu volání háčků; konzument si ukazatel neukládá.
+     */
+    typedef struct st_MZARCH_INSN_INFO
+    {
+        uint16_t pc;      /**< Adresa začátku vykonaného kroku. */
+        uint16_t next_pc; /**< PC po kroku (u HALT stejné jako pc). */
+        uint32_t tstates; /**< T-stavy kroku včetně WAIT. */
+        uint32_t wait;    /**< Čekací stavy kroku (g_mzarch_main.instruction_wait_tstates). */
+    } st_MZARCH_INSN_INFO;
+
+    /** @brief Aktivní háčky po instrukci (bity MZARCH_POST_INSN_*); 0 = žádný. */
+    extern uint32_t g_mzarch_post_insn_hooks;
+
+    /**
+     * @brief Přepočítá g_mzarch_post_insn_hooks z příznaků konzumentů.
+     *
+     * Volají ji cesty, které mění příznak aktivity konzumenta
+     * (cputrack_recompute_active(), profiler_pc_set_active()).
+     *
+     * @pre Volá se mimo instrukční smyčku (studená cesta).
+     * @post Bit konzumenta je nastaven právě tehdy, když je konzument aktivní.
+     * @note Zápis jedné proměnné bez zámku, stejně jako dosavadní příznaky
+     *       konzumentů; emu vlákno ho uvidí nejpozději v další instrukci.
+     */
+    extern void mzarch_post_insn_hooks_recompute(void);
+    /** @} */
+#endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */
+
 #define mz800_main_get_instruction_start_ticks() (g_gdg.total_elapsed.ticks - g_mzarch_main.instruction_insideop_sync_ticks) /* muze legalne vracet i zaporne cislo! */
 
 #define mz800_main_cursor_timer_reset() \

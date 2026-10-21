@@ -107,6 +107,13 @@ dokumentu [Resources overview](resources-overview.md).
 | `emu_profiler_pc_get` | ne | Nejvytíženější adresy instrukcí s nejbližším symbolem (řazení, limit, rozsah adres) |
 | `emu_profiler_pc_export` | ne | Všechny vykonané adresy do CSV souboru |
 | `emu_profiler_pc_bitmap` | ne | Vykonané adresy jako bitmapa 8 KiB v base64 (pokrytí kódu) |
+| `emu_coverage_start` | ne | Spustí pokrytí kódu: úroveň `branch` (podle PC) nebo `detail` (podle fyzické buňky a verze kódu) |
+| `emu_coverage_stop` | ne | Zastaví pokrytí kódu (data zůstanou čitelná) |
+| `emu_coverage_reset` | ne | Smaže data pokrytí kódu |
+| `emu_coverage_status` | ne | Stav pokrytí kódu, úplnost a souhrn větví |
+| `emu_coverage_mark` | ne | Nová epocha pokrytí (co se poprvé vykoná po značce) |
+| `emu_coverage_read` | ne | Stránka řádků pokrytí: stavy větví, čítače, verze kódu (kurzor, filtr, rozpočet znaků) |
+| `emu_coverage_export` | ne | Všechny řádky pokrytí do souboru JSON nebo CSV |
 | `emu_audio_capture_start` | ano (vytváří soubory) | Zachycení zvuku do složky a/nebo do paměti: změny úrovní kanálů, zápisy do PSG, reference.wav a sdl.wav (frames, výběr souborů, memory, pcm) |
 | `emu_audio_capture_stop` | ne | Ukončí zachycení zvuku a dopíše soubory |
 | `emu_audio_capture_status` | ne | Stav zachycení zvuku (snímky, události, zápisy PSG, vzorky, bloky SDL, složka, důvod konce, paměť) |
@@ -1721,6 +1728,101 @@ nic nepřidá, bloková instrukce označí svůj začátek; banky ani verze
 samomodifikovaného kódu na stejné adrese se nerozlišují. Funguje za
 běhu sběru i po `emu_profiler_pc_stop`, emulaci nepozastaví ani
 neposune.
+
+## Pokrytí kódu
+
+Pokrytí kódu odpovídá, které instrukce se vykonaly, kterým směrem šla
+každá podmíněná instrukce (`JR` / `JP` / `CALL` / `RET` s podmínkou,
+`DJNZ`, `LDIR` / `CPIR` / `INIR` / `OTIR` a sestupné varianty) a na
+úrovni `detail` i která verze kódu se kde vykonala. Výsledek podmínky se
+odvozuje ze stavu CPU po kroku (příznaky, B, PC zpět na opakující se
+blokové instrukci), takže `JR Z,$+2` se započte správně, i když oba
+výsledky skončí na stejné adrese.
+
+- `branch` - podle logického PC: vykonané adresy, podmíněné instrukce
+  a jejich výsledky, první instrukce obsluhy přerušení. Naměřená cena v MAX SPEED: asi +16 až +29 % času emulace.
+- `detail` - navíc jedna jednotka na (fyzickou buňku prvního bajtu, PC,
+  verzi kódu) s čítači `exec`, `taken`, `not_taken`, posledním operandem
+  a posledním následujícím PC. Stejné PC v RAM a v ROM nebo v jiné bance
+  MemExt je jiná jednotka; samomodifikovaný operand zůstává jednou
+  jednotkou s příznakem `operand_varied` (klíč `opcode`), s klíčem
+  `full_bytes` je každá hodnota operandu samostatná jednotka. Bajty se
+  berou tak, jak je CPU načetlo, což potřebuje pomalejší cestu přístupu
+  do paměti. Naměřená cena: asi +78 až +115 % času emulace.
+- Nečinný HALT se nepočítá; reset, načtení snapshotu a skok
+  v přehrávání záznamu data ponechají a zvýší `discontinuities`.
+- Stejný sběr jde spustit z příkazové řádky (`--coverage`,
+  `--coverage-save-on-exit`, viz [Headless režim](headless-mode.md)),
+  ze sekce INI `[COVERAGE]` a z akce breakpointu (`coverage_start`,
+  `coverage_stop`, `coverage_mark`).
+
+Postup pro AI klienty: `emulator://docs/coverage`.
+
+Typické použití:
+
+```
+emu_coverage_start(level="branch", reset=true)
+emu_run(frames=500)
+emu_coverage_read(filter={"state": "partial"})   # větve, které šly jen jedním směrem
+emu_coverage_stop()
+```
+
+Všechny nástroje vracejí stav `{"active", "has_data", "level", "key",
+"reset_on_discontinuity", "complete", "units", "capacity", "dropped",
+"fetch_fallback", "saturated", "discontinuities", "host_state_edits",
+"epoch", "generation", "instructions", "halt_idle", "branches":
+{"decisions", "both", "taken_only", "not_taken_only"}}` (plus položky
+níže). `complete` je false, když se jednotka nevešla (`dropped`), bajt
+nebyl v záznamu načtení instrukce (`fetch_fallback`) nebo čítač
+saturoval.
+
+### `emu_coverage_start`
+
+Argumenty (všechny volitelné): `level` (`branch` výchozí, `detail`),
+`key` (`opcode` výchozí, `full_bytes`; jen detail), `capacity` (jednotky
+detail, 1..1048576, výchozí 65536, každá 32 bajtů), `reset` (výchozí
+false: pokračovat do dat se stejným nastavením), `reset_on_discontinuity`
+(výchozí false).
+
+### `emu_coverage_stop`, `emu_coverage_reset`, `emu_coverage_status`
+
+Zastaví sběr (data zůstanou čitelná) / smaže data (nová `generation`,
+sběr pokračuje, pokud běžel) / jen stav.
+
+### `emu_coverage_mark`
+
+Začne novou epochu; stav nese její číslo v `epoch`. Každá adresa
+a jednotka si pamatuje epochu, ve které se poprvé vykonala.
+
+### `emu_coverage_read`
+
+Stránka řádků seřazených podle PC. Řádky jsou pole v pořadí `columns`.
+
+- řádky `branch` (vykonané adresy): `pc`, `state`, `int_entry`,
+  `first_epoch`.
+- řádky `detail` (jednotky): `pc`, `space` (`ram`, `memext`, `rom`,
+  `vram`, `pcg`, `bus` = bez fyzické buňky, offset je CPU adresa),
+  `offset`, `key` (bajty opkódu hexadecimálně), `len`, `exec`, `taken`,
+  `not_taken`, `state`, `operand` (null bez operandu), `next_pc`,
+  `first_epoch`, `flags`.
+- `state`: `none` (nepodmíněná), `unobserved`, `taken_only`,
+  `not_taken_only`, `both`.
+
+Argumenty: `cursor` (`next_cursor` předchozí stránky), `columns`,
+`filter` (`pc_from`, `pc_to`, `space`, `state` - jedno jméno nebo
+seznam, i `partial` a `decision` -, `new_since_epoch`, `flags`), `limit`
+(1..5000, výchozí 500), `max_chars` (1000..45000, výchozí 20000). Přidá
+`columns`, `rows`, `returned`, `page_full`, `end_of_data`
+a `next_cursor`. Po `emu_coverage_reset` nebo novém startu skončí starší
+kurzor chybou `segment_replaced:`.
+
+### `emu_coverage_export`
+
+Všechny řádky do souboru. Argumenty: `path` (povinný, přepíše se; složka
+musí existovat) a `format` (`json` výchozí, `csv`). JSON: `{"format":
+"mz800emu-coverage/1", "status", "columns", "rows": [{...}]}`; CSV:
+hlavička se jmény sloupců, příznaky oddělené `|`. Přidá `path`, `format`
+a `rows`.
 
 ## Zachycení zvuku
 

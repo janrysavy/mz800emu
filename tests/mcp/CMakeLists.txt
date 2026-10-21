@@ -63,6 +63,9 @@ mz_add_test(mcp_dispatch
         ${CMAKE_SOURCE_DIR}/src/emulator/debugger/trace/trace_reader.c
         ${CMAKE_SOURCE_DIR}/src/emulator/audio_analysis.c
         ${CMAKE_SOURCE_DIR}/src/emulator/debugger/trace/ramlog.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/debugger/coverage/coverage.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/debugger/coverage/coverage_decode.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/debugger/coverage/coverage_export.c
         ${CMAKE_SOURCE_DIR}/src/emulator/debugger/memsearch/memsearch.c
         ${CMAKE_SOURCE_DIR}/src/emulator/debugger/run_control/run_log.c
     LABELS   "standalone;mcp"
@@ -528,6 +531,41 @@ if(Python3_FOUND)
         SKIP_RETURN_CODE 77
     )
     message(STATUS "  tests/mcp: registered mcp_ramlog "
+                   "(Python ${Python3_VERSION})")
+
+    # Pokrytí kódu (coverage) přes MCP: stavy větví všech druhů podmíněných
+    # instrukcí, úroveň detail (samomodifikace, DD 00, kapacita), vstup do
+    # obsluhy přerušení, stránkování a kurzor, export JSON a CSV, bitová
+    # shoda se zapnutým pokrytím, MZ-700 a MZ-1500 (pokud binárky existují).
+    add_test(
+        NAME    mcp_coverage
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_coverage.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_coverage PROPERTIES
+        LABELS  "e2e;mcp;pipe;coverage"
+        TIMEOUT 300
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_coverage "
+                   "(Python ${Python3_VERSION})")
+
+    # Klasifikace čtení paměti: datové čtení hned za instrukcí (POP ze
+    # SP = PC, LD A,(nn) s nn = PC) je data - CDL r a zastavení MEM_R
+    # breakpointu; MZ-800, MZ-700 a MZ-1500 (pokud binárky existují).
+    add_test(
+        NAME    mcp_mem_read_kind
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_mem_read_kind.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_mem_read_kind PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger"
+        TIMEOUT 300
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_mem_read_kind "
                    "(Python ${Python3_VERSION})")
 
     # Postupné hledání proměnných (memsearch) a Freeze Bytes přes MCP:

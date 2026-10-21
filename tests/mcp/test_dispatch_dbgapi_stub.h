@@ -81,6 +81,9 @@ typedef struct st_DISPATCH_STUB_STATE {
     int                  aud_copy_calls;            /**< Počet audio_capture_stream_copy. */
     st_DBGAPI_RAMLOG_PARAM rl_last;                 /**< Kopie vstupu posledního DBGAPI_CMD_RAMLOG (výstupní ukazatele neplatné). */
     int                  rl_calls;                  /**< Počet DBGAPI_CMD_RAMLOG. */
+    st_DBGAPI_COVERAGE_PARAM cov_last;              /**< Kopie vstupu posledního DBGAPI_CMD_COVERAGE (snap neplatný). */
+    int                  cov_calls;                 /**< Počet DBGAPI_CMD_COVERAGE. */
+    en_COVERAGE_LEVEL    cov_level;                 /**< Úroveň dat stubu (nastaví START), vrací ji stav i snímek. */
     uint8_t              ms_ram[ 256 ];             /**< memsearch: prvních 256 B User RAM pro DBGAPI_CMD_MEMSEARCH_SAMPLE (zbytek 0). */
     int                  ms_sample_calls;           /**< Počet DBGAPI_CMD_MEMSEARCH_SAMPLE. */
     bool                 ms_regions;                /**< true = REGIONS_ENUMERATE vrátí RAM, MemExt RAM kus 41h a ROM_LOWER (jen pro čtení). */

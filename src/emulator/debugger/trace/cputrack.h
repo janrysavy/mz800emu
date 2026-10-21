@@ -140,6 +140,9 @@ extern int g_cputrack_active;
  *
  * Volá se při změně cputrack_mode (UI/CLI) a při změně debugger_active
  * (debug okno open/close).
+ *
+ * @post Maska háčků po instrukci (g_mzarch_post_insn_hooks) odpovídá
+ *       novému stavu @c g_cputrack_active.
  */
 void cputrack_recompute_active ( int debugger_active );
 
