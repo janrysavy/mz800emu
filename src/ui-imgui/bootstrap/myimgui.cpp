@@ -19,6 +19,7 @@
 #include "libs/sdlapp/sdlapp.h"
 #include "libs/sdlapp/sdlapp_options.h"
 #include "myimgui.h"
+#include "ui-imgui/emulator_input_focus.h"
 #include "ui-imgui/filechooser/res/CustomFont.cpp"
 #include "ui-imgui/filechooser/res/CustomFont.h"
 
@@ -528,6 +529,7 @@ void myimgui_event_cb(SdlAppWindow *win, SDL_Event *event, gpointer user_data)
     };
 
     ImGui::SetCurrentContext(ctx);
+    imgui_emulator_input_focus(win->sdl_window,event,gui->showOverlay);
     ImGui_ImplSDL3_ProcessEvent(event);
     // ImGuiIO &io = ImGui::GetIO();
     // (void)io;

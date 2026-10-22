@@ -14,6 +14,13 @@ add_subdirectory(membrowser)
 
 # Production upload/format/alpha checks use dummy software rendering only.
 # Unlike ui-smoke this target never creates an OpenGL context.
+mz_add_test(emulator-input-focus
+    TYPE STANDALONE
+    SOURCES test_emulator_input_focus.cpp
+    LIBS mzlib_imgui mz::sdl3
+    LABELS "standalone;ui;software;input"
+)
+
 mz_add_test(video-textures
     TYPE STANDALONE
     SOURCES test_video_textures.c

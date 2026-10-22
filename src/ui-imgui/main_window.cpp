@@ -6,6 +6,7 @@
 #include <SDL3/SDL.h>
 #include "iface-video/sdl3/iface_video_sdl3.h"
 #include "ui-imgui/display_picture.h"
+#include "ui-imgui/emulator_input_focus.h"
 #include <SDL3/SDL_opengl.h>
 #include <cstring>
 
@@ -195,7 +196,7 @@ static void ShowFullScreenImageEmulatorWindow(VideoTexture texture)
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
 
     static ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse;
-    ImGui::Begin("##MainEmulatorWindow", NULL, flags);
+    ImGui::Begin("##MainEmulatorWindow", NULL, flags | emulator_view_navigation_flags);
 
 // Prozatim nemame nic smysluplneho pro zobrazovani overlay okna
 #if 0
