@@ -59,8 +59,6 @@ typedef struct st_JOY_DEV
     en_JOY_DEVID id;
     en_JOY_TYPE type;
     uint8_t state;
-    /* Active-low automation source, independent of physical/keypad polling. */
-    uint8_t virtual_state;
 } st_JOY_DEV;
 
 /**
