@@ -10,6 +10,12 @@ mz_add_test(pio8255
     LABELS   "emu;peripherals"
 )
 
+mz_add_test(joy_input_sources
+    TYPE     EMU
+    SOURCES  test_joy_input_sources.c
+    LABELS   "emu;peripherals;input"
+)
+
 mz_add_test(psg
     TYPE     EMU
     SOURCES  test_psg.c

@@ -74,6 +74,7 @@ void joy_init ( void ) {
         g_joy.dev[joy_devid].id = joy_devid;
         joy_type_config ( cmod, joy_devid );
         joy_reset_dev_state ( joy_devid );
+        g_joy.dev[joy_devid].virtual_state = 0xff;
     };
     cfgmodule_parse ( cmod );
     cfgmodule_propagate ( cmod );
@@ -81,12 +82,13 @@ void joy_init ( void ) {
 
 
 uint8_t joy_read_byte ( en_JOY_DEVID joy_devid ) {
-
-    if ( g_joy.dev[joy_devid].type == JOY_TYPE_NONE ) {
-        return 0xff;
-    } else if ( g_joy.dev[joy_devid].type == JOY_TYPE_JOYSTICK ) {
-        return iface_joy_scan ( joy_devid );
-    };
-
-    return g_joy.dev[joy_devid].state;
+    uint8_t physical = 0xff;
+    if ( g_joy.dev[joy_devid].type == JOY_TYPE_JOYSTICK ) {
+        physical = iface_joy_scan ( joy_devid );
+    } else if ( g_joy.dev[joy_devid].type != JOY_TYPE_NONE ) {
+        physical = g_joy.dev[joy_devid].state;
+    }
+    /* Either source can press a switch; neither can release the other's
+     * switch. Automation also works without a configured host joystick. */
+    return physical & g_joy.dev[joy_devid].virtual_state;
 }
