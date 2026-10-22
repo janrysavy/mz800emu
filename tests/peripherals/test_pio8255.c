@@ -245,12 +245,16 @@ void test_pio_joystick_signals(void)
 {
     MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
 
-    /* přečteme joystick signály — jen ověříme, že nepadne */
-    int joy1 = pio8255_pa4_get();
-    int joy2 = pio8255_pa5_get();
-    (void)joy1;
-    (void)joy2;
-    TEST_ASSERT_TRUE(true);
+    /* MZ-800 service manual, section 4-7: PA4 enables JOY1 and PA5
+     * enables JOY2, both active low. Exhaust all Port A combinations;
+     * PA6 must not become a joystick strobe. Restore the original latch. */
+    uint8_t saved = g_pio8255.signal_PA;
+    for (unsigned value = 0; value < 256; ++value) {
+        pio8255_write(0, (uint8_t)value);
+        TEST_ASSERT_EQUAL_INT(!(value & 0x10), pio8255_pa4_get());
+        TEST_ASSERT_EQUAL_INT(!(value & 0x20), pio8255_pa5_get());
+    }
+    pio8255_write(0, saved);
 }
 
 /* PIO — vkbd probe: readback dosednutí klávesy (fix 0016 / cesta A)

@@ -237,10 +237,10 @@ void pio8255_write(int addr, uint8_t value)
         g_pio8255.signal_PA_keybord_column = (pahalf <= 9) ? pahalf : 10;
 
         // 4. bit Joystick-1 strobe - aktivni pri L
-        g_pio8255.signal_PA_joy1_enabled = (!(value & 0x20)) ? 1 : 0;
+        g_pio8255.signal_PA_joy1_enabled = (!(value & 0x10)) ? 1 : 0;
 
         // 5. bit Joystick-2 strobe - aktivni pri L
-        g_pio8255.signal_PA_joy2_enabled = (!(value & 0x40)) ? 1 : 0;
+        g_pio8255.signal_PA_joy2_enabled = (!(value & 0x20)) ? 1 : 0;
 
         // 7. bit cursor timer reset - aktivni pri L
         if (!(value & 0x80))
