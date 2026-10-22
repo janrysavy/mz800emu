@@ -4,7 +4,8 @@
  * Testuje: snapshot_io_open_write, snapshot_io_open_read,
  *          snapshot_io_write_bin, snapshot_io_read_bin,
  *          snapshot_io_write_xml, snapshot_io_read_xml,
- *          snapshot_io_entry_exists, snapshot_io_compute_checksum
+ *          snapshot_io_entry_exists, snapshot_io_compute_checksum,
+ *          snapshot_io_open_hash, snapshot_io_close_hash
  *
  * Licence: GPLv3
  */
@@ -335,6 +336,83 @@ void test_io_compression_levels(void)
     snapshot_io_close(io);
 }
 
+/* hashovací režim: stejné zápisy = stejný hash, nic se nezapisuje */
+void test_io_hash_mode_deterministic(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    uint8_t data[] = { 0x01, 0x02, 0x03 };
+    char h1[65], h2[65];
+
+    snapshot_io_t *io = snapshot_io_open_hash();
+    TEST_ASSERT_NOT_NULL(io);
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_OK, snapshot_io_write_bin(io, "a.bin", data, sizeof(data)));
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_OK, snapshot_io_write_xml(io, "b.xml", "<x/>"));
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_OK, snapshot_io_close_hash(io, h1, sizeof(h1)));
+
+    io = snapshot_io_open_hash();
+    snapshot_io_write_bin(io, "a.bin", data, sizeof(data));
+    snapshot_io_write_xml(io, "b.xml", "<x/>");
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_OK, snapshot_io_close_hash(io, h2, sizeof(h2)));
+
+    TEST_ASSERT_EQUAL_INT(64, (int)strlen(h1));
+    TEST_ASSERT_EQUAL_STRING(h1, h2);
+}
+
+/* hashovací režim: jiná data, jiné jméno i jiné rozdělení = jiný hash */
+void test_io_hash_mode_differs(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    uint8_t ab[] = { 'a', 'b' };
+    char base[65], other[65];
+
+    snapshot_io_t *io = snapshot_io_open_hash();
+    snapshot_io_write_bin(io, "x.bin", ab, 2);
+    snapshot_io_close_hash(io, base, sizeof(base));
+
+    /* jiný obsah */
+    uint8_t ac[] = { 'a', 'c' };
+    io = snapshot_io_open_hash();
+    snapshot_io_write_bin(io, "x.bin", ac, 2);
+    snapshot_io_close_hash(io, other, sizeof(other));
+    TEST_ASSERT_NOT_EQUAL(0, strcmp(base, other));
+
+    /* jiné jméno entry */
+    io = snapshot_io_open_hash();
+    snapshot_io_write_bin(io, "y.bin", ab, 2);
+    snapshot_io_close_hash(io, other, sizeof(other));
+    TEST_ASSERT_NOT_EQUAL(0, strcmp(base, other));
+
+    /* stejné bajty rozdělené do dvou entries */
+    io = snapshot_io_open_hash();
+    snapshot_io_write_bin(io, "x.bin", ab, 1);
+    snapshot_io_write_bin(io, "x.bin", ab + 1, 1);
+    snapshot_io_close_hash(io, other, sizeof(other));
+    TEST_ASSERT_NOT_EQUAL(0, strcmp(base, other));
+}
+
+/* hashovací režim: čtení selže, malý výstup = chyba */
+void test_io_hash_mode_rejects_read_and_small_buffer(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    snapshot_io_t *io = snapshot_io_open_hash();
+    uint8_t *out = NULL;
+    size_t out_size = 0;
+    TEST_ASSERT_NOT_EQUAL(SNAPSHOT_OK, snapshot_io_read_bin(io, "a.bin", &out, &out_size));
+    TEST_ASSERT_FALSE(snapshot_io_entry_exists(io, "a.bin"));
+
+    char small[10];
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_ERR_IO, snapshot_io_close_hash(io, small, sizeof(small)));
+    TEST_ASSERT_EQUAL_STRING("", small);
+
+    /* handle z běžného zápisu nemá hashovací režim */
+    snapshot_io_t *zip = snapshot_io_open_write(TMP_FILE, 6);
+    char h[65];
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_ERR_IO, snapshot_io_close_hash(zip, h, sizeof(h)));
+}
+
 /* === MAIN === */
 
 int main(int argc, char *argv[])
@@ -359,6 +437,9 @@ int main(int argc, char *argv[])
     RUN_TEST(test_io_checksum_consistency);
     RUN_TEST(test_io_checksum_differs_for_different_data);
     RUN_TEST(test_io_compression_levels);
+    RUN_TEST(test_io_hash_mode_deterministic);
+    RUN_TEST(test_io_hash_mode_differs);
+    RUN_TEST(test_io_hash_mode_rejects_read_and_small_buffer);
 
     int result = UNITY_END();
     mztest_teardown();

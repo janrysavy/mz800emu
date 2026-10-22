@@ -428,6 +428,29 @@ void test_context_global_state ( void ) {
 }
 
 
+/* InsnPC = adresa instrukce (nezávislá na živém PC), FrameCycle = takty
+ * od začátku snímku; Cycle se ve výrazu ořízne na int32 (přetečení). */
+void test_context_insnpc_framecycle ( void ) {
+    bp_expr_ctx_t ctx;
+    bp_expr_ctx_zero ( &ctx );
+    ctx.cpu = &g_test_cpu;
+    g_test_cpu.pc = 0x3006;
+    ctx.InsnPC = 0x3003;
+    ctx.FrameCycle = 354431;
+    ctx.Cycle = (int64_t) 0x80000000LL + 5;
+    int32_t v;
+    char err[128];
+    TEST_ASSERT_TRUE ( bp_expr_parse_eval ( "InsnPC", &ctx, &v, err, sizeof(err) ) );
+    TEST_ASSERT_EQUAL_INT32 ( 0x3003, v );
+    TEST_ASSERT_TRUE ( bp_expr_parse_eval ( "insnpc != PC", &ctx, &v, err, sizeof(err) ) );
+    TEST_ASSERT_EQUAL_INT32 ( 1, v );
+    TEST_ASSERT_TRUE ( bp_expr_parse_eval ( "FrameCycle", &ctx, &v, err, sizeof(err) ) );
+    TEST_ASSERT_EQUAL_INT32 ( 354431, v );
+    TEST_ASSERT_TRUE ( bp_expr_parse_eval ( "Cycle < 0", &ctx, &v, err, sizeof(err) ) );
+    TEST_ASSERT_EQUAL_INT32 ( 1, v );
+}
+
+
 /**
  * V1.5 fáze 2.4: breakpoints_fill_global_ctx musí čerpat Frame/Scanline/Cycle
  * z g_gdg (= reálný GDG state, ne hardcoded 0).
@@ -980,6 +1003,7 @@ int main ( int argc, char *argv[] ) {
     RUN_TEST ( test_context_address_value );
     RUN_TEST ( test_context_flags );
     RUN_TEST ( test_context_global_state );
+    RUN_TEST ( test_context_insnpc_framecycle );
     RUN_TEST ( test_fill_global_ctx_from_gdg );
     RUN_TEST ( test_expr_scanline_frame_from_gdg );
 

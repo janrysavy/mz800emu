@@ -8,11 +8,14 @@
  *   - read_rom_no_se: ROM_LOWER region vrací data z g_memory.ROM[0..]
  *   - memext_not_connected: Memext disconnected = žádné MEMEXT_RAM/FLASH
  *     regiony v enumerate
- *   - memext_connected_pehu: PEHU connected = 128 RAM banks, 0 FLASH
+ *   - memext_pehu_bank_count: PEHU connected = 128 raw 4 KB kusů (64 bank
+ *     po 8 KB), 0 FLASH; horní půlka banky 3Fh = raw kus 7Fh
  *   - memext_connected_luftner: LUFTNER connected = 128 RAM + 128 FLASH
  *   - prohibited_shadow: aktivace flagu = region s 0x1A bajty
  *   - ramdisk_pezik_e8: PEZIK E8 connected = jeden RAMDISK_PEZIK region
  *     se sub_id=1, 512 KB
+ *   - ramdisk_std_shrink_stale: po zmenšení RAMdisku STD starý deskriptor
+ *     nesahá mimo buffer, staré ID s generací = DBGAPI_REGIONS_ERR_STALE
  *   - vram_plane_read: plane I/II R/W přes API
  *   - write_respects_flags: FLASH writable=0 → write vrátí -1
  *
@@ -492,7 +495,76 @@ void test_regions_ramdisk_pezik_e8(void)
 
 
 /* ================================================================
- * Test 8b: Memext PEHU emit 64 banks (NE 128 jako Luftner)
+ * Test 8a: zmenšení RAMdisku STD - starý deskriptor ani staré ID
+ * nesahají mimo buffer (N44)
+ *
+ * Výčet s RAMdiskem 1 MB (16 bank), pak ramdisk_std_init() na 64 KB
+ * (realloc na jednu banku) bez nového výčtu. Cache pořád drží banku 15:
+ *   - dbgapi_regions_read/write (bez generace, cesta Memory Browseru)
+ *     musí podle živé velikosti vrátit -1, ne číst/psát za koncem bufferu,
+ *   - dbgapi_regions_read_gen/write_gen s generací starého výčtu vrátí
+ *     DBGAPI_REGIONS_ERR_STALE, i pro banku 0, která dál existuje,
+ *   - s generací nového výčtu banka 0 jde číst.
+ * ================================================================ */
+
+void test_regions_ramdisk_std_shrink_stale(void)
+{
+    char empty_path[1] = "";
+    ramdisk_std_init(RAMDISK_CONNECTED, RAMDISK_TYPE_STD, RAMDISK_SIZE_1M, empty_path);
+    TEST_ASSERT_NOT_NULL(g_ramdisk.std.memory);
+
+    int count = 0;
+    uint32_t gen_old = 0;
+    st_REGION_DESC *regs = dbgapi_regions_enumerate_dup_gen(&count, &gen_old);
+    TEST_ASSERT_NOT_NULL(regs);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0, gen_old);
+    int i_last = find_region_sub(regs, count, REGION_KIND_RAMDISK_STD, 15);
+    int i_first = find_region_sub(regs, count, REGION_KIND_RAMDISK_STD, 0);
+    TEST_ASSERT_NOT_EQUAL_INT(-1, i_last);
+    TEST_ASSERT_NOT_EQUAL_INT(-1, i_first);
+    int id_last = regs[i_last].id;
+    int id_first = regs[i_first].id;
+    g_free(regs);
+
+    /* Zmenšení na 64 KB bez nového výčtu (jako snapshot_load). */
+    ramdisk_std_init(RAMDISK_CONNECTED, RAMDISK_TYPE_STD, RAMDISK_SIZE_64, empty_path);
+    TEST_ASSERT_EQUAL_INT(RAMDISK_SIZE_64, g_ramdisk.std.size);
+
+    uint8_t buf[16];
+    memset(buf, 0x5A, sizeof(buf));
+    TEST_ASSERT_EQUAL_INT(-1, dbgapi_regions_read(id_last, 0, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_INT(-1, dbgapi_regions_write(id_last, 0, buf, sizeof(buf)));
+
+    TEST_ASSERT_EQUAL_INT(DBGAPI_REGIONS_ERR_STALE,
+        dbgapi_regions_read_gen(id_last, gen_old, 0, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_REGIONS_ERR_STALE,
+        dbgapi_regions_write_gen(id_last, gen_old, 0, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_REGIONS_ERR_STALE,
+        dbgapi_regions_read_gen(id_first, gen_old, 0, buf, sizeof(buf)));
+
+    uint32_t gen_new = dbgapi_regions_layout_gen();
+    TEST_ASSERT_NOT_EQUAL_UINT32(gen_old, gen_new);
+    regs = dbgapi_regions_enumerate_dup_gen(&count, &gen_new);
+    TEST_ASSERT_EQUAL_UINT32(dbgapi_regions_layout_gen(), gen_new);
+    i_first = find_region_sub(regs, count, REGION_KIND_RAMDISK_STD, 0);
+    TEST_ASSERT_NOT_EQUAL_INT(-1, i_first);
+    TEST_ASSERT_EQUAL_INT(-1, find_region_sub(regs, count, REGION_KIND_RAMDISK_STD, 1));
+    TEST_ASSERT_EQUAL_INT((int)sizeof(buf),
+        dbgapi_regions_read_gen(regs[i_first].id, gen_new, 0, buf, sizeof(buf)));
+    g_free(regs);
+
+    ramdisk_std_disconnect();
+}
+
+
+/* ================================================================
+ * Test 8b: Memext PEHU emit 128 raw 4 KB kusů = celých 512 KB
+ *
+ * PEHU má 64 bank po 8 KB (MEMEXT_PEHU_BANKS x MEMEXT_PEHU_BANK_SIZE
+ * = 512 KB). Region MEMEXT_RAM je ale raw 4 KB kus (sub_id = raw
+ * index, čtení přes memext_get_ram_read_pointer_by_rawbank), takže
+ * PEHU potřebuje 2 * MEMEXT_PEHU_BANKS regionů. Dřív se emitovalo jen
+ * MEMEXT_PEHU_BANKS = 64 kusů a PEHU banky 20h-3Fh nebyly vidět (N34).
  * ================================================================ */
 
 void test_regions_memext_pehu_bank_count(void)
@@ -504,13 +576,29 @@ void test_regions_memext_pehu_bank_count(void)
     static st_REGION_DESC regs[512];
     int count = dbgapi_regions_enumerate(regs, 512);
 
-    /* PEHU má 64 RAM banek (MEMEXT_PEHU_BANKS = 0x40). */
+    /* 64 PEHU bank po 8 KB = 128 raw kusů po 4 KB. */
     int ram_n = count_regions(regs, count, REGION_KIND_MEMEXT_RAM);
-    TEST_ASSERT_EQUAL_INT(MEMEXT_PEHU_BANKS, ram_n);
+    TEST_ASSERT_EQUAL_INT(MEMEXT_PEHU_BANKS * 2, ram_n);
 
     /* PEHU NEMÁ FLASH. */
     int flash_n = count_regions(regs, count, REGION_KIND_MEMEXT_FLASH);
     TEST_ASSERT_EQUAL_INT(0, flash_n);
+
+    /* Poslední PEHU banka 3Fh namapovaná na 0x2000-0x3FFF (addr point
+     * 2 a 3): horní půlka je raw kus 7Fh a region se sub_id 7Fh musí
+     * číst tutéž buňku, kterou vidí CPU. */
+    memext_map_pwrite(2, MEMEXT_PEHU_MASK);
+    uint8_t *cpu_upper = memext_get_ram_read_pointer_by_addr_point(3);
+    TEST_ASSERT_NOT_NULL(cpu_upper);
+    cpu_upper[0x123] = 0xA5;
+
+    int idx = find_region_sub(regs, count, REGION_KIND_MEMEXT_RAM, 0x7F);
+    TEST_ASSERT_NOT_EQUAL_INT(-1, idx);
+    TEST_ASSERT_EQUAL_UINT32(MEMEXT_RAW_BANK_SIZE, regs[idx].size);
+
+    uint8_t b = 0;
+    TEST_ASSERT_EQUAL_INT(1, dbgapi_regions_read(regs[idx].id, 0x123, &b, 1));
+    TEST_ASSERT_EQUAL_HEX8(0xA5, b);
 }
 
 
@@ -801,6 +889,7 @@ int main(int argc, char *argv[])
     RUN_TEST(test_regions_vram_plane);
     RUN_TEST(test_regions_vram_700_offsets);
     RUN_TEST(test_regions_ramdisk_pezik_e8);
+    RUN_TEST(test_regions_ramdisk_std_shrink_stale);
     RUN_TEST(test_regions_memext_pehu_bank_count);
     RUN_TEST(test_regions_enumerate_clip);
     RUN_TEST(test_regions_read_write_invalid_id);

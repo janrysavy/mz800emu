@@ -69,7 +69,23 @@ st_EVENTLOG_RING g_eventlog = {
     .head     = 0,
     .count    = 0,
     .overflow = false,
+    .next_seq = 0,
+    .segment  = 1,
 };
+
+
+/**
+ * @brief Nový segment proudu eventů: seq od 0, vyšší identita segmentu.
+ *
+ * Volá se všude, kde se ring vyprázdní (clear, změna kapacity, init), aby
+ * čtenář proudu (trace_read) poznal, že jeho kurzor patří starým datům.
+ */
+static void eventlog_new_segment ( void )
+{
+    g_eventlog.next_seq = 0;
+    g_eventlog.segment++;
+    if ( g_eventlog.segment == 0 ) g_eventlog.segment = 1;
+}
 
 /**
  * Interní flag = Events okno aktuálně otevřené v UI.
@@ -180,6 +196,7 @@ void eventlog_init ( size_t capacity )
     if ( g_eventlog.events != NULL && g_eventlog.capacity == cap ) {
         g_eventlog.head     = 0;
         g_eventlog.count    = 0;
+        eventlog_new_segment ( );
         g_eventlog.overflow = false;
         return;
     }
@@ -190,6 +207,7 @@ void eventlog_init ( size_t capacity )
     g_eventlog.capacity = ( g_eventlog.events != NULL ) ? cap : 0;
     g_eventlog.head     = 0;
     g_eventlog.count    = 0;
+    eventlog_new_segment ( );
     g_eventlog.overflow = false;
 }
 
@@ -201,6 +219,7 @@ void eventlog_destroy ( void )
     g_eventlog.capacity = 0;
     g_eventlog.head     = 0;
     g_eventlog.count    = 0;
+    eventlog_new_segment ( );
     g_eventlog.overflow = false;
     g_eventlog_active   = 0;
     /* Pause-on-match gate - po destroy ring není, gate vypneme (callback
@@ -268,6 +287,7 @@ void eventlog_clear ( void )
 {
     g_eventlog.head     = 0;
     g_eventlog.count    = 0;
+    eventlog_new_segment ( );
     g_eventlog.overflow = false;
     /* events[] obsah zachováme - count = 0 zaručí, že ho nikdo nepřečte. */
 }
@@ -291,6 +311,7 @@ void eventlog_set_capacity ( size_t new_capacity )
     g_eventlog.capacity = ( g_eventlog.events != NULL ) ? new_capacity : 0;
     g_eventlog.head     = 0;
     g_eventlog.count    = 0;
+    eventlog_new_segment ( );
     g_eventlog.overflow = false;
     g_eventlog_config.capacity = (unsigned) g_eventlog.capacity;
 
@@ -486,6 +507,7 @@ void eventlog_record ( uint8_t category, uint8_t subtype,
     e->reserved32      = 0;
 
     g_eventlog.head = ( g_eventlog.head + 1 ) % g_eventlog.capacity;
+    g_eventlog.next_seq++;
     if ( g_eventlog.count < g_eventlog.capacity ) {
         g_eventlog.count++;
     } else {

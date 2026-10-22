@@ -113,7 +113,7 @@ A standard Z80 IORQ takes ~3 T-state cycles. If a WAIT was granted
 | `0` | Not recorded (the current implementation defaults to 0). |
 | `>0` | Actual length in pxCLK. For conversion to T-states: `t_states = pulse / cpu_divider`. |
 
-## meta.json
+## Manifest `<name>.json`
 
 ```json
 {

@@ -32,6 +32,25 @@
  * V režimu bez zvukového zařízení (headless) si zachycení SDL bloky vyrábí
  * samo na každý snímek (iface_audio_20ms_sync()).
  *
+ * Paměť (parametr `memory`, výchozí jen při startu přes MCP): vedle souborů
+ * (nebo místo nich) drží zachycení ringy v paměti, které jde číst za běhu
+ * i po konci až do dalšího startu (audio_capture_stream_copy()):
+ *
+ * | Proud (en_AUDIO_CAPTURE_STREAM) | Záznam | Plní se |
+ * |-------------------------------|--------|---------|
+ * | `psg_writes`    | st_AUDIO_CAPTURE_PSG_REC (24 B), jako řádek psg_writes.csv | zápis do PSG |
+ * | `levels`        | st_AUDIO_CAPTURE_LEVEL_REC (16 B), jako řádek events.csv | změna úrovně kanálu |
+ * | `frames`        | st_AUDIO_CAPTURE_FRAME_REC (192 B), souhrn zvukového snímku | konec snímku |
+ * | `pcm_reference` | stereo pár int16 (4 B), stejná data jako reference.wav | konec snímku |
+ * | `pcm_sdl`       | stereo pár int16 (4 B), stejná data jako sdl.wav | blok SDL cesty |
+ *
+ * Každý proud má pořadová čísla záznamů `seq` od 0 (začátek zachycení).
+ * Ring po naplnění přepisuje nejstarší záznamy (first_seq roste). Číslo
+ * `segment` se zvýší při každém startu; ringy předchozího zachycení start
+ * uvolní. S pamětí běží renderer reference i bez reference.wav (souhrn
+ * snímku z něj bere RMS a špičku) a s `pcm_sdl` i SDL cesta bez sdl.wav.
+ * Zachycení jen do paměti (žádný soubor) nevytváří složku ani capture.json.
+ *
  * Konec: audio_capture_stop(), dosažení `frames`, pojistka
  * AUDIO_CAPTURE_MAX_FRAMES_SAFETY, skok času zpět (reset emulátoru, načtení
  * snapshotu), chyba zápisu, nebo ukončení emulátoru (audio_capture_exit()).
@@ -76,6 +95,107 @@ extern "C" {
 #define AUDIO_CAPTURE_WAV_RATE 44100u
 /** @brief Pojistka délky zachycení bez `frames` (1 hodina při 60 snímcích/s). */
 #define AUDIO_CAPTURE_MAX_FRAMES_SAFETY 216000u
+/** @brief Nejvýš zvukových kanálů v souhrnu snímku (CTC0 + 2x 4 kanály PSG). */
+#define AUDIO_CAPTURE_MAX_CHANNELS 9u
+/** @brief Výchozí kapacita ringu změn úrovní [záznamy] (16 MiB). */
+#define AUDIO_CAPTURE_RING_LEVELS_DEFAULT (1024u * 1024u)
+/** @brief Výchozí kapacita ringu zápisů do PSG [záznamy] (6 MiB). */
+#define AUDIO_CAPTURE_RING_PSG_DEFAULT (256u * 1024u)
+/** @brief Výchozí délka ringu souhrnů snímků [minuty]. */
+#define AUDIO_CAPTURE_MEMORY_MINUTES_DEFAULT 10u
+/** @brief Výchozí délka PCM ringů [s] (10,6 MB na zdroj). */
+#define AUDIO_CAPTURE_PCM_SECONDS_DEFAULT 60u
+
+/** @brief Proud paměti zachycení (pořadí = indexy v st_AUDIO_CAPTURE_STATUS::streams). */
+typedef enum en_AUDIO_CAPTURE_STREAM {
+    AUDIO_CAPTURE_STREAM_PSG_WRITES = 0, /**< Zápisy do PSG (st_AUDIO_CAPTURE_PSG_REC). */
+    AUDIO_CAPTURE_STREAM_LEVELS,         /**< Změny úrovní kanálů (st_AUDIO_CAPTURE_LEVEL_REC). */
+    AUDIO_CAPTURE_STREAM_FRAMES,         /**< Souhrny zvukových snímků (st_AUDIO_CAPTURE_FRAME_REC). */
+    AUDIO_CAPTURE_STREAM_PCM_REFERENCE,  /**< PCM reference (stereo pár int16). */
+    AUDIO_CAPTURE_STREAM_PCM_SDL,        /**< PCM SDL cesty (stereo pár int16). */
+    AUDIO_CAPTURE_STREAM_COUNT           /**< Počet proudů (není platná hodnota). */
+} en_AUDIO_CAPTURE_STREAM;
+
+/**
+ * @brief Záznam změny úrovně kanálu (proud `levels`, jako řádek events.csv).
+ *
+ * Paměť hostitele (little endian na podporovaných hostitelích); stejné
+ * bajty vrací čtení `raw_b64`.
+ */
+typedef struct st_AUDIO_CAPTURE_LEVEL_REC {
+    uint64_t t;           /**< Absolutní čas změny [takty GDG] (origin_ticks = čas 0 v CSV). */
+    uint32_t frame;       /**< Zvukový snímek od začátku zachycení. */
+    uint8_t src;          /**< Kanál 0 = ctc0, 1..4 = psg0_0..3, 5..8 = psg1_0..3. */
+    uint8_t level;        /**< Úroveň 0..15. */
+    uint8_t reserved[2];  /**< 0. */
+} st_AUDIO_CAPTURE_LEVEL_REC;
+
+/** @brief Registr zapsaný do PSG (dekódováno ze stavu PSG po zápisu, jako psg_writes.csv). */
+typedef enum en_AUDIO_CAPTURE_PSG_REG {
+    AUDIO_CAPTURE_PSG_REG_TONE_LO = 0, /**< Latch bajt tónu: value = dolní 4 bity děliče (dělič se změní až datovým bajtem). */
+    AUDIO_CAPTURE_PSG_REG_TONE,        /**< Dělič tónu po zápisu (10 bitů). */
+    AUDIO_CAPTURE_PSG_REG_VOLUME,      /**< Útlum 0..15 (15 = vypnuto). */
+    AUDIO_CAPTURE_PSG_REG_NOISE        /**< Šum: (typ << 2) | rychlost. */
+} en_AUDIO_CAPTURE_PSG_REG;
+
+/** @brief Záznam zápisu do PSG (proud `psg_writes`). */
+typedef struct st_AUDIO_CAPTURE_PSG_REC {
+    uint64_t t;           /**< Absolutní čas zápisu [takty GDG]. */
+    uint32_t frame;       /**< Zvukový snímek od začátku zachycení. */
+    uint16_t value;       /**< Hodnota registru po zápisu (viz en_AUDIO_CAPTURE_PSG_REG). */
+    uint8_t psg;          /**< Cílové PSG: bit 0 = PSG0, bit 1 = PSG1. */
+    uint8_t byte;         /**< Zapsaný bajt. */
+    uint8_t channel;      /**< Kanál 0..3 (3 = šum). */
+    uint8_t reg;          /**< en_AUDIO_CAPTURE_PSG_REG. */
+    uint8_t reserved[6];  /**< 0. */
+} st_AUDIO_CAPTURE_PSG_REC;
+
+/** @brief Souhrn jednoho kanálu za zvukový snímek. */
+typedef struct st_AUDIO_CAPTURE_FRAME_CH {
+    uint32_t edges;       /**< Změny úrovně ve snímku (jako řádky events.csv s tímto `frame`). */
+    uint32_t on_ticks;    /**< Takty GDG s úrovní > 0. */
+    uint32_t energy;      /**< Součet úroveň^2 x takty (RMS úrovně = sqrt(energy / len_ticks)). */
+    uint8_t max_level;    /**< Největší úroveň ve snímku. */
+    uint8_t end_level;    /**< Úroveň na konci snímku. */
+    uint8_t reserved[2];  /**< 0. */
+} st_AUDIO_CAPTURE_FRAME_CH;
+
+/** @brief Bit st_AUDIO_CAPTURE_FRAME_REC::flags: ref_rms / ref_peak platí. */
+#define AUDIO_CAPTURE_FRAME_FLAG_REF 0x01u
+/** @brief Bit st_AUDIO_CAPTURE_FRAME_REC::flags: SDL cesta se zachytávala (sdl_* platí). */
+#define AUDIO_CAPTURE_FRAME_FLAG_SDL 0x02u
+
+/**
+ * @brief Souhrn zvukového snímku (proud `frames`).
+ *
+ * Kanály a změny se přiřazují snímku, během kterého je zvuková cesta
+ * doručila (stejně jako sloupec `frame` v CSV); změny CTC0 doručené po
+ * horizontu snímku (nejvýš jeden krok PSG) se tak počítají do snímku před
+ * ním. Součty on_ticks a energy přes všechny snímky jsou přesné.
+ * Úrovně SDL cesty jsou z bloků, které přišly od konce předchozího snímku
+ * (SDL cesta je o snímek a víc zpožděná).
+ *
+ * @invariant ch[i] pro i >= počet kanálů platformy je nulový.
+ */
+typedef struct st_AUDIO_CAPTURE_FRAME_REC {
+    uint64_t t;           /**< Absolutní čas začátku snímku [takty GDG] (horizont předchozího). */
+    uint32_t frame;       /**< Snímek od začátku zachycení (= seq). */
+    uint32_t len_ticks;   /**< Délka snímku [takty GDG]. */
+    st_AUDIO_CAPTURE_FRAME_CH ch[AUDIO_CAPTURE_MAX_CHANNELS]; /**< Kanály v pořadí audio logu. */
+    uint16_t ref_rms[2];  /**< RMS reference L, R (0..32767). */
+    uint16_t ref_peak[2]; /**< Špička reference L, R (0..32768). */
+    uint16_t sdl_rms[2];  /**< RMS bloků SDL cesty L, R. */
+    uint16_t sdl_peak[2]; /**< Špička bloků SDL cesty L, R. */
+    uint32_t ref_samples; /**< Vzorky reference vyrenderované za snímek. */
+    uint32_t sdl_samples; /**< Vzorky bloků SDL cesty od předchozího snímku. */
+    uint16_t sdl_blocks;  /**< Bloky SDL cesty od předchozího snímku. */
+    uint8_t flags;        /**< AUDIO_CAPTURE_FRAME_FLAG_*. */
+    uint8_t reserved[5];  /**< 0. */
+} st_AUDIO_CAPTURE_FRAME_REC;
+
+G_STATIC_ASSERT(sizeof(st_AUDIO_CAPTURE_LEVEL_REC) == 16);
+G_STATIC_ASSERT(sizeof(st_AUDIO_CAPTURE_PSG_REC) == 24);
+G_STATIC_ASSERT(sizeof(st_AUDIO_CAPTURE_FRAME_REC) == 192);
 
 /** @brief Parametry zachycení. */
 typedef struct st_AUDIO_CAPTURE_PARAMS {
@@ -86,6 +206,13 @@ typedef struct st_AUDIO_CAPTURE_PARAMS {
     bool reference_wav;               /**< Zapisovat reference.wav. */
     bool sdl_wav;                     /**< Zapisovat sdl.wav. */
     bool quit_after_stop;             /**< Po dosažení `frames` ukončit emulátor (CLI v režimu --headless). */
+    bool memory;                      /**< Držet ringy v paměti (proudy psg_writes, levels, frames). */
+    bool pcm_reference;               /**< S `memory`: PCM ring reference. */
+    bool pcm_sdl;                     /**< S `memory`: PCM ring SDL cesty (zapne SDL cestu i bez sdl.wav). */
+    uint32_t ring_levels;             /**< Kapacita ringu levels [záznamy]; 0 = AUDIO_CAPTURE_RING_LEVELS_DEFAULT. */
+    uint32_t ring_psg_writes;         /**< Kapacita ringu psg_writes [záznamy]; 0 = AUDIO_CAPTURE_RING_PSG_DEFAULT. */
+    uint32_t ring_frames;             /**< Kapacita ringu frames [snímky]; 0 = AUDIO_CAPTURE_MEMORY_MINUTES_DEFAULT minut. */
+    uint32_t ring_pcm;                /**< Kapacita PCM ringů [stereo páry]; 0 = AUDIO_CAPTURE_PCM_SECONDS_DEFAULT s. */
 } st_AUDIO_CAPTURE_PARAMS;
 
 /**
@@ -110,6 +237,15 @@ typedef struct st_AUDIO_CAPTURE_SETTINGS {
  */
 extern st_AUDIO_CAPTURE_SETTINGS g_audio_capture_settings;
 
+/** @brief Stav jednoho proudu paměti zachycení. */
+typedef struct st_AUDIO_CAPTURE_STREAM_INFO {
+    bool present;         /**< Proud se drží (memory, u PCM navíc pcm_reference / pcm_sdl). */
+    size_t record_size;   /**< Velikost záznamu [B]. */
+    uint64_t capacity;    /**< Kapacita ringu [záznamy]. */
+    uint64_t first_seq;   /**< Nejstarší držený záznam (= přepsané záznamy). */
+    uint64_t next_seq;    /**< Pořadové číslo příštího záznamu (= všechny záznamy od začátku). */
+} st_AUDIO_CAPTURE_STREAM_INFO;
+
 /** @brief Stav zachycení (běžícího nebo posledního). */
 typedef struct st_AUDIO_CAPTURE_STATUS {
     bool pending;                /**< Start naplánovaný, čeká na konec zvukového snímku. */
@@ -123,7 +259,43 @@ typedef struct st_AUDIO_CAPTURE_STATUS {
     char dir[AUDIO_CAPTURE_PATH_MAX];          /**< Složka ("" = dosud žádná). */
     char stop_reason[AUDIO_CAPTURE_TEXT_MAX];  /**< Anglicky: proč zachycení skončilo ("" = běží / nikdy). */
     char last_error[AUDIO_CAPTURE_TEXT_MAX];   /**< Anglicky: poslední chyba ("" = žádná). */
+    unsigned segment;            /**< Pořadí zachycení od spuštění emulátoru (0 = dosud žádné). */
+    bool began;                  /**< Zachycení opravdu začalo (origin_ticks platí). */
+    uint64_t origin_ticks;       /**< Absolutní čas začátku [takty GDG] (čas 0 v CSV). */
+    unsigned channels;           /**< Počet zvukových kanálů platformy (AUDIO_SRC_CHANNELS_COUNT). */
+    bool stereo;                 /**< Druhé PSG je zapnuté (MZ-800 / MZ-1500). */
+    bool memory;                 /**< Paměť zachycení se drží. */
+    uint64_t memory_bytes;       /**< Alokovaná paměť ringů [B]. */
+    st_AUDIO_CAPTURE_STREAM_INFO streams[AUDIO_CAPTURE_STREAM_COUNT]; /**< Proudy paměti. */
 } st_AUDIO_CAPTURE_STATUS;
+
+/**
+ * @brief Kopie úseku proudu paměti zachycení (audio_capture_stream_copy()).
+ *
+ * @par Vlastnictví
+ * `data` alokuje audio_capture_stream_copy() (g_malloc), uvolní
+ * audio_capture_stream_copy_clear().
+ */
+typedef struct st_AUDIO_CAPTURE_STREAM_COPY {
+    unsigned segment;     /**< Pořadí zachycení (0 = dosud žádné). */
+    bool live;            /**< Zachycení je naplánované nebo běží. */
+    bool present;         /**< Proud se v tomto zachycení drží. */
+    size_t record_size;   /**< Velikost záznamu [B] (0 = proud se nedrží). */
+    uint64_t first_seq;   /**< Nejstarší držený záznam. */
+    uint64_t next_seq;    /**< Příští záznam. */
+    uint64_t origin_ticks; /**< Absolutní čas začátku zachycení [takty GDG] (0 = nezačalo). */
+    uint8_t *data;        /**< Zkopírované záznamy (NULL = žádné). */
+    uint64_t data_seq;    /**< seq prvního zkopírovaného záznamu. */
+    uint64_t data_count;  /**< Počet zkopírovaných záznamů. */
+} st_AUDIO_CAPTURE_STREAM_COPY;
+
+/** @brief Stav kanálu PSG na začátku zachycení (pro detektor not). */
+typedef struct st_AUDIO_CAPTURE_PSG_INITIAL {
+    bool valid;                 /**< Zachycení začalo na platformě s PSG. */
+    uint16_t divider[2][4];     /**< Dělič tónu [PSG][kanál]. */
+    uint8_t attn[2][4];         /**< Útlum 0..15 [PSG][kanál]. */
+    bool noise[2][4];           /**< Kanál je šumový [PSG][kanál]. */
+} st_AUDIO_CAPTURE_PSG_INITIAL;
 
 /**
  * @brief Příznak pro rychlé testy v háčcích (0 = nic se nezachytává ani nečeká).
@@ -138,7 +310,7 @@ extern gint g_audio_capture_flags;
 /** @brief Bit g_audio_capture_flags: zapisuje se sdl.wav. */
 #define AUDIO_CAPTURE_FLAG_SDL 0x02
 
-/** @brief Výchozí parametry: všechny soubory, bez limitu snímků, výchozí složka. */
+/** @brief Výchozí parametry: všechny soubory, bez paměti a limitu snímků, výchozí složka. */
 static inline void audio_capture_params_init(st_AUDIO_CAPTURE_PARAMS *p)
 {
     memset(p, 0, sizeof(*p));
@@ -166,9 +338,14 @@ static inline bool audio_capture_wants_sdl(void)
  * @param p        Parametry.
  * @param err      Buffer na anglický text chyby, nebo NULL.
  * @param err_size Velikost `err`.
- * @return false = zachycení už běží, žádný soubor není zvolený, nebo nejde
- *         vytvořit složka či soubor (text v `err`); nic se nespustí.
- * @post Při úspěchu status.pending == true a status.dir je složka.
+ * Ringy předchozího zachycení uvolní a s `memory` alokuje nové; segment
+ * se zvýší i bez paměti.
+ *
+ * @return false = zachycení už běží, žádný výstup (soubor ani paměť) není
+ *         zvolený, nejde vytvořit složka či soubor, nebo nejde alokovat
+ *         paměť ringů (text v `err`); nic se nespustí.
+ * @post Při úspěchu status.pending == true; status.dir je složka, nebo ""
+ *       u zachycení jen do paměti.
  */
 bool audio_capture_start(const st_AUDIO_CAPTURE_PARAMS *p, char *err, size_t err_size);
 
@@ -224,10 +401,43 @@ void audio_capture_on_frame(uint64_t horizon_ticks);
 void audio_capture_sdl_output(const float *stereo, size_t frames);
 
 /**
- * @brief Ukončí zachycení při ukončení emulátoru (soubory se dopíší).
+ * @brief Ukončí zachycení při ukončení emulátoru (soubory se dopíší) a uvolní ringy.
  * @note Libovolné vlákno (bere zámek modulu).
  */
 void audio_capture_exit(void);
+
+/**
+ * @brief Zkopíruje metadata a úsek proudu paměti zachycení.
+ *
+ * Pod zámkem modulu (ten drží i emu vlákno a vlákno SDL zvuku) zkopíruje
+ * záznamy [max(from_seq, first_seq), ...) nejvýš `count` záznamů a nejvýš
+ * `max_bytes` bajtů; volající proto drží `max_bytes` malé (zámek blokuje
+ * zvukovou cestu po dobu kopie).
+ *
+ * @param stream    Proud.
+ * @param from_seq  První požadovaný záznam.
+ * @param count     Nejvýš záznamů (0 = jen metadata).
+ * @param max_bytes Nejvýš bajtů kopie.
+ * @param out       Výstup (uvolnit audio_capture_stream_copy_clear()).
+ * @return false = nedostatek paměti pro kopii (out bez dat, metadata platí).
+ * @note Libovolné vlákno.
+ */
+bool audio_capture_stream_copy(en_AUDIO_CAPTURE_STREAM stream, uint64_t from_seq,
+                               uint64_t count, size_t max_bytes,
+                               st_AUDIO_CAPTURE_STREAM_COPY *out);
+
+/**
+ * @brief Uvolní data kopie a vynuluje ji.
+ * @param c Kopie (smí být už prázdná).
+ */
+void audio_capture_stream_copy_clear(st_AUDIO_CAPTURE_STREAM_COPY *c);
+
+/**
+ * @brief Stav kanálů PSG na začátku posledního zachycení.
+ * @param out Výstup (valid = false, pokud nezačalo nebo platforma nemá PSG).
+ * @note Libovolné vlákno.
+ */
+void audio_capture_get_psg_initial(st_AUDIO_CAPTURE_PSG_INITIAL *out);
 
 /**
  * @brief Zaregistruje sekci INI `[AUDIO_CAPTURE]` a načte g_audio_capture_settings.

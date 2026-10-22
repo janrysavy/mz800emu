@@ -93,10 +93,13 @@ bool sdlapp_option_present ( const char *name )
 }
 
 
-const char *sdlapp_option_value ( const char *name )
+/**
+ * @brief Hodnota option z argv tokenu na indexu @p idx (obě formy zápisu).
+ *
+ * @return Hodnota, nebo NULL, když u space formy chybí další token.
+ */
+static const char *sdlapp_options_value_at ( int idx, const char *name )
 {
-    int idx = sdlapp_options_find_index ( name );
-    if ( idx < 0 ) return NULL;
     const char *tok = s_argv[ idx ];
     size_t n = strlen ( name );
     /* Equals form: `--name=value` - hodnota začíná za rovnítkem. */
@@ -104,6 +107,43 @@ const char *sdlapp_option_value ( const char *name )
     /* Space form: `--name value` - hodnota je v dalším argv tokenu. */
     if ( idx + 1 >= s_argc ) return NULL;
     return s_argv[ idx + 1 ];
+}
+
+
+int sdlapp_option_count ( const char *name )
+{
+    if ( !name || !s_argv ) return 0;
+    int count = 0;
+    int i;
+    for ( i = 1; i < s_argc; i++ )
+    {
+        if ( s_argv[i] && sdlapp_options_match_token ( s_argv[i], name ) >= 0 ) count++;
+    }
+    return count;
+}
+
+
+const char *sdlapp_option_value_nth ( const char *name, int n )
+{
+    if ( !name || !s_argv || n < 0 ) return NULL;
+    int i;
+    for ( i = 1; i < s_argc; i++ )
+    {
+        if ( s_argv[i] && sdlapp_options_match_token ( s_argv[i], name ) >= 0 )
+        {
+            if ( n == 0 ) return sdlapp_options_value_at ( i, name );
+            n--;
+        }
+    }
+    return NULL;
+}
+
+
+const char *sdlapp_option_value ( const char *name )
+{
+    int idx = sdlapp_options_find_index ( name );
+    if ( idx < 0 ) return NULL;
+    return sdlapp_options_value_at ( idx, name );
 }
 
 

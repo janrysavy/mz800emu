@@ -5,7 +5,7 @@
  * 5. subsystém trace-suite (vedle `cputrack`, `iorqlog`, `intlog`, `hwlog`).
  * Loguje `mark "name"` action z bp_action.c jako 24 B záznamy do
  * `<dir>/<name>.NNN.bin`. Marker name registry (string -> uint16 id) se
- * dumpuje do meta.json `subsys_header.markers`, což analyzátory umožní
+ * dumpuje do manifestu <name>.json `subsys_header.markers`, což analyzátory umožní
  * dekódovat id zpět na človek-čitelné jméno.
  *
  * Designové rozhodnutí: Mark name jsou parse-time konstantní string literály
@@ -24,7 +24,7 @@
  * | 18     | 6 B      | reserved (padding, vyplněno nulami)      |
  *
  * @note Registr je perzistentní napříč start/stop recordingu (= ID stabilní
- *       v rámci jednoho běhu emulátoru, dumpuje se do meta.json při každém
+ *       v rámci jednoho běhu emulátoru, dumpuje se do manifestu <name>.json při každém
  *       @ref marklog_start). Reset registru až ve @ref marklog_finalize().
  *
  * @author Michal Hucik <hucik@ordoz.com>
@@ -131,7 +131,7 @@ void marklog_recompute_active ( int debugger_active );
 int marklog_start ( void );
 
 /**
- * @brief Zastavit recording (flush + close + finalize meta.json).
+ * @brief Zastavit recording (flush + close + finalize manifest <name>.json).
  *
  * Idempotentní - druhé volání bez startu = no-op.
  */
@@ -156,6 +156,21 @@ void marklog_finalize ( void );
  *         neaktivní subsystém.
  */
 int marklog_is_truncated ( void );
+
+/**
+ * @brief Uložit aktuální segment, volitelně přesměrovat na @p path.
+ *
+ * Stejná sémantika jako iorqlog_save_segment():
+ *  - @p path NULL nebo prázdná: zapíše rozpracovaný chunk a manifest,
+ *    segment pokračuje (nic se nezahodí),
+ *  - jinak uzavře segment, přesměruje dir/name na @p path a při aktivním
+ *    nahrávání otevře nový segment.
+ *
+ * @param path Cílová cesta dalšího segmentu, nebo NULL (jen flush).
+ * @return 0 OK, -1 chyba (restart writeru selhal).
+ * @pre Emu vlákno (dbgapi trace lifecycle).
+ */
+int marklog_save_segment ( const char *path );
 
 /**
  * @brief Zaregistrovat marker name -> uint16 id (parse-time API).
@@ -210,6 +225,18 @@ const char *marklog_get_name ( uint16_t marker_id );
  * @return Počet zaregistrovaných jmen (0 .. 65535).
  */
 unsigned marklog_registry_count ( void );
+
+/**
+ * @brief Writer kanálu marklog pro čtení proudu záznamů (trace_read).
+ *
+ * Vrací writer i po stopu (popis posledního uzavřeného segmentu), viz
+ * tlog_writer_read_snapshot() a devdoc/trace/stream-read.md.
+ *
+ * @return Ukazatel na statický writer modulu (nikdy NULL).
+ * @pre Snímek writeru pořizovat jen z emu vlákna; tlog_writer_segment()
+ *      z libovolného vlákna.
+ */
+const st_TLOG_WRITER *marklog_get_writer ( void );
 
 #ifdef __cplusplus
 }

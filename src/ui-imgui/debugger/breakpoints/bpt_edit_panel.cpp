@@ -2504,8 +2504,10 @@ static void render_section_action(BptEditPanelState *ep)
  *
  * Label "Live Eval Test (optional)" je v parent SeparatorText.
  *
- * V1: ctx je naplněna nulami (= stateless test). V1.5.A10 doplní real ctx
- * z g_mzarch_main.
+ * Výraz vyhodnotí emu vlákno přes dbg_ui_bp_test_eval() (kontext
+ * breakpoints_fill_global_ctx(), kontext zásahu nulový, znak `!` se
+ * ignoruje); UI vlákno emu stav nečte. Volání blokuje do vyřízení
+ * příkazu, nejvýš DBG_UI_BP_BULK_CMD_TIMEOUT_MS.
  */
 static void render_section_test_eval(BptEditPanelState *ep)
 {
@@ -2522,27 +2524,26 @@ static void render_section_test_eval(BptEditPanelState *ep)
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + row_avail - btn_w);
     if (ImGui::Button(btn_label, ImVec2(btn_w, 0)))
     {
-        char errbuf[BPT_EDIT_ERR_BUFLEN];
-        errbuf[0] = '\0';
-        bp_expr_ctx_t ctx;
-        /* V1.5.A10: ctx_zero pak naplň real emu state z g_mzarch_main
-         * + g_gdg (= cpu registers, BankPC). Test Eval tak může pracovat
-         * s skutečnými hodnotami CPU registrů a memory probe. self_id=-1
-         * = test eval out-of-band (= disable_self loguje warning). */
-        bp_expr_ctx_zero(&ctx);
-        breakpoints_fill_global_ctx(&ctx);
-        ctx.self_id = -1;
-        int32_t result = 0;
-        if (bp_expr_parse_eval(ep->wc_test_expr, &ctx, &result,
-                                 errbuf, sizeof(errbuf)))
+        /* Výraz čte registry, paměť a porty emu vlákna, proto ho vyhodnotí
+         * emu vlákno (DBGAPI_CMD_BP_TEST_EVAL): kontext jako u BP mimo
+         * zásah, self_id -1, znak `!` se ignoruje. */
+        st_DBGAPI_BP_TEST_EVAL_PARAM p;
+        memset(&p, 0, sizeof(p));
+        p.expr_text = ep->wc_test_expr;
+        if (!dbg_ui_bp_test_eval(&p))
         {
             snprintf(ep->wc_test_result, sizeof(ep->wc_test_result),
-                      "= %d  (0x%X)", (int)result, (unsigned)result);
+                      "ERR: %s", _("The emulator did not respond in time."));
+        }
+        else if (p.out_ok)
+        {
+            snprintf(ep->wc_test_result, sizeof(ep->wc_test_result),
+                      "= %d  (0x%X)", (int)p.out_value, (unsigned)p.out_value);
         }
         else
         {
             snprintf(ep->wc_test_result, sizeof(ep->wc_test_result),
-                      "ERR: %s", errbuf);
+                      "ERR: %s", p.out_error);
         }
     }
     if (ep->wc_test_result[0])

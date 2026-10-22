@@ -30,6 +30,7 @@
 #include "debugger/dbgapi_cmdrq.h"
 #include "debugger/dbgapi_emu.h"
 #include "debugger/trace/tlog_common.h"   /* I19BYTE: tlog disk-byte čítač */
+#include "debugger/trace/cputrack.h"      /* mode kanálu cputrack (trace řízený akcí BP) */
 #include "emulator/emulator.h"
 
 #include <string.h>
@@ -450,7 +451,8 @@ void test_trace_save_baseline_reset ( void ) {
  * Toto je root-cause oprava V19B disk-floodu: trace flooduje disk inkrementálně
  * po chunkách (64 MB) mezi fire eventy, takže per-fire accounting by tu stopu
  * chytil pozdě. Po zaregistrování guardu (bp_action_install_disk_flush_guard)
- * každý chunk swap rovnou naroste backstop a na hraně prahu auto-zapauzuje -
+ * každý chunk swap kanálu řízeného akcí BP (zde cputrack, jako po akci
+ * trace_start) rovnou naroste backstop a na hraně prahu auto-zapauzuje -
  * žádný trace_save fire není potřeba.
  */
 void test_flush_guard_accounts_without_fire ( void ) {
@@ -464,6 +466,10 @@ void test_flush_guard_accounts_without_fire ( void ) {
     breakpoints_fwd_set_byte_limit ( 100ULL * 1024 * 1024 );
     breakpoints_fwd_reset_byte_accounting ( );
 
+    /* cputrack nahrává a spustila ho akce BP (bez skutečného writeru). */
+    g_cputrack_config.mode = TLOG_MODE_ALWAYS;
+    bp_action_trace_channel_note ( DBGAPI_TRACE_CHANNEL_CPUTRACK );
+
     /* První chunk swap (64 MB) - pod prahem 100 MB, žádná pauza, ale účtuje se. */
     tlog_common_disk_bytes_add ( 64ULL * 1024 * 1024 );
     TEST_ASSERT_EQUAL_UINT64 ( 64ULL * 1024 * 1024,
@@ -476,6 +482,56 @@ void test_flush_guard_accounts_without_fire ( void ) {
     TEST_ASSERT_EQUAL_UINT64 ( 128ULL * 1024 * 1024,
                                breakpoints_fwd_get_total_bytes ( ) );
     TEST_ASSERT_TRUE ( g_emulator.paused );
+
+    g_cputrack_config.mode = TLOG_MODE_OFF;
+    bp_action_trace_channel_forget ( DBGAPI_TRACE_CHANNEL_CPUTRACK );
+}
+
+
+/**
+ * Trace bez akcí BP (spuštěný z GUI nebo MCP) se do byte backstopu nepočítá.
+ *
+ * Dřív guard účtoval každý zápis trace na disk: samotný trace bez BP po
+ * 256 MB zapauzoval emulaci s "BP #-1" a headless běh s --exit-after-frames
+ * visel. Teď ho hlídá jen max_total_mb kanálu. Bajty zapsané bez řízení
+ * akcí BP nezapočítá ani pozdější zúčtování (baseline se posouvá). Kanál,
+ * který přestal nahrávat, ztratí značku řízení akcí BP.
+ */
+void test_flush_guard_ignores_trace_without_bp ( void ) {
+    MZTEST_REQUIRE_LEVEL ( MZTEST_LEVEL_UNIT );
+
+    bp_action_install_disk_flush_guard ( );
+    bp_action_reset_trace_disk_baseline ( );
+    breakpoints_fwd_set_byte_limit ( 100ULL * 1024 * 1024 );
+    breakpoints_fwd_reset_byte_accounting ( );
+
+    /* Trace spuštěný uživatelem: nahrává, ale bez značky akce BP. */
+    g_cputrack_config.mode = TLOG_MODE_ALWAYS;
+    bp_action_trace_channel_forget ( DBGAPI_TRACE_CHANNEL_CPUTRACK );
+
+    tlog_common_disk_bytes_add ( 256ULL * 1024 * 1024 );
+    TEST_ASSERT_EQUAL_UINT64 ( 0, breakpoints_fwd_get_total_bytes ( ) );
+    TEST_ASSERT_FALSE ( g_emulator.paused );
+
+    /* Akce BP kanál převezme: účtuje se jen to, co přibude potom. */
+    bp_action_trace_channel_note ( DBGAPI_TRACE_CHANNEL_CPUTRACK );
+    tlog_common_disk_bytes_add ( 32ULL * 1024 * 1024 );
+    TEST_ASSERT_EQUAL_UINT64 ( 32ULL * 1024 * 1024,
+                               breakpoints_fwd_get_total_bytes ( ) );
+
+    /* Kanál přestal nahrávat (vypnutý z GUI): značka zmizí, další zápisy
+     * (jiný kanál spuštěný uživatelem) se nepočítají. */
+    g_cputrack_config.mode = TLOG_MODE_OFF;
+    tlog_common_disk_bytes_add ( 32ULL * 1024 * 1024 );
+    TEST_ASSERT_EQUAL_UINT64 ( 32ULL * 1024 * 1024,
+                               breakpoints_fwd_get_total_bytes ( ) );
+    g_cputrack_config.mode = TLOG_MODE_ALWAYS;
+    tlog_common_disk_bytes_add ( 32ULL * 1024 * 1024 );
+    TEST_ASSERT_EQUAL_UINT64 ( 32ULL * 1024 * 1024,
+                               breakpoints_fwd_get_total_bytes ( ) );
+    TEST_ASSERT_FALSE ( g_emulator.paused );
+
+    g_cputrack_config.mode = TLOG_MODE_OFF;
 }
 
 
@@ -526,6 +582,10 @@ void test_flush_guard_no_double_account_with_fire ( void ) {
     breakpoints_set_type ( id, BPT_TYPE_PC_EXEC );
     set_trace_save_action ( id );
 
+    /* Kanál cputrack nahrává a ukládá ho akce BP (trace_save). */
+    g_cputrack_config.mode = TLOG_MODE_ALWAYS;
+    bp_action_trace_channel_note ( DBGAPI_TRACE_CHANNEL_CPUTRACK );
+
     /* Flush-side guard zaúčtuje 80 MB (chunk swapy mezi fire). */
     tlog_common_disk_bytes_add ( 80ULL * 1024 * 1024 );
     TEST_ASSERT_EQUAL_UINT64 ( 80ULL * 1024 * 1024,
@@ -536,6 +596,9 @@ void test_flush_guard_no_double_account_with_fire ( void ) {
     breakpoints_enforce_pc_exec ( 0x1234 );
     TEST_ASSERT_EQUAL_UINT64 ( 80ULL * 1024 * 1024,
                                breakpoints_fwd_get_total_bytes ( ) );
+
+    g_cputrack_config.mode = TLOG_MODE_OFF;
+    bp_action_trace_channel_forget ( DBGAPI_TRACE_CHANNEL_CPUTRACK );
 }
 
 
@@ -806,6 +869,7 @@ int main ( int argc, char *argv[] ) {
 
     /* I19FLUSH - flush-side byte backstop guard (0019 v3 dokončení) */
     RUN_TEST ( test_flush_guard_accounts_without_fire );
+    RUN_TEST ( test_flush_guard_ignores_trace_without_bp );
     RUN_TEST ( test_flush_guard_noop_when_unregistered );
     RUN_TEST ( test_flush_guard_no_double_account_with_fire );
 

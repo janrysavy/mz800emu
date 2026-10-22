@@ -124,6 +124,7 @@ int iorqlog_start ( void )
         return -1;
     }
     s_writer_open = 1;
+    tlog_writer_set_record_size ( &s_writer, TLOG_RECORD_SIZE_EVENT24 );
     char *hdr = build_subsys_header_json ( );
     tlog_writer_update_meta ( &s_writer, hdr );
     g_free ( hdr );
@@ -276,4 +277,10 @@ void iorqlog_apply_cli_options ( void )
         if ( g_ascii_strcasecmp ( v, "on" ) == 0 ) g_iorqlog_config.save_on_exit = 1;
         else if ( g_ascii_strcasecmp ( v, "off" ) == 0 ) g_iorqlog_config.save_on_exit = 0;
     }
+}
+
+
+const st_TLOG_WRITER *iorqlog_get_writer ( void )
+{
+    return &s_writer;
 }

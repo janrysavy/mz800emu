@@ -8,6 +8,7 @@
 #include <string>
 #include <stdint.h>
 #include <stdbool.h>
+#include "emulator/replay.h"
 #include <glib.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
@@ -177,12 +178,12 @@ void imgui_vkbd_draw_row(imgui_vkbd_t *vkbd, int x, int y, float scale)
                 if (ImGui::IsMouseClicked(0))
                 {
                     // g_print("Pressed key: %s\n", vkbd->vkdef[i].filename);
-                    PIO8255_VKBDBIT_RESET(vkbd->vkdef[i].mzcolumn, vkbd->vkdef[i].mzbit);
+                    replay_host_vkbd_set(vkbd->vkdef[i].mzcolumn, vkbd->vkdef[i].mzbit, true);
                 }
                 else if (ImGui::IsMouseReleased(0))
                 {
                     // g_print("Released key: %s\n", vkbd->vkdef[i].filename);
-                    PIO8255_VKBDBIT_SET(vkbd->vkdef[i].mzcolumn, vkbd->vkdef[i].mzbit);
+                    replay_host_vkbd_set(vkbd->vkdef[i].mzcolumn, vkbd->vkdef[i].mzbit, false);
                 };
             };
 

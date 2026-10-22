@@ -553,10 +553,16 @@ extern uint64_t g_eventlog_active_mask;
  * @field count     Počet validních eventů (capped at capacity).
  * @field overflow  @c true pokud došlo k wrap-around (= ring přepisuje
  *                  nejstarší eventy).
+ * @field next_seq  Počet eventů zapsaných od začátku segmentu (seq příštího
+ *                  eventu, čtení proudu trace_read). Nejstarší event v ringu
+ *                  má seq `next_seq - count`.
+ * @field segment   Identita segmentu (> 0): zvýší se při každém vyprázdnění
+ *                  ringu (clear, změna kapacity, init), seq pak začíná od 0.
  *
  * @invariant @c head < capacity (kromě stavu @c capacity == 0).
  * @invariant @c count <= capacity.
  * @invariant @c overflow implikuje @c count == capacity.
+ * @invariant @c count <= next_seq.
  */
 typedef struct st_EVENTLOG_RING
 {
@@ -565,6 +571,8 @@ typedef struct st_EVENTLOG_RING
     size_t             head;
     size_t             count;
     bool               overflow;
+    uint64_t           next_seq;
+    unsigned           segment;
 } st_EVENTLOG_RING;
 
 /**

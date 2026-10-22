@@ -43,6 +43,7 @@
 #include "ff_result.h"
 #include "unicard.h"
 #include "unimgr.h"
+#include "replay.h"
 #include "MGR_V24_MZF.h"
 #include "MGR800_V211B_MZF.h"
 #include "MGR1500_V211B_MZF.h"
@@ -933,6 +934,18 @@ uint8_t unicard_read_byte ( uint16_t port ) {
 
 
 void unicard_read_rtc ( st_UNICARD_RTC *rtc ) {
+    /* Záznam a přehrání vstupů: hodiny z emulovaného času (stejné při
+     * přehrání), jinak hostitelský místní čas. */
+    int y, mo, d, h, mi, s;
+    if ( replay_rtc_now ( &y, &mo, &d, &h, &mi, &s ) ) {
+        rtc->year = (uint16_t) y;
+        rtc->month = (uint8_t) mo;
+        rtc->day = (uint8_t) d;
+        rtc->hour = (uint8_t) h;
+        rtc->min = (uint8_t) mi;
+        rtc->sec = (uint8_t) s;
+        return;
+    };
     GTimeZone *tz = g_time_zone_new_local ( );
     GDateTime *datetime = g_date_time_new_now ( tz );
     rtc->year = g_date_time_get_year ( datetime );

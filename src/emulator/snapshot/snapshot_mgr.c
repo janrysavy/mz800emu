@@ -27,6 +27,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+#include "debugger/trace/ramlog.h"
+#include "debugger/coverage/coverage.h"
+#endif
 
 
 /* ========================================================================= */
@@ -273,6 +277,7 @@ const char *snapshot_result_to_string(en_SNAPSHOT_RESULT result)
         case SNAPSHOT_ERR_ALLOC:        return "Memory allocation error";
         case SNAPSHOT_ERR_EXTERNAL_REF: return "Missing external reference";
         case SNAPSHOT_ERR_NOT_PAUSED:   return "Emulator is not paused";
+        case SNAPSHOT_ERR_REPLAY_ACTIVE: return "Not allowed while recording or playing a replay";
         default:                        return "Unknown error";
     }
 }
@@ -401,6 +406,40 @@ static en_SNAPSHOT_RESULT snapshot_save_through_io(snapshot_io_t *io,
 }
 
 
+en_SNAPSHOT_RESULT snapshot_hash_components(const char *const *names, size_t count,
+                                            char *out_hex, size_t out_size)
+{
+    if (out_hex && out_size) out_hex[0] = '\0';
+    if (!names || !out_hex || out_size < 65) return SNAPSHOT_ERR_IO;
+
+    st_SNAPSHOT_CONTEXT ctx = {
+        .io = snapshot_io_open_hash(),
+        .format_version = SNAPSHOT_FORMAT_VERSION,
+        .architecture = MZARCH,
+        .saving = true,
+        .for_hash = true
+    };
+
+    /* Pořadí podle registru (priority), ne podle @p names: výsledek tak
+     * nezávisí na pořadí v seznamu volajícího. */
+    for (int i = 0; i < g_snapshot_registry_count; i++) {
+        bool wanted = false;
+        for (size_t n = 0; n < count && !wanted; n++) {
+            if (names[n] && strcmp(names[n], g_snapshot_registry[i].name) == 0) wanted = true;
+        }
+        if (!wanted) continue;
+        en_SNAPSHOT_RESULT result = g_snapshot_registry[i].save_cb(&ctx);
+        if (result != SNAPSHOT_OK) {
+            SNAP_ERR("hash", "error in component '%s': %s",
+                     g_snapshot_registry[i].name, snapshot_result_to_string(result));
+            snapshot_io_close(ctx.io);
+            return result;
+        }
+    }
+    return snapshot_io_close_hash(ctx.io, out_hex, out_size);
+}
+
+
 en_SNAPSHOT_RESULT snapshot_save(const char *filepath, const char *description)
 {
     /* 1. Ověřit safe-point: emulátor v pauze NEBO dedikovaný snapshot
@@ -452,8 +491,9 @@ en_SNAPSHOT_RESULT snapshot_save_to_buffer(const char *description,
 
     if (!out_data || !out_size) return SNAPSHOT_ERR_IO;
 
-    /* 1. Ověřit, že je emulátor v pauze */
-    if (!EMULATOR_TEST_PAUSED) return SNAPSHOT_ERR_NOT_PAUSED;
+    /* 1. Ověřit safe-point: pauza NEBO dedikovaný snapshot safe-point
+     * (jako snapshot_save; checkpoint záznamu vstupů v bodě hranice snímku). */
+    if (!EMULATOR_TEST_PAUSED && !EMULATOR_TEST_SNAPSHOT_SAFEPOINT) return SNAPSHOT_ERR_NOT_PAUSED;
 
     /* 2. Otevřít ZIP archiv pro zápis do paměti */
     snapshot_io_t *io = snapshot_io_open_write_buffer(
@@ -568,6 +608,15 @@ static en_SNAPSHOT_RESULT snapshot_load_through_io(snapshot_io_t *io)
 
     /* Video záznam: retake nebo šev (časová osa emulace se právě změnila). */
     snap_videorec_after_load();
+
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* Záznam zápisů: záznamy patří k předchozímu stavu - vyprázdnit (nový
+     * segment, běžící záznam pokračuje). */
+    ramlog_clear();
+    /* Pokrytí kódu: načtení snapshotu (i rewind a seek přehrávání) je
+     * nespojitost běhu; data se nemažou, jen se započte. */
+    coverage_note_discontinuity();
+#endif
 
     return SNAPSHOT_OK;
 }

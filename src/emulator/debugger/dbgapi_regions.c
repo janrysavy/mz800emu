@@ -4,13 +4,24 @@
  * Implementuje veřejné funkce z dbgapi_regions.h:
  *   - dbgapi_regions_enumerate(): dispatch na per-arch <arch>_regions_collect()
  *     a cache snapshot pro následující read/write.
+ *   - dbgapi_regions_enumerate_dup(): kopie celého výčtu bez stropu.
+ *   - dbgapi_regions_refresh(): jen obnoví cache (bez kopie).
+ *   - dbgapi_regions_get() / dbgapi_regions_find_kind(): deskriptor z cache
+ *     podle ID nebo podle (kind, sub_id).
  *   - dbgapi_regions_read(): no-side-effect read; per-kind dispatch.
  *   - dbgapi_regions_write(): safe write; respekt writable/connected flagů.
+ *   - dbgapi_regions_read_gen() / _write_gen(): totéž s kontrolou generace
+ *     rozložení výčtu (staré ID po změně sestavy HW = chyba).
  *
  * Cache snapshot:
- *   - s_region_cache[] drží poslední enumerate výsledek
+ *   - s_region_cache[] drží poslední enumerate výsledek, alokace roste podle
+ *     skutečného počtu regionů (bez pevného stropu)
  *   - s_region_cache_count = počet validních záznamů
  *   - read/write hledá podle id v cache (= O(1) lookup, id == index v cache)
+ *   - s_region_layout_gen se zvýší, když plnění cache dá jiné rozložení
+ *     (otisk druhu, sub_id, velikosti a příznaků všech regionů)
+ *   - per-kind větve kontrolují živou velikost bufferu (RAMdisk STD, banky
+ *     MemExt), takže ani deskriptor ze starší sestavy nesáhne mimo buffer
  *
  * Thread safety:
  *   - CMDRQ serializace kryje jen emu vlákno (dbgapi handlery, freeze).
@@ -58,6 +69,7 @@
 #include "hw-generic/memory/memory.h"
 #include "hw-generic/memory/memext.h"
 #include "hw-generic/ramdisk/ramdisk.h"
+#include "debugger/trace/ramlog_hook.h"
 
 #if MZARCH == 800
 #include "mzarch/mz800/memory/mz800_memory.h"
@@ -71,16 +83,18 @@
 /* ============================================================================
  * Cache poslední enumerate výsledek
  *
- * Maximální počet regionů = LOGICAL + RAM + 2× ROM + CGROM + 2× CGRAM/700 +
- * 2× VRAM_700 + 4× VRAM_PLANE + 3× PCG + 2× 128 Memext + 256 RAMDISK_STD +
- * 2× 8 PEZIK + PROHIBITED. Worst case (MZ-800 Luftner + STD 16M + 2× PEZIK):
- *   1 + 1 + 2 + 1 + 1 + 2 + 4 + 256 + 256 + 16 + 1 = ~541 regionů.
- * Zaokrouhlujeme na 1024 pro bezpečnost.
+ * Počet regionů závisí na připojeném HW: MZ-800 s MemExtem Luftner, RAMdiskem
+ * STD 16 MB a oběma PEZIKy má podle per-arch collect 12 + 256 + 256 + 16
+ * (+ 1 PROHIBITED po OUT 0E5h) regionů. Pevný strop by výčet zase usekl,
+ * proto se alokace cache zvětšuje podle počtu, který collect vrátí (collect
+ * počítá i položky, které se do pole nevešly, viz dbgapi_regions_add()).
  * ============================================================================ */
 
-#define REGION_CACHE_MAX 1024
-
-static st_REGION_DESC s_region_cache[REGION_CACHE_MAX];
+/** @brief Cache výčtu; alokace s_region_cache_cap položek, NULL do 1. plnění. */
+static st_REGION_DESC *s_region_cache = NULL;
+/** @brief Počet alokovaných položek s_region_cache (jen roste). */
+static int s_region_cache_cap = 0;
+/** @brief Počet platných položek s_region_cache (<= s_region_cache_cap). */
 static int s_region_cache_count = 0;
 
 /**
@@ -91,6 +105,16 @@ static int s_region_cache_count = 0;
  * k datům (viz Thread safety v hlavičce souboru).
  */
 static GMutex s_region_cache_mutex;
+
+/**
+ * @brief Generace rozložení výčtu (viz dbgapi_regions_layout_gen()).
+ *
+ * 0 = cache se ještě nenaplnila. Zvyšuje ji region_cache_fill_locked(), když
+ * otisk nového výčtu nesouhlasí s předchozím. Chráněno s_region_cache_mutex.
+ */
+static uint32_t s_region_layout_gen = 0;
+/** @brief Otisk rozložení posledního plnění cache (chráněno s_region_cache_mutex). */
+static uint64_t s_region_layout_fp = 0;
 
 
 /* ============================================================================
@@ -115,13 +139,66 @@ static int arch_regions_collect(st_REGION_DESC *out, int max_count)
  * Veřejné API
  * ============================================================================ */
 
+/**
+ * @brief FNV-1a: přimíchá 32bitovou hodnotu do 64bitového otisku.
+ * @param fp Dosavadní otisk.
+ * @param v  Přimíchaná hodnota.
+ * @return Nový otisk.
+ */
+static uint64_t region_fp_mix(uint64_t fp, uint32_t v)
+{
+    for (int i = 0; i < 4; i++) {
+        fp ^= (uint8_t)(v >> (i * 8));
+        fp *= 0x100000001B3ull;
+    }
+    return fp;
+}
+
+
+/**
+ * @brief Otisk rozložení výčtu v cache.
+ *
+ * Počet regionů a u každého druh, sub_id, velikost, writable a connected.
+ * Bez mapped_now (mění se s bankováním) a jména (plyne z druhu a sub_id).
+ *
+ * @return 64bitový otisk.
+ * @pre Drží se s_region_cache_mutex.
+ */
+static uint64_t region_layout_fp_locked(void)
+{
+    uint64_t fp = 0xCBF29CE484222325ull;
+    fp = region_fp_mix(fp, (uint32_t)s_region_cache_count);
+    for (int i = 0; i < s_region_cache_count; i++) {
+        const st_REGION_DESC *d = &s_region_cache[i];
+        fp = region_fp_mix(fp, (uint32_t)d->kind);
+        fp = region_fp_mix(fp, (uint32_t)d->sub_id);
+        fp = region_fp_mix(fp, d->size);
+        fp = region_fp_mix(fp, (uint32_t)((d->writable ? 1u : 0u) | (d->connected ? 2u : 0u)));
+    }
+    return fp;
+}
+
+
 /* Helper: naplní cache z per-arch collect. Volat POUZE pod
- * s_region_cache_mutex. */
+ * s_region_cache_mutex. Nevejde-li se výčet do alokace, zvětší ji na
+ * skutečný počet a collect zopakuje (stav HW se mezi oběma průchody nemění,
+ * volání drží zámek a výčet jen čte). Když se rozložení výčtu proti
+ * předchozímu plnění změnilo, zvýší generaci (s_region_layout_gen, nikdy 0). */
 static void region_cache_fill_locked(void)
 {
-    s_region_cache_count = arch_regions_collect(s_region_cache, REGION_CACHE_MAX);
-    if (s_region_cache_count > REGION_CACHE_MAX) {
-        s_region_cache_count = REGION_CACHE_MAX;
+    int n = arch_regions_collect(s_region_cache, s_region_cache_cap);
+    if (n > s_region_cache_cap) {
+        s_region_cache = g_renew(st_REGION_DESC, s_region_cache, n);
+        s_region_cache_cap = n;
+        n = arch_regions_collect(s_region_cache, s_region_cache_cap);
+    }
+    if (n < 0) n = 0;
+    s_region_cache_count = (n < s_region_cache_cap) ? n : s_region_cache_cap;
+
+    uint64_t fp = region_layout_fp_locked();
+    if (s_region_layout_gen == 0 || fp != s_region_layout_fp) {
+        s_region_layout_fp = fp;
+        if (++s_region_layout_gen == 0) s_region_layout_gen = 1;
     }
 }
 
@@ -140,6 +217,51 @@ int dbgapi_regions_enumerate(st_REGION_DESC *out, int max_count)
     memcpy(out, s_region_cache, n * sizeof(st_REGION_DESC));
     g_mutex_unlock(&s_region_cache_mutex);
     return n;
+}
+
+
+void dbgapi_regions_refresh(void)
+{
+    g_mutex_lock(&s_region_cache_mutex);
+    region_cache_fill_locked();
+    g_mutex_unlock(&s_region_cache_mutex);
+}
+
+
+st_REGION_DESC *dbgapi_regions_enumerate_dup_gen(int *out_count, uint32_t *out_gen)
+{
+    st_REGION_DESC *copy = NULL;
+    int n;
+    uint32_t gen;
+
+    g_mutex_lock(&s_region_cache_mutex);
+    region_cache_fill_locked();
+    n = s_region_cache_count;
+    gen = s_region_layout_gen;
+    if (n > 0) {
+        copy = g_new(st_REGION_DESC, n);
+        memcpy(copy, s_region_cache, (size_t) n * sizeof(st_REGION_DESC));
+    }
+    g_mutex_unlock(&s_region_cache_mutex);
+
+    if (out_count) *out_count = n;
+    if (out_gen) *out_gen = gen;
+    return copy;
+}
+
+
+st_REGION_DESC *dbgapi_regions_enumerate_dup(int *out_count)
+{
+    return dbgapi_regions_enumerate_dup_gen(out_count, NULL);
+}
+
+
+uint32_t dbgapi_regions_layout_gen(void)
+{
+    g_mutex_lock(&s_region_cache_mutex);
+    uint32_t gen = s_region_layout_gen;
+    g_mutex_unlock(&s_region_cache_mutex);
+    return gen;
 }
 
 
@@ -165,6 +287,67 @@ static bool lookup_region_copy(int region_id, st_REGION_DESC *out_desc)
     if (region_id >= 0 && region_id < s_region_cache_count) {
         *out_desc = s_region_cache[region_id];
         found = true;
+    }
+    g_mutex_unlock(&s_region_cache_mutex);
+    return found;
+}
+
+
+/**
+ * @brief Kopie deskriptoru podle ID s kontrolou generace rozložení.
+ *
+ * Při @p layout_gen != 0 obnoví cache podle aktuálního stavu HW (tím se
+ * změna sestavy promítne do generace i bez otevřeného Memory Browseru)
+ * a deskriptor vydá jen tehdy, když generace souhlasí. Při @p layout_gen
+ * == 0 je to lookup_region_copy() (bez obnovy cache).
+ *
+ * @param region_id  ID z výčtu.
+ * @param layout_gen Generace výčtu, ze kterého ID pochází; 0 = bez kontroly.
+ * @param out_desc   Kopie deskriptoru (zapsaná jen při návratu 0).
+ * @return 0 = OK, -1 = neplatné ID, DBGAPI_REGIONS_ERR_STALE = rozložení
+ *         výčtu se od generace @p layout_gen změnilo.
+ * @note Thread-safe (zámek cache).
+ */
+static int lookup_region_copy_gen(int region_id, uint32_t layout_gen, st_REGION_DESC *out_desc)
+{
+    if (layout_gen == 0) {
+        return lookup_region_copy(region_id, out_desc) ? 0 : -1;
+    }
+    int rc = -1;
+    g_mutex_lock(&s_region_cache_mutex);
+    region_cache_fill_locked();
+    if (s_region_layout_gen != layout_gen) {
+        rc = DBGAPI_REGIONS_ERR_STALE;
+    } else if (region_id >= 0 && region_id < s_region_cache_count) {
+        *out_desc = s_region_cache[region_id];
+        rc = 0;
+    }
+    g_mutex_unlock(&s_region_cache_mutex);
+    return rc;
+}
+
+
+bool dbgapi_regions_get(int region_id, st_REGION_DESC *out)
+{
+    if (!out) return false;
+    return lookup_region_copy(region_id, out);
+}
+
+
+bool dbgapi_regions_find_kind(en_REGION_KIND kind, int sub_id, st_REGION_DESC *out)
+{
+    bool found = false;
+    if (!out) return false;
+    g_mutex_lock(&s_region_cache_mutex);
+    if (s_region_cache_count <= 0) {
+        region_cache_fill_locked();
+    }
+    for (int i = 0; i < s_region_cache_count; i++) {
+        if (s_region_cache[i].kind == kind && s_region_cache[i].sub_id == sub_id) {
+            *out = s_region_cache[i];
+            found = true;
+            break;
+        }
     }
     g_mutex_unlock(&s_region_cache_mutex);
     return found;
@@ -200,12 +383,50 @@ static uint8_t *vram_plane_pointer(int sub_id)
 #endif
 
 
-int dbgapi_regions_read(int region_id, uint32_t offset, uint8_t *out, uint32_t len)
+/**
+ * @brief Velikost bufferu RAMdisku STD podle živého stavu.
+ *
+ * Buffer má (g_ramdisk.std.size + 1) bank po 64 KB (ramdisk_std_init(),
+ * ramdisk_fit_buffers_after_load()). Deskriptor z výčtu před zmenšením
+ * RAMdisku může mít sub_id za touto hranicí.
+ *
+ * @return Velikost v bajtech.
+ */
+static size_t ramdisk_std_live_size(void)
+{
+    return ((size_t)g_ramdisk.std.size + 1u) * 0x10000u;
+}
+
+
+/**
+ * @brief Ověří, že raw banka MemExt leží v polích g_memext.RAM / FLASH.
+ *
+ * Raw banky 00h-7Fh jsou RAM, 80h-0FFh FLASH (memext_get_ram_read_pointer_by_rawbank()),
+ * každá po MEMEXT_RAW_BANK_SIZE; obě pole mají 128 takových bank.
+ *
+ * @param rawbank sub_id regionu MEMEXT_RAM / MEMEXT_FLASH.
+ * @return true = banka leží uvnitř pole.
+ */
+static bool memext_rawbank_in_range(int rawbank)
+{
+    return rawbank >= 0 && rawbank <= 0xFF
+           && (size_t)((rawbank & 0x7F) + 1) * MEMEXT_RAW_BANK_SIZE
+              <= ((rawbank & 0x80) ? (size_t)MEMEXT_FLASH_SIZE : (size_t)MEMEXT_RAM_SIZE);
+}
+
+
+/**
+ * @brief Čtení z regionu podle deskriptoru (tělo dbgapi_regions_read()).
+ *
+ * @param desc   Kopie deskriptoru (z cache, případně ze starší sestavy HW).
+ * @param offset Offset v regionu.
+ * @param out    Výstupní buffer, min @p len bajtů.
+ * @param len    Počet bajtů.
+ * @return Viz dbgapi_regions_read().
+ */
+static int regions_read_desc(const st_REGION_DESC *desc, uint32_t offset, uint8_t *out, uint32_t len)
 {
     if (!out || len == 0) return -1;
-    st_REGION_DESC desc_copy;
-    if (!lookup_region_copy(region_id, &desc_copy)) return -1;
-    const st_REGION_DESC *desc = &desc_copy;
     if (!desc->connected) return -1;
 
     uint32_t n = clamp_len(desc, offset, len);
@@ -348,6 +569,7 @@ int dbgapi_regions_read(int region_id, uint32_t offset, uint8_t *out, uint32_t l
     case REGION_KIND_MEMEXT_FLASH: {
         /* Direct array access přes get_*_by_rawbank helper. No side-effect. */
         if (!MEMEXT_TEST_CONNECTED) return -1;
+        if (!memext_rawbank_in_range(desc->sub_id)) return -1;
         uint8_t *p = memext_get_ram_read_pointer_by_rawbank(desc->sub_id);
         if (!p) return -1;
         memcpy(out, &p[offset], n);
@@ -357,9 +579,12 @@ int dbgapi_regions_read(int region_id, uint32_t offset, uint8_t *out, uint32_t l
     case REGION_KIND_RAMDISK_STD: {
         /* Direct array access do g_ramdisk.std.memory.
          * Nelze použít ramdisk_std_read_byte() - má side-effect na offset
-         * cursor (auto-inc). */
+         * cursor (auto-inc). Živá velikost: deskriptor může pocházet
+         * z výčtu před zmenšením RAMdisku (načtení snapshotu). */
         if (!g_ramdisk.std.connected || !g_ramdisk.std.memory) return -1;
-        uint32_t abs_off = (uint32_t)desc->sub_id * 0x10000u + offset;
+        if (desc->sub_id < 0) return -1;
+        size_t abs_off = (size_t)desc->sub_id * 0x10000u + offset;
+        if (abs_off + n > ramdisk_std_live_size()) return -1;
         memcpy(out, &g_ramdisk.std.memory[abs_off], n);
         return (int)n;
     }
@@ -398,16 +623,42 @@ int dbgapi_regions_read(int region_id, uint32_t offset, uint8_t *out, uint32_t l
 }
 
 
+int dbgapi_regions_read(int region_id, uint32_t offset, uint8_t *out, uint32_t len)
+{
+    if (!out || len == 0) return -1;
+    st_REGION_DESC desc;
+    if (!lookup_region_copy(region_id, &desc)) return -1;
+    return regions_read_desc(&desc, offset, out, len);
+}
+
+
+int dbgapi_regions_read_gen(int region_id, uint32_t layout_gen,
+                            uint32_t offset, uint8_t *out, uint32_t len)
+{
+    if (!out || len == 0) return -1;
+    st_REGION_DESC desc;
+    int rc = lookup_region_copy_gen(region_id, layout_gen, &desc);
+    if (rc != 0) return rc;
+    return regions_read_desc(&desc, offset, out, len);
+}
+
+
 /* ============================================================================
  * WRITE per kind
  * ============================================================================ */
 
-int dbgapi_regions_write(int region_id, uint32_t offset, const uint8_t *data, uint32_t len)
+/**
+ * @brief Vlastní zápis do regionu podle deskriptoru (bez záznamu zápisů).
+ *
+ * @param desc   Kopie deskriptoru (z cache, případně ze starší sestavy HW).
+ * @param offset Offset v regionu.
+ * @param data   Data k zapsání.
+ * @param len    Počet bajtů.
+ * @return Viz dbgapi_regions_write().
+ */
+static int regions_write_impl(const st_REGION_DESC *desc, uint32_t offset, const uint8_t *data, uint32_t len)
 {
     if (!data || len == 0) return -1;
-    st_REGION_DESC desc_copy;
-    if (!lookup_region_copy(region_id, &desc_copy)) return -1;
-    const st_REGION_DESC *desc = &desc_copy;
     if (!desc->connected) return -1;
     if (!desc->writable) return -1;
 
@@ -417,11 +668,12 @@ int dbgapi_regions_write(int region_id, uint32_t offset, const uint8_t *data, ui
     switch (desc->kind) {
 
     case REGION_KIND_LOGICAL: {
-        /* Banking-aware write přes memory_write_byte. POZOR: může mít
-         * side-effecty (např. VRAM write hits GDG WF dispatch). Pro VRAM
-         * editaci v pause modu preferovat fyzický plane region. */
+        /* Banking-aware write přes memory_write_byte_no_bp (bez MEM_W
+         * breakpointu - zápis debuggerem). POZOR: může mít side-effecty
+         * (např. VRAM write hits GDG WF dispatch). Pro VRAM editaci
+         * v pause modu preferovat fyzický plane region. */
         for (uint32_t i = 0; i < n; i++) {
-            memory_write_byte((uint16_t)(offset + i), data[i]);
+            memory_write_byte_no_bp((uint16_t)(offset + i), data[i]);
         }
         return (int)n;
     }
@@ -492,6 +744,7 @@ int dbgapi_regions_write(int region_id, uint32_t offset, const uint8_t *data, ui
         /* RAM bank: write přes raw write pointer (vrátí přímo do RAM banky).
          * FLASH ji nikdy nevolá - REGION_KIND_MEMEXT_FLASH má writable=0. */
         if (!MEMEXT_TEST_CONNECTED) return -1;
+        if (!memext_rawbank_in_range(desc->sub_id)) return -1;
         uint8_t *p = memext_get_ram_write_pointer_by_rawbank(desc->sub_id);
         if (!p) return -1;
         /* Pro RAM bank pointer ukazuje do RAM[]; pro FLASH bank by ukazoval
@@ -503,7 +756,11 @@ int dbgapi_regions_write(int region_id, uint32_t offset, const uint8_t *data, ui
     case REGION_KIND_RAMDISK_STD: {
         if (!g_ramdisk.std.connected || !g_ramdisk.std.memory) return -1;
         if (g_ramdisk.std.type & RAMDISK_IS_READONLY) return -1;
-        uint32_t abs_off = (uint32_t)desc->sub_id * 0x10000u + offset;
+        /* Živá velikost jako u čtení: deskriptor může být starší než
+         * zmenšení RAMdisku. */
+        if (desc->sub_id < 0) return -1;
+        size_t abs_off = (size_t)desc->sub_id * 0x10000u + offset;
+        if (abs_off + n > ramdisk_std_live_size()) return -1;
         memcpy(&g_ramdisk.std.memory[abs_off], data, n);
         return (int)n;
     }
@@ -527,6 +784,134 @@ int dbgapi_regions_write(int region_id, uint32_t offset, const uint8_t *data, ui
     default:
         return -1;
     }
+}
+
+
+/**
+ * @brief Buňka paměti CPU pro bajt fyzického regionu (pro záznam zápisů).
+ *
+ * @param desc   Region.
+ * @param off    Offset v regionu.
+ * @param space  Výstup: prostor ramlogu.
+ * @param soff   Výstup: offset v prostoru.
+ * @return Ukazatel na buňku, NULL = region neleží v paměti CPU (RAMdisk,
+ *         Logical - ten zaznamená memory_write_byte_no_bp()).
+ */
+static uint8_t *regions_ramlog_cell(const st_REGION_DESC *desc, uint32_t off,
+                                    uint8_t *space, uint32_t *soff)
+{
+    uint8_t *p = NULL;
+    switch (desc->kind) {
+    case REGION_KIND_RAM:
+        p = g_memory.memram_write[(off >> 12) & 0xF] + (off & 0x0FFF);
+        return ramlog_platform_ram_cell(p, space, soff) ? p : NULL;
+    case REGION_KIND_MEMEXT_RAM:
+        if (!MEMEXT_TEST_CONNECTED) return NULL;
+        p = memext_get_ram_write_pointer_by_rawbank(desc->sub_id);
+        if (!p) return NULL;
+        p += off;
+        return ramlog_platform_ram_cell(p, space, soff) ? p : NULL;
+#if MZARCH == 800
+    case REGION_KIND_CGRAM_700:
+        *space = RAMLOG_SPACE_VRAM; *soff = off;
+        return &g_memory.VRAM[off];
+    case REGION_KIND_VRAM_700_CHAR:
+        *space = RAMLOG_SPACE_VRAM; *soff = 0x1000u + off;
+        return &g_memory.VRAM[*soff];
+    case REGION_KIND_VRAM_700_ATTR:
+        *space = RAMLOG_SPACE_VRAM; *soff = 0x1800u + off;
+        return &g_memory.VRAM[*soff];
+    case REGION_KIND_VRAM_PHYS_PLANE:
+        p = vram_plane_pointer(desc->sub_id);
+        if (!p) return NULL;
+        *space = RAMLOG_SPACE_VRAM; *soff = (uint32_t)desc->sub_id * MEMORY_SIZE_VRAM_BANK + off;
+        return p + off;
+#else
+    case REGION_KIND_VRAM_700_CHAR:
+        *space = RAMLOG_SPACE_VRAM; *soff = off;
+        return &g_memory.VRAM[off];
+    case REGION_KIND_VRAM_700_ATTR:
+        *space = RAMLOG_SPACE_VRAM; *soff = 0x0800u + off;
+        return &g_memory.VRAM[*soff];
+#endif
+#if MZARCH == 1500
+    case REGION_KIND_PCG_1500:
+        if (desc->sub_id < 0 || desc->sub_id > 2) return NULL;
+        *space = RAMLOG_SPACE_PCG; *soff = (uint32_t)desc->sub_id * MEMORY_SIZE_PCG_BANK + off;
+        return &g_memory.PCG[*soff];
+#endif
+    default:
+        return NULL;
+    }
+}
+
+
+/**
+ * @brief Zápis podle deskriptoru včetně záznamu zápisů (tělo dbgapi_regions_write()).
+ *
+ * @param desc   Kopie deskriptoru.
+ * @param offset Offset v regionu.
+ * @param data   Data k zapsání.
+ * @param len    Počet bajtů.
+ * @return Viz dbgapi_regions_write().
+ */
+static int regions_write_logged(const st_REGION_DESC *desc, uint32_t offset, const uint8_t *data, uint32_t len)
+{
+    /* Záznam zápisů (ramlog): fyzické regiony v paměti CPU zaznamenat po
+     * bajtech (old/new přímo z buňky); Logical zaznamená sám
+     * memory_write_byte_no_bp(). */
+    if (!g_ramlog_active || !data || len == 0
+        || desc->kind == REGION_KIND_LOGICAL || !desc->connected || !desc->writable) {
+        return regions_write_impl(desc, offset, data, len);
+    }
+    uint32_t n = clamp_len(desc, offset, len);
+    uint8_t **cell = (uint8_t **)g_malloc0((gsize)(n ? n : 1) * sizeof(uint8_t *));
+    uint8_t *old = (uint8_t *)g_malloc0(n ? n : 1);
+    uint8_t *sp = (uint8_t *)g_malloc0(n ? n : 1);
+    uint32_t *so = (uint32_t *)g_malloc0((gsize)(n ? n : 1) * sizeof(uint32_t));
+    for (uint32_t i = 0; i < n; i++) {
+        cell[i] = regions_ramlog_cell(desc, offset + i, &sp[i], &so[i]);
+        if (cell[i]) old[i] = *cell[i];
+    }
+    int rc = regions_write_impl(desc, offset, data, len);
+    for (uint32_t i = 0; rc > 0 && i < n && i < (uint32_t)rc; i++) {
+        if (cell[i]) ramlog_hook_cell_write((en_RAMLOG_SPACE)sp[i], so[i], old[i], *cell[i]);
+    }
+    g_free(cell);
+    g_free(old);
+    g_free(sp);
+    g_free(so);
+    return rc;
+}
+
+
+int dbgapi_regions_write(int region_id, uint32_t offset, const uint8_t *data, uint32_t len)
+{
+    if (!data || len == 0) return -1;
+    st_REGION_DESC desc;
+    if (!lookup_region_copy(region_id, &desc)) return -1;
+    return regions_write_logged(&desc, offset, data, len);
+}
+
+
+int dbgapi_regions_write_gen(int region_id, uint32_t layout_gen,
+                             uint32_t offset, const uint8_t *data, uint32_t len)
+{
+    if (!data || len == 0) return -1;
+    st_REGION_DESC desc;
+    int rc = lookup_region_copy_gen(region_id, layout_gen, &desc);
+    if (rc != 0) return rc;
+    return regions_write_logged(&desc, offset, data, len);
+}
+
+bool dbgapi_regions_ramlog_cell(int kind, int sub_id, uint32_t offset,
+                                uint8_t *out_space, uint32_t *out_offset)
+{
+    if (kind < 0 || kind >= REGION_KIND_COUNT) return false;
+    st_REGION_DESC desc;
+    if (!dbgapi_regions_find_kind((en_REGION_KIND)kind, sub_id, &desc)) return false;
+    if (offset >= desc.size) return false;
+    return regions_ramlog_cell(&desc, offset, out_space, out_offset) != NULL;
 }
 
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */

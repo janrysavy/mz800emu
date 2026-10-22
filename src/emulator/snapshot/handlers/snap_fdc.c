@@ -3,7 +3,9 @@
  * @brief Snapshot handler: FDC floppy - uložení a načtení stavu řadiče
  *        floppy disků.
  *
- * Ukládá stav chipu WD279x (registry, state machine) a per-drive
+ * Ukládá stav chipu WD279x (registry, state machine včetně přechodného
+ * RNF na konci stopy `pending_rnf_end` a seznamu ID sektorů READ TRACK
+ * `rt_sinfo`) a per-drive
  * informace (mount, R/O flag, filename). Mount cesty disků se primárně
  * obnovují z cfgfile (`wd279x_fddX_dskpath`); snapshot ukládá filename
  * a flagy pouze pro informaci a kontinuitu.
@@ -31,6 +33,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <glib.h>
 
 #include "hw-generic/fdc/fdc.h"
@@ -92,6 +95,15 @@ static en_SNAPSHOT_RESULT snap_fdc_save_instance(st_SNAPSHOT_CONTEXT *ctx, st_FD
     snapshot_xml_write_hex16(w, "rt_sector_bytes", fdc->wd279x.rt_sector_bytes);
     snapshot_xml_write_hex8(w, "rt_ssize_code", fdc->wd279x.rt_ssize_code);
     snapshot_xml_write_int(w, "rt_cached_sec_idx", (int)fdc->wd279x.rt_cached_sec_idx);
+    snapshot_xml_write_hex8(w, "pending_rnf_end", fdc->wd279x.pending_rnf_end);
+    {
+        /* Seznam ID sektorů READ TRACK jako hex řetězec (2 znaky na bajt). */
+        char hex[sizeof(fdc->wd279x.rt_sinfo) * 2 + 1];
+        for (size_t k = 0; k < sizeof(fdc->wd279x.rt_sinfo); k++) {
+            snprintf(&hex[k * 2], 3, "%02x", fdc->wd279x.rt_sinfo[k]);
+        }
+        snapshot_xml_write_string(w, "rt_sinfo", hex);
+    }
 
     /* Mechaniky */
     for (int i = 0; i < FDC_NUM_DRIVES; i++) {
@@ -180,6 +192,22 @@ static en_SNAPSHOT_RESULT snap_fdc_load_instance(st_SNAPSHOT_CONTEXT *ctx,
         if (snapshot_xml_read_hex16(r, "rt_sector_bytes", &hval16)) fdc->wd279x.rt_sector_bytes = hval16;
         if (snapshot_xml_read_hex8(r, "rt_ssize_code", &hval8)) fdc->wd279x.rt_ssize_code = hval8;
         if (snapshot_xml_read_int(r, "rt_cached_sec_idx", &ival)) fdc->wd279x.rt_cached_sec_idx = (int8_t)ival;
+        /* Novější prvky; starší snapshot je nemá -> 0 jako po resetu chipu. */
+        fdc->wd279x.pending_rnf_end = 0;
+        if (snapshot_xml_read_hex8(r, "pending_rnf_end", &hval8)) fdc->wd279x.pending_rnf_end = hval8;
+        memset(fdc->wd279x.rt_sinfo, 0, sizeof(fdc->wd279x.rt_sinfo));
+        {
+            char *hex = NULL;
+            if (snapshot_xml_read_string(r, "rt_sinfo", &hex) && hex) {
+                size_t n = strlen(hex) / 2;
+                if (n > sizeof(fdc->wd279x.rt_sinfo)) n = sizeof(fdc->wd279x.rt_sinfo);
+                for (size_t k = 0; k < n; k++) {
+                    char byte[3] = { hex[k * 2], hex[k * 2 + 1], 0 };
+                    fdc->wd279x.rt_sinfo[k] = (uint8_t)strtoul(byte, NULL, 16);
+                }
+            }
+            g_free(hex);
+        }
 
         for (int i = 0; i < FDC_NUM_DRIVES; i++) {
             char elem_name[16];

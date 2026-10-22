@@ -26,6 +26,7 @@
 #ifndef IDE8_H
 #define IDE8_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "mzarch/mzarch.h"
@@ -176,6 +177,38 @@ extern "C"
     void ide8_drive_set_connected(en_IDE8_DRIVE drive_id, en_IDE8_STATE connected);
     void ide8_drive_close_image(st_IDE8_DRIVE *drive);
     int ide8_drive_open_image(st_IDE8_DRIVE *drive, char *filepath);
+
+    /**
+     * @brief Velikost obrazu připojeného disku v bajtech (záznam vstupů).
+     *
+     * @param drive_id disk
+     * @return velikost souboru po fflush, 0 = disk nepřipojený nebo prázdný
+     * @pre Emu vlákno nebo pozastavená emulace.
+     */
+    uint64_t ide8_drive_image_size(en_IDE8_DRIVE drive_id);
+
+    /**
+     * @brief Callback pro ide8_drive_read_image(): další úsek obsahu obrazu.
+     * @param data úsek (platný jen během volání)
+     * @param len  délka úseku v bajtech
+     * @param user ukazatel volajícího
+     */
+    typedef void (*ide8_image_chunk_cb)(const uint8_t *data, size_t len, void *user);
+
+    /**
+     * @brief Projde obsah obrazu připojeného disku po úsecích (záznam vstupů).
+     *
+     * Čte otevřený soubor (po fflush) od začátku do konce po úsecích
+     * (obraz může mít stovky MB, do paměti se celý nenačítá). Pozice souboru
+     * se změní; každý příkaz IDE8 si ji nastavuje sám.
+     *
+     * @param drive_id disk
+     * @param cb       volá se pro každý úsek v pořadí
+     * @param user     předá se do @p cb
+     * @return EXIT_SUCCESS; EXIT_FAILURE (disk nepřipojený, chyba čtení)
+     * @pre Emu vlákno nebo pozastavená emulace.
+     */
+    int ide8_drive_read_image(en_IDE8_DRIVE drive_id, ide8_image_chunk_cb cb, void *user);
 
 #ifdef __cplusplus
 }

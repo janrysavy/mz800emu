@@ -75,13 +75,16 @@ extern "C" {
 
 /** @brief Strojový kód (object file) */
 #define MZF_FTYPE_OBJ           0x01
-/** @brief BASIC textový program (MZ-700/800) */
+/** @brief Program BASICu uložený `SAVE` bez volby A (binární forma) */
 #define MZF_FTYPE_BTX           0x02
-/** @brief BASIC datový soubor */
+/** @brief BSD - jméno podle tabulky typů ROM; podle manuálu sekvenční data
+ *  nebo program BASICu v ASCII (`SAVE ...,A`, kód 03h neověřen); používá ho
+ *  i boot disku IPLPRO */
 #define MZF_FTYPE_BSD           0x03
-/** @brief BASIC read-after-run datový soubor */
+/** @brief BRD - datový soubor BASICu 1Z-016 z `WOPEN#`/`PRINT#` (manuál ho
+ *  nazývá "BSD file") */
 #define MZF_FTYPE_BRD           0x04
-/** @brief Read and branch (spuštění po načtení) */
+/** @brief RB - program BASICu ve sbalené formě */
 #define MZF_FTYPE_RB            0x05
 
 /** @} */

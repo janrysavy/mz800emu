@@ -75,7 +75,7 @@ void gdg_mirror_snapshot(st_GDG_MIRROR_MZ800 *out)
     out->vc_rf_plane               = (uint8_t)(g_vramctrl.regRF_PLANE & 0x0Fu);
     out->vc_rf_search              = (uint8_t)(g_vramctrl.regRF_SEARCH & 0x0Fu);
     out->vc_wfrf_vbank             = (uint8_t)(g_vramctrl.regWFRF_VBANK & 0x01u);
-    out->vc_mz700_wr_latch_is_used = (uint8_t)(g_vramctrl.mz700_wr_latch_is_used & 0x01u);
+    out->vc_vram_wrff_set          = (uint8_t)(g_gdg.vram_wrff_release > gdg_get_vramwait_ticks());
 
     /* HW scroll registry. SSA/SEA/SW/SOF jsou adresy/velikosti v bajtech
      * plane (= max 0x4000 pro 16 KB plane). enabled je cached flag,

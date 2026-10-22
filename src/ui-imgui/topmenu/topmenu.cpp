@@ -9,6 +9,7 @@
 #include "i18n.h"
 
 #include "emulator.h"
+#include "emulator/replay.h"
 #include "mzarch/mzarch_platform_functions.h"
 // #include "iface/iface_video.h"
 #include "topmenu.h"
@@ -26,11 +27,22 @@ extern "C"
 
 void imgui_topmenu_body(void)
 {
+    /* Záznam a přehrání vstupů: nastavení stroje se během nich měnit nesmí
+     * (záznam by změnu nezopakoval, rozhodnutí M6a v1). */
+    bool replay_active = replay_is_active();
+    ImGui::BeginDisabled(replay_active);
     imgui_menu_devices();
+    ImGui::EndDisabled();
+    if (replay_active && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+    {
+        ImGui::SetTooltip("%s", _("Machine settings cannot be changed while a replay is recorded or played. "
+                                  "Stop it in the Replay menu first."));
+    };
     imgui_menu_interface();
     imgui_menu_speed();
     imgui_menu_emulator();
     imgui_menu_snapshot();
+    imgui_menu_replay();
     ImGui::Separator();
 
     if ((ImGui::MenuItem(_L("Pause Emulation"), "Alt+P", EMULATOR_TEST_PAUSED)) || ImGui::Shortcut(ImGuiMod_Alt | ImGuiKey_P))

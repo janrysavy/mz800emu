@@ -151,25 +151,6 @@ int bptmap_event_get_id_by_addr ( uint16_t addr ) {
 }
 
 
-void bptmap_activate_event ( void ) {
-    int breakpoint_id = g_bptmap.bpmap [ g_mzarch_main.instruction_addr ];
-    if ( breakpoint_id == BREAKPOINT_TYPE_NONE ) return;
-    if ( breakpoint_id > BREAKPOINT_TYPE_NONE ) {
-        printf ( "DEBUGGER - activated breakpoint on addr: 0x%04x\n", g_mzarch_main.instruction_addr );
-        emulator_pause ( true );
-        debugger_show_main_window ( );
-    };
-
-    if ( !EMULATOR_TEST_PAUSED ) {
-        if ( g_mzarch_main.instruction_addr == g_bptmap.temporary_bpt_addr ) {
-            printf ( "DEBUGGER - activated temporary breakpoint on addr: 0x%04x\n", g_mzarch_main.instruction_addr );
-            emulator_pause ( true );
-            debugger_show_main_window ( );
-        };
-    };
-}
-
-
 /* ========================================================================= */
 /*  D.2 per-typ tabulky                                                       */
 /* ========================================================================= */

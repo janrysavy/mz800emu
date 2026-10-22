@@ -6,6 +6,7 @@
  * - Pro kazdy z 2 joysticku vybrat typ (None/Numpad/Real device)
  * - Konfigurovat mapovani os a tlacitek pro real zarizeni
  * - Zobrazit live stav joysticku
+ * - Použít nastavení tlačítkem OK (zavře okno) nebo Apply (okno zůstane)
  */
 
 #include "main.h"
@@ -554,10 +555,12 @@ void imgui_joy_setup_window(bool *p_open)
         ImGui::Separator();
         ImGui::Spacing();
 
-        /* Tlacitka OK / Cancel */
+        /* Tlačítka OK / Apply / Cancel. Apply použije nastavení a okno nechá
+         * otevřené (stav dialogu zůstává, odpovídá použitému nastavení);
+         * Cancel pak už použité změny nevrací. */
         float avail = ImGui::GetContentRegionAvail().x;
         float btn_width = 100.0f;
-        float total = btn_width * 2 + ImGui::GetStyle().ItemSpacing.x;
+        float total = btn_width * 3 + ImGui::GetStyle().ItemSpacing.x * 2;
         float offset = (avail - total) * 0.5f;
         if (offset > 0) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
 
@@ -566,6 +569,11 @@ void imgui_joy_setup_window(bool *p_open)
             apply_changes();
             *p_open = false;
             s_state.initialized = false;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(_L("Apply"), ImVec2(btn_width, 0)))
+        {
+            apply_changes();
         }
         ImGui::SameLine();
         if (ImGui::Button(_L("Cancel"), ImVec2(btn_width, 0)))

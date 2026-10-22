@@ -81,6 +81,7 @@ Settings...; Tools -> Screenshot -> Save Screenshot As... asks for a file name. 
 |----------------------------|-----------------------------------------------------------------------------|
 | `Alt + F`                  | Save a PNG screenshot of the picture shown in the window to the output folder |
 | `Alt + Shift + F`          | Start / stop a frame series: a PNG of every changed emulated frame         |
+| `Alt + G`                  | Show / hide the Screenshot Control window                                   |
 
 ## Audio capture
 
@@ -90,6 +91,16 @@ Settings... For details see [`audio-capture.md`](audio-capture.md).
 | Key                        | Action                                                                      |
 |----------------------------|-----------------------------------------------------------------------------|
 | `Alt + Q`                  | Start / stop an audio capture into a new folder                             |
+| `Alt + Shift + Q`          | Show / hide the Audio Capture Control window                                |
+
+## Replay (input recording)
+
+All platforms. For details see [`replay.md`](replay.md).
+
+| Key                        | Action                                                                      |
+|----------------------------|-----------------------------------------------------------------------------|
+| `Alt + J`                  | Show / hide the Replay Control window                                       |
+| `Alt + Shift + J`          | Rewind: back to the previous checkpoint (while recording or playing back)   |
 
 ## Debugger
 

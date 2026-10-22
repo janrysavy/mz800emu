@@ -9,6 +9,7 @@
  *  - Pixel render extraction (320@4, 320@16, 640@2, 640@4)
  *  - Locate pixel inverse
  *  - SMOKE IDENTITY: porovnání sim vs emu na matrix DMD x WF x HW scroll
+ *  - HW scroll u CPU přístupu jen pro zobrazenou frame (B/A == DMD bit 0)
  *    pro celý 16 KB rozsah 0x8000-0xBFFF (byte-by-byte)
  *
  * Test typu LIB - linkuje proti emu core + headless stuby, aby identity
@@ -140,6 +141,29 @@ static void test_hwscroll_shift_up_and_down(void)
     /* SW = 0x1E00, SOF = 0x140 → shift down delta = 0x140 - 0x1E00 = -0x1CC0 */
     TEST_ASSERT_EQUAL_UINT16((uint16_t)(0x1E00 + 0x0140 - 0x1E00),
                              vram_sim_hwscroll_shift(&state, 0x1E00));
+}
+
+/**
+ * @brief Pravidlo HW scrollu pro CPU přístup v simulátoru.
+ *
+ * Scroll se na CPU přístup uplatní jen při B/A == DMD bit 0, v HICOLOR
+ * režimech (DMD bit 1 = 1) vždy. Ověřuje vram_sim_cpu_hwscroll_applies()
+ * pro DMD 00h-07h a obě hodnoty B/A.
+ */
+static void test_cpu_hwscroll_applies_rule(void)
+{
+    st_VRAM_SIM_STATE state;
+    memset(&state, 0, sizeof(state));
+    for (uint8_t dmd = 0x00; dmd <= 0x07; dmd++) {
+        for (uint8_t vbank = 0; vbank <= 1; vbank++) {
+            state.dmd = dmd;
+            state.wfrf_vbank = vbank;
+            int expected = (dmd & 0x02) ? 1 : ((dmd & 0x01) == vbank);
+            char msg[64];
+            snprintf(msg, sizeof(msg), "DMD=0x%02X B/A=%u", dmd, vbank);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(expected, vram_sim_cpu_hwscroll_applies(&state), msg);
+        }
+    }
 }
 
 /* ========================================================================
@@ -556,6 +580,7 @@ static void test_smoke_identity_write_matrix(void)
         for (int wf_idx = 0; wf_idx < (int)(sizeof(wf_modes)/sizeof(wf_modes[0])); wf_idx++) {
             for (uint8_t wf_planes = 0x01; wf_planes <= 0x0F; wf_planes++) {
                 for (int vbank = 0; vbank <= 1; vbank++) {
+                  for (int hwscroll_on = 0; hwscroll_on <= 1; hwscroll_on++) {
                     total_combos++;
 
                     /* Reset patternu. */
@@ -568,7 +593,9 @@ static void test_smoke_identity_write_matrix(void)
                     memcpy(sim_plane[2], g_memoryVRAM_III, VRAM_SIM_PLANE_SIZE);
                     memcpy(sim_plane[3], g_memoryVRAM_IV,  VRAM_SIM_PLANE_SIZE);
 
-                    /* Setup emu DMD + WF (žádný hwscroll pro write test). */
+                    /* Setup emu DMD + WF; hwscroll_on = posun o 1 řádek (SOF=0x28)
+                     * přes celou obrazovku, zapisované adresy 0x8000.. tak leží
+                     * ve scroll oblasti. */
                     g_gdg.regDMD = dmd;
                     /* WF byte: bit 7 = WM2, bity 5-6 = WM1, WM0; bit 4 = vbank; bity 0-3 = plane. */
                     uint8_t wf_byte;
@@ -580,7 +607,7 @@ static void test_smoke_identity_write_matrix(void)
                         wf_byte = (uint8_t)((wf_modes[wf_idx] << 5) | (vbank << 4) | wf_planes);
                     }
                     vramctrl_mz800_set_wf_rf_reg(0, wf_byte);
-                    hwscroll_set_reg(0x01, 0); hwscroll_set_reg(0x02, 0);
+                    hwscroll_set_reg(0x01, hwscroll_on ? 0x05 : 0); hwscroll_set_reg(0x02, 0);
                     hwscroll_set_reg(0x03, 0x7D); hwscroll_set_reg(0x04, 0); hwscroll_set_reg(0x05, 0x7D);
 
                     /* Sim state setup - capture po RF/WF + ručně použít sim_plane buffery. */
@@ -633,17 +660,107 @@ static void test_smoke_identity_write_matrix(void)
                         char msg[256];
                         snprintf(msg, sizeof(msg),
                                  "SMOKE WRITE FAIL: DMD=0x%02X WF=0x%02X wf_mode=%d vbank=%d "
-                                 "plane=%d offset=0x%04X emu=0x%02X sim=0x%02X",
-                                 dmd, wf_byte, wf_modes[wf_idx], vbank,
+                                 "hwscrl=%d plane=%d offset=0x%04X emu=0x%02X sim=0x%02X",
+                                 dmd, wf_byte, wf_modes[wf_idx], vbank, hwscroll_on,
                                  diff_plane, diff_offset, diff_emu, diff_sim);
                         TEST_FAIL_MESSAGE(msg);
                     }
+                  }
                 }
             }
         }
     }
 
     TEST_ASSERT_EQUAL_INT(total_combos, passed);
+}
+
+/* ========================================================================
+ * HW scroll a CPU přístup do nezobrazené frame (emu vramctrl)
+ *
+ * GDG přičítá SOF k adrese CPU přístupu jen při B/A == DMD bit 0 (HICOLOR
+ * vždy). Scénář odpovídá testu, který na reálném MZ-800 kreslí pruhovaný
+ * sloupec: zápis 0FFh na spodní řádek (offset 199*40+20 = 0x1F2C) při
+ * posunu o jeden řádek (SOF = 5 << 3 = 0x28, SSA = 0, SEA = SW = 0x1F40).
+ * Posunutá fyzická adresa: 0x1F2C >= SEA - SOF, tedy 0x1F2C + 0x28 - 0x1F40
+ * = 0x0014.
+ * ======================================================================== */
+
+/** @brief Fyzická adresa zápisu na spodní řádek bez posunu. */
+#define SCRL_FRAME_OFFSET     0x1F2C
+/** @brief Fyzická adresa téhož zápisu po posunu o jeden řádek. */
+#define SCRL_FRAME_SHIFTED    0x0014
+
+/**
+ * @brief Připraví emu: DMD, WF (SINGLE, roviny I-IV) a RF (rovina I) se
+ *        zadaným B/A, scroll o 1 řádek, vynulované roviny.
+ */
+static void scrl_frame_setup(uint8_t dmd, uint8_t ba)
+{
+    memset(g_memoryVRAM_I,   0, VRAM_SIM_PLANE_SIZE);
+    memset(g_memoryVRAM_II,  0, VRAM_SIM_PLANE_SIZE);
+    memset(g_memoryVRAM_III, 0, VRAM_SIM_PLANE_SIZE);
+    memset(g_memoryVRAM_IV,  0, VRAM_SIM_PLANE_SIZE);
+    g_gdg.regDMD = dmd;
+    vramctrl_mz800_set_wf_rf_reg(0, (uint8_t)((ba << 4) | 0x0F));
+    vramctrl_mz800_set_wf_rf_reg(1, (uint8_t)((ba << 4) | 0x01));
+    hwscroll_set_reg(0x03, 0x7D); hwscroll_set_reg(0x04, 0x00); hwscroll_set_reg(0x05, 0x7D);
+    hwscroll_set_reg(0x02, 0x00); hwscroll_set_reg(0x01, 0x05);
+}
+
+/**
+ * @brief Zápis i čtení CPU jdou na posunutou adresu jen při B/A == DMD bit 0.
+ *
+ * 320x200@4 (DMD 00h/01h) a 640x200@2 (DMD 04h/05h; CPU offset se dělí 2,
+ * proto se zapisuje na 2*offset). Pro B/A != DMD bit 0 musí zápis skončit na
+ * neposunuté adrese a posunutá zůstat netknutá; čtení z téhož CPU offsetu
+ * musí vrátit zapsanou hodnotu.
+ */
+static void test_emu_cpu_scroll_only_for_displayed_frame(void)
+{
+    static const uint8_t bases[] = { 0x00, 0x04 };
+    for (unsigned b = 0; b < sizeof(bases); b++) {
+        for (uint8_t d0 = 0; d0 <= 1; d0++) {
+            for (uint8_t ba = 0; ba <= 1; ba++) {
+                uint8_t dmd = (uint8_t)(bases[b] | d0);
+                uint16_t cpu_off = (dmd & 0x04) ? (uint16_t)(SCRL_FRAME_OFFSET * 2) : SCRL_FRAME_OFFSET;
+                scrl_frame_setup(dmd, ba);
+                vramctrl_mz800_memop_write_byte(cpu_off, 0xFF);
+
+                int scrolled = (d0 == ba);
+                uint16_t hit  = scrolled ? SCRL_FRAME_SHIFTED : SCRL_FRAME_OFFSET;
+                uint16_t miss = scrolled ? SCRL_FRAME_OFFSET : SCRL_FRAME_SHIFTED;
+                /* B/A vybírá v 640x200@2 rovinu I (A) nebo III (B) */
+                const uint8_t *plane = ((dmd & 0x04) && ba) ? g_memoryVRAM_III : g_memoryVRAM_I;
+                char msg[80];
+                snprintf(msg, sizeof(msg), "DMD=0x%02X B/A=%u", dmd, ba);
+                TEST_ASSERT_EQUAL_HEX8_MESSAGE(0xFF, plane[hit], msg);
+                TEST_ASSERT_EQUAL_HEX8_MESSAGE(0x00, plane[miss], msg);
+                TEST_ASSERT_EQUAL_HEX8_MESSAGE(0xFF, vramctrl_mz800_memop_read_byte(cpu_off), msg);
+            }
+        }
+    }
+}
+
+/**
+ * @brief V HICOLOR režimech (320x200@16, 640x200@4) se scroll uplatní vždy.
+ */
+static void test_emu_cpu_scroll_always_in_hicolor(void)
+{
+    static const uint8_t bases[] = { 0x02, 0x06 };
+    for (unsigned b = 0; b < sizeof(bases); b++) {
+        for (uint8_t d0 = 0; d0 <= 1; d0++) {
+            for (uint8_t ba = 0; ba <= 1; ba++) {
+                uint8_t dmd = (uint8_t)(bases[b] | d0);
+                uint16_t cpu_off = (dmd & 0x04) ? (uint16_t)(SCRL_FRAME_OFFSET * 2) : SCRL_FRAME_OFFSET;
+                scrl_frame_setup(dmd, ba);
+                vramctrl_mz800_memop_write_byte(cpu_off, 0xFF);
+                char msg[80];
+                snprintf(msg, sizeof(msg), "DMD=0x%02X B/A=%u", dmd, ba);
+                TEST_ASSERT_EQUAL_HEX8_MESSAGE(0xFF, g_memoryVRAM_I[SCRL_FRAME_SHIFTED], msg);
+                TEST_ASSERT_EQUAL_HEX8_MESSAGE(0x00, g_memoryVRAM_I[SCRL_FRAME_OFFSET], msg);
+            }
+        }
+    }
 }
 
 /* ========================================================================
@@ -663,6 +780,7 @@ int main(int argc, char **argv)
     RUN_TEST(test_hwscroll_disabled_default);
     RUN_TEST(test_hwscroll_recompute_enable_conditions);
     RUN_TEST(test_hwscroll_shift_up_and_down);
+    RUN_TEST(test_cpu_hwscroll_applies_rule);
 
     /* CPU R/W unit */
     RUN_TEST(test_cpu_read_no_plane_selected_returns_FF);
@@ -686,6 +804,10 @@ int main(int argc, char **argv)
     /* SMOKE IDENTITY - sim vs emu */
     RUN_TEST(test_smoke_identity_read_matrix);
     RUN_TEST(test_smoke_identity_write_matrix);
+
+    /* HW scroll a CPU přístup do nezobrazené frame */
+    RUN_TEST(test_emu_cpu_scroll_only_for_displayed_frame);
+    RUN_TEST(test_emu_cpu_scroll_always_in_hicolor);
 
     return UNITY_END();
 }

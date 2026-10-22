@@ -264,7 +264,7 @@ extern "C" void imgui_pezik_settings_window(bool *p_open) {
 
         if (ImGui::Button("OK", ImVec2(120, 0))) {
 #if MZARCH != 1500
-            /* Při zapínání E8 PEZIK — odpojit MR1R18 (sdílí porty 0xE8-0xEF) */
+            /* Při zapínání E8 PEZIK — odpojit MZ-1R18 (sdílí porty 0xE8-0xEF) */
             if (s_state.e8.connected && RAMDISK_TEST_STD_CONNECTED) {
                 ramdisk_std_disconnect();
             }

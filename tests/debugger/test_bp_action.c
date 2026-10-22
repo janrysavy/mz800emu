@@ -25,6 +25,9 @@
 #include "debugger/bp_vars.h"
 #include "debugger/symbols/sym_db.h"
 #include "emulator/emulator.h"     /* g_emulator.paused - gating snapshotu */
+#include "debugger/trace/ramlog.h" /* ramlog_start/stop: stav záznamu zápisů */
+#include "debugger/coverage/coverage_hook.h" /* coverage_start/stop/mark: stav pokrytí */
+#include "hw-generic/memory/memory.h" /* memory_write_byte_no_bp - zápis přes debugger cestu */
 #include "libs/cpu-z80/z80.h"
 
 #include <string.h>
@@ -813,6 +816,97 @@ static void test_fwd_snapshot_parse ( void ) {
     assert_parse_ok ( "snapshot \"snap-%X.mzs\", PC" );
 }
 
+/* --- ramlog parse --- */
+static void test_fwd_ramlog_parse ( void ) {
+    assert_parse_ok ( "ramlog_start" );
+    assert_parse_ok ( "ramlog_start 0x4000, 0x40FF" );
+    assert_parse_ok ( "ramlog_start $a, $a + 15" );
+    assert_parse_ok ( "ramlog_stop" );
+    assert_parse_ok ( "ramlog_clear" );
+    assert_parse_ok ( "if lastwriter(0x4000) == 0x3009 then ramlog_stop" );
+    /* Jen 0 nebo 2 argumenty. */
+    assert_parse_fails ( "ramlog_start 0x4000" );
+    assert_parse_fails ( "ramlog_start 1, 2, 3" );
+    assert_parse_fails ( "ramlog_start 0x4000 0x40FF" );
+}
+
+/*
+ * ramlog_start s výrazy vyhodnocenými při hitu, zápis přes debugger cestu se
+ * zdrojem POKE (pc 1234h), lastwriter() z mapy, ramlog_clear a ramlog_stop.
+ */
+static void test_fwd_ramlog_execute ( void ) {
+    exec_action ( "$a = 0x4001\nramlog_start $a, $a - 1" );
+    st_RAMLOG_STATUS st;
+    ramlog_get_status ( &st );
+    TEST_ASSERT_TRUE ( st.active );
+    TEST_ASSERT_EQUAL_UINT ( 1, st.n_ranges );
+    TEST_ASSERT_EQUAL_UINT32 ( 0x4000, st.ranges[0].from );     /* meze seřazené */
+    TEST_ASSERT_EQUAL_UINT32 ( 0x4001, st.ranges[0].to );
+
+    uint32_t saved = ramlog_source_push ( RAMLOG_SRC_POKE, 0x1234 );
+    memory_write_byte_no_bp ( 0x4000, 0x5A );
+    memory_write_byte_no_bp ( 0x5000, 0x5A );                    /* mimo rozsah */
+    ramlog_source_pop ( saved );
+
+    char err[160] = {0};
+    bp_expr_ctx_t ctx;
+    make_ctx ( &ctx );
+    bp_expr_t *e = bp_expr_parse ( "lastwriter(0x4000)", err, sizeof ( err ) );
+    TEST_ASSERT_NOT_NULL ( e );
+    TEST_ASSERT_EQUAL_INT32 ( 0x1234, bp_expr_eval ( e, &ctx ) );
+    bp_expr_free ( e );
+    e = bp_expr_parse ( "lastwriter(0x4001) + lastwriter(0x5000)", err, sizeof ( err ) );
+    TEST_ASSERT_NOT_NULL ( e );
+    TEST_ASSERT_EQUAL_INT32 ( -2, bp_expr_eval ( e, &ctx ) );    /* obě -1 = nezapsané */
+    bp_expr_free ( e );
+
+    exec_action ( "ramlog_clear" );
+    e = bp_expr_parse ( "lastwriter(0x4000)", err, sizeof ( err ) );
+    TEST_ASSERT_EQUAL_INT32 ( -1, bp_expr_eval ( e, &ctx ) );    /* nový segment */
+    bp_expr_free ( e );
+
+    exec_action ( "ramlog_stop" );
+    ramlog_get_status ( &st );
+    TEST_ASSERT_FALSE ( st.active );
+    exec_action ( "ramlog_start" );
+    ramlog_get_status ( &st );
+    TEST_ASSERT_TRUE ( st.active );
+    TEST_ASSERT_EQUAL_UINT ( 0, st.n_ranges );                   /* celá paměť */
+    exec_action ( "ramlog_stop" );
+    ramlog_free ( );
+}
+
+/* --- coverage --- */
+/**
+ * @brief coverage_start [branch|detail], coverage_stop, coverage_mark:
+ *        parsování a provedení (úroveň, maska háčků, epocha).
+ */
+static void test_fwd_coverage ( void ) {
+    assert_parse_ok ( "coverage_start" );
+    assert_parse_ok ( "coverage_start branch" );
+    assert_parse_ok ( "coverage_start detail" );
+    assert_parse_ok ( "coverage_stop" );
+    assert_parse_ok ( "coverage_mark" );
+    assert_parse_fails ( "coverage_start full" );
+    assert_parse_fails ( "coverage_start detail 5" );
+
+    st_COVERAGE_STATUS st;
+    exec_action ( "coverage_start detail" );
+    coverage_get_status ( &st );
+    TEST_ASSERT_TRUE ( st.active );
+    TEST_ASSERT_EQUAL_INT ( COVERAGE_LEVEL_DETAIL, st.level );
+    TEST_ASSERT_TRUE ( g_mzarch_post_insn_hooks & MZARCH_POST_INSN_COVERAGE );
+    exec_action ( "coverage_mark" );
+    coverage_get_status ( &st );
+    TEST_ASSERT_EQUAL_UINT32 ( 1, st.epoch );
+    exec_action ( "coverage_stop" );
+    coverage_get_status ( &st );
+    TEST_ASSERT_FALSE ( st.active );
+    TEST_ASSERT_TRUE ( st.has_data );
+    TEST_ASSERT_FALSE ( g_mzarch_post_insn_hooks & MZARCH_POST_INSN_COVERAGE );
+    coverage_free ( );
+}
+
 /* --- chybové stavy --- */
 static void test_fwd_parse_errors ( void ) {
     /* trace bez kanálu / neznámý kanál. */
@@ -824,6 +918,69 @@ static void test_fwd_parse_errors ( void ) {
     assert_parse_fails ( "cdl_export" );
     assert_parse_fails ( "snapshot" );
     assert_parse_fails ( "snapshot foo" );
+}
+
+/* --- stop / exit: parser --- */
+static void test_halt_parse ( void ) {
+    assert_parse_ok ( "stop" );
+    assert_parse_ok ( "stop \"done\"" );
+    assert_parse_ok ( "stop \"a=%d\", $a" );
+    assert_parse_ok ( "exit 1" );
+    assert_parse_ok ( "exit A" );
+    assert_parse_ok ( "exit (Value & 0x0F), \"code %X at %X\", Value, PC" );
+    assert_parse_ok ( "if $a == 1 then exit 2 else stop" );
+
+    assert_parse_fails ( "exit" );
+    assert_parse_fails ( "exit 1, 2" );
+    assert_parse_fails ( "exit 1 \"msg\"" );
+    assert_parse_fails ( "stop 5" );
+}
+
+/* --- stop: zastaví a ukončí akci, další příkazy se nevykonají --- */
+static void test_halt_stop_execute ( void ) {
+    TEST_ASSERT_FALSE ( exec_action ( "$a = 1\nstop \"msg %d\", $a\n$a = 2" ) );
+    TEST_ASSERT_EQUAL_INT32 ( 1, bp_var_get ( "a" ) );
+    st_BP_ACTION_HALT h;
+    TEST_ASSERT_TRUE ( bp_action_last_halt ( &h ) );
+    TEST_ASSERT_EQUAL_INT ( BP_ACTION_HALT_STOP, h.kind );
+    TEST_ASSERT_EQUAL_STRING ( "msg 1", h.message );
+}
+
+/* --- exit: kód z výrazu, dolních 8 bitů, hláška; uvnitř if --- */
+static void test_halt_exit_execute ( void ) {
+    st_BP_ACTION_HALT h;
+    TEST_ASSERT_FALSE ( exec_action ( "$v = 66\nexit $v, \"v=%d\", $v" ) );
+    TEST_ASSERT_TRUE ( bp_action_last_halt ( &h ) );
+    TEST_ASSERT_EQUAL_INT ( BP_ACTION_HALT_EXIT, h.kind );
+    TEST_ASSERT_EQUAL_INT ( 66, h.code );
+    TEST_ASSERT_EQUAL_STRING ( "v=66", h.message );
+
+    TEST_ASSERT_FALSE ( exec_action ( "exit 0x1FF" ) );
+    TEST_ASSERT_TRUE ( bp_action_last_halt ( &h ) );
+    TEST_ASSERT_EQUAL_INT ( 0xFF, h.code );
+    TEST_ASSERT_NULL ( h.message );
+
+    TEST_ASSERT_FALSE ( exec_action ( "$b = 0\nif 1 then exit 3\n$b = 9" ) );
+    TEST_ASSERT_EQUAL_INT32 ( 0, bp_var_get ( "b" ) );
+    TEST_ASSERT_TRUE ( bp_action_last_halt ( &h ) );
+    TEST_ASSERT_EQUAL_INT ( 3, h.code );
+
+    /* Akce bez stop / exit: výsledek předchozí akce neplatí. */
+    TEST_ASSERT_TRUE ( exec_action ( "if 0 then exit 4" ) );
+    TEST_ASSERT_FALSE ( bp_action_last_halt ( &h ) );
+    TEST_ASSERT_EQUAL_INT ( BP_ACTION_HALT_NONE, h.kind );
+}
+
+/* --- klasifikace: stop / exit = HALT i vedle jiných příkazů --- */
+static void test_halt_classify ( void ) {
+    const char *srcs[] = { "log \"x\"; exit 1", "if 0 then stop", "mark \"m\"; stop" };
+    for ( size_t i = 0; i < sizeof ( srcs ) / sizeof ( srcs[0] ); i++ ) {
+        char err[160] = {0};
+        bp_action_t *a = bp_action_parse ( srcs[i], err, sizeof ( err ) );
+        TEST_ASSERT_NOT_NULL ( a );
+        TEST_ASSERT_EQUAL_INT ( BP_ACTION_SUB_HALT, bp_action_classify_subtype ( a ) );
+        bp_action_free ( a );
+    };
 }
 
 /* --- klasifikace: forward příkazy = CONTINUE subtype --- */
@@ -1104,6 +1261,9 @@ int main ( int argc, char *argv[] ) {
     RUN_TEST ( test_fwd_cdl_lifecycle_parse );
     RUN_TEST ( test_fwd_trace_parse_channels );
     RUN_TEST ( test_fwd_snapshot_parse );
+    RUN_TEST ( test_fwd_ramlog_parse );
+    RUN_TEST ( test_fwd_ramlog_execute );
+    RUN_TEST ( test_fwd_coverage );
     RUN_TEST ( test_fwd_parse_errors );
     RUN_TEST ( test_fwd_classify_continue );
     RUN_TEST ( test_fwd_vision_0017_combo_parse );
@@ -1111,6 +1271,12 @@ int main ( int argc, char *argv[] ) {
     /* FWD_SNAPSHOT exekuce z continuing BP - 0018 (S18MAIN) */
     RUN_TEST ( test_fwd_snapshot_continuing_bp_writes_mzs );
     RUN_TEST ( test_fwd_snapshot_from_paused_no_regression );
+
+    /* Akce stop / exit (M4 headless-exit) */
+    RUN_TEST ( test_halt_parse );
+    RUN_TEST ( test_halt_stop_execute );
+    RUN_TEST ( test_halt_exit_execute );
+    RUN_TEST ( test_halt_classify );
 
     int result = UNITY_END ( );
 

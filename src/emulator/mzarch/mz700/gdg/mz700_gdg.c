@@ -191,6 +191,18 @@ uint8_t gdg_read_dmd_status_memop(void)
     return retval;
 }
 
+uint8_t gdg_peek_dmd_status_memop(void)
+{
+    uint8_t retval = 0x1E;
+    retval |= SIGNAL_GDG_HBLNK ? (1 << 7) : 0x00;
+    retval |= SIGNAL_GDG_TEMPO;
+    /* Jako gdg_read_dmd_status_memop(), ale bez načtení joysticku z hostitele. */
+    if ( JOYMZ_TEST_ANY_ACTIVE ) {
+        retval = (retval & ~0x1E) | (joymz_peek_status_bits14() & 0x1E);
+    }
+    return retval;
+}
+
 void gdg_write_byte(unsigned addr, uint8_t value)
 {
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED

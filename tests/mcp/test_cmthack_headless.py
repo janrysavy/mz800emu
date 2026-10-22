@@ -23,6 +23,10 @@ vlastní prázdné INI, ``--no-save-ini``, zabíjí se jen vlastní PID):
   C  mz800emu, fáze A původního skriptu bugreportu: ``run 350``, ``cpu_boost``
      0, ``cmt_open`` (vlastní MZF), klávesa C, ``cmt_transport play``,
      ``run 300`` -> 300 snímků, ``get_periph_cmt`` odpoví.
+  D  všechny nalezené binárky: CMT hack vypnutý, program provede
+     ``OUT (01h),A`` a ``OUT (02h),A``. Porty nejsou pastí (dřív se past
+     spustila i bez patche a změnila AF z 0044h): AF i HL zůstanou, CPU
+     doběhne do smyčky, na stderr není varování CMT hacku.
 
 Bez jakékoli binárky vrací 77 (SKIP). Výstup anglicky.
 Exit code: 0 = PASS, 1 = FAIL, 77 = SKIP.
@@ -66,6 +70,14 @@ _PROGRAM = bytes([0xF3, 0x21, 0xF0, 0x10, 0xD3, 0x01, 0x3C, 0x18, 0xFD])
 
 #: PC smyčky za OUT (01h).
 _LOOP_PCS = (0x1206, 0x1207)
+
+#: Program fáze D: 1200h DI; 1201h LD HL,10F0h; 1204h XOR A;
+#: 1205h OUT (01h),A; 1207h OUT (02h),A; 1209h JR 1209h.
+_PROGRAM_OFF = bytes([0xF3, 0x21, 0xF0, 0x10, 0xAF, 0xD3, 0x01,
+                      0xD3, 0x02, 0x18, 0xFE])
+
+#: PC smyčky programu fáze D.
+_LOOP_PC_OFF = 0x1209
 
 #: Text varování na stderr (cmthack_load_file() bez GUI).
 _WARNING = "CMT hack needs the GUI file dialog"
@@ -230,6 +242,29 @@ def phase_a(exe, tmp, mzf):
     check(_WARNING in emu.stderr_text(), "headless CMT hack warning on stderr")
 
 
+def phase_d(exe, tmp, mzf):
+    """OUT (01h) a OUT (02h) s vypnutým CMT hackem nic nezmění."""
+    print("  Phase D: OUT (01h) and OUT (02h) with the CMT hack disabled")
+    emu = PipeEmu(exe, tmp)
+    try:
+        emu.run_frames(50)
+        emu.call("cmt_hack_set", {"enabled": False})
+        cmt = emu.call("get_periph_cmt")
+        check(cmt.get("cmthack_enabled") is False, "CMT hack ROM patch not installed")
+        emu.call("media_load_mzf", {"path": str(mzf)})
+        emu.call("set_register", {"reg": "PC", "value": _EXEC})
+        emu.run_frames(5)
+        regs = emu.call("get_registers")
+        check(regs["PC"] == _LOOP_PC_OFF,
+              f"CPU reached the loop after both OUTs (PC = {regs['PC']:04X}h)")
+        check(regs["AF"] == 0x0044 and regs["HL"] == 0x10F0,
+              f"ports 01h/02h are no trap: AF = {regs['AF']:04X}h, "
+              f"HL = {regs['HL']:04X}h (expected 0044h, 10F0h)")
+    finally:
+        emu.close()
+    check(_WARNING not in emu.stderr_text(), "no CMT hack warning on stderr")
+
+
 def phase_b(exe, tmp):
     """Přesná posloupnost bugreportu: boot menu, klávesa C, run 50."""
     print("  Phase B: MZ-800 boot menu, key C, run 50 (bug report sequence)")
@@ -280,12 +315,15 @@ def main():
         root = Path(td)
         mzf = root / "out01.mzf"
         _make_mzf(mzf, _PROGRAM)
+        mzf_off = root / "out0102.mzf"
+        _make_mzf(mzf_off, _PROGRAM_OFF, name=b"CMTHACK OFF\r")
         tape = root / "tape.mzf"
         _make_mzf(tape, bytes((i * 37 + 11) & 0xFF for i in range(4096)),
                   name=b"CMTHACK TAPE\r")
         for name, arch, exe in present:
             print(f"== {name} ({arch}) ==")
-            phases = [("A", lambda t, e=exe: phase_a(e, t, mzf))]
+            phases = [("A", lambda t, e=exe: phase_a(e, t, mzf)),
+                      ("D", lambda t, e=exe: phase_d(e, t, mzf_off))]
             if arch == "mz800":
                 phases.append(("B", lambda t, e=exe: phase_b(e, t)))
                 phases.append(("C", lambda t, e=exe: phase_c(e, t, tape)))

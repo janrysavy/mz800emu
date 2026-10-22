@@ -63,6 +63,8 @@
 #include "cmt_mzf.h"
 #include "libs/mzf/mzf.h"
 #include "emulator.h"
+#include "replay.h"
+#include "media_writes.h"
 
 st_CMT g_cmt;
 char *g_ui_cmt_filters = NULL;
@@ -305,6 +307,9 @@ void cmt_eject(void)
     };
     if (!CMT_TEST_STOP)
         cmt_stop();
+    /* Vysunutá páska = změna média (media_writes.h): checkpoint záznamu
+     * vstupů ji zpět vložit neumí. */
+    MEDIA_WRITES_NOTE();
     if (g_cmt.ext->cb_eject)
         g_cmt.ext->cb_eject();
     g_cmt.ext = NULL;
@@ -460,6 +465,10 @@ void cmt_play_paused(void)
 
 static void cmt_record(void)
 {
+    /* Nahrávání změní obsah pásky (media_writes.h): checkpointy záznamu
+     * vstupů z doby před ním už nejdou načíst. */
+    MEDIA_WRITES_NOTE();
+
     // implicitne zacneme v pauze
     g_cmt.paused = 1;
 
@@ -551,43 +560,39 @@ static void cmt_ui_record_cb(baseui_fchooser_t *fch)
         };
     };
 
-    st_CMTEXT *ext = cmtext_get_recording_extension();
-
-    if (EXIT_SUCCESS != ext->cb_open(filepath))
-    {
-        baseui_error("%s can't open file '%s'\n", cmtext_get_description(ext), filepath);
-        baseui_tools_mem_free(filepath);
-        ui_cmt_window_update();
-        return;
-    };
-
+    /* Nahrávání zahájí emu vlákno (cmt_record_to_file() přes
+     * replay_host_cmt()); záznam vstupů ho tak zachytí jako událost. */
+    replay_host_cmt(REPLAY_CMT_RECORD, 0, filepath);
     baseui_tools_mem_free(filepath);
-    g_cmt.ext = ext;
-    cmt_record();
+    ui_cmt_window_update();
 }
 
+/**
+ * @brief Tlačítko RECORD okna Virtual CMT (UI vlákno).
+ *
+ * Je-li vložená páska, do které jde nahrávat, nahrává se do ní; jinak se
+ * otevře dialog pro nový WAV soubor (nenahrávatelnou pásku vysune až
+ * zahájení nahrávání, zrušený dialog ji nechá vloženou). Samotné zahájení
+ * nahrávání (cmt_record_to_file()) provede emu vlákno přes
+ * replay_host_cmt(), takže ho záznam vstupů zachytí.
+ */
 void cmt_ui_record(void)
 {
     if (!CMT_TEST_STOP)
         return;
 
-    if ((CMT_TEST_FILLED) && (EXIT_SUCCESS != cmtext_is_recordable(g_cmt.ext)))
+    if ((CMT_TEST_FILLED) && (EXIT_SUCCESS == cmtext_is_recordable(g_cmt.ext)))
     {
-        cmt_eject();
+        st_CMTEXT_CONTAINER *container = cmtext_get_container(g_cmt.ext);
+        const char *fpath = container ? cmtext_container_get_filepath(container) : NULL;
+        replay_host_cmt(REPLAY_CMT_RECORD, 0, (fpath && fpath[0]) ? fpath : "record.wav");
+        return;
     };
 
-    if (!CMT_TEST_FILLED)
+    baseui_fchooser_t *fch = baseui_filechooser_save_file(BASEUI_FCHOOSER_CAT_CMT, _("Create a new WAV file"), ".wav", NULL, NULL, _("newfile.wav"), cmt_ui_record_cb, NULL);
+    if (!fch)
     {
-
-        baseui_fchooser_t *fch = baseui_filechooser_save_file(BASEUI_FCHOOSER_CAT_CMT, _("Create a new WAV file"), ".wav", NULL, NULL, _("newfile.wav"), cmt_ui_record_cb, NULL);
-        if (!fch)
-        {
-            fprintf(stderr, "%s(%d): filechooser error\n", __FILE__, __LINE__);
-        };
-    }
-    else
-    {
-        cmt_record();
+        fprintf(stderr, "%s(%d): filechooser error\n", __FILE__, __LINE__);
     };
 }
 
@@ -622,6 +627,97 @@ void cmt_ui_record(void)
  *      volá cmtext cb_open, stejně jako ostatní cmt_* funkce).
  * @post Při úspěchu je g_cmt.state == CMT_STATE_RECORD a g_cmt.paused == 1.
  */
+void cmt_stop_button(void)
+{
+    if (!CMT_TEST_RECORD)
+    {
+        cmt_stop();
+        return;
+    };
+    st_CMTEXT_BLOCK *block = cmtext_get_block(g_cmt.ext);
+    uint32_t size = cmtext_block_get_size(block);
+    if (!size)
+    {
+        cmt_eject();
+        return;
+    };
+    st_CMTEXT_CONTAINER *container = cmtext_get_container(g_cmt.ext);
+    char *filepath = g_strdup(cmtext_container_get_filepath(container));
+    cmt_eject();
+    cmt_open_file_by_extension(filepath);
+    g_free(filepath);
+}
+
+int cmt_tape_step_block(int forward)
+{
+    if (!CMT_TEST_FILLED || !g_cmt.ext->container)
+        return EXIT_FAILURE;
+    cmtext_container_cb_next_block step = forward ? g_cmt.ext->container->cb_next_block
+                                                  : g_cmt.ext->container->cb_previous_block;
+    if (!step)
+        return EXIT_FAILURE;
+
+    gboolean fl_play = CMT_TEST_PLAY;
+    gboolean fl_paused = CMT_TEST_PAUSED;
+    if (fl_play)
+        cmt_stop();
+    if (EXIT_FAILURE == step())
+        return EXIT_FAILURE;
+    if (fl_play)
+    {
+        if (fl_paused)
+            cmt_play_paused();
+        else
+            cmt_play();
+    };
+    ui_cmt_window_update();
+    return EXIT_SUCCESS;
+}
+
+int cmt_tape_select_block(int block_id, int forced)
+{
+    if (!CMT_TEST_FILLED || !g_cmt.ext->container || !g_cmt.ext->container->cb_open_block)
+        return EXIT_FAILURE;
+
+    gboolean fl_stop = CMT_TEST_STOP;
+    if ((!fl_stop) && (!forced))
+        return EXIT_FAILURE;
+
+    int old_block = cmtext_block_get_block_id(g_cmt.ext->block);
+    gboolean fl_play = CMT_TEST_PLAY;
+    gboolean fl_paused = CMT_TEST_PAUSED;
+
+    if (old_block != block_id)
+    {
+        if (fl_play)
+            cmt_stop();
+        if (EXIT_SUCCESS != g_cmt.ext->container->cb_open_block(block_id))
+            return EXIT_FAILURE;
+        if (forced)
+        {
+            /* dvojklik na jiný blok: v pauze zůstane pauza, jinak play */
+            if (fl_paused)
+                cmt_play_paused();
+            else
+                cmt_play();
+        };
+    }
+    else
+    {
+        if (!forced)
+            return EXIT_SUCCESS;
+        /* dvojklik na stejný blok: pauza -> play, play -> pauza, stop -> play */
+        if (fl_paused)
+            cmt_pause(0);
+        else if (fl_play)
+            cmt_pause(1);
+        else
+            cmt_play();
+    };
+    ui_cmt_window_update();
+    return EXIT_SUCCESS;
+}
+
 int cmt_record_to_file(const char *path)
 {
     if (!path || path[0] == '\0')

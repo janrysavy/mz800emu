@@ -9,16 +9,17 @@ For the authoritative document with all corner cases see
 
 ## Stop vs continue semantics
 
-No explicit `stop` command exists. The decision to halt the emulator
-is driven solely by whether the action string is empty:
-
 - **action == NULL or whitespace-only** -> emulator stops (classic BP).
 - **action with any non-empty content** -> after evaluating all
-  commands the emulator continues (implicit continue).
+  commands the emulator continues (implicit continue), unless it ran
+  `stop` or `exit`.
+- `stop` stops like an empty action, `exit <code>` ends the run with an
+  exit code (headless) or only pauses (GUI, MCP: `emu_run` returns
+  `stopped_by: "exit"`, the `paused` event has `reason: "exit"` and
+  `exit_code`). Both end the action - commands after them do not run.
 
-Consequence: a "log and then stop" BP is **not expressible directly**
-in one BP. Workaround: increment `$hits` and add a separate Stop BP
-on `$hits >= N`, or use Stop mode without a Custom script.
+"Log and then stop": `stop "A=%X", A`. Stop on the 5th pass:
+`$hits += 1; if $hits >= 5 then stop`.
 
 ## Lexical rules
 
@@ -49,12 +50,18 @@ on `$hits >= N`, or use Stop mode without a Custom script.
 | `$name = <expr>` (+ compound ops) | Assign to user variable | `$hits += 1` |
 | `clear_vars` | Reset all `$name` values to 0 (entries preserved) | `clear_vars` |
 | `if <expr> then <stmt> [else <stmt>]` | Single-line conditional | `if $hits >= 5 then disable_self` |
+| `stop ["fmt"[, expr...]]` | Stop the emulator (optional message `[BP-STOP] ...`), ends the action | `stop "HL=%X", HL` |
+| `exit <expr>[, "fmt"[, expr...]]` | End the run with exit code 0-255 (headless without MCP; elsewhere only pause), ends the action | `exit Value` |
 | `cdl_start` / `cdl_stop` / `cdl_reset` | CDL (Memory Heatmap) lifecycle | `cdl_start` |
 | `cdl_export "fmt"[, expr...]` | Export CDL data to file (templated name) | `cdl_export "dump-%d.cdl", $id` |
 | `trace_start <chan>` | Start a trace channel | `trace_start cputrack` |
 | `trace_stop <chan>` | Stop a trace channel | `trace_stop cputrack` |
 | `trace_save <chan>, "fmt"[, expr...]` | Save / redirect channel segment | `trace_save cputrack, "seg-%d.bin", $id` |
 | `snapshot "fmt"[, expr...]` | Save `.mzs` snapshot (works from a continuing BP too) | `snapshot "snap-%X.mzs", PC` |
+| `ramlog_start [<from>, <to>]` | Start the RAM write log: all memory, or one range of CPU addresses (expressions evaluated at hit) | `ramlog_start HL, HL + 15` |
+| `ramlog_stop` / `ramlog_clear` | Stop / empty the RAM write log | `ramlog_stop` |
+| `coverage_start [branch\|detail]` | Start code coverage (default `branch`); continues existing data with the same settings | `coverage_start detail` |
+| `coverage_stop` / `coverage_mark` | Stop code coverage / start a new coverage epoch | `coverage_mark` |
 
 ## `log` format specifiers
 
@@ -78,7 +85,10 @@ reads a single character spec. If you need zero-padded hex emit it
 via multiple `log` calls or fixed-width construction externally.
 
 Max 8 expression arguments per `log` call. Output goes to stdout as
-`[BP-LOG] <formatted>\n`.
+`[BP-LOG] <formatted>\n`. Under `--mcp-pipe` stdout carries MCP JSONL,
+so the text goes to stderr and is **not readable through MCP**; count hits
+via `bp_list` or stop the BP instead. In MEM_R / MEM_W / IORQ BPs log
+`InsnPC`, not `PC` (the live PC is behind the accessing instruction).
 
 ```
 log "PC=%X A=%X HL=%X", PC, A, HL
@@ -178,7 +188,7 @@ Two independent branches run when the BP fires:
 1. **Marklog binary record** - if `[TRACE_MARKLOG] mode` is
    `WITH_WINDOW` or `ALWAYS` (and the writer is active), a 24 B
    record is written into `<dir>/<name>.NNN.bin` with a pre-resolved
-   `marker_id`. ID -> name mapping is in `meta.json`.
+   `marker_id`. ID -> name mapping is in the manifest `<name>.json`.
 2. **Stdout printout** `[BP-MARK] <name>` - if
    `[TRACE_MARKLOG].stdout_enabled` is `1` (default).
 
@@ -259,7 +269,7 @@ paths.
 
 ### Trace suite
 
-`<chan>` is one of `cputrack`, `iorqlog`, `intlog`, `hwlog`
+`<chan>` is one of `cputrack`, `iorqlog`, `intlog`, `hwlog`, `marklog`
 (case-sensitive). Unknown channel = parse error.
 
 | Command | Effect |
@@ -287,6 +297,33 @@ the headless frame counter the way a transient `paused` toggle did
 (0018/0019). This realises the "one BP"
 vision (0018): trace segment + `.mzs` snapshot from a single continuing
 BP, no client round-trip.
+
+### RAM write log
+
+| Command | Effect |
+|---------|--------|
+| `ramlog_start` | Same as `emu_ramlog_start` without `ranges` (all memory, ring, default capacity); replaces a running log |
+| `ramlog_start <from>, <to>` | One range of CPU addresses; both expressions evaluated when the BP fires, order of the two values does not matter |
+| `ramlog_stop` | Same as `emu_ramlog_stop` (records stay readable) |
+| `ramlog_clear` | Same as `emu_ramlog_clear` |
+
+Use `lastwriter(addr)` in conditions (`emulator://docs/bp_dsl`), e.g.
+`if lastwriter(0x4000) == 0x3009 then ramlog_stop`. Recipe:
+`emulator://docs/ramlog`.
+
+### Code coverage
+
+| Command | Effect |
+|---------|--------|
+| `coverage_start` | Same as `emu_coverage_start(level="branch")` without `reset`: continues existing data with the same settings, otherwise starts new data |
+| `coverage_start detail` | The same with `level="detail"` (key `opcode`, default capacity) |
+| `coverage_stop` | Same as `emu_coverage_stop` (data stay readable) |
+| `coverage_mark` | Same as `emu_coverage_mark`: new epoch, filter `new_since_epoch` then lists only code that ran after the mark |
+
+Typical use: a breakpoint on the start of a level does `coverage_mark`,
+the agent then reads what the level added. Started at `detail` inside an
+instruction (a MEM_R / MEM_W breakpoint), that one step may count as
+`fetch_fallback`. Recipe: `emulator://docs/coverage`.
 
 ### Filename templates and `$vars`
 
@@ -326,12 +363,19 @@ Both override fields are settable from production via `emu_bp_update`
 default for breakpoints without an explicit override is the INI key
 `[BREAKPOINTS] fwd_default_min_interval_ms`. A cumulative byte
 backstop (`[BREAKPOINTS] fwd_byte_limit_mb`, default 256 MB) auto-pauses
-the emulator if heavy actions keep writing past the threshold.
+the emulator if heavy actions keep writing past the threshold (run result
+`stopped_by: "bp_action_saturation"`). It counts snapshots and traces
+saved by actions and the recording of trace channels an action started
+(`trace_start`) or saves (`trace_save`); a trace started only with
+`emu_trace_start` is limited by its own `max_total_mb` instead.
 
 Control-plane robustness: a continuing BP running a heavy forward
-action no longer wedges the emulator. The drain happens at the BP
-action boundary, so `pause`, `stop` and breakpoint-clear always take
-effect even mid-action.
+action no longer wedges the emulator. At the BP action boundary only
+`pause`, `force_pause` and `get_state` are served. The boundary can be
+in the middle of an instruction (a MEM_W BP fires before the write), so
+all other commands (register and memory reads, writes, breakpoint
+changes) wait for the end of the frame or for the pause and never see a
+half-executed instruction. Pause first, then change breakpoints.
 
 ## Vision 0017: one smart BP on `0x0005`
 

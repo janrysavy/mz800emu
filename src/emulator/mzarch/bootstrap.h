@@ -133,7 +133,9 @@ extern void mzarch_platform_bootstrap_apply_load_map(void);
  * BEZ platform-specific GDG/video zásahů (= mz800 Bod 2 přepnutí DMD).
  * Určeno pro mid-session load (media_load_mzf), kde nechceme měnit video
  * mód běžícího programu, ale tělo MZF s `fstrt < 0x1000` se musí zapsat
- * do RAM místo pod ROM.
+ * do RAM místo pod ROM. Odmapuje šířeji než ROM MZ-800, ta jen při
+ * zaváděcí i spouštěcí adrese 0000h (viz
+ * `mzarch_platform_bootstrap_post_header()`).
  *
  * Volá se PŘED `cmthack_read_mzf_body()`, na již nastavené load-time mapě
  * (`mzarch_platform_bootstrap_apply_load_map()`).
@@ -154,8 +156,10 @@ extern void mzarch_platform_load_prepare_body_map(uint16_t fstrt);
  * Společné chování napříč platformami:
  *   - Pokud `fstrt < 0x1000`, odmapovat dolní ROM (`MEMORY_*_MAP_FLAG_ROM_0000`),
  *     jinak by `cmthack_read_mzf_body()` zapisoval pod ROM. Pozn.: reálná
- *     ROM toto dělá jen když `fstrt == 0x0000` - naše bootstrap je víc
- *     vanilla (= mapping musí odpovídat skutečné cílové RAM).
+ *     ROM MZ-800 (`]GOPGM`) dolní ROM odmapuje jen tehdy, když jsou
+ *     zaváděcí i spouštěcí adresa obě 0000h (u ROM MZ-700 a MZ-1500
+ *     podmínka [neověřeno]); bootstrap odmapuje šířeji, protože mapování
+ *     musí odpovídat skutečné cílové RAM.
  *
  * Platform-specific (MZ-800):
  *   - Pokud je nastavený MZ-800 mode (= backside switch S1=OFF), replikovat

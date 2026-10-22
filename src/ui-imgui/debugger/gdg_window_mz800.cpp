@@ -253,9 +253,9 @@ static void render_vramctrl_section(const st_GDG_MIRROR_MZ800 *snap)
         ImGui::TextUnformatted(snap->vc_wfrf_vbank ? _("B") : _("A"));
 
         ImGui::TableNextRow();
-        ImGui::TableNextColumn(); ImGui::Text("%s:", _("MZ700 WR latch"));
+        ImGui::TableNextColumn(); ImGui::Text("%s:", _("WRITE FF"));
         ImGui::TableNextColumn();
-        ImGui::TextUnformatted(snap->vc_mz700_wr_latch_is_used
+        ImGui::TextUnformatted(snap->vc_vram_wrff_set
                                    ? _("set") : _("clear"));
 
         ImGui::EndTable();

@@ -88,7 +88,8 @@ static st_EVTRIG_AUTOMARK s_automark = {
  *
  * Při shodě zaznamená pozici události a požádá o pauzu emulace
  * (emulator_pause(true) - nastaví příznak pauzy a událost pro hlavní
- * smyčku, stejná cesta jako breakpointy).
+ * smyčku, stejná cesta jako breakpointy) s důvodem
+ * EMU_PAUSE_REASON_EVENT_TRIGGER (záznam zastavení, událost "paused").
  *
  * @param e  Právě zapsaná událost v ringu (jen čtení).
  */
@@ -105,6 +106,10 @@ static void evtrig_pause_callback ( const st_EVENTLOG_EVENT *e )
     s_pause.last_match_event_idx = ( g_eventlog.count > 0 )
                                    ? (int64_t) ( g_eventlog.count - 1 )
                                    : -1;
+    if ( !EMULATOR_TEST_PAUSED )
+    {
+        g_emulator.pause_reason = EMU_PAUSE_REASON_EVENT_TRIGGER;
+    };
     emulator_pause ( true );
 }
 

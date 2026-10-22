@@ -70,11 +70,6 @@ extern "C" {
 #define MB_DIFF_BUF_MAX_BYTES ( 4u * 1024u * 1024u )
 
 /**
- * @brief Maximální počet enumerovaných regionů (per snapshot).
- */
-#define MB_DIFF_MAX_REGIONS 512
-
-/**
  * @brief Source mode (Source A i B sdílejí stejný enum).
  */
 typedef enum
@@ -124,8 +119,9 @@ struct mb_diff_state_t
     bool            auto_snapshot_at_pause;
     bool            last_paused;
 
-    /* Region enumerate cache (per frame). */
-    st_REGION_DESC  regions[MB_DIFF_MAX_REGIONS];
+    /* Region enumerate cache (per frame): dbgapi_regions_enumerate_dup,
+     * všechny regiony bez stropu; vlastní okno, refresh ho nahradí. */
+    st_REGION_DESC *regions;
     int             regions_count;
 
     /* Scroll state side-by-side hex view. */
@@ -333,8 +329,11 @@ extern "C" void membrowser_diff_window_cleanup ( void )
 
 static void refresh_regions_snapshot ( void )
 {
-    int n = dbgapi_regions_enumerate ( s_diff.regions, MB_DIFF_MAX_REGIONS );
-    if ( n < 0 ) n = 0;
+    int n = 0;
+    st_REGION_DESC *fresh = dbgapi_regions_enumerate_dup ( &n );
+    g_free ( s_diff.regions );
+    s_diff.regions = fresh;
+    if ( !s_diff.regions ) n = 0;
     s_diff.regions_count = n;
 }
 

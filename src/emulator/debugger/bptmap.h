@@ -105,7 +105,6 @@ extern "C" {
     extern int bptmap_event_get_id_by_addr ( uint16_t addr );
     extern void bptmap_reset_temporary_event ( void );
     extern void bptmap_set_temporary_event ( uint16_t addr );
-    extern void bptmap_activate_event ( void );
 
 
     /* ===== D.2 per-typ API ================================================= */

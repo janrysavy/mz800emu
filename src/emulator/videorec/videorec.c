@@ -1487,7 +1487,8 @@ static void vr_observe_speed_reset(void)
  * je od breakpointu, právě probíhá běh k dočasnému breakpointu
  * (g_vr_dbg_run_inflight: step over a run to cursor krátce zruší
  * g_emulator.paused), nebo pauza je zastavení na dočasném breakpointu
- * (`dbg_pause`, jeho `pause_reason` se nenastavuje). Ruční pokračování po
+ * (`dbg_pause`; její `pause_reason` je EMU_PAUSE_REASON_RUN_TO, rozhoduje ale
+ * `dbg_pause`). Ruční pokračování po
  * dokončeném kroku je normální běh uživatele.
  *
  * @return true = krokování (řídí se `record_debugger_steps`).

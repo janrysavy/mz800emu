@@ -60,8 +60,20 @@ mz_add_test(mcp_dispatch
         ${CMAKE_SOURCE_DIR}/src/emulator/mcp/event_bus.c
         ${CMAKE_SOURCE_DIR}/src/emulator/mcp/trap_manager.c
         ${CMAKE_SOURCE_DIR}/src/emulator/screenshot/screenshot.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/debugger/trace/trace_reader.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/audio_analysis.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/debugger/trace/ramlog.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/debugger/coverage/coverage.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/debugger/coverage/coverage_decode.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/debugger/coverage/coverage_export.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/debugger/memsearch/memsearch.c
+        ${CMAKE_SOURCE_DIR}/src/emulator/debugger/run_control/run_log.c
     LABELS   "standalone;mcp"
 )
+
+# trace_reader (trace_read) dekóduje cputrack disassemblerem; audio_analysis
+# (Hz a noty audio_psg_writes) potřebuje libm.
+target_link_libraries(test_mcp_dispatch PRIVATE mzlib_dasm_z80 m)
 
 target_compile_definitions(test_mcp_dispatch PRIVATE
     MZ800EMU_MCP_TEST_BUILD
@@ -215,6 +227,26 @@ if(Python3_FOUND)
         SKIP_RETURN_CODE 77
     )
     message(STATUS "  tests/mcp: registered mcp_wrapper_emu_exit "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Wrapper: emu_event_poll s timeout_ms nad limitem odpovědi
+    # -----------------------------------------------------------
+    # Falešný emulátor odpoví na event_poll až po timeout_ms; wrapper
+    # nesmí skončit timeoutem dřív (limit = SEND_TIMEOUT_S + timeout_ms).
+    # Bez FastMCP (.venv) 77 (SKIP).
+    add_test(
+        NAME    mcp_wrapper_event_poll_timeout
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_wrapper_event_poll_timeout.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_wrapper_event_poll_timeout PROPERTIES
+        LABELS  "mcp;wrapper"
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_wrapper_event_poll_timeout "
                    "(Python ${Python3_VERSION})")
 
     # -----------------------------------------------------------
@@ -448,6 +480,181 @@ if(Python3_FOUND)
     message(STATUS "  tests/mcp: registered mcp_snapshot_gdg_event "
                    "(Python ${Python3_VERSION})")
 
+    # Stránkované čtení Trace Suite (trace_status / trace_read): krátký běh
+    # jen v RAM čitelný za běhu i po stopu, raw_b64 = chunk soubory, čas
+    # cputrack = kotvy chunků i s přijetím přerušení, segment_replaced po
+    # restartu, marklog se jménem značky. MZ-800, pipe.
+    add_test(
+        NAME    mcp_trace_read
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_trace_read.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_trace_read PROPERTIES
+        LABELS  "e2e;mcp;pipe;trace"
+        TIMEOUT 300
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_trace_read "
+                   "(Python ${Python3_VERSION})")
+
+    # Paměť zachycení zvuku přes MCP: trace_read audio_* = CSV, PCM výřez
+    # 44100 Hz stereo = WAV bajt po bajtu, souhrn (nota PSG, posun SDL cesty
+    # o snímek), zachycení jen do paměti a segment_replaced. Pipe, MZ-800.
+    add_test(
+        NAME    mcp_audio_read
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_audio_read.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_audio_read PROPERTIES
+        LABELS  "e2e;mcp;pipe;audio"
+        TIMEOUT 300
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_audio_read "
+                   "(Python ${Python3_VERSION})")
+
+    # Záznam zápisů do paměti (ramlog) přes MCP: insn_pc, old/new, PUSH,
+    # LDIR, dotazy kdo zapsal, malý ring, přijetí přerušení, banking RAM/VRAM
+    # a plány WF REPLACE, reset a snapshot, bitová shoda se zapnutým záznamem,
+    # MZ-700 a MZ-1500 (pokud binárky existují). Pipe.
+    add_test(
+        NAME    mcp_ramlog
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_ramlog.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_ramlog PROPERTIES
+        LABELS  "e2e;mcp;pipe;ramlog"
+        TIMEOUT 300
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_ramlog "
+                   "(Python ${Python3_VERSION})")
+
+    # Pokrytí kódu (coverage) přes MCP: stavy větví všech druhů podmíněných
+    # instrukcí, úroveň detail (samomodifikace, DD 00, kapacita), vstup do
+    # obsluhy přerušení, stránkování a kurzor, export JSON a CSV, bitová
+    # shoda se zapnutým pokrytím, MZ-700 a MZ-1500 (pokud binárky existují).
+    add_test(
+        NAME    mcp_coverage
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_coverage.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_coverage PROPERTIES
+        LABELS  "e2e;mcp;pipe;coverage"
+        TIMEOUT 300
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_coverage "
+                   "(Python ${Python3_VERSION})")
+
+    # Klasifikace čtení paměti: datové čtení hned za instrukcí (POP ze
+    # SP = PC, LD A,(nn) s nn = PC) je data - CDL r a zastavení MEM_R
+    # breakpointu; MZ-800, MZ-700 a MZ-1500 (pokud binárky existují).
+    add_test(
+        NAME    mcp_mem_read_kind
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_mem_read_kind.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_mem_read_kind PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger"
+        TIMEOUT 300
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_mem_read_kind "
+                   "(Python ${Python3_VERSION})")
+
+    # Postupné hledání proměnných (memsearch) a Freeze Bytes přes MCP:
+    # pauza i běžící program, undo/redo, ruční vyřazení, MemExt PEHU (128
+    # kusů, bp_hint MMEXT_BANK), VRAM plane bez adresy, BCD, MZ-700/1500.
+    add_test(
+        NAME    mcp_memsearch
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_memsearch.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_memsearch PROPERTIES
+        LABELS  "e2e;mcp;pipe;memsearch"
+        TIMEOUT 300
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_memsearch "
+                   "(Python ${Python3_VERSION})")
+
+    # Běh ukončený podmínkou (headless): návratové kódy, result.json,
+    # --exit-after-frames, --timeout-*, --exit-on-pc/--fail-on-pc/
+    # --exit-on-write/--exit-on-out, --bpt, chyby voleb (kód 3), dopsání
+    # artefaktů při nenulovém kódu, determinismus, všechny 4 binárky,
+    # akce exit / stop v pipe a přes MCP TCP (jen pauza).
+    add_test(
+        NAME    mcp_headless_exit
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_headless_exit.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_headless_exit PROPERTIES
+        LABELS  "e2e;mcp;cli;automation"
+        TIMEOUT 300
+    )
+    message(STATUS "  tests/mcp: registered mcp_headless_exit "
+                   "(Python ${Python3_VERSION})")
+
+    # Snapshot uloží a obnoví skrytý stav Z80 (WZ, čekající INT/NMI,
+    # total_cycles); starý snapshot bez hidden_state nastaví výchozí
+    # hodnoty resetu; snapshot hned po EI s aktivní linkou INT dá stejný
+    # běh jako souvislý běh. Všechny 4 binárky, pipe. Bez binárek 77.
+    add_test(
+        NAME    mcp_snapshot_z80_hidden
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_snapshot_z80_hidden.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_snapshot_z80_hidden PROPERTIES
+        LABELS  "e2e;mcp;pipe;snapshot"
+        TIMEOUT 300
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_snapshot_z80_hidden "
+                   "(Python ${Python3_VERSION})")
+
+    # Snapshot z jiné HW konfigurace se načte bezpečně: RAMdisk 1 MB do
+    # procesu s 64 kB (dřív přetečení bufferu, load se zasekl), IDE8
+    # připojený bez otevřeného obrazu zůstane odpojený. MZ-800, pipe.
+    add_test(
+        NAME    mcp_snapshot_load_safety
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_snapshot_load_safety.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_snapshot_load_safety PROPERTIES
+        LABELS  "e2e;mcp;pipe;snapshot"
+        TIMEOUT 180
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_snapshot_load_safety "
+                   "(Python ${Python3_VERSION})")
+
+    # Snapshot obnoví latch WAIT VRAM režimu MZ-700: druhý zápis do VRAM
+    # ve viditelné části řádku po načtení má stejný WAIT jako v souvislém
+    # běhu (dřív build MZ-700 latch neukládal). Všechny 4 binárky, pipe.
+    add_test(
+        NAME    mcp_snapshot_vram_latch
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_snapshot_vram_latch.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_snapshot_vram_latch PROPERTIES
+        LABELS  "e2e;mcp;pipe;snapshot"
+        TIMEOUT 180
+        SKIP_RETURN_CODE 77
+    )
+    message(STATUS "  tests/mcp: registered mcp_snapshot_vram_latch "
+                   "(Python ${Python3_VERSION})")
+
     # -----------------------------------------------------------
     # MZT s hlavičkou CMTSPEED (UniCMT) a vlastní délky pulzů (pipe)
     # -----------------------------------------------------------
@@ -584,6 +791,400 @@ if(Python3_FOUND)
         TIMEOUT 120
     )
     message(STATUS "  tests/mcp: registered mcp_bp_addr_range "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Událost paused po zastavení na dočasném breakpointu (pipe)
+    # -----------------------------------------------------------
+    # run_until_addr, step_over přes CALL a step_out vyšlou paused
+    # s reason "run_to"; uživatelský BP s nesplněnou podmínkou na cíli
+    # dočasný BP nezakryje; uživatelský BP bez podmínky dá jedinou
+    # událost (reason "breakpoint").
+    add_test(
+        NAME    mcp_run_to_paused_event
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_run_to_paused_event.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_run_to_paused_event PROPERTIES
+        LABELS  "e2e;mcp;pipe;breakpoints"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_run_to_paused_event "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Krokování přes hranici snímku neztratí krok (pipe)
+    # -----------------------------------------------------------
+    # Blok konce snímku dřív vybíral frontu dbgapi i během kroku a další
+    # STEP_INTO se ztratil: step_n posunul PC o krok méně na každé hranici
+    # snímku. 20x step_n 1000 nad NOPy + jednotlivé step_into přes hranici.
+    add_test(
+        NAME    mcp_step_frame_boundary
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_step_frame_boundary.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_step_frame_boundary PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger"
+        TIMEOUT 300
+    )
+    message(STATUS "  tests/mcp: registered mcp_step_frame_boundary "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Řízení běhu: čísla běhů, wait_stop, deadline, pause(if_run_seq) (pipe)
+    # -----------------------------------------------------------
+    # deadline v emulovaném čase (snímky, ms), determinismus délky běhu,
+    # resumed + jediný paused, step_over přes CALL = běh, wait_stop timeout,
+    # podmíněná pauza, přerušený run(frames) nezastaví další běh, historie.
+    add_test(
+        NAME    mcp_run_control
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_run_control.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_run_control PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger"
+        TIMEOUT 180
+    )
+    message(STATUS "  tests/mcp: registered mcp_run_control "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # SHA-256 u čtení paměti, regionů a obrazu (pipe)
+    # -----------------------------------------------------------
+    # mem_read / region_read sha256 proti hashlib, want_data false,
+    # frame_hash stabilní v pauze a shodný se screenshotem, změna po
+    # zápisu do VRAM.
+    add_test(
+        NAME    mcp_read_sha256
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_read_sha256.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_read_sha256 PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_read_sha256 "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # state_observe - registry a okna paměti z jednoho okamžiku (pipe)
+    # -----------------------------------------------------------
+    # Za běhu konzistence registru a slova v paměti (kontrola, že dvě
+    # samostatná volání neshodu zachytí), v pauze run_seq a hash okna
+    # proti mem_read, okna regionů podle druhu, limity, sekce a hashe.
+    add_test(
+        NAME    mcp_state_observe
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_state_observe.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_state_observe PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_state_observe "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Podmíněné zápisy - expected_sha256 a expected (pipe + CLI)
+    # -----------------------------------------------------------
+    # mem_write, mem_write_force, region_write, set_register a
+    # set_cpu_flags s podmínkou v pauze i za běhu; odmítnutý zápis se
+    # nezaznamená do záznamu vstupů a --replay-verify skončí kódem 0.
+    add_test(
+        NAME    mcp_conditional_writes
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_conditional_writes.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_conditional_writes PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger"
+        TIMEOUT 180
+    )
+    message(STATUS "  tests/mcp: registered mcp_conditional_writes "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Záznam a přehrání vstupů (pipe + headless CLI)
+    # -----------------------------------------------------------
+    # Záznam kláves a zápisů debuggeru, odmítnutí zásahu mimo hranici
+    # snímku, přehrání v novém procesu se shodným stavem, --replay-verify
+    # (kód 0, upravený záznam kód 4 na správném snímku), odchýlení.
+    add_test(
+        NAME    mcp_replay
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_replay.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_replay PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger;replay"
+        TIMEOUT 180
+    )
+    message(STATUS "  tests/mcp: registered mcp_replay "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Média v záznamu vstupů (kazeta, disk) přes MCP (pipe)
+    # -----------------------------------------------------------
+    # Záznam začne uprostřed hrající kazety (boot z CMT) s DSK v mechanice,
+    # ovládání kazety přes MCP = události cmt; --replay-verify v novém
+    # procesu bez pásky a disku kód 0, záznam bez pásky kód 4, originální
+    # soubory beze změny.
+    add_test(
+        NAME    mcp_replay_media
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_replay_media.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_replay_media PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger;replay"
+        TIMEOUT 180
+    )
+    message(STATUS "  tests/mcp: registered mcp_replay_media "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Checkpointy záznamu vstupů: rewind a seek přes MCP (pipe)
+    # -----------------------------------------------------------
+    # Záznam v ROM monitoru s rewindem: zápis po checkpointu zmizí, soubor
+    # má rerecord_count 1; --replay-verify v novém procesu kód 0; seek
+    # dopředu / zpět / znovu dopředu dá stejný stav, rewind při přehrávání,
+    # přehrávání doběhne bez rozjetí.
+    add_test(
+        NAME    mcp_replay_rewind
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_replay_rewind.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_replay_rewind PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger;replay"
+        TIMEOUT 180
+    )
+    message(STATUS "  tests/mcp: registered mcp_replay_rewind "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Záznam vstupů ukončený --exit-after-frames (CLI)
+    # -----------------------------------------------------------
+    # Smyčka IN = konec snímku uvnitř instrukce; pauza z callbacku konce
+    # snímku nesmí posunout poslední bod hranice snímku: --replay-verify
+    # záznamů různé délky v novém procesu kód 0.
+    add_test(
+        NAME    mcp_replay_exit_boundary
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_replay_exit_boundary.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_replay_exit_boundary PROPERTIES
+        LABELS  "e2e;replay"
+        TIMEOUT 180
+    )
+    message(STATUS "  tests/mcp: registered mcp_replay_exit_boundary "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Regiony plné sestavy MZ-800 přes MCP (pipe)
+    # -----------------------------------------------------------
+    # MemExt Luftner + RAMdisk STD 16 MB + PEZIK 68h = 532 regionů:
+    # regions_list vrátí všechny (dřív useknuto na 128), region_write
+    # a region_read na ID nad 512 fungují, ID = count je chyba.
+    add_test(
+        NAME    mcp_regions_full_config
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_regions_full_config.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_regions_full_config PROPERTIES
+        LABELS  "e2e;mcp;pipe;regions"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_regions_full_config "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Staré region_id po změně HW (pipe, dva procesy)
+    # -----------------------------------------------------------
+    # Snapshot s RAMdiskem 64K načtený do procesu s 16M: region_read a
+    # region_write se starým ID skončí chybou "stale region id", ne
+    # čtením za koncem bufferu RAMdisku (dřív access violation).
+    add_test(
+        NAME    mcp_regions_stale
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_regions_stale.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_regions_stale PROPERTIES
+        LABELS  "e2e;mcp;pipe;regions"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_regions_stale "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Drain na hranici akce BP jen pro řídicí příkazy (pipe)
+    # -----------------------------------------------------------
+    # MEM_W BP s akcí continue: get_raster_pos za běhu se vykoná vždy na
+    # hranici snímku (ne uprostřed instrukce), pauza projde, stav v pauze
+    # je konzistentní.
+    add_test(
+        NAME    mcp_bp_action_drain
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_bp_action_drain.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_bp_action_drain PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_bp_action_drain "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Byte backstop akcí BP nezastaví samotný trace (pipe)
+    # -----------------------------------------------------------
+    # Práh 1 MB: trace přes MCP bez BP doběhne run 60 snímků, trace
+    # spuštěný akcí BP backstop zastaví (stopped_by bp_action_saturation).
+    add_test(
+        NAME    mcp_trace_backstop
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_trace_backstop.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_trace_backstop PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger;trace"
+        TIMEOUT 180
+    )
+    message(STATUS "  tests/mcp: registered mcp_trace_backstop "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Seek zpět přes checkpoint s PSG v běhu (pipe)
+    # -----------------------------------------------------------
+    # Snapshot ukládá fázi krokování PSG: přehrání po seeku zpět přes
+    # checkpoint se nerozjede na části periph (čítače kanálů PSG).
+    add_test(
+        NAME    mcp_replay_seek_psg
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_replay_seek_psg.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_replay_seek_psg PROPERTIES
+        LABELS  "e2e;mcp;pipe;debugger;replay"
+        TIMEOUT 180
+    )
+    message(STATUS "  tests/mcp: registered mcp_replay_seek_psg "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Čtení paměti debuggerem nespouští MEM_R breakpoint (pipe)
+    # -----------------------------------------------------------
+    # mem_read a dasm přes adresu s MEM_R BP nezmění hits ani nevyšlou
+    # breakpoint_hit; čtení CPU (LD A,(nn)) BP dál spustí.
+    add_test(
+        NAME    mcp_debugger_read_no_mem_r_bp
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_debugger_read_no_mem_r_bp.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_debugger_read_no_mem_r_bp PROPERTIES
+        LABELS  "e2e;mcp;pipe;breakpoints"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_debugger_read_no_mem_r_bp "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # IRQ / NMI inject bez HW linky INT (pipe)
+    # -----------------------------------------------------------
+    # irq_inject při EI skočí do obsluhy IM 2, nmi_inject při IFF1 = 0 na
+    # 0066h, irq_inject při DI čeká do EI.
+    add_test(
+        NAME    mcp_irq_nmi_inject
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_irq_nmi_inject.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_irq_nmi_inject PROPERTIES
+        LABELS  "e2e;mcp;pipe"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_irq_nmi_inject "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # InsnPC a FrameCycle ve výrazech breakpointů (pipe)
+    # -----------------------------------------------------------
+    # MEM_W BP s InsnPC zastaví na zápisu dané instrukce, PC je u MEM_W
+    # za instrukcí; FrameCycle = Cycle - Frame * takty snímku.
+    add_test(
+        NAME    mcp_bp_expr_insnpc
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_bp_expr_insnpc.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_bp_expr_insnpc PROPERTIES
+        LABELS  "e2e;mcp;pipe;breakpoints"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_bp_expr_insnpc "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Zápis paměti debuggerem nespouští MEM_W breakpoint (pipe)
+    # -----------------------------------------------------------
+    # mem_write a region_write (Logical) přes adresu s MEM_W BP nezmění
+    # hits ani nevyšlou breakpoint_hit; zápis CPU (LD (nn),A) BP spustí.
+    add_test(
+        NAME    mcp_debugger_write_no_mem_w_bp
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_debugger_write_no_mem_w_bp.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_debugger_write_no_mem_w_bp PROPERTIES
+        LABELS  "e2e;mcp;pipe;breakpoints"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_debugger_write_no_mem_w_bp "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Kanál marklog přes trace_* (pipe)
+    # -----------------------------------------------------------
+    # trace_start/reset/save/stop přijmou channel "marklog"; BP s akcí
+    # mark zapíše manifest a neprázdný chunk do adresáře z INI.
+    add_test(
+        NAME    mcp_trace_marklog
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_trace_marklog.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_trace_marklog PROPERTIES
+        LABELS  "e2e;mcp;pipe;trace"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_trace_marklog "
+                   "(Python ${Python3_VERSION})")
+
+    # -----------------------------------------------------------
+    # Cputrack: bajty instrukce z fetch, ne z paměti po vykonání (pipe)
+    # -----------------------------------------------------------
+    # LD (3001h),A na 3001h přepíše vlastní opkód; záznam musí mít
+    # délku 3 a bajty 32 01 30 (dřív 1 bajt 00h = NOP).
+    add_test(
+        NAME    mcp_cputrack_insn_bytes
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test_cputrack_insn_bytes.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(mcp_cputrack_insn_bytes PROPERTIES
+        LABELS  "e2e;mcp;pipe;trace"
+        TIMEOUT 120
+    )
+    message(STATUS "  tests/mcp: registered mcp_cputrack_insn_bytes "
                    "(Python ${Python3_VERSION})")
 
     # -----------------------------------------------------------

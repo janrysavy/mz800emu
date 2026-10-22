@@ -9,9 +9,10 @@
  * míst, kde program tráví čas (optimalizace).
  *
  * Napojení: hlavní smyčka (mzarch.c) po každé instrukci testuje jedinou
- * podmínkou `g_cputrack_active | g_profiler_pc_active` a teprve uvnitř
- * volá háčky; v neaktivním stavu se tedy proti stavu bez profileru přidá
- * jen jedno čtení proměnné, žádná větev.
+ * proměnnou, masku háčků `g_mzarch_post_insn_hooks` (bit
+ * MZARCH_POST_INSN_PROFILER_PC nastaví profiler_pc_set_active()), a teprve
+ * uvnitř volá háčky; v neaktivním stavu se tedy proti stavu bez profileru
+ * nepřidá nic.
  *
  * Zvlášť se vedou (nejsou přičtené k žádné adrese):
  * - nečinný HALT: kroky, kdy CPU stojí v HALT (4 T každý); vykonání samotné
@@ -97,6 +98,8 @@ typedef struct st_PROFILER_PC_SUMMARY {
  * @param enable true = sbírat.
  * @pre Emu vlákno (čte `cpu->total_cycles`), nebo emu vlákno neběží.
  * @post Při zapnutí se začne měřit uplynulý čas od tohoto okamžiku.
+ * @post Maska háčků po instrukci (g_mzarch_post_insn_hooks) odpovídá
+ *       novému stavu.
  */
 void profiler_pc_set_active(bool enable);
 

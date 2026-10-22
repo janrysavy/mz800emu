@@ -91,6 +91,7 @@ extern "C"
 #include "hw-generic/gdg/gdgclk.h"
 #include "hw-generic/gdg/gdg.h"  /* gdg_get_total_ticks() - reálná pxCLK timebase */
 #include "emulator/emulator.h"   /* EMULATOR_TEST_PAUSED - gate samplingu v pauze */
+#include "emulator/audio_analysis.h" /* sdílený výpočet výšky tónu a not (i MCP souhrn zvuku) */
 
     void imgui_psg_audio_scope_window(bool *p_open);
     void psg_audio_scope_tick(void);
@@ -310,16 +311,15 @@ static inline void psg_events_push(st_PSG_SCOPE_EVENTS *ev,
  * GDG ticků → f_out = GDGCLK_BASE / (2 * divider * PSG_DIVIDER)
  * = GDGCLK_BASE / (32 * divider * GDGCLK2CPU_DIVIDER).
  *
- * Reference: shoda s `psg_window.cpp::psg_tone_frequency_hz`.
+ * Počítá sdílená audio_psg_tone_hz() (audio_analysis.h), stejně jako
+ * `psg_window.cpp::psg_tone_frequency_hz` a MCP souhrn zachyceného zvuku.
  *
  * @param divider  10-bit hodnota 0..1023.
  * @return Frekvence v Hz, 0 pro DC případ.
  */
 static double psg_scope_tone_frequency_hz(unsigned divider)
 {
-    if (divider < 2u)
-        return 0.0;
-    return (double)GDGCLK_BASE / (32.0 * (double)divider * (double)GDGCLK2CPU_DIVIDER);
+    return audio_psg_tone_hz(divider, (uint64_t)GDGCLK_BASE, (unsigned)GDGCLK2CPU_DIVIDER);
 }
 
 /**
@@ -354,6 +354,7 @@ static inline bool psg_sample_is_playing(const st_PSG_SCOPE_SAMPLE *s)
  *
  * Pro `divider < 2` (= DC) by se sem nemělo dostat (volá se jen pokud
  * `psg_sample_is_playing == true`), defenzivně vrací pitch=0, cents=0.
+ * Kroky 2-4 dělá sdílená audio_hz_to_midi() (audio_analysis.h).
  *
  * @param divider     10-bit divider 0..1023.
  * @param out_pitch   Out: MIDI pitch 0..127 (NESMÍ být NULL).
@@ -361,22 +362,7 @@ static inline bool psg_sample_is_playing(const st_PSG_SCOPE_SAMPLE *s)
  */
 static void psg_tone_to_midi(unsigned divider, int *out_pitch, int *out_cents)
 {
-    double f = psg_scope_tone_frequency_hz(divider);
-    if (f <= 0.0)
-    {
-        *out_pitch = 0;
-        *out_cents = 0;
-        return;
-    }
-    double midi_float = 12.0 * log2(f / 440.0) + 69.0;
-    int nearest = (int)lround(midi_float);
-    int cents   = (int)lround((midi_float - (double)nearest) * 100.0);
-    if (nearest < 0)   nearest = 0;
-    if (nearest > 127) nearest = 127;
-    if (cents < -50)   cents = -50;
-    if (cents > 50)    cents = 50;
-    *out_pitch = nearest;
-    *out_cents = cents;
+    (void)audio_hz_to_midi(psg_scope_tone_frequency_hz(divider), out_pitch, out_cents);
 }
 
 /**
@@ -1551,25 +1537,11 @@ static const float PSG_SCOPE_ROLL_LABEL_W = 40.0f;
 static const float PSG_SCOPE_ROLL_NOISE_LANE_H = 14.0f;
 
 /**
- * @brief Names not C..B pro hover tooltip MIDI pitch popisek.
- *
- * Standardní 12-tónový equal temperament. Indexed `pitch % 12`. Octave
- * se počítá jako `pitch / 12 - 1` (MIDI konvence: C-1 = 0, C0 = 12, C4 = 60,
- * A4 = 69).
- *
- * Strings záměrně bez `_()` - jde o standardní MIDI note names (universální
- * notace), překladu by nedávalo smysl.
- */
-static const char *const PSG_SCOPE_NOTE_NAMES[12] = {
-    "C", "C#", "D", "D#", "E", "F",
-    "F#", "G", "G#", "A", "A#", "B"
-};
-
-/**
  * @brief Naformátuje MIDI pitch na lidsky čitelné jméno noty.
  *
  * Příklady: pitch 60 → "C4", pitch 69 → "A4", pitch 70 → "A#4".
- * Pro pitch mimo MIDI range (< 0 nebo > 127) vrací "?".
+ * Pro pitch > 127 vrací "?". Jména dává sdílená audio_midi_note_name()
+ * (standardní MIDI jména not, záměrně bez `_()`).
  *
  * @param pitch  MIDI pitch (0..127). -1 = NOISE - vrací "noise".
  * @param buf    Output buffer, ASCII zero-terminated.
@@ -1577,19 +1549,7 @@ static const char *const PSG_SCOPE_NOTE_NAMES[12] = {
  */
 static void psg_scope_midi_pitch_to_name(int pitch, char *buf, size_t buflen)
 {
-    if (pitch < 0)
-    {
-        snprintf(buf, buflen, "noise");
-        return;
-    }
-    if (pitch < 0 || pitch > 127)
-    {
-        snprintf(buf, buflen, "?");
-        return;
-    }
-    int octave = pitch / 12 - 1;
-    int idx    = pitch % 12;
-    snprintf(buf, buflen, "%s%d", PSG_SCOPE_NOTE_NAMES[idx], octave);
+    audio_midi_note_name(pitch, buf, buflen);
 }
 
 /**

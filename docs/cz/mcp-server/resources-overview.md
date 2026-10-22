@@ -25,6 +25,7 @@ mají oproti Tools dvě výhody:
 | URI | Obsah |
 |-----|-------|
 | `emulator://breakpoints` | Aktivní BP s id/addr/type/hit |
+| `emulator://run/history` | Posledních 32 záznamů zastavení (důvod, PC, kdo běh spustil, délka), totéž co `emu_get_stop_history` |
 | `emulator://callstack` | Single-shadow callstack snapshot |
 | `emulator://profiler` | Per-funkce profile data (excl/incl cycles) |
 | `emulator://symbols` | Symbol table výpis (cap 10 000, truncated flag) |
@@ -74,8 +75,8 @@ mají oproti Tools dvě výhody:
 | `emulator://input/keyboard/matrix_info` | Per-platform col x bit -> key_name tabulka |
 | `emulator://input/joystick/state` | Per-port (0, 1) digital state bits + device name |
 | `emulator://frame/framebuffer/info` | width/height/last_render_frame/dirty + 16-entry palette |
-| `emulator://frame/screenshot.raw` | Base64 RGBA pixely (auto-downscale 1/2/4) + `fallback_source` |
-| `emulator://frame/screenshot` | PNG base64 (`format: "png"`, plný frame, enkodér stb_image_write) |
+| `emulator://frame/screenshot.raw` | Base64 RGBA pixely (auto-downscale 1/2/4) + `fallback_source`, `image_sha256`, `vram_sha256`, `beam` |
+| `emulator://frame/screenshot` | PNG base64 (`format: "png"`, plný frame, enkodér stb_image_write) + `image_sha256`, `vram_sha256`, `beam` |
 | `emulator://video/text_dump` | MZ-700 mode 40x25 text dump (MZ-800 jen v 700 compat módu) |
 
 ### Dokumentace pro AI klienty

@@ -683,7 +683,7 @@ static int dump_initial_state ( const char *resolved_dir, const char *name )
  * Volaný z hwlog_start() po dump_initial_state() a předaný do
  * tlog_writer_update_meta() jako pre-formatted JSON string. tlog_common
  * fragment parsuje (JsonParser) a embedu jako JsonNode pod klíč
- * "subsys_header" v meta.json.
+ * "subsys_header" v manifestu <name>.json.
  *
  * @return Heap-alokovaný string s JSON object {...}; caller uvolní
  *         přes g_free().
@@ -787,6 +787,7 @@ int hwlog_start ( void )
         return -1;
     }
     s_writer_open = 1;
+    tlog_writer_set_record_size ( &s_writer, TLOG_RECORD_SIZE_EVENT24 );
     s_hs_edge_counter = 0;
 
     /* Initial state binary snapshot - per-chip TLV dump pro externí
@@ -942,6 +943,11 @@ void hwlog_apply_cli_options ( void )
     }
     v = sdlapp_option_value ( "--hwlog-hs-decimation" );
     if ( v ) g_hwlog_config.hs_decimation = (unsigned) g_ascii_strtoull ( v, NULL, 10 );
+}
+
+const st_TLOG_WRITER *hwlog_get_writer ( void )
+{
+    return &s_writer;
 }
 
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */

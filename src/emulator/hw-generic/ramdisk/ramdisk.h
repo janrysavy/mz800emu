@@ -108,6 +108,28 @@ extern "C" {
     extern void ramdisk_std_disconnect ( void );
     extern void ramdisk_std_save ( void );
 
+    /**
+     * @brief Přizpůsobí buffery RAMdisků stavu převzatému ze snapshotu.
+     *
+     * Load snapshotu přepíše `connected`, `type` a `size` hodnotami ze
+     * snapshotu, buffer ale zůstává alokovaný podle předchozí konfigurace.
+     * Funkce STD buffer (re)alokuje na `(size + 1) * 64 kB` (nově přidané
+     * banky vyplní 0FFh jako ramdisk_std_init) a připojenému PEZIKu bez
+     * bufferu ho alokuje. Na rozdíl od ramdisk_std_init() a
+     * ramdisk_pezik_connect() nečte ani nezapisuje záložní soubory.
+     *
+     * @param std_alloc_size Velikost (bank mask), podle které byl STD
+     *        buffer alokovaný před loadem; platí jen při
+     *        `g_ramdisk.std.memory != NULL`.
+     *
+     * @post `g_ramdisk.std.memory` je NULL (STD odpojený a bez bufferu),
+     *       nebo má `(g_ramdisk.std.size + 1) * 64 kB` bajtů; připojený
+     *       PEZIK má buffer 8 * 64 kB.
+     * @note Při selhání alokace ukončí emulátor (stejně jako init).
+     * @pre Emulátor je v pauze (volá load snapshotu).
+     */
+    extern void ramdisk_fit_buffers_after_load ( en_RAMDISK_BANKMASK std_alloc_size );
+
     extern void ramdisk_pezik_init ( int pezik_type, int connect, int portmask, int backuped, char *filepath );
     extern void ramdisk_pezik_connect ( int pezik_type );
     extern void ramdisk_pezik_disconnect ( int pezik_type );

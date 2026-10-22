@@ -440,6 +440,16 @@ extern "C" {
     extern void unicard_write_byte ( uint16_t port, uint8_t data );
     extern uint8_t unicard_read_byte ( uint16_t port );
 
+    /**
+     * @brief Aktuální čas pro RTC Unicardu (příkazy RTCGETD / RTCGETT).
+     *
+     * Mimo záznam a přehrání vstupů je to místní čas hostitele; při záznamu
+     * a přehrání čas ze základu záznamu + emulovaného času
+     * (replay_rtc_now()), aby přehrání vidělo stejné hodiny.
+     *
+     * @param[out] rtc Složky času (rok celý, měsíc 1-12).
+     * @pre Emu vlákno.
+     */
     extern void unicard_read_rtc ( st_UNICARD_RTC *rtc );
 
     extern FRESULT unicard_chdir ( char *dirpath );

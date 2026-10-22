@@ -243,14 +243,21 @@ void port_write_cb(z80_t *cpu, uint16_t addr, uint8_t value, void *user_data)
 
     switch (port_lsb)
     {
+    /* Past CMT hacku jen se zapnutým patchem - viz mz800_iorq.c. */
     case 0x01:
-        cmthack_load_file();
-        TRACELOG_IORQ_MARK_HANDLED();
+        if (CMTHACK_TEST_IS_INSTALLED)
+        {
+            cmthack_load_file();
+            TRACELOG_IORQ_MARK_HANDLED();
+        };
         break;
 
     case 0x02:
-        cmthack_read_mzf_body();
-        TRACELOG_IORQ_MARK_HANDLED();
+        if (CMTHACK_TEST_IS_INSTALLED)
+        {
+            cmthack_read_mzf_body();
+            TRACELOG_IORQ_MARK_HANDLED();
+        };
         break;
 
     case 0x50:

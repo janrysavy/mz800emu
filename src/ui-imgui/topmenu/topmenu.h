@@ -2,6 +2,7 @@
 #define IMGUI_TOPMENU_H
 
 #include "main.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -64,6 +65,62 @@ void imgui_menu_mz800_dip_switch(void);
     void imgui_customspeed_setup(void);
     void imgui_menu_snapshot(void);
     void imgui_menu_tools(void);
+
+    /** @brief Nabídka Replay: záznam a přehrání vstupů (menu_replay.cpp). */
+    void imgui_menu_replay(void);
+
+    /**
+     * @brief Každý snímek UI: souborové dialogy nabídky Replay a oznámení
+     *        výsledku záznamu / přehrávání (chyba startu, uloženo, konec, rozjetí).
+     */
+    void imgui_replay_dialogs(void);
+
+    /**
+     * @brief Indikátor REC / PLAY v levém dolním rohu obrazu (jen UI).
+     * @pre Volá se hned po vykreslení obrazu emulátoru (poslední položka = obraz).
+     */
+    void imgui_replay_overlay(void);
+
+    /** @brief Popisek zkratky okna Replay Control (zobrazí ho menu i okno). */
+#define IMGUI_REPLAY_SHORTCUT_WINDOW "Alt+J"
+    /** @brief Popisek zkratky Rewind (o jeden checkpoint zpět). */
+#define IMGUI_REPLAY_SHORTCUT_REWIND "Alt+Shift+J"
+
+    /** @brief Otevře souborový dialog startu záznamu (zobrazí se v imgui_replay_dialogs()). */
+    void imgui_replay_open_record_dialog(void);
+
+    /** @brief Otevře souborový dialog přehrání (zobrazí se v imgui_replay_dialogs()). */
+    void imgui_replay_open_play_dialog(void);
+
+    /**
+     * @brief Zapamatuje si číslo požadavku záznamu, jehož chybu ohlásí oznámení.
+     * @param seq Číslo z replay_request_*().
+     */
+    void imgui_replay_request(uint32_t seq);
+
+    /** @brief Rewind o jeden checkpoint (nic, když nic neběží nebo běží seek). */
+    void imgui_replay_rewind(void);
+
+    /**
+     * @brief Globální zkratky záznamu vstupů: Alt+J okno Replay Control,
+     *        Alt+Shift+J Rewind. Volá global_shortcuts.cpp.
+     */
+    void imgui_replay_shortcuts(void);
+
+    /**
+     * @brief Plovoucí okno Replay Control (`###ReplayRemote`): stav, ovládání,
+     *        rewind a seek se zkratkami (replay_window.cpp).
+     */
+    void imgui_replay_window(void);
+
+    /**
+     * @brief Zaregistruje sekci INI `[REPLAY_UI]` (viditelnost okna); jen jednou,
+     *        i v headless režimu, aby uložení INI sekci nepřepsalo.
+     */
+    void imgui_replay_window_cfg_init(void);
+
+    /** @brief Aplikuje uloženou viditelnost okna do `g_gui` (po jeho vzniku). */
+    void imgui_replay_window_apply_persisted(void);
 
     void imgui_global_shortcuts(void);
 

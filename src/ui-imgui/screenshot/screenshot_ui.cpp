@@ -1,10 +1,17 @@
 /**
  * @file   screenshot_ui.cpp
- * @brief  Screenshot z GUI: menu Tools -> Screenshot, zkratka Alt+F, dialog nastavení.
+ * @brief  Screenshot z GUI: menu Tools -> Screenshot, zkratky Alt+F, Alt+Shift+F
+ *         a Alt+G, dialog nastavení a okno Screenshot Control.
  *
  * Viz screenshot_ui.h. Zdrojem obrazu je surface, který okno emulátoru
  * zobrazuje (UI vlákno ho samo plní), takže screenshot je přesně to, co
  * uživatel vidí. Oblast a měřítko bere z g_screenshot_settings.
+ *
+ * Okno Screenshot Control (`###ScreenshotRemote`) je obdoba dálkového
+ * ovládání nahrávání videa: nastavení (oblast, měřítko, složka), poslední
+ * screenshot, stav série snímků a tlačítka s viditelnými zkratkami.
+ * Viditelnost okna se ukládá do INI (sekce `[SCREENSHOT_UI]`, klíč
+ * `window`, vzor videorec_remote_window.cpp včetně cache pro headless).
  *
  * @par Licence: GPLv3
  */
@@ -25,6 +32,10 @@
 #include "emulator/screenshot/screenshot_capture.h"
 #include "emulator/screenshot/screenshot_config.h"
 #include "emulator/screenshot/screenshot_series.h"
+#include "emulator/cfgmain.h"
+#include "libs/cfgfile/cfgroot.h"
+#include "libs/cfgfile/cfgmodule.h"
+#include "libs/cfgfile/cfgelement.h"
 
 #include "i18n.h"
 
@@ -35,6 +46,17 @@ extern "C" void snapshot_notification_show_ex(const char *message, bool is_error
 #define SCREENSHOT_SHORTCUT_LABEL "Alt+F"
 /** @brief Zobrazovaný popisek zkratky série snímků. */
 #define SCREENSHOT_SERIES_SHORTCUT_LABEL "Alt+Shift+F"
+/** @brief Zobrazovaný popisek zkratky okna Screenshot Control. */
+#define SCREENSHOT_WINDOW_SHORTCUT_LABEL "Alt+G"
+
+/** @brief Cesta posledního screenshotu z GUI ("" = žádný v tomto běhu). */
+static char s_last_path[1200] = "";
+/** @brief Rozměr posledního screenshotu. */
+static unsigned s_last_w = 0, s_last_h = 0;
+/** @brief Poslední pokus o screenshot selhal (s_last_error platí). */
+static bool s_last_failed = false;
+/** @brief Popis chyby posledního pokusu (přeložený nebo anglicky z jádra). */
+static char s_last_error[256] = "";
 
 
 /*******************************************************************************
@@ -91,7 +113,13 @@ static void ss_ui_save_and_notify(const char *path)
 {
     unsigned w = 0, h = 0;
     char err[256] = "";
-    if (ss_ui_save_to(path, &w, &h, err, sizeof(err))) {
+    bool ok = ss_ui_save_to(path, &w, &h, err, sizeof(err));
+    g_strlcpy(s_last_path, path, sizeof(s_last_path));
+    s_last_failed = !ok;
+    s_last_w = w;
+    s_last_h = h;
+    g_strlcpy(s_last_error, ok ? "" : err, sizeof(s_last_error));
+    if (ok) {
         char *msg = g_strdup_printf(_("Screenshot saved (%u x %u): %s"), w, h, path);
         snapshot_notification_show_ex(msg, false, NULL);
         g_free(msg);
@@ -175,6 +203,9 @@ void imgui_screenshot_menu(void)
                                   "(area and scale from Settings) until you stop it."));
     }
     ImGui::Separator();
+    if (ImGui::MenuItem(_L("Screenshot Control..."), SCREENSHOT_WINDOW_SHORTCUT_LABEL, g_gui->showScreenshotWindow)) {
+        g_gui->showScreenshotWindow = !g_gui->showScreenshotWindow;
+    }
     if (ImGui::MenuItem(_L("Settings..."))) {
         g_gui->showScreenshotSetupWindow = true;
     }
@@ -187,7 +218,12 @@ void imgui_screenshot_menu(void)
 void imgui_screenshot_shortcuts(void)
 {
     ImGuiIO &io = ImGui::GetIO();
-    if (!io.KeyAlt || io.KeyCtrl || !ImGui::IsKeyPressed(ImGuiKey_F, false)) return;
+    if (!io.KeyAlt || io.KeyCtrl) return;
+    if (!io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false)) {
+        g_gui->showScreenshotWindow = !g_gui->showScreenshotWindow;
+        return;
+    }
+    if (!ImGui::IsKeyPressed(ImGuiKey_F, false)) return;
     if (io.KeyShift) {
         screenshot_ui_toggle_series();
     } else {
@@ -429,4 +465,199 @@ void imgui_screenshot_setup_dialog(void)
             s_dir_chooser_open = false;
         }
     }
+}
+
+
+/*******************************************************************************
+ *
+ *                  Okno Screenshot Control
+ *
+ ******************************************************************************/
+
+/** @brief Viditelnost okna načtená z INI (cache do vzniku g_gui, a v headless trvale). */
+static bool s_cfg_window_open = false;
+/** @brief Cache byla aplikovaná do g_gui - od té doby je zdrojem pravdy g_gui. */
+static bool s_cfg_window_applied = false;
+/** @brief Modul `[SCREENSHOT_UI]` je zaregistrovaný. */
+static bool s_cfg_window_registered = false;
+
+/**
+ * @brief INI -> cache viditelnosti okna (případně rovnou do g_gui po aplikaci).
+ * @param e    Prvek `window` (st_CFGELEMENT*).
+ * @param data Nepoužito.
+ */
+static void ss_cfg_propagate_window(void *e, void *data)
+{
+    (void)data;
+    s_cfg_window_open = cfgelement_get_bool_value((st_CFGELEMENT *)e) ? true : false;
+    if (s_cfg_window_applied && g_gui) g_gui->showScreenshotWindow = s_cfg_window_open;
+}
+
+/**
+ * @brief Viditelnost okna -> INI: z g_gui po aplikaci cache, jinak hodnota cache.
+ * @param e    Prvek `window` (st_CFGELEMENT*).
+ * @param data Nepoužito.
+ */
+static void ss_cfg_save_window(void *e, void *data)
+{
+    (void)data;
+    bool open = (s_cfg_window_applied && g_gui) ? g_gui->showScreenshotWindow : s_cfg_window_open;
+    cfgelement_set_bool_value((st_CFGELEMENT *)e, open ? 1 : 0);
+}
+
+void imgui_screenshot_window_cfg_init(void)
+{
+    if (s_cfg_window_registered) return;
+    s_cfg_window_registered = true;
+    CFGMOD *cmod = cfgroot_register_new_module(g_cfgmain, (char *)"SCREENSHOT_UI");
+    if (!cmod) return; /* duplicitní modul - okno pojede bez persistence */
+    CFGELM *elm = cfgmodule_register_new_element(cmod, (char *)"window", CFGENTYPE_BOOL, 0);
+    cfgelement_set_propagate_cb(elm, ss_cfg_propagate_window, NULL);
+    cfgelement_set_save_cb(elm, ss_cfg_save_window, NULL);
+    cfgmodule_parse(cmod);
+    cfgmodule_propagate(cmod);
+}
+
+void imgui_screenshot_window_apply_persisted(void)
+{
+    if (!g_gui) return;
+    g_gui->showScreenshotWindow = s_cfg_window_open;
+    s_cfg_window_applied = true;
+}
+
+/**
+ * @brief Řádek tabulky stavu: popisek a hodnota (zalomená na šířku okna).
+ * @param label Přeložený popisek.
+ * @param value Hodnota (UTF-8).
+ * @param error true = hodnota je chyba (červeně).
+ */
+static void ss_status_row(const char *label, const char *value, bool error = false)
+{
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::TextUnformatted(label);
+    ImGui::TableSetColumnIndex(1);
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetFontSize() * 24.0f);
+    if (error) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", value);
+    } else {
+        ImGui::TextUnformatted(value);
+    }
+    ImGui::PopTextWrapPos();
+}
+
+/**
+ * @brief Tlačítko akce na novém řádku tabulky akcí, zkratka viditelně ve druhém sloupci.
+ * @param label Popisek s ImGui ID.
+ * @param width Šířka tlačítka.
+ * @param hint  Text zkratky nebo NULL.
+ * @return true = stisknuto.
+ */
+static bool ss_action(const char *label, float width, const char *hint)
+{
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    bool pressed = ImGui::Button(label, ImVec2(width, 0.0f));
+    if (hint) {
+        ImGui::TableSetColumnIndex(1);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(hint);
+    }
+    return pressed;
+}
+
+void imgui_screenshot_window(void)
+{
+    if (!g_gui->showScreenshotWindow) return;
+
+    char title[128];
+    g_snprintf(title, sizeof(title), "%s###ScreenshotRemote", _("Screenshot Control"));
+    const ImGuiViewport *vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + 80.0f, vp->WorkPos.y + 80.0f), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin(title, &g_gui->showScreenshotWindow, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::End();
+        return;
+    }
+
+    st_SCREENSHOT_SERIES_STATUS st;
+    screenshot_series_get_status(&st);
+
+    if (ImGui::BeginTable("##ss_rc_status", 2, ImGuiTableFlags_SizingFixedFit)) {
+        char buf[1400];
+        ss_status_row(_("Area"), g_screenshot_settings.area == SCREENSHOT_AREA_CANVAS ? _("Picture without border")
+                                                                                      : _("Whole frame with border"));
+        int cur = (g_screenshot_settings.scale_mode == SCREENSHOT_SCALE_NATIVE) ? 0 : (int)g_screenshot_settings.window_scale;
+        if (cur < 0 || cur > SCREENSHOT_WINDOW_SCALE_MAX) cur = 2;
+        ss_status_row(_("Scale"), _(s_scale_labels[cur]));
+        char dir[1024];
+        screenshot_resolve_output_dir(dir, sizeof(dir));
+        ss_status_row(_("Output folder"), dir);
+
+        if (!s_last_path[0]) {
+            ss_status_row(_("Last screenshot"), "-");
+        } else if (s_last_failed) {
+            ss_status_row(_("Last screenshot"), s_last_error, true);
+        } else {
+            char *base = g_path_get_basename(s_last_path);
+            g_snprintf(buf, sizeof(buf), "%s (%u x %u)", base, s_last_w, s_last_h);
+            g_free(base);
+            ss_status_row(_("Last screenshot"), buf);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s_last_path);
+        }
+
+        if (st.active) {
+            g_snprintf(buf, sizeof(buf), _("Recording: %u files of %u frames"), (unsigned)st.files,
+                       (unsigned)st.frames_seen);
+            ss_status_row(_("Frame series"), buf);
+        } else if (st.writing) {
+            g_snprintf(buf, sizeof(buf), _("Writing: %u files"), (unsigned)st.files);
+            ss_status_row(_("Frame series"), buf);
+        } else if (st.dir[0]) {
+            if (st.last_error[0]) {
+                g_snprintf(buf, sizeof(buf), _("Stopped after %u files: %s"), (unsigned)st.files, st.last_error);
+                ss_status_row(_("Frame series"), buf, true);
+            } else {
+                g_snprintf(buf, sizeof(buf), _("Last: %u files of %u frames"), (unsigned)st.files,
+                           (unsigned)st.frames_seen);
+                ss_status_row(_("Frame series"), buf);
+            }
+        } else {
+            ss_status_row(_("Frame series"), _("off"));
+        }
+        if (st.dir[0]) {
+            ss_status_row(_("Series folder"), st.dir);
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::SeparatorText(_("Controls"));
+    const ImGuiStyle &style = ImGui::GetStyle();
+    const char *const widest[] = { N_("Save Screenshot"), N_("Save Screenshot As..."), N_("Start Frame Series"),
+                                   N_("Stop Frame Series") };
+    float btn_w = 0.0f;
+    for (size_t i = 0; i < G_N_ELEMENTS(widest); i++) {
+        float w = ImGui::CalcTextSize(_(widest[i])).x;
+        if (w > btn_w) btn_w = w;
+    }
+    btn_w += style.FramePadding.x * 2.0f;
+    if (ImGui::BeginTable("##ss_rc_actions", 2, ImGuiTableFlags_SizingFixedFit)) {
+        if (ss_action(_L("Save Screenshot"), btn_w, SCREENSHOT_SHORTCUT_LABEL)) screenshot_ui_save_quick();
+        if (ss_action(_L("Save Screenshot As..."), btn_w, NULL)) screenshot_ui_save_as();
+        char label[128];
+        g_snprintf(label, sizeof(label), "%s###ss_rc_series", st.active ? _("Stop Frame Series") : _("Start Frame Series"));
+        ImGui::BeginDisabled(!st.active && st.writing);
+        if (ss_action(label, btn_w, SCREENSHOT_SERIES_SHORTCUT_LABEL)) screenshot_ui_toggle_series();
+        ImGui::EndDisabled();
+        ImGui::EndTable();
+    }
+    ImGui::TextDisabled("%s", _("The frame series saves a PNG of every changed emulated frame into a new folder."));
+
+    ImGui::Separator();
+    if (ImGui::Button(_L("Open Output Folder"))) ss_ui_open_output_folder();
+    ImGui::SameLine();
+    if (ImGui::Button(_L("Settings..."))) g_gui->showScreenshotSetupWindow = true;
+
+    ImGui::Separator();
+    ImGui::TextDisabled(_("Show or hide this window: %s"), SCREENSHOT_WINDOW_SHORTCUT_LABEL);
+    ImGui::End();
 }

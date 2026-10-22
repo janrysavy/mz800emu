@@ -28,7 +28,7 @@
  *    sts_hsync, sts_vsync, total elapsed screens),
  *  - tempo, cksw, regct53g7,
  *  - F3: vramctrl RF/WF state (regWF_PLANE, regWF_MODE, regRF_PLANE,
- *    regRF_SEARCH, regWFRF_VBANK, mz700_wr_latch_is_used),
+ *    regRF_SEARCH, regWFRF_VBANK) a WRITE FF modelu WAIT u VRAM,
  *  - F3: hwscroll state (regSSA, regSEA, regSW, regSOF, enabled).
  *
  * NENI součástí mirror snapshot:
@@ -117,7 +117,7 @@ typedef struct st_GDG_MIRROR_MZ800
     uint8_t  vc_rf_plane;   /**< RF: výběr plane pro čtení (bity 0..3). */
     uint8_t  vc_rf_search;  /**< RF: search mode bity (= komparátor pro plane match). */
     uint8_t  vc_wfrf_vbank; /**< WF/RF: aktivní VBANK pro VRAM přístup (0 = A, 1 = B). */
-    uint8_t  vc_mz700_wr_latch_is_used; /**< MZ-700 one-shot WAIT latch (visible scanline). */
+    uint8_t  vc_vram_wrff_set; /**< WRITE FF modelu WAIT u VRAM: 1 = poslední zápis CPU ještě není v DRAM (další přístup čeká). */
 
     /* ---- Hardware scroll (g_hwscroll, F3) ------------------------------ */
     /*

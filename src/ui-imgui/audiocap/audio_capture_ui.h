@@ -32,7 +32,8 @@ void audio_capture_ui_toggle(void);
 void imgui_audio_capture_menu(void);
 
 /**
- * @brief Zkratka Alt+Q (start / stop); volá se v Alt větvi globálních zkratek.
+ * @brief Zkratky Alt+Q (start / stop) a Alt+Shift+Q (okno Audio Capture
+ *        Control); volá se v Alt větvi globálních zkratek.
  */
 void imgui_audio_capture_shortcuts(void);
 
@@ -58,6 +59,28 @@ void imgui_audio_capture_poll(void);
  * se do INI při ukončení emulátoru), Cancel ji zahodí.
  */
 void imgui_audio_capture_setup_dialog(void);
+
+/**
+ * @brief Plovoucí okno Audio Capture Control (`###AudioCaptureRemote`), zobrazí
+ *        se při g_gui->showAudioCaptureWindow.
+ *
+ * Ukazuje stav (zachytává, startuje, vypnuto), délku, složku zachycení,
+ * počty zapsaných změn úrovní a zápisů PSG, poslední výsledek, soubory
+ * k zápisu a výstupní složku; tlačítko Start / Stop s viditelnou zkratkou,
+ * Open Output Folder a Settings... Volá UI vlákno jednou za snímek.
+ */
+void imgui_audio_capture_window(void);
+
+/**
+ * @brief Zaregistruje sekci INI `[AUDIOCAP_UI]` (viditelnost okna), jen jednou.
+ *
+ * Volá se i v headless režimu, aby uložení INI sekci nepřepsalo.
+ * @pre g_cfgmain existuje.
+ */
+void imgui_audio_capture_window_cfg_init(void);
+
+/** @brief Aplikuje uloženou viditelnost okna do `g_gui` (po jeho vzniku). */
+void imgui_audio_capture_window_apply_persisted(void);
 
 #ifdef __cplusplus
 }

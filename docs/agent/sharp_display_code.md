@@ -34,10 +34,10 @@ available.
 
 | Display range | Glyph(s) |
 |---------------|----------|
-| `0x00` | `@` (= space-equivalent in some contexts) |
+| `0x00` | space (Sharp ASCII `0x20` -> display `0x00`) |
 | `0x01..0x1A` | `A`..`Z` (uppercase letters, **not** at ASCII positions) |
-| `0x20..0x29` | grid graphic + digits at `0x21..0x2A`? See note below |
-| `0x21..0x2A` | `!`, `"`, `#`, `$`, `%`, `&`, `'`, `(`, `)`, `*` (= shifted ASCII punctuation) |
+| `0x20..0x29` | digits `0`..`9` (Sharp ASCII `0x30..0x39`) |
+| `0x61..0x69` | `!`, `"`, `#`, `$`, `%`, `&`, `'`, `(`, `)` (Sharp ASCII `0x21..0x29`) |
 | `0x80..` | lowercase + diacritics + graphics (rearranged) |
 | `0xC0..0xC6` | DPCT control glyphs - SCROLL / CDOWN / CUP / CRIGHT / CLEFT / HOME / CLS |
 | `0xF0` | NK (no key / non-printable placeholder) |

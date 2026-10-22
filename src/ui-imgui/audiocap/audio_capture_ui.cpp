@@ -2,6 +2,13 @@
  * @file   audio_capture_ui.cpp
  * @brief  Zachycení zvuku z GUI (viz audio_capture_ui.h).
  *
+ * Okno Audio Capture Control (`###AudioCaptureRemote`, Alt+Shift+Q) je
+ * obdoba dálkového ovládání nahrávání videa: stav, délka, složka, soubory
+ * k zápisu, počty zapsaných řádků a vzorků, poslední výsledek a tlačítka
+ * s viditelnými zkratkami. Viditelnost se ukládá do INI (sekce
+ * `[AUDIOCAP_UI]`, klíč `window`, vzor videorec_remote_window.cpp včetně
+ * cache pro headless).
+ *
  * @par Licence: GPLv3
  */
 
@@ -19,6 +26,11 @@
 #include "ui-imgui/audiocap/audio_capture_ui.h"
 #include "emulator/audio_capture.h"
 #include "emulator/screenshot/screenshot_series.h"
+#include "ui-imgui/bootstrap/myimgui.h"
+#include "emulator/cfgmain.h"
+#include "libs/cfgfile/cfgroot.h"
+#include "libs/cfgfile/cfgmodule.h"
+#include "libs/cfgfile/cfgelement.h"
 
 #include "i18n.h"
 
@@ -27,6 +39,8 @@ extern "C" void snapshot_notification_show_ex(const char *message, bool is_error
 
 /** @brief Zobrazovaný popisek zkratky startu / stopu. */
 #define AUDIO_CAPTURE_SHORTCUT_LABEL "Alt+Q"
+/** @brief Zobrazovaný popisek zkratky okna Audio Capture Control. */
+#define AUDIO_CAPTURE_WINDOW_SHORTCUT_LABEL "Alt+Shift+Q"
 
 /** @brief GUI spustilo zachycení a ještě neohlásilo jeho konec. */
 static bool s_pending_report = false;
@@ -89,6 +103,10 @@ void imgui_audio_capture_menu(void)
                                   "and the sound you hear (sdl.wav). For finding sound bugs."));
     }
     ImGui::Separator();
+    if (ImGui::MenuItem(_L("Audio Capture Control..."), AUDIO_CAPTURE_WINDOW_SHORTCUT_LABEL,
+                        g_gui->showAudioCaptureWindow)) {
+        g_gui->showAudioCaptureWindow = !g_gui->showAudioCaptureWindow;
+    }
     if (ImGui::MenuItem(_L("Settings..."))) {
         s_setup_open = true;
     }
@@ -102,8 +120,12 @@ void imgui_audio_capture_menu(void)
 void imgui_audio_capture_shortcuts(void)
 {
     ImGuiIO &io = ImGui::GetIO();
-    if (!io.KeyAlt || io.KeyCtrl || io.KeyShift || !ImGui::IsKeyPressed(ImGuiKey_Q, false)) return;
-    audio_capture_ui_toggle();
+    if (!io.KeyAlt || io.KeyCtrl || !ImGui::IsKeyPressed(ImGuiKey_Q, false)) return;
+    if (io.KeyShift) {
+        g_gui->showAudioCaptureWindow = !g_gui->showAudioCaptureWindow;
+    } else {
+        audio_capture_ui_toggle();
+    }
 }
 
 
@@ -249,4 +271,166 @@ void imgui_audio_capture_setup_dialog(void)
             s_dir_chooser_open = false;
         }
     }
+}
+
+
+/*******************************************************************************
+ *
+ *                  Okno Audio Capture Control
+ *
+ ******************************************************************************/
+
+/** @brief Viditelnost okna načtená z INI (cache do vzniku g_gui, a v headless trvale). */
+static bool s_cfg_window_open = false;
+/** @brief Cache byla aplikovaná do g_gui - od té doby je zdrojem pravdy g_gui. */
+static bool s_cfg_window_applied = false;
+/** @brief Modul `[AUDIOCAP_UI]` je zaregistrovaný. */
+static bool s_cfg_window_registered = false;
+
+/**
+ * @brief INI -> cache viditelnosti okna (případně rovnou do g_gui po aplikaci).
+ * @param e    Prvek `window` (st_CFGELEMENT*).
+ * @param data Nepoužito.
+ */
+static void ac_cfg_propagate_window(void *e, void *data)
+{
+    (void)data;
+    s_cfg_window_open = cfgelement_get_bool_value((st_CFGELEMENT *)e) ? true : false;
+    if (s_cfg_window_applied && g_gui) g_gui->showAudioCaptureWindow = s_cfg_window_open;
+}
+
+/**
+ * @brief Viditelnost okna -> INI: z g_gui po aplikaci cache, jinak hodnota cache.
+ * @param e    Prvek `window` (st_CFGELEMENT*).
+ * @param data Nepoužito.
+ */
+static void ac_cfg_save_window(void *e, void *data)
+{
+    (void)data;
+    bool open = (s_cfg_window_applied && g_gui) ? g_gui->showAudioCaptureWindow : s_cfg_window_open;
+    cfgelement_set_bool_value((st_CFGELEMENT *)e, open ? 1 : 0);
+}
+
+void imgui_audio_capture_window_cfg_init(void)
+{
+    if (s_cfg_window_registered) return;
+    s_cfg_window_registered = true;
+    CFGMOD *cmod = cfgroot_register_new_module(g_cfgmain, (char *)"AUDIOCAP_UI");
+    if (!cmod) return; /* duplicitní modul - okno pojede bez persistence */
+    CFGELM *elm = cfgmodule_register_new_element(cmod, (char *)"window", CFGENTYPE_BOOL, 0);
+    cfgelement_set_propagate_cb(elm, ac_cfg_propagate_window, NULL);
+    cfgelement_set_save_cb(elm, ac_cfg_save_window, NULL);
+    cfgmodule_parse(cmod);
+    cfgmodule_propagate(cmod);
+}
+
+void imgui_audio_capture_window_apply_persisted(void)
+{
+    if (!g_gui) return;
+    g_gui->showAudioCaptureWindow = s_cfg_window_open;
+    s_cfg_window_applied = true;
+}
+
+/**
+ * @brief Řádek tabulky stavu: popisek a hodnota (zalomená na šířku okna).
+ * @param label Přeložený popisek.
+ * @param value Hodnota (UTF-8).
+ * @param error true = hodnota je chyba (červeně).
+ */
+static void ac_status_row(const char *label, const char *value, bool error = false)
+{
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::TextUnformatted(label);
+    ImGui::TableSetColumnIndex(1);
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetFontSize() * 24.0f);
+    if (error) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", value);
+    } else {
+        ImGui::TextUnformatted(value);
+    }
+    ImGui::PopTextWrapPos();
+}
+
+void imgui_audio_capture_window(void)
+{
+    if (!g_gui->showAudioCaptureWindow) return;
+
+    char title[128];
+    g_snprintf(title, sizeof(title), "%s###AudioCaptureRemote", _("Audio Capture Control"));
+    const ImGuiViewport *vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + 100.0f, vp->WorkPos.y + 100.0f), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin(title, &g_gui->showAudioCaptureWindow, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::End();
+        return;
+    }
+
+    st_AUDIO_CAPTURE_STATUS st;
+    audio_capture_get_status(&st);
+    bool running = st.active || st.pending;
+
+    if (ImGui::BeginTable("##ac_rc_status", 2, ImGuiTableFlags_SizingFixedFit)) {
+        char buf[AUDIO_CAPTURE_PATH_MAX + 64];
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted(_("State"));
+        ImGui::TableSetColumnIndex(1);
+        if (st.active) {
+            ImGui::TextColored(ImVec4(0.45f, 0.90f, 0.45f, 1.0f), "%s", _("Capturing"));
+        } else if (st.pending) {
+            ImGui::TextUnformatted(_("Starting"));
+        } else {
+            ImGui::TextUnformatted(_("Off"));
+        }
+
+        if (running || st.dir[0]) {
+            g_snprintf(buf, sizeof(buf), "%.1f s", ac_ui_seconds(st.frames));
+            ac_status_row(running ? _("Time") : _("Last length"), buf);
+            ac_status_row(_("Folder"), st.dir[0] ? st.dir : "-");
+            g_snprintf(buf, sizeof(buf), _("%llu level changes, %llu PSG writes"), (unsigned long long)st.events,
+                       (unsigned long long)st.psg_writes);
+            ac_status_row(_("Recorded"), buf);
+        }
+        if (!running && st.last_error[0]) {
+            ac_status_row(_("Last result"), st.last_error, true);
+        } else if (!running && st.stop_reason[0]) {
+            ac_status_row(_("Last result"), st.stop_reason);
+        }
+
+        GString *files = g_string_new(NULL);
+        if (g_audio_capture_settings.events) g_string_append(files, "events.csv ");
+        if (g_audio_capture_settings.psg_writes) g_string_append(files, "psg_writes.csv ");
+        if (g_audio_capture_settings.reference_wav) g_string_append(files, "reference.wav ");
+        if (g_audio_capture_settings.sdl_wav) g_string_append(files, "sdl.wav");
+        ac_status_row(_("Files"), files->len ? files->str : "-");
+        g_string_free(files, TRUE);
+
+        char dir[AUDIO_CAPTURE_PATH_MAX];
+        audio_capture_resolve_output_dir(dir, sizeof(dir));
+        ac_status_row(_("Output folder"), dir);
+        ImGui::EndTable();
+    }
+
+    ImGui::SeparatorText(_("Controls"));
+    const ImGuiStyle &style = ImGui::GetStyle();
+    float btn_w = ImGui::CalcTextSize(_("Start Audio Capture")).x;
+    float w2 = ImGui::CalcTextSize(_("Stop Audio Capture")).x;
+    if (w2 > btn_w) btn_w = w2;
+    btn_w += style.FramePadding.x * 2.0f;
+    char label[128];
+    g_snprintf(label, sizeof(label), "%s###ac_rc_toggle", running ? _("Stop Audio Capture") : _("Start Audio Capture"));
+    if (ImGui::Button(label, ImVec2(btn_w, 0.0f))) audio_capture_ui_toggle();
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(AUDIO_CAPTURE_SHORTCUT_LABEL);
+    ImGui::TextDisabled("%s", _("Each capture creates a new folder in the output folder."));
+
+    ImGui::Separator();
+    if (ImGui::Button(_L("Open Output Folder"))) ac_ui_open_output_folder();
+    ImGui::SameLine();
+    if (ImGui::Button(_L("Settings..."))) s_setup_open = true;
+
+    ImGui::Separator();
+    ImGui::TextDisabled(_("Show or hide this window: %s"), AUDIO_CAPTURE_WINDOW_SHORTCUT_LABEL);
+    ImGui::End();
 }

@@ -268,26 +268,23 @@ void test_ops_executed_by_emu_thread(void)
  *
  * Regrese: handler MEMMAP_SET dřív zapisoval g_gdg.regDMD přímo, takže
  * přechod do 800 módu nenastavil GATE0 CTC0 na 1
- * (ctc82530_on_regDMD_changed) ani nevynuloval latch zápisu MZ-700
- * (g_vramctrl.mz700_wr_latch_is_used). Nově handler volá
- * gdg_debug_set_regDMD() = stejná cesta jako OUT CEh.
+ * (ctc82530_on_regDMD_changed). Nově handler volá gdg_debug_set_regDMD()
+ * = stejná cesta jako OUT CEh.
  *
- * Výchozí stav: 700 mód, E008h GATE0 = 0 (regct53g7), GATE0 CTC0 = 0,
- * latch použitý. Po DMD 00h: GATE0 = 1, latch 0. Po návratu na 08h:
- * GATE0 zpět podle regct53g7 = 0.
+ * Výchozí stav: 700 mód, E008h GATE0 = 0 (regct53g7), GATE0 CTC0 = 0.
+ * Po DMD 00h: GATE0 = 1. Po návratu na 08h: GATE0 zpět podle
+ * regct53g7 = 0.
  */
 void test_dmd_side_effects_like_out_ceh(void)
 {
     g_gdg.regct53g7 = 0;
     g_ctc8253[0].gate = 0;
-    g_vramctrl.mz700_wr_latch_is_used = 1;
 
     st_FAKE_EMU fe = { 0 };
     GThread *t = g_thread_new("fake-emu", fake_emu_thread, &fe);
 
     bool ok_800 = dbg_ui_memmap_set_dmd(TEST_DMD_MZ800_320x4A);
     unsigned gate_800 = g_ctc8253[0].gate;
-    unsigned latch_800 = g_vramctrl.mz700_wr_latch_is_used;
 
     bool ok_700 = dbg_ui_memmap_set_dmd(TEST_DMD_MZ700);
     unsigned gate_700 = g_ctc8253[0].gate;
@@ -297,7 +294,6 @@ void test_dmd_side_effects_like_out_ceh(void)
 
     TEST_ASSERT_TRUE(ok_800);
     TEST_ASSERT_EQUAL_UINT(1u, gate_800);
-    TEST_ASSERT_EQUAL_UINT(0u, latch_800);
 
     TEST_ASSERT_TRUE(ok_700);
     TEST_ASSERT_EQUAL_HEX32(TEST_DMD_MZ700, g_gdg.regDMD);

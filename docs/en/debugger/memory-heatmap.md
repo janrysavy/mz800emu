@@ -40,13 +40,14 @@ inactive" grey).
 
 ## Three access types (R / W / X)
 
-Each cell holds a triple of 32-bit counters:
+Each cell holds four 32-bit counters:
 
 | Symbol | Meaning |
 |--------|---------|
 | **R** | data read - regular LOAD instructions outside the M1 fetch |
-| **W** | write - any write (LD, PUSH, OUT) |
+| **W** | write - any write (LD, PUSH, OUT) outside the stack regions |
 | **X** | execute - byte fetched as part of an instruction (M1 or its operands) |
+| **S** | stack write - a write into an active stack region (instead of W; stays 0 without stack regions) |
 
 Classic FCEUX-style CDL flags can be derived from this: flag = (counter > 0).
 
@@ -207,8 +208,8 @@ a target directory the following is created:
     iorq-gdg.cdl
 ```
 
-Each per-region file is raw binary: `size_cells * 12 bytes`, where the 12
-bytes per cell = `r:uint32 LE, w:uint32 LE, x:uint32 LE`.
+Each per-region file is raw binary: `size_cells * 16 bytes`, where the 16
+bytes per cell = `r:uint32 LE, w:uint32 LE, x:uint32 LE, s:uint32 LE`.
 
 If the directory exists, files are overwritten without a warning. If it
 does not exist, it is created (`g_mkdir_with_parents`).
@@ -220,10 +221,10 @@ The `meta.json` output looks like this:
   "format_version": 2,
   "format": "memory-heatmap",
   "mzarch": 800,
-  "cell_size_bytes": 12,
-  "cell_layout": "r:uint32_le, w:uint32_le, x:uint32_le",
+  "cell_size_bytes": 16,
+  "cell_layout": "r:uint32_le, w:uint32_le, x:uint32_le, s:uint32_le",
   "regions": [
-    { "name": "bus", "file": "bus.cdl", "size_cells": 65536, "size_bytes": 786432 },
+    { "name": "bus", "file": "bus.cdl", "size_cells": 65536, "size_bytes": 1048576 },
     ...
   ]
 }

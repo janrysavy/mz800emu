@@ -11,13 +11,22 @@ speaker.
 |-----|-----|
 | Menu | **Tools -> Audio Capture -> Record Audio Capture** (`Alt + Q`) starts the capture; the same item or key stops it. |
 | Command line | `--audio-capture <folder>` starts it right after startup, `--audio-capture-frames <count>` stops it after the given number of frames; with `--headless` the emulator then exits. |
-| MCP | `emu_audio_capture_start`, `emu_audio_capture_stop`, `emu_audio_capture_status` (see [`mcp-server/tools-overview.md`](mcp-server/tools-overview.md)). |
+| MCP | `emu_audio_capture_start`, `emu_audio_capture_stop`, `emu_audio_capture_status`; reading the capture memory `emu_trace_read` (`audio_*`), `emu_audio_capture_summary`, `emu_audio_capture_pcm` (see [`mcp-server/tools-overview.md`](mcp-server/tools-overview.md) and below). |
 
 From the menu each capture creates a new folder `<platform>_audio_YYYYMMDD_HHMMSS`
 in the output folder (default: `audio_captures` next to the emulator; MCP
 without `dir` uses it too). While it runs, the top left corner of the picture
 shows **AUDIO** and the captured time; when it ends, a notification shows the
 folder. **Open Output Folder** opens the output folder in the file manager.
+
+**Tools -> Audio Capture -> Audio Capture Control...** (`Alt + Shift + Q`)
+opens a floating window that can stay open while you play: the state
+(capturing, starting, off), the captured time, the folder of the capture,
+the number of level changes and PSG writes, the result of the last
+capture, the files that will be written and the output folder. Its
+buttons start or stop the capture (`Alt + Q`), open the output folder and
+the settings. The window opens again after a restart of the emulator if
+it was open.
 
 The capture starts at the end of the next frame; when `sdl.wav` is written,
 after six more frames (about 0.1 s) that let the audio output settle. It
@@ -97,6 +106,27 @@ the platform clocks with the same names as in MCP `emulator://platform/info`:
 `gdg_base_hz` (the rounded frequency the emulated time runs at),
 `gdg_real_base_hz` (the real crystal), `cpu_divider`, `ctc0_divider`,
 `psg_divider` (`null` without a PSG) and `screen_total_ticks_per_frame`.
+
+## Reading the capture via MCP (memory)
+
+A capture started via MCP also keeps its data in memory (`memory`, on by
+default for MCP, off from the menu and the command line). An MCP client
+reads it while the capture runs and after it ends, until the next capture
+starts - without access to the files, so also over a network connection.
+A capture into memory only (all four files off) creates no folder.
+
+| What | Tool |
+|------|------|
+| PSG writes, level changes (the CSV rows) | `emu_trace_read` channels `audio_psg_writes`, `audio_levels` |
+| one summary row per frame (level changes, time with level > 0 and RMS level per channel, RMS and peak of the reference and the audio output) | `emu_trace_read` channel `audio_frames` |
+| what happened: silent and sound spans, notes played by the PSG, does the speaker play a tone or 1-bit PCM (an estimate), the delay and difference of the audio output against the reference | `emu_audio_capture_summary` |
+| a short PCM window as WAV (resampled preview, or the exact samples of reference.wav / sdl.wav at 44100 Hz stereo) | `emu_audio_capture_pcm` |
+
+Memory: level changes 1M records (16 MiB), PSG writes 256k (6 MiB), frame
+summaries for 10 minutes, PCM of the reference for 60 s (10.6 MB per
+minute; the audio output with `pcm` `sdl`). When full, the oldest records
+are dropped. The PSG notes and the pitch are computed with the emulator's
+PSG formula (the same as the PSG Audio Scope of the debugger).
 
 ## Example
 

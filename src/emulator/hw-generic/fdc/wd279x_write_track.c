@@ -25,6 +25,7 @@
 #include "fdc.h"
 #include "libs/dsk/dsk.h"
 #include "libs/generic_driver/generic_driver.h"
+#include "media_writes.h"
 
 /* ====================================================================
  * Type III - WRITE TRACK (formátování stopy)
@@ -558,6 +559,9 @@ void do_write_track_byte(st_WD279X *chip, uint8_t io_data)
             struct st_FDDrive *drv = current_drive(chip);
             if (drv)
             {
+                /* Formátování stopy = zápis na médium (media_writes.h),
+                 * i když flush selže - obraz už mohl změnit hlavičku. */
+                MEDIA_WRITES_NOTE();
                 (void)write_track_flush(chip, drv);
             }
             return;

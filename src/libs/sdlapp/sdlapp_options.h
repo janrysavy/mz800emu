@@ -137,6 +137,28 @@ extern "C"
 
 
     /**
+     * @brief Kolikrát je option v argv (opakovatelné VALUE volby).
+     *
+     * Počítá obě formy zápisu (`--name value` i `--name=value`).
+     *
+     * @param name Plný long option včetně "--".
+     * @return Počet výskytů (0 = option chybí).
+     */
+    extern int sdlapp_option_count ( const char *name );
+
+
+    /**
+     * @brief Hodnota n-tého výskytu option (jen pro VALUE typ).
+     *
+     * @param name Plný long option včetně "--".
+     * @param n Pořadí výskytu od 0 (v pořadí argv).
+     * @return Hodnota stejně jako sdlapp_option_value(), nebo NULL, když
+     *         výskyt @p n neexistuje nebo za ním hodnota chybí.
+     */
+    extern const char *sdlapp_option_value_nth ( const char *name, int n );
+
+
+    /**
      * @brief Validovat argv vůči whitelistu.
      *
      * Projde všechny tokeny v argv (kromě argv[0]) začínající "--". Pokud

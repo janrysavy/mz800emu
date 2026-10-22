@@ -160,6 +160,43 @@ extern "C" {
     void cmt_stop ( void );
     void cmt_eject ( void );
     bool cmt_sanitize_state ( void );
+
+    /**
+     * @brief Tlačítko STOP okna Virtual CMT.
+     *
+     * Při nahrávání nahrávání ukončí: prázdný záznam pásku vysune, jinak se
+     * soubor uloží (vysunutí) a hned znovu vloží pro přehrání. Mimo
+     * nahrávání cmt_stop().
+     *
+     * @pre Emu vlákno (nebo pozastavená emulace).
+     */
+    void cmt_stop_button ( void );
+
+    /**
+     * @brief Další / předchozí blok pásky se zachováním transportu.
+     *
+     * Hraje-li páska, zastaví ji, otevře sousední blok a znovu spustí
+     * (i v pauze). Bez pásky s kontejnerem nebo bez sousedního bloku nic.
+     *
+     * @param forward 1 = další blok, 0 = předchozí.
+     * @return EXIT_SUCCESS; EXIT_FAILURE (blok neexistuje, bez pásky).
+     * @pre Emu vlákno (nebo pozastavená emulace).
+     */
+    int cmt_tape_step_block ( int forward );
+
+    /**
+     * @brief Výběr bloku pásky ze seznamu bloků (okno Tape Filelist).
+     *
+     * Bez @p forced (jedno kliknutí) jen při zastaveném transportu otevře
+     * blok. S @p forced (dvojklik) na jiném bloku ho otevře a spustí (v pauze
+     * zůstane v pauze), na stejném bloku přepne play / pause.
+     *
+     * @param block_id Číslo bloku.
+     * @param forced   1 = dvojklik.
+     * @return EXIT_SUCCESS; EXIT_FAILURE (bez pásky, blok nejde otevřít).
+     * @pre Emu vlákno (nebo pozastavená emulace).
+     */
+    int cmt_tape_select_block ( int block_id, int forced );
     int cmt_change_speed ( en_CMTSPEED cmtspeed );
 
     /**

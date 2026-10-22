@@ -35,6 +35,9 @@
 #include "memory/memext.h"
 #include "memory/memory.h"
 #include "mz800_memory.h"
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+#include "debugger/trace/ramlog_hook.h"
+#endif
 #include "memory/rom.h"
 #include "mzarch/mz800/gdg/mz800_gdg.h"
 #include "mzarch/mz800/gdg/mz800_vramctrl.h"
@@ -328,6 +331,17 @@ void mz800_ram_fastpath_rebuild ( void ) {
      */
     bool enabled = ( g_mzarch_main.cpu->mread_cb == memory_read_cb );
 
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* Záznam zápisů (ramlog, háček A): zápisy na sledované stránky musí jít
+     * přes write callback (ramlog_hook_cpu_write_cb), čtení zůstává na
+     * fast-path. Studená cesta (přestavba tabulky při změně mapování). */
+    if ( g_ramlog_active ) {
+        for ( i = 0; i < 16; i++ ) {
+            if ( write_table[i] && ramlog_page_watched ( (unsigned) i ) ) write_table[i] = NULL;
+        };
+    };
+#endif
+
     z80_set_ram_fastpath ( g_mzarch_main.cpu, read_table, write_table,
                            &g_mzarch_main.regDBUS_latch, enabled );
 }
@@ -566,7 +580,11 @@ static inline uint8_t memory_internal_read_rom_e000_efff_sync ( uint16_t addr ) 
 
 /**
  * Cteni z 0xe000 - 0xefff - bez synchronizace
- * 
+ *
+ * Bez vedlejšího efektu: mapované porty (8255, 8253, status GDG) se čtou
+ * přes *_peek funkce čipů, které stav nemění (memory_read_byte_no_se,
+ * memory_read_byte = debugger, Memory Browser, Watch, výrazy BP).
+ *
  * @param addr
  * @return 
  */
@@ -587,7 +605,7 @@ static inline uint8_t memory_internal_read_rom_e000_efff ( uint16_t addr ) {
     /* 700 mode: $E000-$E008 mapped ports. */
 
     /* cteni z E008 ( regDMD ) */
-    if ( 0x08 == addr_low ) return gdg_read_dmd_status_memop ( );
+    if ( 0x08 == addr_low ) return gdg_peek_dmd_status_memop ( );
 
 
     /* cteni z CTC8253 */
@@ -597,12 +615,11 @@ static inline uint8_t memory_internal_read_rom_e000_efff ( uint16_t addr ) {
         if ( 0x07 == addr_low ) {
             return g_mzarch_main.regDBUS_latch;
         };
-        // TODO: prozatim vracime 0x00
-        return 0x00;
+        return ctc8253_peek_byte ( addr_low & 0x03 );
     };
 
     /* cteni z PIO8255 */
-    return pio8255_read ( addr & 0x03 );
+    return pio8255_peek ( addr & 0x03 );
 }
 
 
@@ -633,7 +650,8 @@ uint8_t memory_internal_read_sync ( uint16_t addr ) {
  */
 uint8_t memory_read_cb ( z80_t *cpu, uint16_t addr, int m1_state, void *user_data ) {
     ( void ) cpu;
-    ( void ) m1_state;
+    /* Model WAIT u VRAM rozlišuje M1 (4 T) od ostatních čtení (3 T). */
+    g_mzarch_main.mreq_m1 = m1_state;
     ( void ) user_data;
     uint8_t retval = memory_internal_read_sync ( addr );
     g_mzarch_main.regDBUS_latch = retval;
@@ -670,12 +688,15 @@ uint8_t memory_read_with_logging_cb ( z80_t *cpu, uint16_t addr, int m1_state, v
      * Pravidlo:
      *  1) is_m1_start (m1_state && addr == instruction_addr) = M1 první bajt.
      *  2) m1_state = M1 prefix opcode uvnitř téže instrukce (např. CB po DD).
-     *  3) addr == instruction_addr + byte_position = sekvenční operand bajt.
-     *  4) jinak = data read (např. LD A,(HL) čte z HL po M1, kde HL nesedí
-     *     na instruction_addr+1).
-     *
-     * Bez podmínky (3) by single-bajt instrukce typu LD A,(HL) klasifikovaly
-     * následující data read jako X (byte_position=1, < 4), což je chybně.
+     *  3) cpu->pc == addr + 1 = operand instrukce: jádro ho čte z PC
+     *     (FETCH, rPC++), PC je v okamžiku čtení už za ním.
+     *  4) jinak = data read (RD, PC neposouvá). I čtení hned za dosud
+     *     načtenými bajty instrukce (POP ze SP = PC, LD A,(nn) s nn = PC)
+     *     je data: cpu->pc == addr. Dřívější pravidlo "addr ==
+     *     instruction_addr + byte_position" ho bralo jako operand, takže
+     *     CDL počítalo X místo R a MEM_R breakpoint nezastavil (N60).
+     *     Nerozliší se jen datové čtení posledního načteného bajtu
+     *     instrukce samotné (LD A,(HL) s HL na sebe): zůstane X.
      *
      * g_debugger_history.byte_position musí být udržován NEZÁVISLE na stavu
      * CPU Instruction History (jinak při cpuhist=OFF + mhmap=ALWAYS by zůstal na 0).
@@ -689,10 +710,8 @@ uint8_t memory_read_with_logging_cb ( z80_t *cpu, uint16_t addr, int m1_state, v
         /* M1 prefix opcode uvnitř téže instrukce (DD, FD, ED, CB; DD CB,
          * FD CB). instruction_addr stále drží první bajt instrukce. */
         access_kind = MHMAP_ACCESS_X;
-    } else if ( g_debugger_history.byte_position < DEBUGGER_MAX_INSTR_BYTES
-                && addr == (uint16_t)( g_mzarch_main.instruction_addr + g_debugger_history.byte_position ) ) {
-        /* Sekvenční immediate operand bajt - addr navazuje na konec
-         * instrukčního streamu. */
+    } else if ( (uint16_t) cpu->pc == (uint16_t) ( addr + 1 ) ) {
+        /* Operand instrukce (FETCH z PC, PC už posunuté). */
         access_kind = MHMAP_ACCESS_X;
     } else {
         access_kind = MHMAP_ACCESS_R;
@@ -703,6 +722,8 @@ uint8_t memory_read_with_logging_cb ( z80_t *cpu, uint16_t addr, int m1_state, v
      * je flag nastaven. Mimo CPU cestu (memory_load_block, debug memory browser)
      * flag zůstává 0 a hook se přeskočí. */
     g_dbg_in_cpu_path = 1;
+    /* Model WAIT u VRAM rozlišuje M1 (4 T) od ostatních čtení (3 T). */
+    g_mzarch_main.mreq_m1 = m1_state;
     uint8_t retval = memory_internal_read_sync ( addr );
     g_dbg_in_cpu_path = 0;
     g_mzarch_main.regDBUS_latch = retval;
@@ -762,6 +783,10 @@ uint8_t memory_read_with_logging_cb ( z80_t *cpu, uint16_t addr, int m1_state, v
         g_debugger_history.byte_position = 1;
     } else if ( access_kind == MHMAP_ACCESS_X ) {
         g_debugger_history.byte_position++;
+    };
+    /* Bajty instrukce tak, jak je CPU načetlo (cputrack, nezávisle na cpuhist). */
+    if ( access_kind == MHMAP_ACCESS_X ) {
+        debugger_insn_fetch_record ( is_m1_start, g_debugger_history.byte_position - 1, addr, retval );
     };
 
     /* CPU Instruction History (cpuhist) - dle cpuhist_mode (default jen při aktivním debug okně). */
@@ -1072,7 +1097,12 @@ void memory_write_with_logging_cb ( z80_t *cpu, uint16_t addr, uint8_t value, vo
      * je flag nastaven. memory_write_cb obsahuje makra s return, ale return
      * ukončí jen sub-call; my se vrátíme zpět a flag vypneme. */
     g_dbg_in_cpu_path = 1;
-    memory_write_cb ( cpu, addr, value, user_data );
+    /* Záznam zápisů (ramlog, háček B): logovací cesta je sama alternativní. */
+    if ( g_ramlog_active ) {
+        ramlog_hook_logging_write ( cpu, addr, value, user_data );
+    } else {
+        memory_write_cb ( cpu, addr, value, user_data );
+    };
     g_dbg_in_cpu_path = 0;
 }
 #endif
@@ -1092,6 +1122,17 @@ void memory_write_byte ( uint16_t addr, uint8_t value ) {
         breakpoints_enforce_mem_w ( addr, value );
     }
 #endif
+    memory_write_byte_no_bp ( addr, value );
+}
+
+
+/**
+ * @brief Vlastni zapis bez synchronizace a bez MEM_W breakpointu (telo memory_write_byte_no_bp).
+ *
+ * @param addr
+ * @param value
+ */
+static void memory_write_byte_raw ( uint16_t addr, uint8_t value ) {
     unsigned addr_high = addr >> 12;
     memory_internal_write_0000_0fff ( addr_high );
     memory_internal_write_1000_1fff ( addr_high );
@@ -1102,6 +1143,38 @@ void memory_write_byte ( uint16_t addr, uint8_t value ) {
     memory_internal_write_d000_dfff ( addr_high );
     memory_internal_write_e000_efff ( addr_high );
     memory_internal_write_f000_ffff ( addr_high );
+}
+
+
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+/** @brief memory_write_byte_raw() pro ramlog_hook_write(). */
+static void memory_write_byte_raw_fn ( uint16_t addr, uint8_t value, void *ctx ) {
+    ( void ) ctx;
+    memory_write_byte_raw ( addr, value );
+}
+#endif
+
+
+/**
+ * Zapis do aktualne mapovane pameti - bez synchronizace, bez MEM_W breakpointu.
+ *
+ * Stejny zapis jako memory_write_byte() (banking, VRAM, mapovane porty), ale
+ * bez vyhodnoceni MEM_W breakpointu. Pro zapisy debuggerem
+ * (debugger_memory_write_byte, region Logical: MCP region_write, Memory
+ * Browser, freeze) - MEM_W breakpoint hlida zapisy CPU. Se zaznamem zapisu
+ * (ramlog) se zapis zaznamena se zdrojem z g_ramlog_src, jinak DEBUGGER.
+ *
+ * @param addr
+ * @param value
+ */
+void memory_write_byte_no_bp ( uint16_t addr, uint8_t value ) {
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    if ( g_ramlog_active ) {
+        ramlog_hook_write ( addr, value, RAMLOG_SRC_DEBUGGER, memory_write_byte_raw_fn, NULL );
+        return;
+    };
+#endif
+    memory_write_byte_raw ( addr, value );
 }
 
 
@@ -1116,6 +1189,11 @@ void memory_write_byte ( uint16_t addr, uint8_t value ) {
 void memory_load_block ( uint8_t *data, uint16_t addr, uint16_t size, en_MEMORY_LOAD type ) {
 
     uint16_t src_addr = 0;
+
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* Záznam zápisů: souhrnný záznam bloku (studená cesta). */
+    if ( g_ramlog_active ) ramlog_hook_load_block ( addr, size, type == MEMORY_LOAD_RAMONLY );
+#endif
 
     while ( size ) {
         //uint8_t *dst = &g_memory.RAM[addr];

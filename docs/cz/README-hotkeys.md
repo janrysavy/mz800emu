@@ -81,6 +81,7 @@ na jméno souboru. Podrobnosti viz [`screenshots.md`](screenshots.md).
 |----------------------------|-----------------------------------------------------------------------------|
 | `Alt + F`                  | Uložit PNG screenshot obrazu zobrazeného v okně do výstupní složky          |
 | `Alt + Shift + F`          | Spustit / ukončit sérii snímků: PNG každého změněného emulovaného snímku   |
+| `Alt + G`                  | Zobrazit / skrýt okno Screenshot Control                                    |
 
 ## Zachycení zvuku
 
@@ -90,6 +91,16 @@ Settings... Podrobnosti viz [`audio-capture.md`](audio-capture.md).
 | Klávesa                    | Akce                                                                        |
 |----------------------------|-----------------------------------------------------------------------------|
 | `Alt + Q`                  | Spustit / ukončit zachycení zvuku do nové složky                            |
+| `Alt + Shift + Q`          | Zobrazit / skrýt okno Audio Capture Control                                 |
+
+## Záznam vstupů (Replay)
+
+Všechny platformy. Podrobnosti viz [`replay.md`](replay.md).
+
+| Klávesa                    | Akce                                                                        |
+|----------------------------|-----------------------------------------------------------------------------|
+| `Alt + J`                  | Zobrazit / skrýt okno Replay Control                                        |
+| `Alt + Shift + J`          | Rewind: zpět na předchozí checkpoint (při záznamu i přehrávání)             |
 
 ## Debugger
 

@@ -237,3 +237,5 @@ simulate an IORQ read). For the side-effect version use
   engine, identical constructs are used in smart BP conditions.
 - **`$vars` panel** - the identifier `$name` in the expression reads a
   user var set by smart BP actions.
+- **Memory Search** - right-click a candidate -> **Add to Watch** adds the
+  found variable here (see [Memory Search](memory-search.md)).

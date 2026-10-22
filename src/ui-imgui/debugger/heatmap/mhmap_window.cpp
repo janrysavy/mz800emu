@@ -239,16 +239,6 @@ static const st_MHMAP_CELL *cells_active ( const st_MHMAP_EXPORT_REGION *region 
 
 
 /**
- * @brief Volně tolerantní validace meta.json.
- *
- * Hledá v souboru "format_version": 2 a "mzarch": @p expected_arch.
- * Pravý JSON parser není potřeba - formát je velmi přísný (vytváří jej
- * mhmap_export sám). Pokud se formát změní (format_version=3), musí se
- * tato validace updateovat.
- *
- * @return 0 = OK, -1 = chyba (s detailním hlášením do @c s_import_status).
- */
-/**
  * @brief Pomocný extraktor JSON string hodnoty z bufferu - "key": "value".
  *
  * Najde @p key v bufferu, přeskočí mezery a uvozovku, zkopíruje hodnotu
@@ -386,10 +376,22 @@ static size_t parse_regions_from_meta ( const char *buf )
 
 
 /**
- * @brief Validovat meta.json soubor v zadané cestě.
+ * @brief Volně tolerantní validace meta.json v zadané cestě.
+ *
+ * Hledá v souboru "format_version": 2, "mzarch": @p expected_arch
+ * a "cell_size_bytes" rovné sizeof(st_MHMAP_CELL) (16 B: R, W, X, S).
+ * Soubory regionů se načítají po bajtech rovnou do st_MHMAP, takže jiná
+ * velikost buňky (cizí nebo budoucí formát) by se načetla posunutě;
+ * odmítne se. Pravý JSON parser není potřeba - formát je velmi přísný
+ * (vytváří jej mhmap_export sám). Pokud se formát změní (format_version=3),
+ * musí se tato validace updateovat.
+ *
+ * Side effects: naplní s_import_meta_arch, s_import_meta_created
+ * a tabulku regionů (parse_regions_from_meta()).
  *
  * @param meta_path Plná cesta k @c meta.json souboru.
  * @param expected_arch Očekávaný @c mzarch (musí matchovat).
+ * @return 0 = OK, -1 = chyba (s detailním hlášením do @c s_import_status).
  */
 static int meta_json_validate ( const char *meta_path, int expected_arch )
 {
@@ -446,16 +448,33 @@ static int meta_json_validate ( const char *meta_path, int expected_arch )
             s_import_meta_arch = atoi ( p_arch );
         };
 
-        if ( s_import_meta_arch == expected_arch )
+        /* Velikost buňky z "cell_size_bytes": <number> (-1 = chybí). */
+        int cell_size = -1;
+        const char *p_cell = strstr ( buf, "\"cell_size_bytes\":" );
+        if ( p_cell )
         {
-            ok = 1;
-        }
-        else
+            p_cell += strlen ( "\"cell_size_bytes\":" );
+            while ( *p_cell == ' ' || *p_cell == '\t' ) p_cell++;
+            cell_size = atoi ( p_cell );
+        };
+
+        if ( s_import_meta_arch != expected_arch )
         {
             snprintf ( s_import_status, sizeof ( s_import_status ),
                        "Architecture mismatch (file=%d, expected=%d)",
                        s_import_meta_arch, expected_arch );
             s_import_status_is_error = true;
+        }
+        else if ( cell_size != (int) sizeof ( st_MHMAP_CELL ) )
+        {
+            snprintf ( s_import_status, sizeof ( s_import_status ),
+                       "Unsupported cell_size_bytes (file=%d, need %d)",
+                       cell_size, (int) sizeof ( st_MHMAP_CELL ) );
+            s_import_status_is_error = true;
+        }
+        else
+        {
+            ok = 1;
         };
     }
     else

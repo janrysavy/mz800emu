@@ -55,7 +55,8 @@ RANGE / MASK for bank ID (only in zone MMEXT_BANK).
 ## MEM_R
 
 **Semantics:** fires when the CPU reads a byte from memory at the
-given address.
+given address. Reads by the debugger itself (disassembler, Memory
+Browser, Watch, stack view, MCP `mem_read` and `dasm`) do not fire it.
 
 **Relevant fields:** same as PC_EXEC (addr / addr_end / mask / zone /
 bank). Zone awareness: `MEM_R` in zone `ROM_LOWER` fires only if the
@@ -67,11 +68,12 @@ read address is currently mapped in ROM (= banking-aware).
 - `Value` = the byte being read
 - `IsRead = 1`, `IsWrite = 0`, `IsExec = 0`, `IsPort = 0`
 - `BankAddr` = active zone for `Address`
+- `InsnPC` = address of the reading instruction (`PC` is already behind it)
 
 **Use case:**
 
 - Watch a variable read/write: `Type: MEM_R, Address: 0xE100, Action:
-  log "read $%X = %X (PC=%X)", Address, Value, PC`.
+  log "read $%X = %X (PC=%X)", Address, Value, InsnPC`.
 - Detect a ROM dump attempt: `Type: MEM_R, Address: 0x0000, End Addr:
   0x0FFF, Match Mode: RANGE`.
 
@@ -80,7 +82,9 @@ read address is currently mapped in ROM (= banking-aware).
 ## MEM_W
 
 **Semantics:** same as MEM_R but for a write. Fires before the
-physical write (= the condition can read the old value).
+physical write (= the condition can read the old value). Writes by the
+debugger (Memory Browser, MCP `mem_write` and `region_write`, byte
+freeze) do not fire it; the `poke` action of the Action DSL does.
 
 **Context:**
 

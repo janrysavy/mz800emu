@@ -76,6 +76,7 @@
 #include "debugger/trace/hwlog.h"
 #endif
 #include "baseui/baseui_filechooser.h"
+#include "media_writes.h"
 
 #define ui_qdisk_set_std_path( x ) {g_free( g_qdisk.ui_std_filepath ); g_qdisk.ui_std_filepath = (x) ? g_strdup( x ) : g_strdup( "" );}
 #define ui_qdisk_set_virt_path( x ) {g_free( g_qdisk.ui_virt_filepath ); g_qdisk.ui_virt_filepath = (x) ? g_strdup( x ) : g_strdup( "" );}
@@ -1165,6 +1166,8 @@ void qdisk_write_byte_into_drive ( uint8_t value ) {
 
 #ifdef COMPILE_FOR_EMULATOR
         if ( g_qdisk.handler_valid ) {
+            /* Zápis na médium (checkpoint záznamu vstupů, media_writes.h). */
+            MEDIA_WRITES_NOTE ( );
             if ( EXIT_SUCCESS != generic_driver_write ( &g_qdisk.handler, g_qdisk.image_position, &value, 1 ) ) {
                 DBGPRINTF ( DBGERR, "generic_driver_write() error: %s\n",
                             generic_driver_error_message ( &g_qdisk.handler, g_qdisk.handler.driver ) );
@@ -1705,6 +1708,76 @@ void qdisk_apply_storage_mode_switch ( const char *target_mode ) {
     qdisk_close ( );
     qdisk_open ( );
 }
+
+
+#ifdef COMPILE_FOR_EMULATOR
+uint8_t *qdisk_copy_image ( size_t *size ) {
+    if ( size ) *size = 0;
+    if ( !size || !g_qdisk.handler_valid ) return NULL;
+    if ( ( g_qdisk.type != QDISK_TYPE_IMAGE ) && ( g_qdisk.type != QDISK_TYPE_UNICARD ) ) return NULL;
+
+    if ( g_qdisk.handler.type == HANDLER_TYPE_MEMORY ) {
+        st_HANDLER_MEMSPC *ms = &g_qdisk.handler.spec.memspec;
+        if ( !ms->ptr || ms->size == 0 ) return NULL;
+        *size = ms->size;
+        return (uint8_t *) g_memdup2 ( ms->ptr, ms->size );
+    };
+
+    /* DIRECT: obsah je v souboru - nejdřív flush. */
+    if ( g_qdisk.handler.spec.filespec.fh ) fflush ( g_qdisk.handler.spec.filespec.fh );
+    gchar *data = NULL;
+    gsize len = 0;
+    if ( !g_file_get_contents ( g_qdisk.filename, &data, &len, NULL ) || ( len == 0 ) ) {
+        g_free ( data );
+        return NULL;
+    };
+    *size = len;
+    return (uint8_t *) data;
+}
+
+
+void qdisk_umount_keep_cfg ( void ) {
+    qdisk_close ( );
+    /* qdisk_close() pracuje jen s připojenou mechanikou; obraz nasazený
+     * přes qdisk_mount_image_buffer() u odpojené zavřít tady. */
+    if ( g_qdisk.handler_valid ) {
+        ( void ) qdisk_sync_drive ( );
+        generic_driver_close ( &g_qdisk.handler );
+        g_qdisk.handler_valid = 0;
+    };
+    g_qdisk.filename[0] = 0x00;
+    g_qdisk.user_readonly = 0;
+    g_qdisk.fs_readonly = 0;
+    g_qdisk.readonly = 0;
+    g_qdisk.storage_mode = QDISK_STORAGE_CACHED;
+    g_qdisk.status = QDSTS_NO_DISC;
+}
+
+
+int qdisk_mount_image_buffer ( const uint8_t *data, uint32_t size, int readonly, const char *label ) {
+    qdisk_umount_keep_cfg ( );
+    if ( ( data == NULL ) || ( size == 0 ) ) return EXIT_FAILURE;
+
+    st_DRIVER *driver = &g_memory_driver_static;
+    st_HANDLER *h = generic_driver_open_memory ( &g_qdisk.handler, driver, size );
+    if ( ( h == NULL ) || ( driver->err != GENERIC_DRIVER_ERROR_NONE ) || ( g_qdisk.handler.err != HANDLER_ERROR_NONE ) ) {
+        fprintf ( stderr, "%s(%d): cannot allocate QD image '%s' (%u B)\n", __FILE__, __LINE__,
+                  label ? label : "", size );
+        return EXIT_FAILURE;
+    };
+    memcpy ( g_qdisk.handler.spec.memspec.ptr, data, size );
+    g_qdisk.handler_valid = 1;
+
+    g_strlcpy ( g_qdisk.filename, label ? label : "replay", sizeof ( g_qdisk.filename ) );
+    g_qdisk.storage_mode = QDISK_STORAGE_DISCARD;
+    g_qdisk.user_readonly = readonly ? 1 : 0;
+    g_qdisk.fs_readonly = 0;
+    g_qdisk.readonly = g_qdisk.user_readonly;
+    generic_driver_set_handler_readonly_status ( &g_qdisk.handler, g_qdisk.readonly );
+    g_qdisk.status = QDSTS_IMG_READY | QDSTS_HEAD_HOME | ( g_qdisk.readonly ? QDSTS_IMG_READONLY : 0 );
+    return EXIT_SUCCESS;
+}
+#endif /* COMPILE_FOR_EMULATOR */
 
 
 int qdisk_drive_has_ram_changes ( void ) {

@@ -43,7 +43,21 @@ extern "C" {
 
 #include "ui-imgui/bootstrap/myimgui.h"
 #include "ui-imgui/videorec/videorec_menu.h"
+#include "ui-imgui/topmenu/topmenu.h"
+#include "emulator/replay.h"
+#include "ui-imgui/screenshot/screenshot_ui.h"
+#include "ui-imgui/audiocap/audio_capture_ui.h"
 #include "i18n.h"
+
+extern "C" {
+#include "snapshot/snapshot.h"
+#include "snapshot/snapshot_request.h"
+/* Z menu_snapshot.cpp a snapshot_quicksave_handler.cpp (bez hlavičky). */
+void snapshot_ui_request_quicksave(void);
+void snapshot_ui_request_quickload(void);
+void imgui_snapshot_quicksave_handler(void);
+}
+#include "ui-imgui/snapshot/snapshot_request_ui.h"
 
 /* UI globál, který jinak vytváří sdlapp_imgui_video.cpp. */
 static MyImGui s_gui;
@@ -71,6 +85,13 @@ extern "C" void snapshot_notification_show_ex(const char *message, bool is_error
 extern "C" bool snapshot_notification_error_active(void)
 {
     return s_modal_open;
+}
+
+/* Stub surface obrazu (sdlapp_imgui_video.cpp test nelinkuje): bez obrazu
+ * screenshot jen ohlásí chybu, okno Screenshot Control se vykreslí. */
+extern "C" SDL_Surface *iface_sdl3_video_get_screen_surface(void)
+{
+    return NULL;
 }
 
 extern "C" void snapshot_notification_show(const char *message, bool is_error)
@@ -196,6 +217,7 @@ void tearDown(void)
     g_emulator.paused = false;
     imgui_videorec_poll_events();
     clean_out_dir();
+    snapshot_request_clear(); /* nevyřízené požadavky snapshotu předchozího testu */
 }
 
 /* ================================================================
@@ -442,8 +464,11 @@ static void test_shortcut_labels_match_keys(void)
     TEST_ASSERT_EQUAL_STRING("Alt+U", videorec_ui_shortcut_label(VIDEOREC_SHORTCUT_TOGGLE_TIMEBASE));
 }
 
-/** Jeden ImGui snímek se stiskem Alt (+ Shift) + klávesy, během kterého běží obsluha zkratek. */
-static void press_alt_key(ImGuiKey key, bool shift)
+/**
+ * Jeden ImGui snímek se stiskem Alt (+ Shift) + klávesy, během kterého běží
+ * obsluha zkratek @p handler (výchozí obsluha video záznamu).
+ */
+static void press_alt_key(ImGuiKey key, bool shift, void (*handler)(void) = imgui_videorec_shortcuts)
 {
     ImGuiIO &io = ImGui::GetIO();
     io.AddKeyEvent(ImGuiMod_Alt, true);
@@ -454,7 +479,7 @@ static void press_alt_key(ImGuiKey key, bool shift)
     }
     io.AddKeyEvent(key, true);
     frame_begin();
-    imgui_videorec_shortcuts();
+    handler();
     frame_end();
     io.AddKeyEvent(key, false);
     io.AddKeyEvent(ImGuiKey_LeftShift, false);
@@ -758,6 +783,247 @@ static void test_realtime_ui_renders(void)
     TEST_ASSERT_EQUAL_INT(VIDEOREC_TIMEBASE_REALTIME, g_videorec_settings.timebase); /* Cancel nic nezmění */
 }
 
+/* Záznam vstupů: Alt+J přepíná okno Replay Control, Alt+Shift+J bez záznamu
+ * nic nevyžádá (rewind jen při záznamu / přehrávání). */
+static void test_replay_shortcuts(void)
+{
+    if (!s_ui_ok) TEST_IGNORE_MESSAGE("SDL/GL not available");
+    g_gui->showReplayWindow = false;
+    press_alt_key(ImGuiKey_J, false, imgui_replay_shortcuts);
+    TEST_ASSERT_TRUE(g_gui->showReplayWindow);
+    press_alt_key(ImGuiKey_J, false, imgui_replay_shortcuts);
+    TEST_ASSERT_FALSE(g_gui->showReplayWindow);
+    st_REPLAY_STATUS before;
+    replay_get_status(&before);
+    press_alt_key(ImGuiKey_J, true, imgui_replay_shortcuts);
+    st_REPLAY_STATUS after;
+    replay_get_status(&after);
+    TEST_ASSERT_EQUAL_UINT32(before.request_done, after.request_done);
+    TEST_ASSERT_FALSE(g_gui->showReplayWindow);
+}
+
+/* Okno Replay Control se vykreslí bez záznamu, při záznamu a při přehrávání
+ * (bez assertu ImGui); rewind tlačítkem vyřídí paused smyčka. */
+static void test_replay_window_renders(void)
+{
+    if (!s_ui_ok) TEST_IGNORE_MESSAGE("SDL/GL not available");
+    char *dir = g_dir_make_tmp("ui_replay_XXXXXX", NULL);
+    TEST_ASSERT_NOT_NULL(dir);
+    char *mzr = g_build_filename(dir, "ui_replay.mzr", NULL);
+    g_emulator.paused = true;
+    g_gui->showReplayWindow = true;
+    for (int i = 0; i < 2; i++) {
+        frame_begin();
+        imgui_replay_window();
+        frame_end();
+    }
+
+    replay_request_record(mzr, 0, NULL);
+    replay_on_paused();
+    st_REPLAY_STATUS st;
+    replay_get_status(&st);
+    TEST_ASSERT_TRUE_MESSAGE(st.request_ok, st.request_message);
+    for (int f = 0; f < 3; f++) {
+        g_gdg.total_elapsed.screens++;
+        replay_on_frame_boundary();
+    }
+    for (int i = 0; i < 2; i++) {
+        frame_begin();
+        imgui_replay_window();
+        frame_end();
+    }
+    imgui_replay_rewind();
+    replay_on_paused();
+    replay_get_status(&st);
+    TEST_ASSERT_TRUE_MESSAGE(st.request_ok, st.request_message);
+    TEST_ASSERT_EQUAL_UINT32(1, st.rerecord_count);
+    for (int f = 0; f < 3; f++) { /* po rewindu (snímek 0) dál, aby přehrávání mělo délku */
+        g_gdg.total_elapsed.screens++;
+        replay_on_frame_boundary();
+    }
+    replay_request_stop();
+    replay_on_paused();
+    replay_get_status(&st);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(REPLAY_OUTCOME_RECORDED, st.outcome, st.outcome_message);
+
+    replay_request_play(mzr, true);
+    replay_on_paused();
+    replay_get_status(&st);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(REPLAY_MODE_PLAYING, st.mode, st.outcome_message);
+    for (int i = 0; i < 2; i++) {
+        frame_begin();
+        imgui_replay_window();
+        frame_end();
+    }
+    replay_request_stop();
+    replay_on_paused();
+    for (int i = 0; i < 2; i++) {
+        frame_begin();
+        imgui_replay_window(); /* poslední výsledek */
+        frame_end();
+    }
+    g_gui->showReplayWindow = false;
+    g_remove(mzr);
+    g_rmdir(dir);
+    g_free(mzr);
+    g_free(dir);
+}
+
+/* Alt+G přepíná okno Screenshot Control, Alt+Shift+Q okno Audio Capture
+ * Control (Alt+Q bez Shift okno nepřepíná). */
+static void test_tool_window_shortcuts(void)
+{
+    if (!s_ui_ok) TEST_IGNORE_MESSAGE("SDL/GL not available");
+    g_gui->showScreenshotWindow = false;
+    press_alt_key(ImGuiKey_G, false, imgui_screenshot_shortcuts);
+    TEST_ASSERT_TRUE(g_gui->showScreenshotWindow);
+    press_alt_key(ImGuiKey_G, true, imgui_screenshot_shortcuts); /* Alt+Shift+G patří debuggeru */
+    TEST_ASSERT_TRUE(g_gui->showScreenshotWindow);
+    press_alt_key(ImGuiKey_G, false, imgui_screenshot_shortcuts);
+    TEST_ASSERT_FALSE(g_gui->showScreenshotWindow);
+
+    g_gui->showAudioCaptureWindow = false;
+    press_alt_key(ImGuiKey_Q, true, imgui_audio_capture_shortcuts);
+    TEST_ASSERT_TRUE(g_gui->showAudioCaptureWindow);
+    press_alt_key(ImGuiKey_Q, true, imgui_audio_capture_shortcuts);
+    TEST_ASSERT_FALSE(g_gui->showAudioCaptureWindow);
+}
+
+/* Okna Screenshot Control a Audio Capture Control se vykreslí (bez assertu
+ * ImGui) a zavření (flag) je skryje. */
+static void test_tool_windows_render(void)
+{
+    if (!s_ui_ok) TEST_IGNORE_MESSAGE("SDL/GL not available");
+    g_gui->showScreenshotWindow = true;
+    g_gui->showAudioCaptureWindow = true;
+    for (int i = 0; i < 3; i++) {
+        frame_begin();
+        imgui_screenshot_window();
+        imgui_audio_capture_window();
+        frame_end();
+    }
+    g_gui->showScreenshotWindow = false;
+    g_gui->showAudioCaptureWindow = false;
+    frame_begin();
+    imgui_screenshot_window();
+    imgui_audio_capture_window();
+    frame_end();
+}
+
+/* ================================================================
+ * Snapshot z GUI (Quick Save) ukládá emu vlákno, ne UI vlákno
+ * ================================================================ */
+
+static const char *SNAP_DIR = "tests/data/tmp/ui_snapshot";
+
+/* Stuby pauzy a běhu z dbgapi_helpers.cpp (test ho nelinkuje): jen přepnou
+ * příznak pauzy jako synchronní pauza s debuggerem. */
+static int s_pause_calls = 0;
+static int s_run_calls = 0;
+extern "C" bool dbg_ui_pause(void) { s_pause_calls++; g_emulator.paused = true; return true; }
+extern "C" bool dbg_ui_run(void) { s_run_calls++; g_emulator.paused = false; return true; }
+
+/** Počet souborů .mzs v SNAP_DIR. */
+static int count_snap_files(void)
+{
+    int n = 0;
+    GDir *d = g_dir_open(SNAP_DIR, 0, NULL);
+    if (!d) return 0;
+    const char *name;
+    while ((name = g_dir_read_name(d)) != NULL) {
+        if (g_str_has_suffix(name, ".mzs")) n++;
+    }
+    g_dir_close(d);
+    return n;
+}
+
+/** Smaže soubory v SNAP_DIR. */
+static void clean_snap_dir(void)
+{
+    GDir *d = g_dir_open(SNAP_DIR, 0, NULL);
+    if (!d) return;
+    const char *n;
+    while ((n = g_dir_read_name(d)) != NULL) {
+        char *p = g_build_filename(SNAP_DIR, n, NULL);
+        g_remove(p);
+        g_free(p);
+    }
+    g_dir_close(d);
+}
+
+/* Quick Save z menu (Ctrl+F5 / Snapshot -> Quick Save) dřív v témže snímku
+ * UI zavolal snapshot_quicksave() přímo v UI vlákně, tedy četl stav stroje
+ * souběžně s emu vláknem (bez debuggeru pauza jen nastaví příznak, emu
+ * vlákno může být uprostřed snímku). Teď UI jen zařadí požadavek; soubor
+ * zapíše až emu vlákno v paused smyčce (snapshot_request_poll()) a UI pak
+ * ukáže výsledek. */
+static void test_quicksave_saved_by_emu_thread(void)
+{
+    g_mkdir_with_parents(SNAP_DIR, 0755);
+    clean_snap_dir();
+    g_strlcpy(g_snapshot_settings.default_directory, SNAP_DIR,
+              sizeof(g_snapshot_settings.default_directory));
+    g_strlcpy(g_snapshot_settings.quicksave_filename, "uiquick",
+              sizeof(g_snapshot_settings.quicksave_filename));
+    g_snapshot_settings.quicksave_mode = 0; /* Basic */
+    g_emulator.paused = true; /* jako po pauze z menu, pauza se pak nežádá */
+
+    snapshot_ui_request_quicksave();
+    imgui_snapshot_quicksave_handler();
+
+    /* UI vlákno samo neuložilo a výsledek zatím nehlásí. */
+    TEST_ASSERT_EQUAL_INT(0, count_snap_files());
+    TEST_ASSERT_EQUAL_INT(0, s_note_count);
+    TEST_ASSERT_EQUAL_INT(1, snapshot_request_pending());
+
+    /* Výsledky se ukazují až po vyřízení. */
+    imgui_snapshot_request_results();
+    TEST_ASSERT_EQUAL_INT(0, s_note_count);
+
+    /* Emu vlákno v paused smyčce požadavek vyřídí. */
+    snapshot_request_poll();
+    TEST_ASSERT_EQUAL_INT(0, snapshot_request_pending());
+    TEST_ASSERT_EQUAL_INT(1, count_snap_files());
+
+    /* UI ohlásí úspěch; emulace před pauzou neběžela, pauza zůstává. */
+    s_run_calls = 0;
+    imgui_snapshot_request_results();
+    TEST_ASSERT_EQUAL_INT(1, s_note_count);
+    TEST_ASSERT_FALSE(s_note_error);
+    TEST_ASSERT_EQUAL_INT(0, s_run_calls);
+    TEST_ASSERT_TRUE(g_emulator.paused);
+
+    clean_snap_dir();
+}
+
+/* Quick Load za běhu emulace: UI emulaci pozastaví, načtení nechá emu
+ * vláknu. Bez souboru quicksave výsledek ohlásí chybu a pauza zůstane. */
+static void test_quickload_pauses_and_reports_error(void)
+{
+    g_mkdir_with_parents(SNAP_DIR, 0755);
+    clean_snap_dir();
+    g_strlcpy(g_snapshot_settings.default_directory, SNAP_DIR,
+              sizeof(g_snapshot_settings.default_directory));
+    g_strlcpy(g_snapshot_settings.quicksave_filename, "uiquick",
+              sizeof(g_snapshot_settings.quicksave_filename));
+    g_snapshot_settings.quicksave_mode = 0;
+    g_emulator.paused = false;
+    s_pause_calls = 0;
+    s_run_calls = 0;
+
+    snapshot_ui_request_quickload();
+    imgui_snapshot_quicksave_handler();
+    TEST_ASSERT_TRUE(s_pause_calls >= 1);
+    TEST_ASSERT_TRUE(g_emulator.paused);
+    TEST_ASSERT_EQUAL_INT(1, snapshot_request_pending());
+
+    snapshot_request_poll();
+    imgui_snapshot_request_results();
+    TEST_ASSERT_EQUAL_INT(1, s_note_count);
+    TEST_ASSERT_TRUE(s_note_error);
+    TEST_ASSERT_EQUAL_INT(0, s_run_calls); /* po chybě zůstává pauza */
+}
+
 int main(int argc, char *argv[])
 {
     mztest_parse_args(argc, argv);
@@ -790,6 +1056,12 @@ int main(int argc, char *argv[])
     RUN_TEST(test_settings_apply_keeps_runtime_timebase);
     RUN_TEST(test_setup_dialog_follows_runtime_timebase);
     RUN_TEST(test_realtime_ui_renders);
+    RUN_TEST(test_replay_shortcuts);
+    RUN_TEST(test_replay_window_renders);
+    RUN_TEST(test_tool_window_shortcuts);
+    RUN_TEST(test_tool_windows_render);
+    RUN_TEST(test_quicksave_saved_by_emu_thread);
+    RUN_TEST(test_quickload_pauses_and_reports_error);
     int result = UNITY_END();
 
     ui_teardown();

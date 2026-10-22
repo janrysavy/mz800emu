@@ -31,11 +31,16 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <glib.h>
 
 #include "emulator/debugger/dbgapi_cmdrq.h"
+#include "emulator/debugger/dbgapi_regions.h"
+#include "emulator/state_hash.h"
+#include "emulator/debugger/memsearch/memsearch.h"
+#include "emulator/audio_capture.h"
 /* Pozn.: dbgapi_ui.h NEincludujeme - viz komentář ve stub headeru. */
 /* F015a - dispatch.c v _handle_bp_list volá bpt_type_to_string /
  * bp_zone_to_string. V standalone testu se breakpoints.c nelinkuje,
@@ -43,6 +48,7 @@
  * je self-contained (jen stdint/stdbool/glib/dbgapi_cmdrq.h/bp_event.h). */
 #include "emulator/debugger/breakpoints.h"
 #include "emulator/snapshot/snapshot.h"
+#include "emulator/replay.h"
 
 #include "test_dispatch_dbgapi_stub.h"
 
@@ -121,6 +127,7 @@ st_DISPATCH_STUB_STATE g_stub_state;
  * "nikdy nevolán" od "volán s id=0".
  */
 void dispatch_stub_reset(void) {
+    memset(&g_stub_replay, 0, sizeof(g_stub_replay));
     /* V1.A.1: uvolnit případné heap stringy z předchozího testu před
      * memsetem (jinak by se ztratily). */
     if (g_stub_state.snapshot_last_filepath) {
@@ -305,6 +312,70 @@ void dispatch_stub_reset(void) {
 
 
 /**
+ * @brief Simulace podmíněného zápisu (observe-cas M10) v mocku.
+ *
+ * Paměť (MEM_WRITE_CHECKED, MEM_WRITE_FORCE, REGIONS_WRITE s `cond`):
+ * expected začínající bajtem EEh = nesplněno (before = 11h * 32); jinak
+ * s podmínkou nebo want_hashes before = 22h * 32, after = 33h * 32.
+ * SET_REG: previous = 4321h, expected EEEEh = nesplněno.
+ * SET_CPU_FLAGS: prev_iff1 = 1, prev_r = 42h, ostatní prev 0; s
+ * expect_mask a exp_r = EEh nesplněno.
+ *
+ * @param cmd Příkaz.
+ * @param data_ptr Parametr příkazu (smí být NULL).
+ * @return false = podmínka nesplněna (příkaz neuspěl), true = pokračovat.
+ */
+static bool stub_apply_write_cond(en_DBGAPI_CMD cmd, void *data_ptr) {
+    if (!data_ptr) return true;
+    st_DBGAPI_WRITE_COND *c = NULL;
+    switch (cmd) {
+        case DBGAPI_CMD_MEM_WRITE_CHECKED:
+            c = ((st_DBGAPI_MEM_WRITE_CHECKED_PARAM *)data_ptr)->cond;
+            break;
+        case DBGAPI_CMD_MEM_WRITE_FORCE:
+            c = ((st_DBGAPI_MEM_PARAM *)data_ptr)->cond;
+            break;
+        case DBGAPI_CMD_REGIONS_WRITE:
+            c = ((st_DBGAPI_REGIONS_WRITE_PARAM *)data_ptr)->cond;
+            break;
+        case DBGAPI_CMD_SET_REG: {
+            st_DBGAPI_REG_PARAM *p = (st_DBGAPI_REG_PARAM *)data_ptr;
+            p->previous = 0x4321;
+            p->precondition_failed = (p->has_expected && p->expected == 0xEEEE) ? 1 : 0;
+            return !p->precondition_failed;
+        }
+        case DBGAPI_CMD_SET_CPU_FLAGS: {
+            st_DBGAPI_CPU_FLAGS *p = (st_DBGAPI_CPU_FLAGS *)data_ptr;
+            p->prev_iff1 = 1;
+            p->prev_iff2 = 0;
+            p->prev_im = 0;
+            p->prev_i = 0;
+            p->prev_r = 0x42;
+            p->precondition_failed = (p->expect_mask && p->exp_r == 0xEE) ? 1 : 0;
+            return !p->precondition_failed;
+        }
+        default:
+            return true;
+    }
+    if (!c) return true;
+    c->precondition_failed = 0;
+    c->hashes_valid = 0;
+    c->written = 0;
+    if (!c->has_expected && !c->want_hashes) return true;
+    c->hashes_valid = 1;
+    if (c->has_expected && c->expected[0] == 0xEE) {
+        memset(c->before, 0x11, 32);
+        c->precondition_failed = 1;
+        return false;
+    }
+    memset(c->before, 0x22, 32);
+    memset(c->after, 0x33, 32);
+    c->written = 1;
+    return true;
+}
+
+
+/**
  * @brief Mock implementace `dbgapi_ui_submit_cmd_sync_with_origin`.
  *
  * Zaznamenává parametry do `g_stub_state` a podle scénáře buď fake
@@ -364,8 +435,349 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
         return false;
     }
 
+    /* observe-cas: podmíněné zápisy (st_DBGAPI_WRITE_COND, expected u
+     * SET_REG a SET_CPU_FLAGS). Selhání = příkaz vrátí false (u _ex
+     * DBGAPI_SUBMIT_FAILED) s nastaveným precondition_failed. */
+    if (!stub_apply_write_cond(cmd, data_ptr)) {
+        return false;
+    }
+
     /* Cmd-specific fake fill */
     switch (cmd) {
+        case DBGAPI_CMD_TRACE_SNAPSHOT:
+            /* mcp-trace-read: segment tr_segment, tr_records záznamů jen
+             * v RAM; záznam i: iorqlog/hwlog/intlog/marklog t = 100 * i,
+             * port 10h + i, value i; cputrack pc 1000h + i, NOP. */
+            if (data_ptr) {
+                st_DBGAPI_TRACE_SNAPSHOT_PARAM *p = (st_DBGAPI_TRACE_SNAPSHOT_PARAM *)data_ptr;
+                g_stub_state.tr_snap_calls++;
+                g_stub_state.tr_last = *p;
+                memset(&p->out, 0, sizeof(p->out));
+                p->out_ok = true;
+                p->out_cpu_divider = 5;
+                p->out_pc_range_full = true;
+                p->out_ram_prefix_t = 0;
+                if (g_stub_state.tr_segment == 0) break;
+                unsigned seg = g_stub_state.tr_segment;
+                if (g_stub_state.tr_bump_on_call > 0 &&
+                    g_stub_state.tr_snap_calls >= g_stub_state.tr_bump_on_call) seg++;
+                size_t rs = (p->channel == DBGAPI_TRACE_CHANNEL_CPUTRACK) ? 12
+                          : (p->channel == DBGAPI_TRACE_CHANNEL_EVENTLOG
+                             || p->channel == DBGAPI_TRACE_CHANNEL_RAMLOG) ? 32 : 24;
+                p->out.segment = seg;
+                p->out.live = 1;
+                p->out.record_size = rs;
+                p->out.next_seq = g_stub_state.tr_records;
+                p->out.ram_first_seq = 0;
+                p->out.dir = g_strdup("C:/tmp/trace");
+                p->out.name = g_strdup("t");
+                p->out.chunks = g_array_new(FALSE, FALSE, sizeof(st_TLOG_CHUNK_META));
+                uint64_t lo = p->from_seq, hi = p->out.next_seq;
+                if (lo < hi && p->count < hi - lo) hi = lo + p->count;
+                if (p->count > 0 && lo < hi) {
+                    p->out.ram_copy = g_malloc0((size_t)((hi - lo) * rs));
+                    for (uint64_t i = lo; i < hi; i++) {
+                        uint8_t *r = p->out.ram_copy + (i - lo) * rs;
+                        if (rs == 12) {
+                            r[0] = (uint8_t)i; r[1] = 0x10; r[2] = 1; r[11] = 4;
+                        } else if (p->channel == DBGAPI_TRACE_CHANNEL_RAMLOG) {
+                            /* ramlog: insn_pc 3000h + i, CPU adresa 4000h + i, RAM,
+                             * old AA, new i; liché i nezměněné (skryté bez all). */
+                            st_RAMLOG_REC *rr = (st_RAMLOG_REC *)r;
+                            rr->t = 100u * i;
+                            rr->insn_pc = (uint16_t)(0x3000 + i);
+                            rr->cpu_addr = (uint16_t)(0x4000 + i);
+                            rr->offset = (uint32_t)(0x4000 + i);
+                            rr->space = RAMLOG_SPACE_RAM;
+                            rr->old_value = 0xAA;
+                            rr->new_value = (uint8_t)i;
+                            rr->src = RAMLOG_SRC_INSN;
+                            rr->tin = (uint8_t)(10 + i);
+                            rr->flags = (i & 1) ? RAMLOG_FLAG_UNCHANGED : 0;
+                            rr->count = 1;
+                        } else {
+                            uint64_t t = 100u * i;
+                            memcpy(r, &t, 8);
+                            r[17] = 1;
+                            r[20] = (uint8_t)(0x10 + i);
+                            r[22] = (uint8_t)i;
+                        }
+                    }
+                    p->out.ram_copy_seq = lo;
+                    p->out.ram_copy_count = hi - lo;
+                }
+            }
+            break;
+
+        case DBGAPI_CMD_TRACE_RESOLVE:
+            /* mcp-trace-read: symbol "S<adresa>" bez offsetu, značka "M<id>". */
+            if (data_ptr) {
+                st_DBGAPI_TRACE_RESOLVE_PARAM *p = (st_DBGAPI_TRACE_RESOLVE_PARAM *)data_ptr;
+                g_stub_state.tr_resolve_calls++;
+                for (size_t i = 0; i < p->n_addrs; i++) {
+                    g_snprintf(p->out_syms[i].name, sizeof(p->out_syms[i].name), "S%04X", p->addrs[i]);
+                    p->out_syms[i].offset = 0;
+                }
+                for (size_t i = 0; i < p->n_markers; i++) {
+                    g_snprintf(p->out_markers[i], DBGAPI_MARKER_NAME_MAX, "M%u", p->marker_ids[i]);
+                }
+                for (size_t i = 0; i < p->n_events; i++) {
+                    g_snprintf(p->out_event_texts[i], DBGAPI_EVENT_TEXT_MAX, "EV%u", p->events[i * 32 + 16]);
+                }
+            }
+            break;
+
+        case DBGAPI_CMD_COVERAGE:
+            /* coverage: zapamatuje vstup; START nastaví úroveň dat stubu.
+             * Snímek: vykonané 1000h-1003h, na 1001h JR (jen skok), na
+             * 1003h DJNZ (obě větve); detail = 4 jednotky (1003h dvě verze
+             * v RAM a v ROM), generace 5, epocha 2 u 1002h. */
+            if (data_ptr) {
+                st_DBGAPI_COVERAGE_PARAM *p = (st_DBGAPI_COVERAGE_PARAM *)data_ptr;
+                g_stub_state.cov_calls++;
+                g_stub_state.cov_last = *p;
+                g_stub_state.cov_last.snap = NULL;
+                p->out_error[0] = '\0';
+                if (p->op == DBGAPI_COVERAGE_OP_START) g_stub_state.cov_level = p->cfg.level;
+                memset(&p->out_status, 0, sizeof(p->out_status));
+                p->out_status.active = (p->op != DBGAPI_COVERAGE_OP_STOP);
+                p->out_status.has_data = true;
+                p->out_status.level = g_stub_state.cov_level;
+                p->out_status.key = p->cfg.key;
+                p->out_status.capacity = (g_stub_state.cov_level == COVERAGE_LEVEL_DETAIL) ? 64 : 0;
+                p->out_status.units = 4;
+                p->out_status.complete = true;
+                p->out_status.generation = 5;
+                p->out_status.epoch = (p->op == DBGAPI_COVERAGE_OP_MARK) ? 3 : 2;
+                p->out_status.decisions = 2;
+                p->out_status.branches_both = 1;
+                p->out_status.branches_taken_only = 1;
+                if (p->op == DBGAPI_COVERAGE_OP_MARK) p->out_epoch = 3;
+                if (p->op == DBGAPI_COVERAGE_OP_SNAPSHOT && p->snap) {
+                    st_COVERAGE_SNAPSHOT *s = p->snap;
+                    s->status = p->out_status;   /* jako coverage_snapshot_take() */
+                    s->exec[0x1000 >> 3] = 0x0F;
+                    s->decision[0x1000 >> 3] = 0x0A;
+                    s->taken[0x1000 >> 3] = 0x0A;
+                    s->not_taken[0x1000 >> 3] = 0x08;
+                    s->first_epoch[0x1002] = 2;
+                    s->units = NULL;
+                    s->n_units = 0;
+                    if (g_stub_state.cov_level == COVERAGE_LEVEL_DETAIL) {
+                        static const struct { uint16_t pc; uint8_t space; uint8_t k0; uint8_t k1; uint8_t klen;
+                                              uint8_t len; uint16_t flags; uint32_t ex, tk, nt; } u[] = {
+                            { 0x1003, 4, 0x10, 0x00, 1, 2, COVERAGE_F_DECISION, 2, 1, 1 },
+                            { 0x1000, 0, 0x3E, 0x00, 1, 2, COVERAGE_F_OPERAND_VARIED, 3, 0, 0 },
+                            { 0x1003, 0, 0x10, 0x00, 1, 2, COVERAGE_F_DECISION, 4, 3, 1 },
+                            { 0x1001, 0, 0x18, 0x00, 1, 2, 0, 1, 0, 0 },
+                        };
+                        s->n_units = 4;
+                        s->units = calloc(4, sizeof(st_COVERAGE_UNIT)); /* uvolní coverage_snapshot_clear() */
+                        for (int i = 0; i < 4; i++) {
+                            s->units[i].pc = u[i].pc;
+                            s->units[i].cell = COVERAGE_CELL(u[i].space, u[i].pc);
+                            s->units[i].key[0] = u[i].k0;
+                            s->units[i].key_len = u[i].klen;
+                            s->units[i].insn_len = u[i].len;
+                            s->units[i].flags = u[i].flags;
+                            s->units[i].exec = u[i].ex;
+                            s->units[i].taken = u[i].tk;
+                            s->units[i].not_taken = u[i].nt;
+                            s->units[i].operand_last = 0x0005;
+                        }
+                    }
+                }
+            }
+            break;
+
+        case DBGAPI_CMD_RAMLOG:
+            /* ramlog: zapamatuje vstup; WHO_WROTE = jedna buňka RAM, poslední
+             * zapisovatel 3009h, historie 1 záznam; WRITERS = 2 zapisovatelé. */
+            if (data_ptr) {
+                st_DBGAPI_RAMLOG_PARAM *p = (st_DBGAPI_RAMLOG_PARAM *)data_ptr;
+                g_stub_state.rl_calls++;
+                g_stub_state.rl_last = *p;
+                p->out_error[0] = '\0';
+                memset(&p->out_status, 0, sizeof(p->out_status));
+                p->out_status.active = (p->op != DBGAPI_RAMLOG_OP_STOP);
+                p->out_status.allocated = true;
+                p->out_status.segment = 4;
+                p->out_status.capacity = p->cfg.capacity;
+                p->out_status.mode = p->cfg.mode;
+                p->out_status.next_seq = 10;
+                p->out_status.n_ranges = p->cfg.n_ranges;
+                memcpy(p->out_status.ranges, p->cfg.ranges, sizeof(p->out_status.ranges));
+                if (p->op == DBGAPI_RAMLOG_OP_WHO_WROTE) {
+                    p->out_n_cells = 1;
+                    memset(&p->out_cells[0], 0, sizeof(p->out_cells[0]));
+                    p->out_cells[0].space = RAMLOG_SPACE_RAM;
+                    p->out_cells[0].offset = p->by_cpu ? p->cpu_from : p->off_from;
+                    p->out_cells[0].has_last = true;
+                    p->out_cells[0].last.seq1 = 2;
+                    p->out_cells[0].last.insn_pc = 0x3009;
+                    p->out_cells[0].last.src = RAMLOG_SRC_INSN;
+                    if (p->out_recs && p->limit) {
+                        memset(&p->out_recs[0], 0, sizeof(p->out_recs[0]));
+                        p->out_recs[0].insn_pc = 0x3009;
+                        p->out_recs[0].cpu_addr = p->cpu_from;
+                        p->out_recs[0].old_value = 0xAA;
+                        p->out_recs[0].new_value = 0x66;
+                        p->out_seqs[0] = 1;
+                        p->out_cells[0].n_recs = 1;
+                    }
+                } else if (p->op == DBGAPI_RAMLOG_OP_WRITERS && p->out_writers && p->limit) {
+                    st_RAMLOG_WRITER w0 = { 0x3011, RAMLOG_SRC_INSN, 2, 2, 3 };
+                    st_RAMLOG_WRITER w1 = { 0x3003, RAMLOG_SRC_INSN, 1, 0, 0 };
+                    p->out_writers[0] = w0;
+                    p->out_n_writers = 1;
+                    if (p->limit > 1) {
+                        p->out_writers[1] = w1;
+                        p->out_n_writers = 2;
+                    }
+                    p->out_total_writers = 2;
+                }
+            }
+            break;
+
+        case DBGAPI_CMD_REGIONS_ENUMERATE:
+            /* memsearch: s ms_regions vrátí User RAM 64 KB, MemExt RAM kus 41h
+             * (4 KB) a ROM_LOWER (4 KB, jen pro čtení); jinak prázdný výčet. */
+            if (data_ptr && g_stub_state.ms_regions) {
+                st_DBGAPI_REGIONS_ENUM_PARAM *p = (st_DBGAPI_REGIONS_ENUM_PARAM *)data_ptr;
+                st_REGION_DESC *r = g_new0(st_REGION_DESC, 3);
+                r[0].id = 0; r[0].kind = REGION_KIND_RAM; r[0].size = 0x10000;
+                r[0].writable = 1; r[0].connected = 1; r[0].mapped_now = 1;
+                r[1].id = 1; r[1].kind = REGION_KIND_MEMEXT_RAM; r[1].sub_id = 0x41;
+                r[1].size = 0x1000; r[1].writable = 1; r[1].connected = 1;
+                r[2].id = 2; r[2].kind = REGION_KIND_ROM_LOWER; r[2].size = 0x1000;
+                r[2].writable = 0; r[2].connected = 1;
+                p->out_dup = r;
+                p->out_count = 3;
+            }
+            break;
+
+        case DBGAPI_CMD_MEMSEARCH_SAMPLE:
+            /* memsearch: User RAM z ms_ram (prvních 256 B, zbytek 0), ostatní
+             * spany vynulované a připojené; snímek = počet vzorků. */
+            if (data_ptr) {
+                st_DBGAPI_MEMSEARCH_SAMPLE_PARAM *p = (st_DBGAPI_MEMSEARCH_SAMPLE_PARAM *)data_ptr;
+                const st_MEMSEARCH_SPAN *sp = (const st_MEMSEARCH_SPAN *)p->spans;
+                st_MEMSEARCH_SAMPLE *smp = (st_MEMSEARCH_SAMPLE *)p->sample;
+                uint32_t pos = 0;
+                g_stub_state.ms_sample_calls++;
+                for (uint32_t i = 0; i < p->span_count; i++) {
+                    for (uint32_t b = 0; b < sp[i].length; b++) {
+                        uint32_t ro = sp[i].offset + b;
+                        smp->data[pos + b] = (sp[i].region_kind == REGION_KIND_RAM && ro < 256)
+                                             ? g_stub_state.ms_ram[ro] : 0;
+                    }
+                    smp->span_connected[i] = 1;
+                    pos += sp[i].length;
+                }
+                smp->frame = (uint64_t)g_stub_state.ms_sample_calls;
+            }
+            break;
+
+        case DBGAPI_CMD_STATE_OBSERVE:
+            /* observe-cas: okno CPU = bajty (adresa + i) & FFh, okno regionu
+             * = 5Ah ^ (offset + i); druh ramdisk_pezik = nedostupný region,
+             * sub_id 99 = okno přes konec regionu (velikost 4096). Registry
+             * 1000h + 100h * i, run_seq 7, snímek 42, v pauze podle
+             * is_running; hash částí vyplní jen cpu a ram ("ab" * 32). */
+            if (data_ptr) {
+                st_DBGAPI_STATE_OBSERVE_PARAM *p = (st_DBGAPI_STATE_OBSERVE_PARAM *)data_ptr;
+                g_stub_state.obs_calls++;
+                for (uint32_t i = 0; i < p->window_count; i++) {
+                    st_DBGAPI_OBSERVE_WINDOW *w = &p->windows[i];
+                    w->status = DBGAPI_OBSERVE_WINDOW_OK;
+                    w->region_size = w->by_region ? 4096u : 0u;
+                    if (w->by_region && w->region_kind == REGION_KIND_RAMDISK_PEZIK) {
+                        w->status = DBGAPI_OBSERVE_WINDOW_UNAVAILABLE;
+                    } else if (w->by_region && w->sub_id == 99) {
+                        w->status = DBGAPI_OBSERVE_WINDOW_OUT_OF_RANGE;
+                    }
+                    for (uint32_t b = 0; b < w->len; b++) {
+                        w->buf[b] = (w->status != DBGAPI_OBSERVE_WINDOW_OK) ? 0
+                                  : w->by_region ? (uint8_t)(0x5A ^ (w->start + b))
+                                                 : (uint8_t)(w->start + b);
+                    }
+                    if (i < 16) g_stub_state.obs_last_win[i] = *w;
+                }
+                memset(&p->panel, 0, sizeof(p->panel));
+                for (int i = 0; i < DBGAPI_REG_COUNT; i++) {
+                    p->panel.regs[i] = (uint16_t)(0x1000 + (i << 8));
+                }
+                p->panel.regs_valid = 1;
+                p->panel.flags_valid = 1;
+                p->panel.flags.im = 1;
+                if (p->which & DBGAPI_CPU_PANEL_WANT_RASTER) {
+                    p->panel.raster.scanline = 12;
+                    p->panel.raster_valid = 1;
+                }
+                p->running = g_stub_state.is_running ? 1 : 0;
+                p->run_seq = 7;
+                p->frame = 42;
+                p->frame_ticks = 26;
+                p->total_cycles = 123456;
+                for (unsigned part = 0; part < DBGAPI_OBSERVE_HASH_PARTS; part++) {
+                    p->hash_ok[part] = 0;
+                    if ((p->hash_mask & (1u << part))
+                        && (part == STATE_HASH_CPU || part == STATE_HASH_RAM)) {
+                        for (int c = 0; c < 64; c++) p->hash_hex[part][c] = (c & 1) ? 'b' : 'a';
+                        p->hash_hex[part][64] = '\0';
+                        p->hash_ok[part] = 1;
+                    }
+                }
+                if (p->want_memory_map) {
+                    memset(&p->memory_map, 0, sizeof(p->memory_map));
+                    g_strlcpy(p->memory_map.platform, "mz800", sizeof(p->memory_map.platform));
+                    p->memory_map.slot_count = 16;
+                    for (int i = 0; i < 16; i++) {
+                        p->memory_map.slots[i].addr_start = (uint16_t)(i * 0x1000);
+                        p->memory_map.slots[i].addr_end = (uint16_t)(i * 0x1000 + 0x0FFF);
+                        p->page_kind[i] = (i == 0) ? 1 /* rom_low */ : 0 /* ram */;
+                    }
+                }
+                g_stub_state.obs_last = *p;
+            }
+            break;
+
+        case DBGAPI_CMD_FREEZE_ADD:
+        case DBGAPI_CMD_FREEZE_REMOVE:
+            /* Freeze Bytes: tabulka frz_items, ADD aktualizuje existující klíč. */
+            if (data_ptr) {
+                st_DBGAPI_FREEZE_PARAM *p = (st_DBGAPI_FREEZE_PARAM *)data_ptr;
+                uint32_t i;
+                for (i = 0; i < g_stub_state.frz_count; i++) {
+                    const st_DBGAPI_FREEZE_LIST_ITEM *e = &g_stub_state.frz_items[i];
+                    if (e->region_kind == p->region_kind && e->sub_id == p->sub_id
+                        && e->offset == p->offset) break;
+                }
+                if (cmd == DBGAPI_CMD_FREEZE_ADD) {
+                    if (i == g_stub_state.frz_count) {
+                        if (i >= 256) return false;
+                        g_stub_state.frz_count++;
+                    }
+                    g_stub_state.frz_items[i].region_kind = p->region_kind;
+                    g_stub_state.frz_items[i].sub_id = p->sub_id;
+                    g_stub_state.frz_items[i].offset = p->offset;
+                    g_stub_state.frz_items[i].value = p->value;
+                } else {
+                    if (i == g_stub_state.frz_count) return false;
+                    g_stub_state.frz_items[i] = g_stub_state.frz_items[--g_stub_state.frz_count];
+                }
+                p->result = true;
+            }
+            break;
+
+        case DBGAPI_CMD_FREEZE_LIST:
+            if (data_ptr) {
+                st_DBGAPI_FREEZE_LIST_PARAM *p = (st_DBGAPI_FREEZE_LIST_PARAM *)data_ptr;
+                memcpy(p->items, g_stub_state.frz_items, sizeof(p->items));
+                p->out_count = g_stub_state.frz_count;
+            }
+            break;
+
         case DBGAPI_CMD_AUDIO_CAPTURE:
             /* Zachycení zvuku: zapamatuje vstup, vrátí stav (pending po START). */
             if (data_ptr) {
@@ -466,8 +878,9 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
         case DBGAPI_CMD_MEM_READ:
             if (data_ptr) {
                 st_DBGAPI_MEM_PARAM *p = (st_DBGAPI_MEM_PARAM *)data_ptr;
-                /* Naplň deterministicky 0xAA + index */
-                for (uint16_t i = 0; i < p->len && p->buf; i++) {
+                /* Naplň deterministicky 0xA0 + (index & 0x0F); index
+                 * uint32_t, len smí být až 0x10000 */
+                for (uint32_t i = 0; i < p->len && p->buf; i++) {
                     p->buf[i] = (uint8_t)(0xA0 + (i & 0x0F));
                 }
             }
@@ -547,14 +960,15 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                 /* Zkopíruj data pro pozdější inspekci testem - dispatch.c
                  * po návratu uvolní původní buffer. */
                 g_stub_state.mem_write_addr    = p->addr;
-                g_stub_state.mem_write_buf_len = p->length;
+                g_stub_state.mem_write_req_len = p->length;
+                g_stub_state.mem_write_buf_len = 0;
                 if (p->data && p->length > 0) {
-                    uint16_t copy_len = p->length;
+                    uint32_t copy_len = p->length;
                     if (copy_len > sizeof(g_stub_state.mem_write_buf)) {
                         copy_len = sizeof(g_stub_state.mem_write_buf);
                     }
                     memcpy(g_stub_state.mem_write_buf, p->data, copy_len);
-                    g_stub_state.mem_write_buf_len = copy_len;
+                    g_stub_state.mem_write_buf_len = (uint16_t)copy_len;
                 }
                 if (g_stub_state.mem_write_fail) {
                     p->success           = 0;
@@ -589,11 +1003,65 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
         case DBGAPI_CMD_STEP_INTO:
             /* V0.B.6 - inkrementuj counter (pro step_n + step_into testy). */
             g_stub_state.step_into_calls++;
+            /* run-control: v pauze krok jedné instrukce, za běhu nic. */
+            if (result_ptr) {
+                st_DBGAPI_RUN_START_RESULT *r = (st_DBGAPI_RUN_START_RESULT *)result_ptr;
+                r->status = g_stub_state.is_running ? DBGAPI_RUN_START_NOT_PAUSED
+                                                    : DBGAPI_RUN_TO_STARTED;
+                r->step = !g_stub_state.is_running;
+                r->run_seq = g_stub_state.run_seq;
+            }
             break;
 
         case DBGAPI_CMD_STEP_OVER:
             /* V0.B.6 - counter pro step_over test. */
             g_stub_state.step_over_calls++;
+            /* run-control: step_over_runs = CALL (běh k dočasnému BP). */
+            if (result_ptr) {
+                st_DBGAPI_RUN_START_RESULT *r = (st_DBGAPI_RUN_START_RESULT *)result_ptr;
+                r->status = g_stub_state.is_running ? DBGAPI_RUN_TO_PAUSED_ONLY
+                                                    : DBGAPI_RUN_TO_STARTED;
+                r->step = !g_stub_state.is_running && !g_stub_state.step_over_runs;
+                r->run_seq = g_stub_state.run_seq;
+            }
+            break;
+
+        case DBGAPI_CMD_RUN:
+            /* run-control: číslo běhu, už běžící běh = NOT_PAUSED. */
+            if (result_ptr) {
+                st_DBGAPI_RUN_START_RESULT *r = (st_DBGAPI_RUN_START_RESULT *)result_ptr;
+                r->status = g_stub_state.is_running ? DBGAPI_RUN_START_NOT_PAUSED
+                                                    : DBGAPI_RUN_TO_STARTED;
+                r->step = false;
+                r->run_seq = g_stub_state.run_seq;
+            }
+            break;
+
+        case DBGAPI_CMD_PAUSE:
+            /* run-control: podmíněná pauza if_run_seq podle is_running a run_seq. */
+            if (data_ptr) {
+                st_DBGAPI_PAUSE_PARAM *pp = (st_DBGAPI_PAUSE_PARAM *)data_ptr;
+                g_stub_state.pause_last = *pp;
+                pp->was_running = g_stub_state.is_running;
+                pp->run_seq = g_stub_state.run_seq;
+                pp->paused_now = g_stub_state.is_running
+                                 && (!pp->has_if_run_seq || pp->if_run_seq == g_stub_state.run_seq);
+            }
+            break;
+
+        case DBGAPI_CMD_RUN_DEADLINE:
+            /* run-control: zachytí nastavení / zrušení deadlinu. */
+            if (data_ptr) {
+                st_DBGAPI_RUN_DEADLINE_PARAM *dp = (st_DBGAPI_RUN_DEADLINE_PARAM *)data_ptr;
+                g_stub_state.deadline_last = *dp;
+                if (dp->arm) {
+                    g_stub_state.deadline_arms++;
+                    dp->ticks = dp->value * 10u;
+                } else {
+                    g_stub_state.deadline_clears++;
+                }
+                dp->valid = true;
+            }
             break;
 
         case DBGAPI_CMD_RUN_TO:
@@ -601,10 +1069,11 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
             if (data_ptr) {
                 g_stub_state.run_to_last_addr = *(uint16_t *)data_ptr;
             }
-            /* mcp-inbox-fixes: volitelný int* výsledek (spuštěno / emulace
-             * běžela a jen se pauzla). */
+            /* mcp-inbox-fixes: volitelný výsledek rozběhu (spuštěno /
+             * emulace běžela a jen se pauzla). */
             if (result_ptr) {
-                *(int *)result_ptr = g_stub_state.run_to_result;
+                ((st_DBGAPI_RUN_START_RESULT *)result_ptr)->status = g_stub_state.run_to_result;
+                ((st_DBGAPI_RUN_START_RESULT *)result_ptr)->run_seq = g_stub_state.run_seq;
             }
             break;
 
@@ -1157,14 +1626,15 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
             if (data_ptr) {
                 st_DBGAPI_MEM_PARAM *p = (st_DBGAPI_MEM_PARAM *)data_ptr;
                 g_stub_state.mwf_addr = p->addr;
-                g_stub_state.mwf_len  = p->len;
+                g_stub_state.mwf_req_len = p->len;
+                g_stub_state.mwf_len  = 0;
                 if (p->buf && p->len > 0) {
-                    uint16_t copy_len = p->len;
+                    uint32_t copy_len = p->len;
                     if (copy_len > sizeof(g_stub_state.mwf_buf)) {
                         copy_len = sizeof(g_stub_state.mwf_buf);
                     }
                     memcpy(g_stub_state.mwf_buf, p->buf, copy_len);
-                    g_stub_state.mwf_len = copy_len;
+                    g_stub_state.mwf_len = (uint16_t)copy_len;
                 }
             }
             break;
@@ -1466,6 +1936,13 @@ bool dbgapi_ui_submit_cmd_sync_with_origin(st_DBGAPI_CMDRQ_QUEUE *queue,
                 snprintf(p->type, sizeof(p->type), "none");
                 p->connected     = 0;
                 p->map_available = 0;
+                if (g_stub_state.ms_pehu) {
+                    snprintf(p->type, sizeof(p->type), "pehu");
+                    p->connected = 1;
+                    p->map_available = 1;
+                    for (int s = 0; s < 16; s++) p->current_map[s] = (uint32_t)s;
+                    p->current_map[4] = 0x41;
+                }
             }
             break;
 
@@ -2351,6 +2828,7 @@ const char *dbgapi_cmd_to_str ( en_DBGAPI_CMD cmd )
     {
         case DBGAPI_CMD_NONE:           return "none";
         case DBGAPI_CMD_PAUSE:          return "pause";
+        case DBGAPI_CMD_RUN_DEADLINE:   return "run_deadline";
         case DBGAPI_CMD_RUN:            return "run";
         case DBGAPI_CMD_RESET:          return "reset";
         case DBGAPI_CMD_STEP_INTO:      return "step_into";
@@ -2523,4 +3001,228 @@ const char *snapshot_result_to_string(en_SNAPSHOT_RESULT result)
         case SNAPSHOT_ERR_NOT_PAUSED: return "Emulator is not paused";
         default:                      return "stub snapshot error";
     }
+}
+
+
+/**
+ * @brief Mock audio_capture_stream_copy(): proud s aud_records syntetickými záznamy.
+ *
+ * Záznam i: levels t = origin + 10 i, frame i / 5, src i % 9, level i % 16;
+ * psg_writes t = origin + 10 i, PSG0, kanál 0, liché i = tón 254, sudé =
+ * hlasitost 2; frames t = origin + 1000 i, délka 1000, kanál 0: i hran,
+ * 500 taktů na úrovni 15, reference RMS 100 / 200; PCM pár (i, -i).
+ */
+bool audio_capture_stream_copy(en_AUDIO_CAPTURE_STREAM stream, uint64_t from_seq,
+                               uint64_t count, size_t max_bytes,
+                               st_AUDIO_CAPTURE_STREAM_COPY *out)
+{
+    memset(out, 0, sizeof(*out));
+    g_stub_state.aud_copy_calls++;
+    out->segment = g_stub_state.aud_segment;
+    out->origin_ticks = g_stub_state.aud_origin;
+    if (g_stub_state.aud_segment == 0) return true;
+    size_t rs = (stream == AUDIO_CAPTURE_STREAM_LEVELS) ? sizeof(st_AUDIO_CAPTURE_LEVEL_REC)
+              : (stream == AUDIO_CAPTURE_STREAM_PSG_WRITES) ? sizeof(st_AUDIO_CAPTURE_PSG_REC)
+              : (stream == AUDIO_CAPTURE_STREAM_FRAMES) ? sizeof(st_AUDIO_CAPTURE_FRAME_REC) : 4u;
+    out->live = true;
+    out->present = true;
+    out->record_size = rs;
+    out->next_seq = g_stub_state.aud_records;
+    uint64_t lo = from_seq, hi = out->next_seq;
+    if (lo < hi && count < hi - lo) hi = lo + count;
+    if (lo < hi && (hi - lo) * rs > max_bytes) hi = lo + max_bytes / rs;
+    if (lo >= hi) return true;
+    out->data = (uint8_t *) g_malloc0((gsize) ((hi - lo) * rs));
+    out->data_seq = lo;
+    out->data_count = hi - lo;
+    uint64_t o = g_stub_state.aud_origin;
+    for (uint64_t i = lo; i < hi; i++) {
+        uint8_t *r = out->data + (i - lo) * rs;
+        if (stream == AUDIO_CAPTURE_STREAM_LEVELS) {
+            st_AUDIO_CAPTURE_LEVEL_REC *l = (st_AUDIO_CAPTURE_LEVEL_REC *) r;
+            l->t = o + 10u * i; l->frame = (uint32_t) (i / 5); l->src = (uint8_t) (i % 9); l->level = (uint8_t) (i % 16);
+        } else if (stream == AUDIO_CAPTURE_STREAM_PSG_WRITES) {
+            st_AUDIO_CAPTURE_PSG_REC *w = (st_AUDIO_CAPTURE_PSG_REC *) r;
+            w->t = o + 10u * i; w->frame = (uint32_t) i; w->psg = 1; w->byte = 0x0E; w->channel = 0;
+            w->reg = (uint8_t) ((i & 1) ? AUDIO_CAPTURE_PSG_REG_TONE : AUDIO_CAPTURE_PSG_REG_VOLUME);
+            w->value = (uint16_t) ((i & 1) ? 254 : 2);
+        } else if (stream == AUDIO_CAPTURE_STREAM_FRAMES) {
+            st_AUDIO_CAPTURE_FRAME_REC *f = (st_AUDIO_CAPTURE_FRAME_REC *) r;
+            f->t = o + 1000u * i; f->frame = (uint32_t) i; f->len_ticks = 1000;
+            f->ch[0].edges = (uint32_t) i; f->ch[0].on_ticks = 500; f->ch[0].energy = 225u * 500u;
+            f->ch[0].max_level = 15;
+            f->flags = AUDIO_CAPTURE_FRAME_FLAG_REF;
+            f->ref_rms[0] = 100; f->ref_rms[1] = 200;
+        } else {
+            int16_t *pcm = (int16_t *) r;
+            pcm[0] = (int16_t) i; pcm[1] = (int16_t) -(int16_t) i;
+        }
+    }
+    return true;
+}
+
+
+/** @brief Mock audio_capture_stream_copy_clear(). */
+void audio_capture_stream_copy_clear(st_AUDIO_CAPTURE_STREAM_COPY *c)
+{
+    g_free(c->data);
+    memset(c, 0, sizeof(*c));
+}
+
+
+
+/**
+ * @brief Mock audio_capture_get_status(): s aud_segment > 0 běžící zachycení
+ *        s pamětí, všech 5 proudů po aud_records záznamech.
+ */
+void audio_capture_get_status(st_AUDIO_CAPTURE_STATUS *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->segment = g_stub_state.aud_segment;
+    out->channels = AUDIO_CAPTURE_MAX_CHANNELS;   /* MZ-800 = 9 kanálů (audio.h zde koliduje s náhradou g_gdg) */
+    if (g_stub_state.aud_segment == 0) return;
+    out->active = true;
+    out->began = true;
+    out->origin_ticks = g_stub_state.aud_origin;
+    out->frames = g_stub_state.aud_records;
+    out->sdl_blocks = g_stub_state.aud_records;
+    out->memory = true;
+    const size_t rs[AUDIO_CAPTURE_STREAM_COUNT] = { sizeof(st_AUDIO_CAPTURE_PSG_REC), sizeof(st_AUDIO_CAPTURE_LEVEL_REC),
+                                                    sizeof(st_AUDIO_CAPTURE_FRAME_REC), 4u, 4u };
+    for (unsigned i = 0; i < AUDIO_CAPTURE_STREAM_COUNT; i++) {
+        out->streams[i].present = true;
+        out->streams[i].record_size = rs[i];
+        out->streams[i].capacity = 1000;
+        out->streams[i].next_seq = g_stub_state.aud_records;
+        out->memory_bytes += 1000u * rs[i];
+    }
+}
+
+
+/** @brief Mock audio_capture_get_psg_initial(): všechny kanály vypnuté, kanál 3 šum. */
+void audio_capture_get_psg_initial(st_AUDIO_CAPTURE_PSG_INITIAL *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->valid = (g_stub_state.aud_segment != 0);
+    for (unsigned c = 0; c < 2; c++) {
+        for (unsigned k = 0; k < 4; k++) {
+            out->attn[c][k] = 15;
+            out->noise[c][k] = (k == 3);
+        }
+    }
+}
+
+
+/* ============================================================================
+ * Záznam a přehrání vstupů (replay.h) - náhrada bez emu vlákna
+ * ============================================================================ */
+
+st_DISPATCH_STUB_REPLAY g_stub_replay;
+
+int g_replay_mode = REPLAY_MODE_OFF;
+int g_replay_frame_hook = 0;
+
+
+/** @brief Zapíše požadavek do g_stub_replay a vrátí jeho číslo (vyřízený hned). */
+static uint32_t stub_replay_request(int kind, const char *path, uint32_t interval, bool pause)
+{
+    g_stub_replay.calls++;
+    g_stub_replay.last_kind = kind;
+    g_strlcpy(g_stub_replay.last_path, path ? path : "", sizeof(g_stub_replay.last_path));
+    g_stub_replay.last_interval = interval;
+    g_stub_replay.last_pause_after_load = pause;
+    g_stub_replay.status.request_done = (uint32_t)g_stub_replay.calls;
+    g_stub_replay.status.request_ok = !g_stub_replay.fail;
+    g_strlcpy(g_stub_replay.status.request_message, g_stub_replay.fail ? "stub failure" : "",
+              sizeof(g_stub_replay.status.request_message));
+    return (uint32_t)g_stub_replay.calls;
+}
+
+/** @brief Uloží nastavení checkpointů požadavku (NULL = z INI = -1). */
+static void stub_replay_ckpt(const st_REPLAY_CKPT_CFG *ckpt)
+{
+    g_stub_replay.last_ckpt.interval = ckpt ? ckpt->interval : -1;
+    g_stub_replay.last_ckpt.count = ckpt ? ckpt->count : -1;
+}
+
+uint32_t replay_request_record_ex(const char *path, uint32_t hash_interval, const char *description,
+                                  const st_REPLAY_CKPT_CFG *ckpt)
+{
+    (void)description;
+    stub_replay_ckpt(ckpt);
+    return stub_replay_request(1, path, hash_interval, false);
+}
+
+uint32_t replay_request_play_ex(const char *path, bool pause_after_load, const st_REPLAY_CKPT_CFG *ckpt)
+{
+    stub_replay_ckpt(ckpt);
+    return stub_replay_request(2, path, 0, pause_after_load);
+}
+
+uint32_t replay_request_rewind(uint32_t frames)
+{
+    g_stub_replay.last_frames = frames;
+    return stub_replay_request(4, NULL, 0, false);
+}
+
+uint32_t replay_request_seek(uint32_t frame)
+{
+    g_stub_replay.last_frames = frame;
+    return stub_replay_request(5, NULL, 0, false);
+}
+
+uint32_t replay_request_record(const char *path, uint32_t hash_interval, const char *description)
+{
+    (void)description;
+    return stub_replay_request(1, path, hash_interval, false);
+}
+
+uint32_t replay_request_play(const char *path, bool pause_after_load)
+{
+    return stub_replay_request(2, path, 0, pause_after_load);
+}
+
+uint32_t replay_request_stop(void)
+{
+    return stub_replay_request(3, NULL, 0, false);
+}
+
+bool replay_wait_request(uint32_t seq, int timeout_ms)
+{
+    (void)timeout_ms;
+    return g_stub_replay.status.request_done >= seq;
+}
+
+void replay_get_status(st_REPLAY_STATUS *out)
+{
+    *out = g_stub_replay.status;
+}
+
+bool replay_is_active(void)
+{
+    return g_stub_replay.status.mode != REPLAY_MODE_OFF;
+}
+
+void replay_take_refusal(char *out, size_t size)
+{
+    if (size) out[0] = '\0';
+}
+
+const char *replay_mode_name(en_REPLAY_MODE mode)
+{
+    return mode == REPLAY_MODE_RECORDING ? "recording" : mode == REPLAY_MODE_PLAYING ? "playing" : "off";
+}
+
+const char *replay_outcome_name(en_REPLAY_OUTCOME outcome)
+{
+    switch (outcome)
+    {
+        case REPLAY_OUTCOME_RECORDED: return "recorded";
+        case REPLAY_OUTCOME_ENDED: return "ended";
+        case REPLAY_OUTCOME_DESYNC: return "desync";
+        case REPLAY_OUTCOME_STOPPED: return "stopped";
+        case REPLAY_OUTCOME_ERROR: return "error";
+        default: break;
+    };
+    return "none";
 }

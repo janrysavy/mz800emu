@@ -4,6 +4,8 @@
  *
  * Čekající GDG událost (g_gdg.event) se do snapshotu neukládá - při loadu
  * se dopočítá z obnovené pozice paprsku, viz snap_gdg_event_resync().
+ * Na MZ-800 ukládá i registry HW scrollu (g_hwscroll); snapshot bez nich
+ * načte HW scroll ve stavu po resetu.
  */
 
 #include <stdio.h>
@@ -13,6 +15,9 @@
 #include "snapshot/snapshot_xml.h"
 #include "hw-generic/gdg/gdg.h"
 #include "hw-generic/gdg/video.h"
+#if MZARCH == 800
+#include "mzarch/mz800/gdg/mz800_hwscroll.h"
+#endif
 
 static en_SNAPSHOT_RESULT snap_gdg_save(st_SNAPSHOT_CONTEXT *ctx)
 {
@@ -44,13 +49,10 @@ static en_SNAPSHOT_RESULT snap_gdg_save(st_SNAPSHOT_CONTEXT *ctx)
 #endif
     snapshot_xml_write_uint(w, "regct53g7", g_gdg.regct53g7);
 #if MZARCH == 800
-    /* HDL-presny WAIT model 800 grafickych rezimu - stav horke faze.
-     * Starsi snapshoty bez techto klicu se pri loadu defaultne zinicializuji
-     * na 0 (= zadna horka faze aktivni). */
-    snapshot_xml_write_uint64(w, "vram800_hot_phase_end_total_ticks",
-                              g_gdg.vram800_hot_phase_end_total_ticks);
-    snapshot_xml_write_uint(w, "vram800_hot_phase_clk0_phase",
-                            g_gdg.vram800_hot_phase_clk0_phase);
+    /* Model WAIT u VRAM - uvolnění WRITE FF posledního zápisu. Starší
+     * snapshoty bez klíče se při načtení inicializují na 0 (žádný zápis);
+     * dřívější klíče vram800_hot_phase_* se už nečtou. */
+    snapshot_xml_write_uint64(w, "vram_wrff_release", g_gdg.vram_wrff_release);
 #endif
     snapshot_xml_close_element(w); /* registers */
 
@@ -66,13 +68,16 @@ static en_SNAPSHOT_RESULT snap_gdg_save(st_SNAPSHOT_CONTEXT *ctx)
     snapshot_xml_write_uint(w, "vbln", g_gdg.vbln);
     snapshot_xml_close_element(w); /* sync_signals */
 
-    /* Stav renderování */
-    snapshot_xml_write_uint(w, "screen_is_already_rendered_at_beam_pos",
-                            g_gdg.screen_is_already_rendered_at_beam_pos);
-    snapshot_xml_write_uint(w, "screen_need_update_from",
-                            g_gdg.screen_need_update_from);
-    snapshot_xml_write_uint(w, "last_updated_border_pixel",
-                            g_gdg.last_updated_border_pixel);
+    /* Stav renderování - průběh vykreslení obrazu pro hostitele, ne stav
+     * stroje (posune ho např. překreslení v pauze); hash ho vynechá. */
+    if (!ctx->for_hash) {
+        snapshot_xml_write_uint(w, "screen_is_already_rendered_at_beam_pos",
+                                g_gdg.screen_is_already_rendered_at_beam_pos);
+        snapshot_xml_write_uint(w, "screen_need_update_from",
+                                g_gdg.screen_need_update_from);
+        snapshot_xml_write_uint(w, "last_updated_border_pixel",
+                                g_gdg.last_updated_border_pixel);
+    }
 
 #if MZARCH == 1500
     /* MZ-1500 specifické: barevná paleta */
@@ -98,6 +103,17 @@ static en_SNAPSHOT_RESULT snap_gdg_save(st_SNAPSHOT_CONTEXT *ctx)
     snapshot_xml_write_int(w, "mode700_color_6", g_gdg.mode700_color[6]);
     snapshot_xml_write_int(w, "mode700_color_7", g_gdg.mode700_color[7]);
     snapshot_xml_close_element(w); /* mode700_colors */
+#endif
+
+#if MZARCH == 800
+    /* HW scroll: registry překládají adresy CPU přístupů do VRAM. */
+    snapshot_xml_open_element(w, "hwscroll");
+    snapshot_xml_write_uint(w, "regSSA", g_hwscroll.regSSA);
+    snapshot_xml_write_uint(w, "regSEA", g_hwscroll.regSEA);
+    snapshot_xml_write_uint(w, "regSW", g_hwscroll.regSW);
+    snapshot_xml_write_uint(w, "regSOF", g_hwscroll.regSOF);
+    snapshot_xml_write_uint(w, "enabled", g_hwscroll.enabled);
+    snapshot_xml_close_element(w); /* hwscroll */
 #endif
 
     snapshot_xml_close_element(w); /* gdg_state */
@@ -220,15 +236,11 @@ static en_SNAPSHOT_RESULT snap_gdg_load(st_SNAPSHOT_CONTEXT *ctx)
 #endif
         snapshot_xml_read_uint(r, "regct53g7", &g_gdg.regct53g7);
 #if MZARCH == 800
-        /* HDL-presny WAIT model - novy klic, default 0 pro starsi snapshoty
-         * (= zadna horka faze aktivni, prvni VRAM pristup po loadu se chova
-         *  jako bez predchoziho WRITE). */
-        g_gdg.vram800_hot_phase_end_total_ticks = 0;
-        g_gdg.vram800_hot_phase_clk0_phase = 0;
-        snapshot_xml_read_uint64(r, "vram800_hot_phase_end_total_ticks",
-                                 &g_gdg.vram800_hot_phase_end_total_ticks);
-        snapshot_xml_read_uint(r, "vram800_hot_phase_clk0_phase",
-                               &g_gdg.vram800_hot_phase_clk0_phase);
+        /* Model WAIT u VRAM - klíč chybí ve starších snapshotech, pak 0
+         * (první přístup do VRAM po načtení se chová jako bez předchozího
+         * zápisu). */
+        g_gdg.vram_wrff_release = 0;
+        snapshot_xml_read_uint64(r, "vram_wrff_release", &g_gdg.vram_wrff_release);
 #endif
         snapshot_xml_leave_element(r);
     }
@@ -278,6 +290,19 @@ static en_SNAPSHOT_RESULT snap_gdg_load(st_SNAPSHOT_CONTEXT *ctx)
         snapshot_xml_read_int(r, "mode700_color_5", &g_gdg.mode700_color[5]);
         snapshot_xml_read_int(r, "mode700_color_6", &g_gdg.mode700_color[6]);
         snapshot_xml_read_int(r, "mode700_color_7", &g_gdg.mode700_color[7]);
+        snapshot_xml_leave_element(r);
+    }
+#endif
+
+#if MZARCH == 800
+    /* HW scroll; snapshot bez něj (starší verze) = stav po resetu. */
+    hwscroll_reset();
+    if (snapshot_xml_enter_element(r, "hwscroll")) {
+        snapshot_xml_read_uint(r, "regSSA", &g_hwscroll.regSSA);
+        snapshot_xml_read_uint(r, "regSEA", &g_hwscroll.regSEA);
+        snapshot_xml_read_uint(r, "regSW", &g_hwscroll.regSW);
+        snapshot_xml_read_uint(r, "regSOF", &g_hwscroll.regSOF);
+        snapshot_xml_read_uint(r, "enabled", &g_hwscroll.enabled);
         snapshot_xml_leave_element(r);
     }
 #endif

@@ -98,6 +98,34 @@ en_SNAPSHOT_RESULT snapshot_io_close_to_buffer(snapshot_io_t *io,
                                               size_t *out_size);
 
 /**
+ * @brief Otevře handle v hashovacím režimu (bez ZIP).
+ *
+ * Zápisy (@ref snapshot_io_write_bin, @ref snapshot_io_write_xml) se
+ * nikam neukládají, jen se z nich počítá SHA-256 v pořadí zápisu: jméno
+ * entry včetně koncové nuly, délka (8 bajtů little endian) a data. Hlavička
+ * ZIP (čas entry) se do hashe nedostane, takže stejný stav dá vždy stejný
+ * hash. Slouží k porovnání stavu komponent (hash části `periph` záznamu
+ * vstupů).
+ *
+ * @return Handle (nikdy NULL); uzavřít @ref snapshot_io_close_hash, nebo
+ *         @ref snapshot_io_close (hash se zahodí). Čtecí funkce na něm
+ *         vracejí chybu.
+ */
+snapshot_io_t *snapshot_io_open_hash(void);
+
+/**
+ * @brief Zavře handle z @ref snapshot_io_open_hash a vrátí hash.
+ *
+ * @param io       Handle v hashovacím režimu (po návratu neplatný).
+ * @param out_hex  Výstup: SHA-256 jako 64 hex znaků malými písmeny a nula.
+ * @param out_size Velikost @p out_hex (aspoň 65).
+ * @return SNAPSHOT_OK; SNAPSHOT_ERR_IO, když handle není v hashovacím
+ *         režimu nebo je @p out_hex malý (pak je @p out_hex prázdný).
+ *         Handle se uvolní vždy.
+ */
+en_SNAPSHOT_RESULT snapshot_io_close_hash(snapshot_io_t *io, char *out_hex, size_t out_size);
+
+/**
  * Zápis binárních dat do archivu
  *
  * @param io Handle

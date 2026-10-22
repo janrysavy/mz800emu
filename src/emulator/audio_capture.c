@@ -7,6 +7,8 @@
  * (stejný renderer jako video záznam v emulovaném čase) po každém
  * zvukovém snímku do horizontu, do kterého jsou všechny změny doručené.
  * sdl.wav dostává hotové bloky SDL cesty z háčku v iface_audio_wait_for_data().
+ * Paměť zachycení (ringy, souhrn snímků) plní tytéž háčky pod stejným
+ * zámkem; čtení kopíruje úsek ringu pod zámkem (audio_capture_stream_copy()).
  *
  * @par Licence: GPLv3
  */
@@ -15,6 +17,7 @@
 
 #include <glib.h>
 #include <glib/gstdio.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,12 +71,52 @@ typedef struct st_AC_WAV {
 } st_AC_WAV;
 
 /**
- * @brief Stav modulu (emu vlákno; sdl a sdl_samples/sdl_blocks pod sdl_mutex).
+ * @brief Ring záznamů pevné velikosti (proud paměti zachycení).
+ *
+ * @invariant data != NULL => cap > 0 && rec > 0; záznam seq leží na indexu
+ *            seq % cap a je platný pro seq v [ac_ring_first(), next).
+ */
+typedef struct st_AC_RING {
+    uint8_t *data;     /**< Paměť cap * rec bajtů, NULL = proud se nedrží. */
+    size_t rec;        /**< Velikost záznamu [B]. */
+    uint64_t cap;      /**< Kapacita [záznamy]. */
+    uint64_t next;     /**< Pořadové číslo příštího záznamu. */
+} st_AC_RING;
+
+/**
+ * @brief Průběžné součty pro souhrn zvukového snímku (st_AUDIO_CAPTURE_FRAME_REC).
+ *
+ * Součty on/energy po kanálech jsou od začátku zachycení do last_t;
+ * snímek bere rozdíl proti stavu na konci předchozího snímku (*_snap).
+ */
+typedef struct st_AC_FRAME_ACC {
+    uint8_t level[AUDIO_CAPTURE_MAX_CHANNELS];      /**< Aktuální úroveň kanálu. */
+    uint64_t last_t[AUDIO_CAPTURE_MAX_CHANNELS];    /**< Čas, do kterého jsou součty kanálu spočtené. */
+    uint64_t on[AUDIO_CAPTURE_MAX_CHANNELS];        /**< Takty s úrovní > 0 od začátku. */
+    uint64_t energy[AUDIO_CAPTURE_MAX_CHANNELS];    /**< Součet úroveň^2 x takty od začátku. */
+    uint64_t on_snap[AUDIO_CAPTURE_MAX_CHANNELS];   /**< `on` na konci předchozího snímku. */
+    uint64_t energy_snap[AUDIO_CAPTURE_MAX_CHANNELS]; /**< `energy` na konci předchozího snímku. */
+    uint32_t edges[AUDIO_CAPTURE_MAX_CHANNELS];     /**< Změny v aktuálním snímku. */
+    uint8_t max_level[AUDIO_CAPTURE_MAX_CHANNELS];  /**< Největší úroveň v aktuálním snímku. */
+    double ref_sq[2];    /**< Součet čtverců vzorků reference L, R ve snímku. */
+    uint32_t ref_peak[2]; /**< Špička reference L, R ve snímku. */
+    uint32_t ref_n;      /**< Vzorky reference ve snímku. */
+    double sdl_sq[2];    /**< Součet čtverců vzorků SDL L, R od předchozího snímku. */
+    uint32_t sdl_peak[2]; /**< Špička SDL L, R. */
+    uint32_t sdl_n;      /**< Vzorky SDL od předchozího snímku. */
+    uint32_t sdl_blocks; /**< Bloky SDL od předchozího snímku. */
+} st_AC_FRAME_ACC;
+
+/**
+ * @brief Stav modulu; celý ho chrání s_mutex (háčky emu vlákna, sdl a sdl_blocks
+ *        zapisuje i vlákno SDL zvuku přes audio_capture_sdl_output()).
  *
  * @invariant active => (origin, frame, last_horizon) platí pro běžící zachycení.
  * @invariant began => origin a last_horizon platí i po konci zachycení
  *            (pro capture.json); has_last_event => last_event_ticks >= origin.
  * @invariant pending && active se nevylučují jen během audio_capture_on_frame().
+ * @invariant mem => ring[LEVELS], ring[PSG_WRITES], ring[FRAMES] jsou alokované;
+ *            ringy zůstávají po konci zachycení až do dalšího startu.
  */
 static struct {
     bool pending;                    /**< Start naplánovaný na konec snímku. */
@@ -83,9 +126,9 @@ static struct {
     FILE *events;                    /**< events.csv, nebo NULL. */
     FILE *psg;                       /**< psg_writes.csv, nebo NULL. */
     st_AC_WAV ref;                   /**< reference.wav. */
-    st_AC_WAV sdl;                   /**< sdl.wav (pod sdl_mutex). */
-    uint64_t sdl_blocks;             /**< Zapsané bloky SDL cesty (pod sdl_mutex). */
-    bool sdl_writing;                /**< Bloky SDL cesty se zapisují (false = rozjezd, zahazují se; pod sdl_mutex). */
+    st_AC_WAV sdl;                   /**< sdl.wav (zapisuje i vlákno SDL zvuku). */
+    uint64_t sdl_blocks;             /**< Zapsané bloky SDL cesty. */
+    bool sdl_writing;                /**< Bloky SDL cesty se zapisují (false = rozjezd, zahazují se). */
     unsigned warmup_frames;          /**< Zbývající snímky rozjezdu SDL cesty před začátkem. */
     st_VIDEOREC_AUDIO renderer;      /**< Renderer reference.wav (platí jen při active && ref.fp). */
     bool renderer_init;              /**< renderer je inicializovaný (k uvolnění). */
@@ -100,6 +143,14 @@ static struct {
     char started[32];                /**< Čas startu (ISO 8601, místní). */
     char stop_reason[AUDIO_CAPTURE_TEXT_MAX]; /**< Důvod konce. */
     char last_error[AUDIO_CAPTURE_TEXT_MAX];  /**< Poslední chyba. */
+    bool sdl_on;                     /**< SDL cesta se zachytává (sdl.wav nebo PCM ring SDL). */
+    uint64_t ref_total;              /**< Vyrenderované vzorky reference (i bez reference.wav). */
+    uint64_t sdl_total;              /**< Přijaté vzorky SDL cesty (i bez sdl.wav). */
+    unsigned segment;                /**< Pořadí zachycení (zvýší každý úspěšný start). */
+    bool mem;                        /**< Paměť zachycení se drží. */
+    st_AC_RING ring[AUDIO_CAPTURE_STREAM_COUNT]; /**< Proudy paměti (en_AUDIO_CAPTURE_STREAM). */
+    st_AC_FRAME_ACC acc;             /**< Součty aktuálního snímku (jen s mem). */
+    st_AUDIO_CAPTURE_PSG_INITIAL psg_init; /**< Stav PSG na začátku zachycení. */
 } s_ac;
 
 /**
@@ -133,6 +184,69 @@ static void ac_error(char *err, size_t err_size, const char *msg)
 {
     g_strlcpy(s_ac.last_error, msg, sizeof(s_ac.last_error));
     if (err && err_size) g_strlcpy(err, msg, err_size);
+}
+
+
+/** @brief Nejstarší držený záznam ringu. */
+static uint64_t ac_ring_first(const st_AC_RING *r)
+{
+    return (r->next > r->cap) ? r->next - r->cap : 0;
+}
+
+
+/** @brief Uvolní ring (proud se přestane držet). */
+static void ac_ring_free(st_AC_RING *r)
+{
+    g_free(r->data);
+    memset(r, 0, sizeof(*r));
+}
+
+
+/**
+ * @brief Alokuje prázdný ring.
+ * @return false = nedostatek paměti (ring zůstane prázdný).
+ */
+static bool ac_ring_alloc(st_AC_RING *r, size_t rec, uint64_t cap)
+{
+    ac_ring_free(r);
+    if (cap == 0 || rec == 0) return false;
+    r->data = (uint8_t *) g_try_malloc((gsize) (cap * rec));
+    if (!r->data) return false;
+    r->rec = rec;
+    r->cap = cap;
+    r->next = 0;
+    return true;
+}
+
+
+/** @brief Přidá `n` záznamů (při naplnění přepisuje nejstarší). */
+static void ac_ring_push(st_AC_RING *r, const void *recs, uint64_t n)
+{
+    if (!r->data) return;
+    const uint8_t *src = (const uint8_t *) recs;
+    /* Z dávky větší než ring zůstane jen její konec. */
+    if (n > r->cap) {
+        src += (n - r->cap) * r->rec;
+        r->next += n - r->cap;
+        n = r->cap;
+    }
+    while (n > 0) {
+        uint64_t idx = r->next % r->cap;
+        uint64_t k = r->cap - idx;
+        if (k > n) k = n;
+        memcpy(r->data + idx * r->rec, src, (size_t) (k * r->rec));
+        src += k * r->rec;
+        r->next += k;
+        n -= k;
+    }
+}
+
+
+/** @brief Uvolní všechny ringy paměti zachycení. */
+static void ac_mem_free(void)
+{
+    for (unsigned i = 0; i < AUDIO_CAPTURE_STREAM_COUNT; i++) ac_ring_free(&s_ac.ring[i]);
+    s_ac.mem = false;
 }
 
 
@@ -341,7 +455,7 @@ static void ac_finish(const char *reason)
         videorec_audio_free(&s_ac.renderer);
         s_ac.renderer_init = false;
     }
-    ac_write_json();
+    if (s_ac.dir[0]) ac_write_json();   /* zachycení jen do paměti nemá složku */
     if (s_ac.params.quit_after_stop && strcmp(reason, "Frame count reached") == 0) {
         s_quit_now = true;
     }
@@ -377,15 +491,17 @@ static bool ac_start(const st_AUDIO_CAPTURE_PARAMS *p, char *err, size_t err_siz
         ac_error(err, err_size, "An audio capture is already running");
         return false;
     }
-    if (!p->events && !p->psg_writes && !p->reference_wav && !p->sdl_wav) {
-        ac_error(err, err_size, "No output selected (events, psg_writes, reference_wav, sdl_wav)");
+    bool files = p->events || p->psg_writes || p->reference_wav || p->sdl_wav;
+    if (!files && !p->memory) {
+        ac_error(err, err_size, "No output selected (events, psg_writes, reference_wav, sdl_wav, memory)");
         return false;
     }
 
     char dir[AUDIO_CAPTURE_PATH_MAX];
-    if (p->dir[0]) g_strlcpy(dir, p->dir, sizeof(dir));
-    else ac_default_dir(dir, sizeof(dir));
-    if (g_mkdir_with_parents(dir, 0755) != 0 || !g_file_test(dir, G_FILE_TEST_IS_DIR)) {
+    dir[0] = '\0';
+    if (files && p->dir[0]) g_strlcpy(dir, p->dir, sizeof(dir));
+    else if (files) ac_default_dir(dir, sizeof(dir));
+    if (files && (g_mkdir_with_parents(dir, 0755) != 0 || !g_file_test(dir, G_FILE_TEST_IS_DIR))) {
         char msg[AUDIO_CAPTURE_TEXT_MAX];
         g_snprintf(msg, sizeof(msg), "Cannot create directory '%s'", dir);
         ac_error(err, err_size, msg);
@@ -400,16 +516,45 @@ static bool ac_start(const st_AUDIO_CAPTURE_PARAMS *p, char *err, size_t err_siz
                                                      "ticks,time_us,frame,psg,byte,channel,reg,value\n") ) != NULL;
     if (ok && p->reference_wav) ok = ac_wav_open(&ref, dir, "reference.wav");
     if (ok && p->sdl_wav) ok = ac_wav_open(&sdl, dir, "sdl.wav");
+    const char *fail = ok ? NULL : "files";
+
+    /* Paměť: ringy předchozího zachycení se uvolní až tady (start projde). */
+    if (ok) {
+        ac_mem_free();
+        if (p->memory) {
+            uint64_t frames = p->ring_frames ? p->ring_frames
+                : (uint64_t) AUDIO_CAPTURE_MEMORY_MINUTES_DEFAULT * 60u * VIDEO_SCREENS_PER_SEC;
+            uint64_t pcm = p->ring_pcm ? p->ring_pcm
+                : (uint64_t) AUDIO_CAPTURE_PCM_SECONDS_DEFAULT * AUDIO_CAPTURE_WAV_RATE;
+            ok = ac_ring_alloc(&s_ac.ring[AUDIO_CAPTURE_STREAM_LEVELS], sizeof(st_AUDIO_CAPTURE_LEVEL_REC),
+                               p->ring_levels ? p->ring_levels : AUDIO_CAPTURE_RING_LEVELS_DEFAULT)
+                 && ac_ring_alloc(&s_ac.ring[AUDIO_CAPTURE_STREAM_PSG_WRITES], sizeof(st_AUDIO_CAPTURE_PSG_REC),
+                                  p->ring_psg_writes ? p->ring_psg_writes : AUDIO_CAPTURE_RING_PSG_DEFAULT)
+                 && ac_ring_alloc(&s_ac.ring[AUDIO_CAPTURE_STREAM_FRAMES], sizeof(st_AUDIO_CAPTURE_FRAME_REC), frames)
+                 && (!p->pcm_reference || ac_ring_alloc(&s_ac.ring[AUDIO_CAPTURE_STREAM_PCM_REFERENCE], 4u, pcm))
+                 && (!p->pcm_sdl || ac_ring_alloc(&s_ac.ring[AUDIO_CAPTURE_STREAM_PCM_SDL], 4u, pcm));
+            if (!ok) {
+                ac_mem_free();
+                fail = "memory";
+            }
+        }
+    }
     if (!ok) {
         ac_csv_close(&ev);
         ac_csv_close(&ps);
         ac_wav_close(&ref);
         ac_wav_close(&sdl);
         char msg[AUDIO_CAPTURE_TEXT_MAX];
-        g_snprintf(msg, sizeof(msg), "Cannot create the capture files in '%s'", dir);
+        if (strcmp(fail, "memory") == 0) {
+            g_strlcpy(msg, "Not enough memory for the audio capture rings", sizeof(msg));
+        } else {
+            g_snprintf(msg, sizeof(msg), "Cannot create the capture files in '%s'", dir);
+        }
         ac_error(err, err_size, msg);
         return false;
     }
+    s_ac.mem = p->memory;
+    s_ac.segment++;
 
     s_ac.params = *p;
     g_strlcpy(s_ac.dir, dir, sizeof(s_ac.dir));
@@ -419,7 +564,12 @@ static bool ac_start(const st_AUDIO_CAPTURE_PARAMS *p, char *err, size_t err_siz
     s_ac.sdl = sdl;
     s_ac.sdl_blocks = 0;
     s_ac.sdl_writing = false;
-    s_ac.warmup_frames = sdl.fp ? AC_SDL_WARMUP_FRAMES : 0;
+    s_ac.sdl_on = sdl.fp || (p->memory && p->pcm_sdl);
+    s_ac.warmup_frames = s_ac.sdl_on ? AC_SDL_WARMUP_FRAMES : 0;
+    s_ac.ref_total = 0;
+    s_ac.sdl_total = 0;
+    memset(&s_ac.acc, 0, sizeof(s_ac.acc));
+    memset(&s_ac.psg_init, 0, sizeof(s_ac.psg_init));
     s_ac.began = false;
     s_ac.has_last_event = false;
     s_ac.frame = 0;
@@ -439,7 +589,7 @@ static bool ac_start(const st_AUDIO_CAPTURE_PARAMS *p, char *err, size_t err_siz
     s_ac.active = false;
     /* SDL cesta běží už během rozjezdu (bloky se zahazují do ac_begin()). */
     g_atomic_int_set(&g_audio_capture_flags,
-                     AUDIO_CAPTURE_FLAG_ON | (sdl.fp ? AUDIO_CAPTURE_FLAG_SDL : 0));
+                     AUDIO_CAPTURE_FLAG_ON | (s_ac.sdl_on ? AUDIO_CAPTURE_FLAG_SDL : 0));
     return true;
 }
 
@@ -462,12 +612,30 @@ static void ac_get_status(st_AUDIO_CAPTURE_STATUS *out)
     out->frames = s_ac.frame;
     out->events = s_ac.n_events;
     out->psg_writes = s_ac.n_psg;
-    out->reference_samples = s_ac.ref.samples;
+    out->reference_samples = s_ac.ref_total;
     out->sdl_blocks = s_ac.sdl_blocks;
-    out->sdl_samples = s_ac.sdl.samples;
+    out->sdl_samples = s_ac.sdl_total;
     g_strlcpy(out->dir, s_ac.dir, sizeof(out->dir));
     g_strlcpy(out->stop_reason, s_ac.stop_reason, sizeof(out->stop_reason));
     g_strlcpy(out->last_error, s_ac.last_error, sizeof(out->last_error));
+    out->segment = s_ac.segment;
+    out->began = s_ac.began;
+    out->origin_ticks = s_ac.began ? s_ac.origin : 0;
+    out->channels = AUDIO_SRC_CHANNELS_COUNT;
+#if HAVE_PSG == 2
+    out->stereo = g_psg_module.stereo;
+#endif
+    out->memory = s_ac.mem;
+    for (unsigned i = 0; i < AUDIO_CAPTURE_STREAM_COUNT; i++) {
+        const st_AC_RING *r = &s_ac.ring[i];
+        st_AUDIO_CAPTURE_STREAM_INFO *si = &out->streams[i];
+        si->present = (r->data != NULL);
+        si->record_size = r->rec;
+        si->capacity = r->cap;
+        si->first_seq = ac_ring_first(r);
+        si->next_seq = r->next;
+        out->memory_bytes += r->cap * r->rec;
+    }
 }
 
 
@@ -481,9 +649,18 @@ static void ac_note_event(uint64_t abs_ticks)
 }
 
 
-/** @brief Zapíše řádek events.csv. */
+/** @brief Zapíše řádek events.csv a záznam do ringu levels. */
 static void ac_write_event(uint64_t rel, unsigned src_id, uint8_t value)
 {
+    if (s_ac.mem) {
+        st_AUDIO_CAPTURE_LEVEL_REC r;
+        memset(&r, 0, sizeof(r));
+        r.t = s_ac.origin + rel;
+        r.frame = (uint32_t) s_ac.frame;
+        r.src = (uint8_t) src_id;
+        r.level = (uint8_t) (value & 0x0F);
+        ac_ring_push(&s_ac.ring[AUDIO_CAPTURE_STREAM_LEVELS], &r, 1);
+    }
     if (!s_ac.events) return;
     char t[32];
     ac_time_us(rel, t, sizeof(t));
@@ -503,7 +680,20 @@ static void ac_on_change(unsigned src_id, uint8_t value, uint64_t ticks)
         return;
     }
     ac_write_event(ticks - s_ac.origin, src_id, value);
-    if (s_ac.ref.fp && src_id < AUDIO_SRC_CHANNELS_COUNT) {
+    if (s_ac.mem && src_id < AUDIO_SRC_CHANNELS_COUNT) {
+        st_AC_FRAME_ACC *a = &s_ac.acc;
+        if (ticks > a->last_t[src_id]) {
+            uint64_t dt = ticks - a->last_t[src_id];
+            uint64_t lv = a->level[src_id];
+            if (lv) a->on[src_id] += dt;
+            a->energy[src_id] += lv * lv * dt;
+            a->last_t[src_id] = ticks;
+        }
+        a->level[src_id] = (uint8_t) (value & 0x0F);
+        a->edges[src_id]++;
+        if (a->level[src_id] > a->max_level[src_id]) a->max_level[src_id] = a->level[src_id];
+    }
+    if ((s_ac.ref.fp || s_ac.mem) && src_id < AUDIO_SRC_CHANNELS_COUNT) {
         if (videorec_audio_event(&s_ac.renderer, src_id, value, ticks) != 0) {
             g_strlcpy(s_ac.last_error, "Reference renderer: out of memory", sizeof(s_ac.last_error));
         }
@@ -517,7 +707,7 @@ static void ac_on_psg_write(uint64_t ticks, unsigned mask, uint8_t value)
 #if HAVE_PSG == 0
     (void) ticks; (void) mask; (void) value;
 #else
-    if (!s_ac.active || !s_ac.psg) return;
+    if (!s_ac.active || (!s_ac.psg && !s_ac.mem)) return;
     if (ticks < s_ac.origin) {
         ac_finish("Emulation timeline restarted (reset or snapshot load)");
         return;
@@ -527,30 +717,45 @@ static void ac_on_psg_write(uint64_t ticks, unsigned mask, uint8_t value)
     const st_PSG *psg = &g_psg_module.psg[(mask & 0x01) ? 0 : 1];
     unsigned cs = psg->latch_cs;
     const st_PSG_CHANNEL *ch = &psg->channel[cs];
-    const char *reg;
+    static const char *const reg_names[4] = { "tone_lo", "tone", "volume", "noise" };
+    en_AUDIO_CAPTURE_PSG_REG reg;
     unsigned val;
     if (psg->latch_attn) {
-        reg = "volume";
+        reg = AUDIO_CAPTURE_PSG_REG_VOLUME;
         val = (unsigned) ch->attn;
     } else if (ch->type == PSG_CHTYPE_TONE) {
         if (value & 0x80) {
             /* Latch bajt tónu nastaví jen spodní 4 bity, dělič se změní až datovým bajtem. */
-            reg = "tone_lo";
+            reg = AUDIO_CAPTURE_PSG_REG_TONE_LO;
             val = ch->tone.latch_divider;
         } else {
-            reg = "tone";
+            reg = AUDIO_CAPTURE_PSG_REG_TONE;
             val = ch->tone.divider;
         }
     } else {
-        reg = "noise";
+        reg = AUDIO_CAPTURE_PSG_REG_NOISE;
         val = ((unsigned) ch->noise.type << 2) | (unsigned) ch->noise.div_type;
     }
     uint64_t rel = ticks - s_ac.origin;
-    char t[32];
-    ac_time_us(rel, t, sizeof(t));
-    fprintf(s_ac.psg, "%llu,%s,%llu,%u,%02X,%u,%s,%u\n", (unsigned long long) rel, t,
-            (unsigned long long) s_ac.frame, mask, (unsigned) value, cs, reg, val);
-    s_ac.n_psg++;
+    if (s_ac.mem) {
+        st_AUDIO_CAPTURE_PSG_REC r;
+        memset(&r, 0, sizeof(r));
+        r.t = ticks;
+        r.frame = (uint32_t) s_ac.frame;
+        r.value = (uint16_t) val;
+        r.psg = (uint8_t) mask;
+        r.byte = value;
+        r.channel = (uint8_t) cs;
+        r.reg = (uint8_t) reg;
+        ac_ring_push(&s_ac.ring[AUDIO_CAPTURE_STREAM_PSG_WRITES], &r, 1);
+    }
+    if (s_ac.psg) {
+        char t[32];
+        ac_time_us(rel, t, sizeof(t));
+        fprintf(s_ac.psg, "%llu,%s,%llu,%u,%02X,%u,%s,%u\n", (unsigned long long) rel, t,
+                (unsigned long long) s_ac.frame, mask, (unsigned) value, cs, reg_names[reg], val);
+        s_ac.n_psg++;
+    }
     ac_note_event(ticks);
 #endif
 }
@@ -571,8 +776,26 @@ static void ac_begin(uint64_t horizon)
         values[i] = (uint8_t) (g_audio.log ? (g_audio.log->src[i]->last_value & 0x0F) : 0);
         /* Výchozí úrovně všech kanálů, aby byl events.csv sám o sobě úplný. */
         ac_write_event(0, i, values[i]);
+        if (i < AUDIO_CAPTURE_MAX_CHANNELS) {
+            s_ac.acc.level[i] = values[i];
+            s_ac.acc.max_level[i] = values[i];
+            s_ac.acc.last_t[i] = horizon;
+        }
     }
-    if (s_ac.ref.fp) {
+#if HAVE_PSG
+    /* Stav PSG na začátku (detektor not v souhrnu potřebuje dělič a útlum
+     * nastavené před začátkem zachycení). */
+    s_ac.psg_init.valid = true;
+    for (unsigned c = 0; c < 2 && c < PSG_MAX_COUNT; c++) {
+        for (unsigned k = 0; k < 4 && k < PSG_CHANNELS_COUNT; k++) {
+            const st_PSG_CHANNEL *pc = &g_psg_module.psg[c].channel[k];
+            s_ac.psg_init.divider[c][k] = (uint16_t) pc->tone.divider;
+            s_ac.psg_init.attn[c][k] = (uint8_t) pc->attn;
+            s_ac.psg_init.noise[c][k] = (pc->type == PSG_CHTYPE_NOISE);
+        }
+    }
+#endif
+    if (s_ac.ref.fp || s_ac.mem) {
         float level[VIDEOREC_AUDIO_MAX_CHANNELS][VIDEOREC_AUDIO_LEVELS];
         memset(level, 0, sizeof(level));
         iface_audio_build_videorec_levels(level, VIDEOREC_AUDIO_MAX_CHANNELS);
@@ -591,7 +814,99 @@ static void ac_begin(uint64_t horizon)
             }
         }
     }
-    s_ac.sdl_writing = (s_ac.sdl.fp != NULL);
+    s_ac.sdl_writing = s_ac.sdl_on;
+}
+
+
+/** @brief Přičte vyrenderované vzorky reference do součtů snímku. */
+static void ac_acc_ref(const int16_t *lr, size_t n)
+{
+    st_AC_FRAME_ACC *a = &s_ac.acc;
+    for (size_t i = 0; i < n; i++) {
+        for (unsigned c = 0; c < 2; c++) {
+            int v = lr[i * 2u + c];
+            a->ref_sq[c] += (double) v * (double) v;
+            uint32_t m = (uint32_t) (v < 0 ? -v : v);
+            if (m > a->ref_peak[c]) a->ref_peak[c] = m;
+        }
+    }
+    a->ref_n += (uint32_t) n;
+}
+
+
+/** @brief RMS ze součtu čtverců, omezené na 0..32767. */
+static uint16_t ac_rms16(double sq, uint32_t n)
+{
+    if (n == 0) return 0;
+    double r = sqrt(sq / (double) n);
+    return (uint16_t) ((r > 32767.0) ? 32767.0 : r + 0.5);
+}
+
+
+/** @brief Takty jako uint32 se saturací. */
+static uint32_t ac_sat32(uint64_t v)
+{
+    return (v > 0xFFFFFFFFu) ? 0xFFFFFFFFu : (uint32_t) v;
+}
+
+
+/**
+ * @brief Uzavře souhrn snímku [frame_start, horizon) do ringu frames a vynuluje součty snímku.
+ * @pre s_ac.mem, s_ac.frame je číslo uzavíraného snímku.
+ */
+static void ac_push_frame(uint64_t frame_start, uint64_t horizon)
+{
+    st_AC_FRAME_ACC *a = &s_ac.acc;
+    st_AUDIO_CAPTURE_FRAME_REC r;
+    memset(&r, 0, sizeof(r));
+    r.t = frame_start;
+    r.frame = (uint32_t) s_ac.frame;
+    r.len_ticks = ac_sat32(horizon - frame_start);
+    for (unsigned i = 0; i < AUDIO_SRC_CHANNELS_COUNT && i < AUDIO_CAPTURE_MAX_CHANNELS; i++) {
+        /* Dopočítat součty do horizontu; změna doručená za horizontem už je
+         * v nich a patří tomuto snímku (viz st_AUDIO_CAPTURE_FRAME_REC). */
+        if (horizon > a->last_t[i]) {
+            uint64_t dt = horizon - a->last_t[i];
+            uint64_t lv = a->level[i];
+            if (lv) a->on[i] += dt;
+            a->energy[i] += lv * lv * dt;
+            a->last_t[i] = horizon;
+        }
+        r.ch[i].edges = a->edges[i];
+        r.ch[i].on_ticks = ac_sat32(a->on[i] - a->on_snap[i]);
+        r.ch[i].energy = ac_sat32(a->energy[i] - a->energy_snap[i]);
+        r.ch[i].max_level = a->max_level[i];
+        r.ch[i].end_level = a->level[i];
+        a->on_snap[i] = a->on[i];
+        a->energy_snap[i] = a->energy[i];
+        a->edges[i] = 0;
+        a->max_level[i] = a->level[i];
+    }
+    if (s_ac.renderer_init) {
+        r.flags |= AUDIO_CAPTURE_FRAME_FLAG_REF;
+        for (unsigned c = 0; c < 2; c++) {
+            r.ref_rms[c] = ac_rms16(a->ref_sq[c], a->ref_n);
+            r.ref_peak[c] = (uint16_t) a->ref_peak[c];
+        }
+        r.ref_samples = a->ref_n;
+    }
+    if (s_ac.sdl_on) {
+        r.flags |= AUDIO_CAPTURE_FRAME_FLAG_SDL;
+        for (unsigned c = 0; c < 2; c++) {
+            r.sdl_rms[c] = ac_rms16(a->sdl_sq[c], a->sdl_n);
+            r.sdl_peak[c] = (uint16_t) a->sdl_peak[c];
+        }
+        r.sdl_samples = a->sdl_n;
+        r.sdl_blocks = (uint16_t) ((a->sdl_blocks > 0xFFFFu) ? 0xFFFFu : a->sdl_blocks);
+    }
+    memset(a->ref_sq, 0, sizeof(a->ref_sq));
+    memset(a->ref_peak, 0, sizeof(a->ref_peak));
+    a->ref_n = 0;
+    memset(a->sdl_sq, 0, sizeof(a->sdl_sq));
+    memset(a->sdl_peak, 0, sizeof(a->sdl_peak));
+    a->sdl_n = 0;
+    a->sdl_blocks = 0;
+    ac_ring_push(&s_ac.ring[AUDIO_CAPTURE_STREAM_FRAMES], &r, 1);
 }
 
 
@@ -611,9 +926,10 @@ static void ac_on_frame(uint64_t horizon_ticks)
         ac_finish("Emulation timeline restarted (reset or snapshot load)");
         return;
     }
+    uint64_t frame_start = s_ac.last_horizon;
     s_ac.last_horizon = horizon_ticks;
 
-    if (s_ac.ref.fp) {
+    if (s_ac.renderer_init) {
 #if HAVE_PSG == 2
         videorec_audio_set_stereo(&s_ac.renderer, g_psg_module.stereo);
 #endif
@@ -622,8 +938,14 @@ static void ac_on_frame(uint64_t horizon_ticks)
         do {
             n = videorec_audio_render(&s_ac.renderer, horizon_ticks, buf, AC_RENDER_CHUNK);
             ac_wav_write(&s_ac.ref, buf, n);
+            s_ac.ref_total += n;
+            if (s_ac.mem) {
+                ac_ring_push(&s_ac.ring[AUDIO_CAPTURE_STREAM_PCM_REFERENCE], buf, n);
+                ac_acc_ref(buf, n);
+            }
         } while (n == AC_RENDER_CHUNK);
     }
+    if (s_ac.mem) ac_push_frame(frame_start, horizon_ticks);
 
     s_ac.frame++;
     uint64_t limit = s_ac.params.frames ? s_ac.params.frames : AUDIO_CAPTURE_MAX_FRAMES_SAFETY;
@@ -642,7 +964,8 @@ void audio_capture_sdl_output(const float *stereo, size_t frames)
     if (!audio_capture_wants_sdl() || !stereo || frames == 0) return;
     int16_t buf[AC_RENDER_CHUNK * 2u];
     g_mutex_lock(&s_mutex);
-    if (s_ac.sdl.fp && s_ac.sdl_writing) {
+    if (s_ac.sdl_on && s_ac.sdl_writing) {
+        st_AC_FRAME_ACC *a = &s_ac.acc;
         size_t done = 0;
         while (done < frames) {
             size_t n = frames - done;
@@ -652,11 +975,23 @@ void audio_capture_sdl_output(const float *stereo, size_t frames)
                 if (v > 32767.0f) v = 32767.0f;
                 if (v < -32768.0f) v = -32768.0f;
                 buf[i] = (int16_t) v;
+                if (s_ac.mem) {
+                    int x = buf[i];
+                    a->sdl_sq[i & 1u] += (double) x * (double) x;
+                    uint32_t m = (uint32_t) (x < 0 ? -x : x);
+                    if (m > a->sdl_peak[i & 1u]) a->sdl_peak[i & 1u] = m;
+                }
             }
             ac_wav_write(&s_ac.sdl, buf, n);
+            if (s_ac.mem) ac_ring_push(&s_ac.ring[AUDIO_CAPTURE_STREAM_PCM_SDL], buf, n);
             done += n;
         }
+        s_ac.sdl_total += frames;
         s_ac.sdl_blocks++;
+        if (s_ac.mem) {
+            a->sdl_n += (uint32_t) frames;
+            a->sdl_blocks++;
+        }
     }
     g_mutex_unlock(&s_mutex);
 }
@@ -728,6 +1063,69 @@ void audio_capture_exit(void)
     g_mutex_lock(&s_mutex);
     if (s_ac.pending || s_ac.active) ac_finish("Emulator exit");
     s_quit_now = false;
+    ac_mem_free();
+    g_mutex_unlock(&s_mutex);
+}
+
+
+bool audio_capture_stream_copy(en_AUDIO_CAPTURE_STREAM stream, uint64_t from_seq,
+                               uint64_t count, size_t max_bytes,
+                               st_AUDIO_CAPTURE_STREAM_COPY *out)
+{
+    memset(out, 0, sizeof(*out));
+    if ((unsigned) stream >= AUDIO_CAPTURE_STREAM_COUNT) return true;
+    bool ok = true;
+    g_mutex_lock(&s_mutex);
+    out->segment = s_ac.segment;
+    out->live = s_ac.pending || s_ac.active;
+    out->origin_ticks = s_ac.began ? s_ac.origin : 0;
+    const st_AC_RING *r = &s_ac.ring[stream];
+    if (r->data) {
+        out->present = true;
+        out->record_size = r->rec;
+        out->first_seq = ac_ring_first(r);
+        out->next_seq = r->next;
+        uint64_t lo = (from_seq > out->first_seq) ? from_seq : out->first_seq;
+        uint64_t hi = r->next;
+        if (lo < hi && count < hi - lo) hi = lo + count;
+        uint64_t max_rec = max_bytes / r->rec;
+        if (lo < hi && hi - lo > max_rec) hi = lo + max_rec;
+        if (lo < hi) {
+            out->data = (uint8_t *) g_try_malloc((gsize) ((hi - lo) * r->rec));
+            if (!out->data) {
+                ok = false;
+            } else {
+                uint8_t *dst = out->data;
+                for (uint64_t seq = lo; seq < hi; ) {
+                    uint64_t idx = seq % r->cap;
+                    uint64_t k = r->cap - idx;
+                    if (k > hi - seq) k = hi - seq;
+                    memcpy(dst, r->data + idx * r->rec, (size_t) (k * r->rec));
+                    dst += k * r->rec;
+                    seq += k;
+                }
+                out->data_seq = lo;
+                out->data_count = hi - lo;
+            }
+        }
+    }
+    g_mutex_unlock(&s_mutex);
+    return ok;
+}
+
+
+void audio_capture_stream_copy_clear(st_AUDIO_CAPTURE_STREAM_COPY *c)
+{
+    g_free(c->data);
+    memset(c, 0, sizeof(*c));
+}
+
+
+void audio_capture_get_psg_initial(st_AUDIO_CAPTURE_PSG_INITIAL *out)
+{
+    g_mutex_lock(&s_mutex);
+    *out = s_ac.psg_init;
+    if (!s_ac.began) out->valid = false;
     g_mutex_unlock(&s_mutex);
 }
 

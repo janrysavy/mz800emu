@@ -52,7 +52,6 @@ extern "C"
         unsigned regRF_PLANE;
         unsigned regRF_SEARCH;
         unsigned regWFRF_VBANK;
-        unsigned mz700_wr_latch_is_used;
     } st_VRAMCTRL;
 
     extern st_VRAMCTRL g_vramctrl;
@@ -65,6 +64,18 @@ extern "C"
     extern uint8_t vramctrl_mz800_memop_read_byte(uint16_t addr);
     extern void vramctrl_mz800_memop_write_byte(uint16_t addr, uint8_t value);
     extern void vramctrl_mz800_memop_write_byte_sync(uint16_t addr, uint8_t value);
+
+    /**
+     * @brief Kam by zápis do VRAM v režimu MZ-800 zapsal (bez zápisu a bez vedlejších efektů).
+     *
+     * Stejný výpočet jako vramctrl_mz800_memop_write_byte() (640 režim,
+     * hwscroll, WF_MODE, WF_PLANE, VBANK); pro záznam zápisů debuggeru.
+     *
+     * @param addr   Mz800 VRAM offset (0x0000 - 0x3FFF, = CPU adresa & 0x3FFF).
+     * @param out_phy Výstup: fyzická adresa v rovině (0x0000 - 0x1FFF).
+     * @param out_we  Výstup: maska rovin bit 0 = I, 1 = II, 2 = III, 3 = IV.
+     */
+    extern void vramctrl_mz800_write_target(uint16_t addr, unsigned *out_phy, unsigned *out_we);
 
 #include "mz800_gdg.h"
 #include "mz800_framebuffer.h"
@@ -106,62 +117,38 @@ extern "C"
 #define vramctrl_mz700_memop_write_byte(addr, value) vramctrl_mz700_memop_write_byte_internal(addr, value)
 
     /**
-     * One-shot WAIT logika pro MZ-700 mode VRAM/CG-RAM pristup.
+     * @brief Čtení z VRAM/CG-RAM v režimu MZ-700 se synchronizací a WAIT.
      *
-     * Pravidla z gate-level HDL simulace GDG (viz mz800-knowledge
-     * public/reference/agent/hw/08-video-mz700-mode.md):
+     * Synchronizuje čas GDG na konec M-cyklu a přidá WAIT podle modelu
+     * mz800_vramwait.h s rozvrhem slotů MZ-700: ve viditelné části řádku
+     * čeká čtení do jejího konce, v zatemnění 2-4 TW.
      *
-     *   1. SIGNAL_GDG_HBLNK = 1 (visible canvas, vcetne 5 px pre-canvas zone):
-     *      - Prvni R/W pristup na scanline projde bez WAIT (= "first free").
-     *      - Kazdy dalsi R/W pristup na stejnem scanline dostane WAIT az do
-     *        konce visible (~3 px pred koncem canvas, kdy fyrne HBLN_START
-     *        event a deaktivuje SIGNAL_GDG_HBLNK).
-     *      - Latch je sdileny pro READ i WRITE.
-     *   2. SIGNAL_GDG_HBLNK = 0 (border / blanking): zadny WAIT bez ohledu
-     *      na latch (= raster-chasing free okno).
-     *   3. Latch reset na visible -> blank prechodu (= MZEVENT_GDG_HBLN_START
-     *      event handler resetuje g_vramctrl.mz700_wr_latch_is_used na 0).
-     *
-     * Predpoklad: pred volanim doslo k mzarch_main_insideop_mreq() (sync
-     * total_elapsed.ticks tak, ze SIGNAL_GDG_HBLNK odpovida current beam pos).
-     */
-    static inline void vramctrl_mz700_memop_oneshot_wait(void)
-    {
-        if (!SIGNAL_GDG_HBLNK) {
-            return;     /* mimo visible - WAIT nikdy */
-        }
-        if (g_vramctrl.mz700_wr_latch_is_used) {
-            /* dalsi pristup ve stejne visible periode - WAIT do konce visible */
-            mzarch_main_insideop_mreq_mz700_vramctrl();
-            return;
-        }
-        /* prvni pristup v aktualni visible periode - oznac latch, NO WAIT */
-        g_vramctrl.mz700_wr_latch_is_used = 1;
-    }
-
-    /**
-     * Cteni z MZ-700 VRAM se synchronizaci a HDL-spravnym WAIT.
-     *
-     * @param addr
-     * @return
+     * @param addr Offset ve VRAM/CG-RAM (adresa bez bitů 0E000h).
+     * @return Přečtený bajt.
+     * @pre Volá se z emu vlákna uvnitř instrukce (callback čtení paměti).
      */
     static inline uint8_t vramctrl_mz700_memop_read_byte_sync(uint16_t addr)
     {
         mzarch_main_insideop_mreq();
-        vramctrl_mz700_memop_oneshot_wait();
+        mzarch_main_insideop_mreq_mz800_vramctrl_read();
         return vramctrl_mz700_memop_read_byte(addr);
     }
 
     /**
-     * Zapis do MZ-700 VRAM se synchronizaci a HDL-spravnym WAIT.
+     * @brief Zápis do VRAM/CG-RAM v režimu MZ-700 se synchronizací a WAIT.
      *
-     * @param addr
-     * @param value
+     * Zápis jde přes jednobajtový buffer GDG: čeká jen, dokud se nezapíše
+     * předchozí zápis (ve viditelné části řádku tedy druhý zápis čeká
+     * do jejího konce). Model mz800_vramwait.h, rozvrh slotů MZ-700.
+     *
+     * @param addr Offset ve VRAM/CG-RAM (adresa bez bitů 0E000h).
+     * @param value Zapisovaný bajt.
+     * @pre Volá se z emu vlákna uvnitř instrukce (callback zápisu paměti).
      */
 #define vramctrl_mz700_memop_write_byte_sync(addr, value)           \
     {                                                               \
         mzarch_main_insideop_mreq();                                \
-        vramctrl_mz700_memop_oneshot_wait();                        \
+        mzarch_main_insideop_mreq_mz800_vramctrl_write();           \
         vramctrl_mz700_memop_write_byte_internal(addr, value);      \
     }
 

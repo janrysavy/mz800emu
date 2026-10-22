@@ -351,14 +351,24 @@ void port_write_cb(z80_t *cpu, uint16_t addr, uint8_t value, void *user_data)
 
     switch (port_lsb)
     {
+    /* Porty 01h a 02h jsou past CMT hacku: patch ROM jimi žádá hlavičku
+     * a tělo MZF. Na skutečném stroji tu žádné zařízení není (báze
+     * hw/04-io-ports.md je v mapě portů neuvádí), proto past platí jen se
+     * zapnutým patchem; jinak je zápis nepřipojený port. */
     case 0x01:
-        cmthack_load_file();
-        TRACELOG_IORQ_MARK_HANDLED();
+        if (CMTHACK_TEST_IS_INSTALLED)
+        {
+            cmthack_load_file();
+            TRACELOG_IORQ_MARK_HANDLED();
+        };
         break;
 
     case 0x02:
-        cmthack_read_mzf_body();
-        TRACELOG_IORQ_MARK_HANDLED();
+        if (CMTHACK_TEST_IS_INSTALLED)
+        {
+            cmthack_read_mzf_body();
+            TRACELOG_IORQ_MARK_HANDLED();
+        };
         break;
 
     case 0x50:

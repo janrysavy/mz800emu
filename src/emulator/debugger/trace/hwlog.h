@@ -429,6 +429,18 @@ void hwlog_record_2byte ( en_HWLOG_CHIP chip, uint8_t sub, uint8_t a, uint8_t b 
  */
 void hwlog_record_gdg_video_hs_edge ( uint8_t sub );
 
+/**
+ * @brief Writer kanálu hwlog pro čtení proudu záznamů (trace_read).
+ *
+ * Vrací writer i po stopu (popis posledního uzavřeného segmentu), viz
+ * tlog_writer_read_snapshot() a devdoc/trace/stream-read.md.
+ *
+ * @return Ukazatel na statický writer modulu (nikdy NULL).
+ * @pre Snímek writeru pořizovat jen z emu vlákna; tlog_writer_segment()
+ *      z libovolného vlákna.
+ */
+const st_TLOG_WRITER *hwlog_get_writer ( void );
+
 #ifdef __cplusplus
 }
 #endif

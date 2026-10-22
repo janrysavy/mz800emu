@@ -40,6 +40,28 @@
 
 st_JOY g_joy;
 
+
+/** @brief Výchozí živý zdroj: SDL přes iface_joy (bez joysticku 0FFh). */
+static uint8_t joy_host_scan_sdl ( en_JOY_DEVID joy_devid ) {
+    return iface_joy_scan ( joy_devid );
+}
+
+
+uint8_t joy_host_scan ( en_JOY_DEVID joy_devid ) {
+    return g_joy.host_scan ( joy_devid );
+}
+
+
+/** @brief Zdroj portu typu JOYSTICK při joy_host_latch(true): stav naplněný replay. */
+static uint8_t joy_host_read_latched ( en_JOY_DEVID joy_devid ) {
+    return g_joy.dev[joy_devid].state;
+}
+
+
+void joy_host_latch ( bool latched ) {
+    g_joy.host_read = latched ? joy_host_read_latched : joy_host_scan;
+}
+
 static void joy_propagatecfg_type ( void *e, void *data ) {
     st_JOY_DEV *joydev = (st_JOY_DEV *) data;
     joydev->type = cfgelement_get_keyword_value ( (CFGELM *) e );
@@ -70,6 +92,8 @@ static void joy_type_config ( CFGMOD *cmod, en_JOY_DEVID joy_devid ) {
 void joy_init ( void ) {
     CFGMOD *cmod = cfgroot_register_new_module ( g_cfgmain, "JOY" );
     en_JOY_DEVID joy_devid;
+    g_joy.host_scan = joy_host_scan_sdl;
+    g_joy.host_read = joy_host_scan;
     for ( joy_devid = 0; joy_devid < JOY_DEVID_COUNT; joy_devid++ ) {
         g_joy.dev[joy_devid].id = joy_devid;
         joy_type_config ( cmod, joy_devid );
@@ -84,7 +108,7 @@ void joy_init ( void ) {
 uint8_t joy_read_byte ( en_JOY_DEVID joy_devid ) {
     uint8_t physical = 0xff;
     if ( g_joy.dev[joy_devid].type == JOY_TYPE_JOYSTICK ) {
-        physical = iface_joy_scan ( joy_devid );
+        physical = g_joy.host_read ( joy_devid );
     } else if ( g_joy.dev[joy_devid].type != JOY_TYPE_NONE ) {
         physical = g_joy.dev[joy_devid].state;
     }

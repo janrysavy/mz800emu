@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-13 21:57+0200\n"
+"POT-Creation-Date: 2026-10-21 07:25+0200\n"
 "PO-Revision-Date: 2026-03-11 21:00+0100\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -63,62 +63,62 @@ msgstr ""
 "Adresa = 0x%04x\n"
 "Inštrukcia = '%s'\n"
 
-#: src/emulator/emulator.c:398
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:421
+#: src/emulator/emulator.c:451
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:425
 #: src/ui-imgui/videorec/videorec_menu.cpp:140
 msgid "PAUSED"
 msgstr "POZASTAVENÉ"
 
-#: src/emulator/emulator.c:401
+#: src/emulator/emulator.c:454
 msgid "Max speed"
 msgstr "Maximálna rýchlosť"
 
-#: src/emulator/emulator.c:404
+#: src/emulator/emulator.c:457
 msgid "Custom speed"
 msgstr "Vlastná rýchlosť"
 
-#: src/emulator/emulator.c:406
+#: src/emulator/emulator.c:459
 msgid "Normal speed"
 msgstr "Normálna rýchlosť"
 
-#: src/emulator/hw-generic/cmt/cmt.c:582
+#: src/emulator/hw-generic/cmt/cmt.c:592
 msgid "Create a new WAV file"
 msgstr "Vytvoriť nový WAV súbor"
 
-#: src/emulator/hw-generic/cmt/cmt.c:582
+#: src/emulator/hw-generic/cmt/cmt.c:592
 msgid "newfile.wav"
 msgstr "newfile.wav"
 
-#: src/emulator/hw-generic/cmt/cmt.c:1043
+#: src/emulator/hw-generic/cmt/cmt.c:1139
 msgid "All Supported CMT Files"
 msgstr "Všetky podporované CMT súbory"
 
-#: src/emulator/hw-generic/cmt/cmt.c:1044
+#: src/emulator/hw-generic/cmt/cmt.c:1140
 msgid "Tape Files"
 msgstr "Súbory pások"
 
-#: src/emulator/hw-generic/cmt/cmt.c:1121
+#: src/emulator/hw-generic/cmt/cmt.c:1217
 msgid "Select CMT file to open"
 msgstr "Vyberte CMT súbor na otvorenie"
 
-#: src/emulator/hw-generic/cmt/cmthack.c:206
+#: src/emulator/hw-generic/cmt/cmthack.c:240
 msgid "Select a MZF File"
 msgstr "Vyberte MZF súbor"
 
-#: src/emulator/hw-generic/fdc/fdc.c:1140
+#: src/emulator/hw-generic/fdc/fdc.c:1220
 #, c-format
 msgid "Select DSK image file for FDC%u drive FD%d"
 msgstr "Vyberte súbor obrazu DSK pre FDC%u mechaniku FD%d"
 
-#: src/emulator/hw-generic/qdisk/qdisk.c:816
+#: src/emulator/hw-generic/qdisk/qdisk.c:817
 msgid "Select existing .MZQ file or create new QD image"
 msgstr "Vyberte existujúci .MZQ súbor alebo vytvorte nový QD obraz"
 
-#: src/emulator/hw-generic/qdisk/qdisk.c:818
+#: src/emulator/hw-generic/qdisk/qdisk.c:819
 msgid "Select directory to mount as virtual Quick Disk"
 msgstr "Vyberte adresár na pripojenie ako virtuálny Quick Disk"
 
-#: src/emulator/hw-generic/unicard/unicard.c:2299
+#: src/emulator/hw-generic/unicard/unicard.c:2312
 msgid "Select SD root directory for Unicard"
 msgstr "Vyberte koreňový adresár SD pre Unicard"
 
@@ -355,33 +355,33 @@ msgstr "%.1f dB"
 msgid "%.0f dB"
 msgstr "%.0f dB"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:52
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:144
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:66
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:172
 #: src/ui-imgui/videorec/videorec_menu.cpp:422
 #, c-format
 msgid "Cannot open folder: %s"
 msgstr "Nie je možné otvoriť adresár: %s"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:53
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:72
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:119
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:67
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:86
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:141
 msgid "Audio Capture Error"
 msgstr "Chyba zachytenia zvuku"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:71
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:85
 #, c-format
 msgid "Cannot start the audio capture: %s"
 msgstr "Zachytenie zvuku nie je možné spustiť: %s"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:80
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:94
 msgid "Audio Capture"
 msgstr "Zachytenie zvuku"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:83
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:97
 msgid "Record Audio Capture"
 msgstr "Zachytiť zvuk"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:87
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:101
 msgid ""
 "Records what the sound hardware does into a new folder until you stop it:\n"
 "changes of the channel levels, PSG writes, the exact sound (reference.wav)\n"
@@ -391,108 +391,119 @@ msgstr ""
 "zmeny úrovní kanálov, zápisy do PSG, presný zvuk (reference.wav)\n"
 "a zvuk, ktorý počujete (sdl.wav). Na hľadanie chýb zvuku."
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:92
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:178
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:106
+msgid "Audio Capture Control..."
+msgstr "Ovládanie zachytenia zvuku..."
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:110
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:431
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:209
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:658
 #: src/ui-imgui/videorec/videorec_menu.cpp:462
 #: src/ui-imgui/videorec/videorec_remote_window.cpp:317
 msgid "Settings..."
 msgstr "Nastavenia..."
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:95
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:181
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:113
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:429
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:212
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:656
 #: src/ui-imgui/videorec/videorec_menu.cpp:466
 #: src/ui-imgui/videorec/videorec_remote_window.cpp:315
 msgid "Open Output Folder"
 msgstr "Otvoriť výstupný adresár"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:118
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:140
 #, c-format
 msgid "Audio capture stopped after %.1f s: %s"
 msgstr "Zachytenie zvuku skončilo po %.1f s: %s"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:123
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:145
 #, c-format
 msgid "Audio capture ended (%s): %.1f s saved to %s"
 msgstr "Zachytenie zvuku skončilo (%s): %.1f s uložených do %s"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:128
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:150
 #, c-format
 msgid "Audio capture saved: %.1f s to %s"
 msgstr "Zachytenie zvuku uložené: %.1f s do %s"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:143
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:165
 #, c-format
 msgid "AUDIO %.1f s"
 msgstr "ZVUK %.1f s"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:145
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:167
 msgid "AUDIO starting"
 msgstr "ZVUK začína"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:190
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:212
 msgid "Audio Capture Settings"
 msgstr "Nastavenia zachytenia zvuku"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:193
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:215
 msgid "Files to write"
 msgstr "Súbory na zápis"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:194
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:216
 msgid "events.csv - changes of the channel levels"
 msgstr "events.csv - zmeny úrovní kanálov"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:195
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:217
 msgid "psg_writes.csv - PSG writes, decoded"
 msgstr "psg_writes.csv - zápisy do PSG, dekódované"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:196
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:218
 msgid "reference.wav - exact sound in emulated time"
 msgstr "reference.wav - presný zvuk v emulovanom čase"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:197
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:219
 msgid "sdl.wav - sound of the audio output (what you hear)"
 msgstr "sdl.wav - zvuk zvukového výstupu (čo počujete)"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:201
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:371
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:223
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:410
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:407
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:594
 #: src/ui-imgui/videorec/videorec_setup_dialog.cpp:260
 msgid "Output folder"
 msgstr "Výstupný adresár"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:204
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:226
 msgid "(default: audio_captures folder next to the emulator)"
 msgstr "(predvolený: adresár audio_captures vedľa emulátora)"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:214
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:384
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:236
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:420
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:80
 #: src/ui-imgui/videorec/videorec_setup_dialog.cpp:273
 msgid "Select Directory"
 msgstr "Vybrať adresár"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:217
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:239
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:426
 msgid "Each capture creates a new folder in the output folder."
 msgstr "Každé zachytenie vytvorí vo výstupnej zložke novú zložku."
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:218
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:240
 #, c-format
 msgid "Record Audio Capture (%s) starts and stops the capture."
 msgstr "Zachytiť zvuk (%s) spustí a zastaví zachytenie."
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:227
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:249
 #: src/ui-imgui/cmt/ImGuiCmt.cpp:175
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2419
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2421
 #: src/ui-imgui/dsk/dsk_create_window.cpp:104
 #: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:109
 #: src/ui-imgui/joy/joy_setup_window.cpp:564
 #: src/ui-imgui/message/message_window.cpp:90
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:406
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:442
 #: src/ui-imgui/snapshot/snapshot_notification.cpp:95
 #: src/ui-imgui/videorec/videorec_setup_dialog.cpp:338
 msgid "OK"
 msgstr "OK"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:233
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:255
 #: src/ui-imgui/cmt/ImGuiCmt.cpp:187
 #: src/ui-imgui/debugger/membrowser/membrowser_annot_dialog.cpp:148
 #: src/ui-imgui/debugger/membrowser/membrowser_fill_dialog.cpp:264
@@ -505,49 +516,135 @@ msgstr "OK"
 #: src/ui-imgui/memext/memext_save_dialog.cpp:207
 #: src/ui-imgui/ramdisk/pezik_settings_window.cpp:289
 #: src/ui-imgui/rom/rom_settings_window.cpp:323
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:411
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:139
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:447
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:127
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:176
 #: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:93
+#: src/ui-imgui/topmenu/menu_replay.cpp:217
 #: src/ui-imgui/videorec/videorec_setup_dialog.cpp:343
 msgid "Cancel"
 msgstr "Zrušiť"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:51
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:360
+msgid "Audio Capture Control"
+msgstr "Ovládanie zachytenia zvuku"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:376
+#: src/ui-imgui/topmenu/replay_window.cpp:201
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:171
+msgid "State"
+msgstr "Stav"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:379
+msgid "Capturing"
+msgstr "Zachytáva"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:381
+msgid "Starting"
+msgstr "Spúšťa sa"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:383
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:306
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:348
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:391
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:488
+#: src/ui-imgui/topmenu/replay_window.cpp:217
+#: src/ui-imgui/videorec/videorec_menu.cpp:96
+msgid "Off"
+msgstr "Vypnuté"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:388
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:177
+msgid "Time"
+msgstr "Čas"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:388
+msgid "Last length"
+msgstr "Posledná dĺžka"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:389
+msgid "Folder"
+msgstr "Priečinok"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:390
+#, c-format
+msgid "%llu level changes, %llu PSG writes"
+msgstr "%llu zmien úrovní, %llu zápisov PSG"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:392
+msgid "Recorded"
+msgstr "Zapísané"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:395
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:397
+#: src/ui-imgui/topmenu/replay_window.cpp:290
+msgid "Last result"
+msgstr "Posledný výsledok"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:405
+msgid "Files"
+msgstr "Súbory"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:414
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:633
+#: src/ui-imgui/topmenu/replay_window.cpp:307
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:227
+msgid "Controls"
+msgstr "Ovládanie"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:416
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:421
+msgid "Start Audio Capture"
+msgstr "Spustiť zachytenie zvuku"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:417
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:421
+msgid "Stop Audio Capture"
+msgstr "Ukončiť zachytenie zvuku"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:434
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:661
+#: src/ui-imgui/topmenu/replay_window.cpp:361
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:320
+#, c-format
+msgid "Show or hide this window: %s"
+msgstr "Zobraziť/skryť toto okno: %s"
+
+#: src/ui-imgui/autotype/autotype_window.cpp:53
 msgid "Invalid character at position"
 msgstr "Neplatný znak na pozícii"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:163
+#: src/ui-imgui/autotype/autotype_window.cpp:166
 #: src/ui-imgui/topmenu/interface/menu_keyjoy.cpp:29
 msgid "Autotype Buffer"
 msgstr "Autotype buffer"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:185
+#: src/ui-imgui/autotype/autotype_window.cpp:188
 msgid "Autotype!"
 msgstr "Autotype!"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:186
+#: src/ui-imgui/autotype/autotype_window.cpp:189
 msgid "Stop!"
 msgstr "Stop!"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:201
+#: src/ui-imgui/autotype/autotype_window.cpp:204
 msgid "Text buffer is empty"
 msgstr "Textový buffer je prázdny"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:215
+#: src/ui-imgui/autotype/autotype_window.cpp:218
 msgid "Key down"
 msgstr "Stlačenie klávesu"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:234
+#: src/ui-imgui/autotype/autotype_window.cpp:237
 msgid "Key up"
 msgstr "Uvoľnenie klávesu"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:285
+#: src/ui-imgui/autotype/autotype_window.cpp:288
 msgid "Characters"
 msgstr "Znaky"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:295
+#: src/ui-imgui/autotype/autotype_window.cpp:298
 msgid "Typed"
 msgstr "Napísané"
 
@@ -602,20 +699,21 @@ msgstr "Uložiť ako"
 msgid "Save MZF file as"
 msgstr "Uložiť MZF súbor ako"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:245
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:198
 msgid "Tape Filelist"
 msgstr "Zoznam súborov na páske"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:281
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:305 src/ui-imgui/cmt/cmt_window.cpp:212
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:236
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:260 src/ui-imgui/cmt/cmt_window.cpp:213
 #: src/ui-imgui/debugger/sections/dbg_stack_panel.cpp:2677
 #: src/ui-imgui/debugger/vars/vars_window.cpp:1502
 #: src/ui-imgui/debugger/watch/watch_window.cpp:1696
 msgid "Name"
 msgstr "Názov"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:282
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:308 src/ui-imgui/cmt/cmt_window.cpp:211
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:237
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:263 src/ui-imgui/cmt/cmt_window.cpp:212
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:576
 #: src/ui-imgui/debugger/watch/watch_window.cpp:1700
 #: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:132
 #: src/ui-imgui/joy/joy_setup_window.cpp:239
@@ -624,8 +722,8 @@ msgstr "Názov"
 msgid "Type"
 msgstr "Typ"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:283
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:311
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:238
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:266
 #: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:133
 #: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:209
 #: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:211
@@ -634,129 +732,146 @@ msgstr "Typ"
 msgid "Size"
 msgstr "Veľkosť"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:284
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:314
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:239
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:269
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:416
 msgid "Start"
 msgstr "Start"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:285
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:317
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:240
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:272
 msgid "Exec"
 msgstr "Exec"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:286
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:320 src/ui-imgui/cmt/cmt_window.cpp:213
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:241
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:275 src/ui-imgui/cmt/cmt_window.cpp:214
 #: src/ui-imgui/topmenu/menu_speed.cpp:27
 msgid "Speed"
 msgstr "Rýchlosť"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:287
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:323
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:242
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:278
 msgid "Length"
 msgstr "Dĺžka"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:64
+#: src/ui-imgui/cmt/cmt_window.cpp:65
 msgid "Playing time:"
 msgstr "Doba prehrávania:"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:68
+#: src/ui-imgui/cmt/cmt_window.cpp:69
 msgid "Remaining time:"
 msgstr "Zostávajúci čas:"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:80 src/ui-imgui/cmt/cmt_window.cpp:826
+#: src/ui-imgui/cmt/cmt_window.cpp:81 src/ui-imgui/cmt/cmt_window.cpp:789
 msgid "CMT Hack"
 msgstr "CMT Hack"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:89
+#: src/ui-imgui/cmt/cmt_window.cpp:90
 msgid "CPU Boost"
 msgstr "CPU Boost"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:126
+#: src/ui-imgui/cmt/cmt_window.cpp:127
 msgid "Click here to change the time info mode."
 msgstr "Kliknite sem pre zmenu režimu zobrazenia času."
 
-#: src/ui-imgui/cmt/cmt_window.cpp:210
+#: src/ui-imgui/cmt/cmt_window.cpp:211
 msgid "Block"
 msgstr "Blok"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:210
+#: src/ui-imgui/cmt/cmt_window.cpp:211
 msgid "of"
 msgstr "z"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:211
+#: src/ui-imgui/cmt/cmt_window.cpp:212
 msgid "FSize"
 msgstr "VeľS"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:212
+#: src/ui-imgui/cmt/cmt_window.cpp:213
 msgid "FExec"
 msgstr "VykA"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:213
+#: src/ui-imgui/cmt/cmt_window.cpp:214
 msgid "FStart"
 msgstr "ŠtaA"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:214
+#: src/ui-imgui/cmt/cmt_window.cpp:215
 msgid "Stream"
 msgstr "Prúd"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:215
+#: src/ui-imgui/cmt/cmt_window.cpp:216
 msgid "Rate"
 msgstr "Rýchlosť"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:215
+#: src/ui-imgui/cmt/cmt_window.cpp:216
 msgid "SSize"
 msgstr "VeľP"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:437
+#: src/ui-imgui/cmt/cmt_window.cpp:439
 msgid "Default MZ Speed:"
 msgstr "Predvolená MZ rýchlosť:"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:800 src/ui-imgui/cmt/cmt_window.cpp:914
+#: src/ui-imgui/cmt/cmt_window.cpp:720
+msgid ""
+"Recording a replay: tape control is recorded; another tape and speed "
+"settings are not available."
+msgstr ""
+"Záznam vstupov: ovládanie kazety sa zaznamenáva; iná páska a nastavenie "
+"rýchlosti nie sú k dispozícii."
+
+#: src/ui-imgui/cmt/cmt_window.cpp:724
+msgid "Tape control is not available while a replay is recorded or played."
+msgstr ""
+"Ovládanie kazety nie je počas záznamu alebo prehrávania vstupov k dispozícii."
+
+#: src/ui-imgui/cmt/cmt_window.cpp:761 src/ui-imgui/cmt/cmt_window.cpp:878
 msgid "Virtual CMT"
 msgstr "Virtuálny CMT"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:835
+#: src/ui-imgui/cmt/cmt_window.cpp:798
 msgid "CMT Hack is activated!"
 msgstr "CMT Hack je aktivovaný!"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:836
+#: src/ui-imgui/cmt/cmt_window.cpp:799
 msgid "Virtual CMT is not available!"
 msgstr "Virtuálny CMT nie je k dispozícii!"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:842
+#: src/ui-imgui/cmt/cmt_window.cpp:805
 #: src/ui-imgui/version_check/imgui_version_check.cpp:390
 msgid "Close"
 msgstr "Zavrieť"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:863
+#: src/ui-imgui/cmt/cmt_window.cpp:827
 msgid "No tape loaded"
 msgstr "Nie je vložená páska"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:872
+#: src/ui-imgui/cmt/cmt_window.cpp:836
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:363
+#: src/ui-imgui/topmenu/replay_window.cpp:205
 msgid "Recording"
 msgstr "Nahrávanie"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:882
+#: src/ui-imgui/cmt/cmt_window.cpp:846
+#: src/ui-imgui/topmenu/replay_window.cpp:213
 msgid "Playing"
 msgstr "Prehrávanie"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:897
+#: src/ui-imgui/cmt/cmt_window.cpp:861
 msgid "Stopped - Ready to Play"
 msgstr "Zastavené - Pripravené na prehrávanie"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:904
+#: src/ui-imgui/cmt/cmt_window.cpp:868
 msgid "(paused)"
 msgstr "(pozastavené)"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:925
+#: src/ui-imgui/cmt/cmt_window.cpp:890
 msgid "*** Empty ***"
 msgstr "*** Prázdny ***"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:931
+#: src/ui-imgui/cmt/cmt_window.cpp:896
 msgid "Recording (paused)"
 msgstr "Nahrávanie (pozastavené)"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:935
+#: src/ui-imgui/cmt/cmt_window.cpp:900
 msgid "Recording.."
 msgstr "Nahrávanie.."
 
@@ -1009,7 +1124,7 @@ msgstr "Záložky###bm_window"
 
 #: src/ui-imgui/debugger/bookmarks/bm_window.cpp:962
 #: src/ui-imgui/topmenu/menu_debugger.cpp:156
-#: src/ui-imgui/topmenu/menu_debugger.cpp:495
+#: src/ui-imgui/topmenu/menu_debugger.cpp:513
 msgid "Bookmarks"
 msgstr "Záložky"
 
@@ -1023,7 +1138,8 @@ msgid "Label"
 msgstr "Názov"
 
 #: src/ui-imgui/debugger/bookmarks/bm_window.cpp:981
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1150
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1154
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:314
 msgid "Address"
 msgstr "Adresa"
 
@@ -1468,7 +1584,7 @@ msgstr ""
 
 #: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1854
 #: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2425
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:667
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:686
 #: src/ui-imgui/debugger/watch/watch_window.cpp:444
 msgid "Mode:"
 msgstr "Režim:"
@@ -1751,7 +1867,7 @@ msgid "Auto-generated name##bpt_panel"
 msgstr "Automaticky generovaný názov##bpt_panel"
 
 #: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2295
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2646
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2647
 #: src/ui-imgui/debugger/vars/vars_window.cpp:812
 #: src/ui-imgui/debugger/watch/watch_window.cpp:488
 msgid "Name:"
@@ -1815,111 +1931,117 @@ msgstr ""
 msgid "(action empty - BP halts the emulator)"
 msgstr "(akcia prázdna - BP zastaví emulátor)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2517
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2519
 msgid "Test Eval##bpt_panel"
 msgstr "Test vyhodnotenia##bpt_panel"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2576
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2535
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:172
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:190
+msgid "The emulator did not respond in time."
+msgstr "Emulátor neodpovedal včas."
+
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2577
 msgid "Enabled##bpt_panel_top"
 msgstr "Povolené##bpt_panel_top"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2587
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2588
 #, c-format
 msgid "Hits: %llu events"
 msgstr "Zásahy: %llu udalostí"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2597
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2598
 msgid "Reset###bpt_hits"
 msgstr "Reset###bpt_hits"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2609
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2610
 msgid "BP Options"
 msgstr "Nastavenia BP"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2614
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2615
 msgid "Name / Parent"
 msgstr "Názov / Rodič"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2619
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2620
 msgid "Trigger logic"
 msgstr "Logika spúšťania"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2624
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2625
 msgid "Action on trigger"
 msgstr "Akcia pri spustení"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2629
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2630
 msgid "Live Eval Test (optional)"
 msgstr "Test živého vyhodnotenia (voliteľné)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2642
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2643
 msgid "Enabled (cascade)##bpt_grp_panel"
 msgstr "Povolené (kaskádovo)##bpt_grp_panel"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2671
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2672
 #, c-format
 msgid "Children: %d BP (%d enabled)"
 msgstr "Potomkovia: %d BP (%d povolených)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2687
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2691
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2688
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2692
 msgid "Discard changes?##bpt_discard"
 msgstr "Zahodiť zmeny?##bpt_discard"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2694
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2695
 msgid "Editor has unsaved changes. Discard them?"
 msgstr "Editor má neuložené zmeny. Zahodiť ich?"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2696
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2697
 msgid "Discard##bpt_disc"
 msgstr "Zahodiť##bpt_disc"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2706
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2707
 msgid "Cancel##bpt_disc"
 msgstr "Zrušiť##bpt_disc"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2714
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2718
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2715
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2719
 msgid "Discard and close?##bpt_close"
 msgstr "Zahodiť a zavrieť?##bpt_close"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2721
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2722
 msgid "Editor has unsaved changes. Close anyway?"
 msgstr "Editor má neuložené zmeny. Napriek tomu zavrieť?"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2723
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2724
 msgid "Close##bpt_clo"
 msgstr "Zavrieť##bpt_clo"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2730
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2731
 msgid "Cancel##bpt_clo"
 msgstr "Zrušiť##bpt_clo"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2775
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2776
 msgid "Edit Group"
 msgstr "Upraviť skupinu"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2780
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2781
 msgid "New Group"
 msgstr "Nová skupina"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2834
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2835
 msgid "Edit BP"
 msgstr "Upraviť BP"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2839
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2840
 msgid "New BP"
 msgstr "Nový BP"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2891
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2892
 msgid "Cancel##bpt_panel_btn"
 msgstr "Zrušiť##bpt_panel_btn"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3048
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3049
 msgid "OK##bpt_panel_btn"
 msgstr "OK##bpt_panel_btn"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3062
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3063
 msgid "(check ranges: end >= start)"
 msgstr "(skontrolujte rozsahy: end >= start)"
 
@@ -2134,7 +2256,7 @@ msgstr "Pridať##bpt"
 #: src/ui-imgui/debugger/breakpoints/bpt_window.cpp:1456
 #: src/ui-imgui/debugger/membrowser/membrowser_annot_dialog.cpp:144
 #: src/ui-imgui/memext/memext_save_dialog.cpp:189
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:119
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:117
 msgid "Save"
 msgstr "Uložiť"
 
@@ -2301,10 +2423,10 @@ msgstr "Posledné riadiace slovo"
 #: src/ui-imgui/debugger/pioz80_window.cpp:268
 #: src/ui-imgui/debugger/pioz80_window.cpp:293
 #: src/ui-imgui/debugger/pioz80_window.cpp:405
-#: src/ui-imgui/debugger/psg_window.cpp:360
-#: src/ui-imgui/debugger/psg_window.cpp:410
-#: src/ui-imgui/debugger/psg_window.cpp:456
-#: src/ui-imgui/debugger/psg_window.cpp:534
+#: src/ui-imgui/debugger/psg_window.cpp:362
+#: src/ui-imgui/debugger/psg_window.cpp:412
+#: src/ui-imgui/debugger/psg_window.cpp:458
+#: src/ui-imgui/debugger/psg_window.cpp:536
 msgid "Field"
 msgstr "Pole"
 
@@ -2312,12 +2434,13 @@ msgstr "Pole"
 #: src/ui-imgui/debugger/ctc_window.cpp:258
 #: src/ui-imgui/debugger/fdc_window.cpp:75
 #: src/ui-imgui/debugger/fdc_window.cpp:126
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:701
 #: src/ui-imgui/debugger/pioz80_window.cpp:294
 #: src/ui-imgui/debugger/pioz80_window.cpp:406
-#: src/ui-imgui/debugger/psg_window.cpp:361
-#: src/ui-imgui/debugger/psg_window.cpp:411
-#: src/ui-imgui/debugger/psg_window.cpp:457
-#: src/ui-imgui/debugger/psg_window.cpp:535
+#: src/ui-imgui/debugger/psg_window.cpp:363
+#: src/ui-imgui/debugger/psg_window.cpp:413
+#: src/ui-imgui/debugger/psg_window.cpp:459
+#: src/ui-imgui/debugger/psg_window.cpp:537
 #: src/ui-imgui/debugger/vars/vars_window.cpp:1504
 #: src/ui-imgui/debugger/watch/watch_window.cpp:1702
 msgid "Value"
@@ -2514,6 +2637,8 @@ msgid "syms in range"
 msgstr "symboly v rozsahu"
 
 #: src/ui-imgui/debugger/dasm_window/dasm_window.cpp:556
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:625
+#: src/ui-imgui/topmenu/replay_window.cpp:252
 msgid "off"
 msgstr "vypnuté"
 
@@ -2553,6 +2678,8 @@ msgid "Addr"
 msgstr "Adr"
 
 #: src/ui-imgui/debugger/dasm_window/dasm_window.cpp:671
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:486
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:589
 msgid "Bytes"
 msgstr "Bajty"
 
@@ -3091,7 +3218,10 @@ msgstr "Žiadne"
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2156
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2682
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2845
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3200
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3160
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:312
+#: src/ui-imgui/topmenu/menu_replay.cpp:208
+#: src/ui-imgui/topmenu/replay_window.cpp:245
 msgid "Frame"
 msgstr "Frame"
 
@@ -3101,6 +3231,7 @@ msgstr "Kategória"
 
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2158
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2693
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:313
 msgid "PC"
 msgstr "PC"
 
@@ -3587,7 +3718,7 @@ msgid "Drives"
 msgstr "Mechaniky"
 
 #: src/ui-imgui/debugger/fdc_window.cpp:187
-#: src/ui-imgui/topmenu/menu_debugger.cpp:588
+#: src/ui-imgui/topmenu/menu_debugger.cpp:606
 msgid "FDC State"
 msgstr "FDC State"
 
@@ -3697,6 +3828,7 @@ msgstr "DMD"
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:185
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:189
 #: src/ui-imgui/debugger/membrowser/membrowser_fill_dialog.cpp:223
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:408
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:99
 msgid "Mode"
 msgstr "Režim"
@@ -3886,19 +4018,19 @@ msgid "VBANK (WF/RF)"
 msgstr "VBANK (WF/RF)"
 
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:253
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:794
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:793
 #: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:122
 msgid "B"
 msgstr "B"
 
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:253
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:793
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:792
 msgid "A"
 msgstr "A"
 
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:256
-msgid "MZ700 WR latch"
-msgstr "MZ700 WR latch"
+msgid "WRITE FF"
+msgstr "WRITE FF"
 
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:259
 msgid "set"
@@ -3961,23 +4093,23 @@ msgstr "Paleta###GDGMZ800Palette"
 msgid "Border###GDGMZ800Border"
 msgstr "Border###GDGMZ800Border"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:624
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:643
 msgid "Select CDL meta.json file"
 msgstr "Vyberte CDL meta.json súbor"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:669
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:688
 msgid "Off##mhmap_mode"
 msgstr "Vypnuté##mhmap_mode"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:676
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:695
 msgid "Do not record. Hot path stays bit-identical with vanilla emulator."
 msgstr "Nezaznamenávať. Hot path zostáva bit-identický s vanilla emulátorom."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:679
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:698
 msgid "With Window##mhmap_mode"
 msgstr "S oknom##mhmap_mode"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:686
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:705
 msgid ""
 "Record only when the main debugger window is open\n"
 "(NOT this Memory Heatmap window)."
@@ -3985,11 +4117,11 @@ msgstr ""
 "Zaznamenávať iba keď je otvorené hlavné okno debuggera\n"
 "(NIE toto Memory Heatmap okno)."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:690
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:709
 msgid "Always##mhmap_mode"
 msgstr "Vždy##mhmap_mode"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:697
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:716
 msgid ""
 "Always record while the emulator is running\n"
 "(independent of any debugger window)."
@@ -3997,165 +4129,165 @@ msgstr ""
 "Zaznamenávať vždy, keď emulátor beží\n"
 "(nezávisle na okne debuggera)."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:747
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:766
 msgid "Save CDL meta.json file"
 msgstr "Uložiť CDL meta.json súbor"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:817
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:836
 msgid "Export on Exit##mhmap_top"
 msgstr "Exportovať pri ukončení##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:823
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:842
 msgid "Reset##mhmap_top"
 msgstr "Reset##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:830
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:849
 msgid "Export...##mhmap_top"
 msgstr "Export...##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:836
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:855
 msgid "Import...##mhmap_top"
 msgstr "Import...##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:848
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:867
 msgid "Hide panel##mhmap_top"
 msgstr "Skryť panel##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:849
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:868
 msgid "Show panel##mhmap_top"
 msgstr "Zobraziť panel##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:877
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:896
 #, c-format
 msgid "Status: Recording active (mhmap_mode=%s)"
 msgstr "Stav: záznam aktívny (mhmap_mode=%s)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:881
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:900
 #, c-format
 msgid "Status: Recording inactive (mhmap_mode=%s)"
 msgstr "Stav: záznam neaktívny (mhmap_mode=%s)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:953
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:972
 msgid "Show"
 msgstr "Zobraziť"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:955
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:974
 msgid "Live##mhmap_show"
 msgstr "Live##mhmap_show"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:961
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:980
 msgid "Imported##mhmap_show"
 msgstr "Importované##mhmap_show"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:968
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:987
 msgid "(no import loaded)"
 msgstr "(žiadny import nenačítaný)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:975
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:994
 msgid "Drop##mhmap_imp"
 msgstr "Zahodiť##mhmap_imp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:985
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1004
 msgid "Drop imported data (free buffer, switch back to Live)"
 msgstr "Zahodiť importované dáta (uvoľniť buffer, prepnúť späť na Live)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:989
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1008
 msgid "Add##mhmap_imp"
 msgstr "Pričítať##mhmap_imp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:997
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1016
 msgid "Add imported counters to Live (saturates at UINT32_MAX)"
 msgstr "Pričítať importované čítače k Live (saturuje na UINT32_MAX)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1001
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1020
 msgid "Sub##mhmap_imp"
 msgstr "Odčítať##mhmap_imp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1009
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1028
 msgid "Subtract imported counters from Live (clamps at 0)"
 msgstr "Odčítať importované čítače od Live (obmedzené na 0)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1013
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1032
 msgid "Selected cell"
 msgstr "Vybraná bunka"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1017
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1036
 msgid "(none - click a cell)"
 msgstr "(žiadna - kliknite na bunku)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1024
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1043
 msgid "(out of range)"
 msgstr "(mimo rozsah)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1050
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1069
 msgid "Region statistics"
 msgstr "Štatistiky regiónu"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1078
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1097
 msgid "Reset region only##mhmap_side"
 msgstr "Resetovať iba región##mhmap_side"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1113
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1132
 msgid "RGB mode color mapping"
 msgstr "Mapovanie farieb v režime RGB"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1119
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1138
 msgid "R counter##mhmap_col"
 msgstr "Čítač R##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1128
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1147
 msgid "W counter##mhmap_col"
 msgstr "Čítač W##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1137
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1156
 msgid "X counter##mhmap_col"
 msgstr "Čítač X##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1146
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1165
 msgid "S counter##mhmap_col"
 msgstr "Čítač S##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1154
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1173
 msgid "Reset to defaults##mhmap_col"
 msgstr "Obnoviť predvolené##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1169
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1188
 msgid "Color:##mhmap_color_btn"
 msgstr "Farba:##mhmap_color_btn"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1175
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1194
 msgid "Click to customize R/W/X/S colors used in RGB mode"
 msgstr "Kliknite pre úpravu farieb R/W/X/S použitých v režime RGB"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1182
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1201
 msgid "RGB##mhmap_color"
 msgstr "RGB##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1187
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1206
 msgid "R##mhmap_color"
 msgstr "R##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1192
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1211
 msgid "W##mhmap_color"
 msgstr "W##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1197
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1216
 msgid "X##mhmap_color"
 msgstr "X##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1205
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1224
 msgid "S##mhmap_color"
 msgstr "S##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1212
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1231
 msgid "Stack write counter (V5). Disabled when 'Show S' is off."
 msgstr "Čítač zápisov na Stack (V5). Zakázané, keď je 'Show S' vypnuté."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1220
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1239
 msgid "Show S##mhmap_show_s"
 msgstr "Zobraziť S##mhmap_show_s"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1232
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1251
 msgid ""
 "Toggle visibility of stack write (S) category in RGB blending and as a "
 "standalone color mode."
@@ -4163,89 +4295,89 @@ msgstr ""
 "Prepnúť viditeľnosť kategórie zápisov na Stack (S) v RGB miešaní aj ako "
 "samostatný farebný režim."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1239
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1258
 msgid "Scale:"
 msgstr "Mierka:"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1242
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1261
 msgid "Linear##mhmap_scale"
 msgstr "Lineárna##mhmap_scale"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1247
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1266
 msgid "Log##mhmap_scale"
 msgstr "Log##mhmap_scale"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1256
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1275
 msgid "Threshold:"
 msgstr "Prah:"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1270
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1289
 msgid "Zoom:"
 msgstr "Priblíženie:"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1287
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1306
 msgid "Cell pixel size. Hint: Ctrl + mouse wheel over the grid to zoom in/out."
 msgstr ""
 "Veľkosť bunky v pixeloch. Tip: Ctrl + koliesko myši nad mriežkou pre "
 "priblíženie/oddialenie."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1361
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1380
 msgid "Show all##mhmap_menu"
 msgstr "Zobraziť všetko##mhmap_menu"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1365
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1384
 msgid "Hide all##mhmap_menu"
 msgstr "Skryť všetko##mhmap_menu"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1372
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1391
 msgid "Groups##mhmap_menu"
 msgstr "Skupiny##mhmap_menu"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1374
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1393
 msgid "Only bus + ram##mhmap_grp"
 msgstr "Iba bus + ram##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1380
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1399
 msgid "Only ROM##mhmap_grp"
 msgstr "Iba ROM##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1386
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1405
 msgid "Only VRAM (all)##mhmap_grp"
 msgstr "Iba VRAM (všetko)##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1391
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1410
 msgid "Only VRAM 320 modes##mhmap_grp"
 msgstr "Iba VRAM 320 režimy##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1396
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1415
 msgid "Only VRAM 640 modes##mhmap_grp"
 msgstr "Iba VRAM 640 režimy##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1401
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1420
 msgid "Only PCG (MZ-1500)##mhmap_grp"
 msgstr "Iba PCG (MZ-1500)##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1406
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1425
 msgid "Only IORQ##mhmap_grp"
 msgstr "Iba IORQ##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1411
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1430
 msgid "Only Memext##mhmap_grp"
 msgstr "Iba Memext##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1453
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1472
 msgid "(no regions available for this architecture)"
 msgstr "(pre túto architektúru nie sú dostupné žiadne regióny)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1458
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1477
 msgid "...##mhmap_menu_btn"
 msgstr "...##mhmap_menu_btn"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1464
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1483
 msgid "Show / hide regions, predefined groups"
 msgstr "Zobraziť / skryť regióny, preddefinované skupiny"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1607
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1626
 msgid "Memory Heatmap##mhmap_main"
 msgstr "Memory Heatmap##mhmap_main"
 
@@ -4287,7 +4419,7 @@ msgid "Disassembler window"
 msgstr "Okno Disassemblera"
 
 #: src/ui-imgui/debugger/ide8_window.cpp:123
-#: src/ui-imgui/topmenu/menu_debugger.cpp:606
+#: src/ui-imgui/topmenu/menu_debugger.cpp:624
 msgid "IDE8 State"
 msgstr "Stav IDE8"
 
@@ -4646,100 +4778,100 @@ msgstr "Zmazať"
 msgid "Annotation @ 0x%08X"
 msgstr "Poznámka @ 0x%08X"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:405
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:404
 msgid "Live"
 msgstr "Naživo"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:406
-#: src/ui-imgui/topmenu/menu_snapshot.cpp:60
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:405
+#: src/ui-imgui/topmenu/menu_snapshot.cpp:69
 msgid "Snapshot"
 msgstr "Snímok"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:407
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:406
 msgid "Auto @ pause"
 msgstr "Auto @ pauza"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:512
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:511
 msgid "Export diff as text"
 msgstr "Exportovať diff ako text"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:531
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:530
 #: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:281
 #: src/ui-imgui/memext/memext_save_dialog.cpp:254
 msgid "Cannot open file for writing"
 msgstr "Nemožno otvoriť súbor pre zápis"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:569
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:568
 msgid "Export error###mb_diff_export_err"
 msgstr "Chyba exportu###mb_diff_export_err"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:574
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:573
 msgid "OK###mb_diff_export_err_ok"
 msgstr "OK###mb_diff_export_err_ok"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:610
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:609
 msgid "No data - pick region and take snapshot"
 msgstr "Žiadne dáta - vyberte región a urobte snímku"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:720
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:719
 #, c-format
 msgid "Changed: %llu of %llu (%.2f %%)  [size mismatch A=%llu B=%llu]"
 msgstr "Zmenené: %llu z %llu (%.2f %%)  [nesúlad veľkosti A=%llu B=%llu]"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:727
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:726
 #, c-format
 msgid "Changed: %llu of %llu (%.2f %%)"
 msgstr "Zmenené: %llu z %llu (%.2f %%)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:738
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:737
 #, c-format
 msgid "auto-snapshots taken: %d"
 msgstr "urobených auto-snímok: %d"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:765
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:764
 #: src/ui-imgui/debugger/membrowser/membrowser_layers.cpp:496
 msgid "Snapshot Now"
 msgstr "Snímka teraz"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:773
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:772
 msgid "Capture current region content as snapshot"
 msgstr "Zachytiť aktuálny obsah regiónu ako snímku"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:779
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:778
 msgid "(live)"
 msgstr "(naživo)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:781
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:780
 #, c-format
 msgid "(%u B)"
 msgstr "(%u B)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:785
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:784
 msgid "(no snapshot)"
 msgstr "(bez snímky)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:797
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:796
 msgid "Auto-snapshot at pause###mb_diff_auto_pause"
 msgstr "Auto-snímka pri pauze###mb_diff_auto_pause"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:801
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:800
 msgid "Take fresh snapshot in AUTO sources on emulator pause"
 msgstr "Urobiť čerstvú snímku v AUTO zdrojoch pri pauze emulátora"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:808
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:807
 msgid "Refresh A+B###mb_diff_refresh"
 msgstr "Obnoviť A+B###mb_diff_refresh"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:822
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:821
 msgid "Export...###mb_diff_export"
 msgstr "Exportovať...###mb_diff_export"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:827
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:826
 msgid "Export diff as text file (addr: AA -> BB per line)"
 msgstr "Exportovať diff ako textový súbor (adresa: AA -> BB na riadok)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:849
-#: src/ui-imgui/topmenu/menu_debugger.cpp:405
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:848
+#: src/ui-imgui/topmenu/menu_debugger.cpp:423
 msgid "Memory Diff"
 msgstr "Diff pamäte"
 
@@ -4804,7 +4936,7 @@ msgid "Save failed (I/O error)"
 msgstr "Uloženie zlyhalo (I/O chyba)"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:331
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:277
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:281
 msgid "Region is read-only"
 msgstr "Región je len na čítanie"
 
@@ -4855,7 +4987,7 @@ msgid "Size (hex)###mb_save_size"
 msgstr "Veľkosť (hex)###mb_save_size"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:473
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1873
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1833
 #: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:307
 msgid "Range:"
 msgstr "Rozsah:"
@@ -5061,69 +5193,75 @@ msgstr "Redo zlyhalo: zápis backendu vrátil chybu"
 msgid "Redo: applied"
 msgstr "Redo: aplikované"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:985
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:987
 msgid "Memext bank"
 msgstr "Memext banka"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:987
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:989
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:117
 msgid "RAM"
 msgstr "RAM"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1409
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1411
 msgid "Backend not ready"
 msgstr "Backend nie je pripravený"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1415
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1417
 msgid "Region empty or disconnected"
 msgstr "Región prázdny alebo odpojený"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1568
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1570
 msgid "Add bookmark for current cursor"
 msgstr "Pridať záložku pre aktuálny kurzor"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1579
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1581
 msgid "Show in Memory Map"
 msgstr "Zobraziť v Mape pamäte"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1601
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1603
 msgid "Unfreeze byte at cursor"
 msgstr "Rozmraziť bajt na kurzore"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1608
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1610
 #, c-format
 msgid "Freeze byte at cursor (= 0x%02X)"
 msgstr "Zmraziť bajt na kurzore (= 0x%02X)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1626
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1628
 msgid "Insert character..."
 msgstr "Vložiť znak..."
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1636
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1638
 msgid "Open in PCG editor..."
 msgstr "Otvoriť v editore PCG..."
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1650
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1652
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:444
+msgid "Who wrote this byte?"
+msgstr "Kto zapísal tento bajt?"
+
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1663
 msgid "Edit annotation at cursor..."
 msgstr "Upraviť poznámku na kurzore..."
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1651
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1664
 msgid "Add annotation at cursor..."
 msgstr "Pridať poznámku na kurzore..."
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1658
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1671
 msgid "Delete annotation at cursor"
 msgstr "Zmazať poznámku na kurzore"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1674
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1687
 msgid "Fill at cursor..."
 msgstr "Vyplniť na kurzore..."
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1685
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1698
 #, c-format
 msgid "Undo  (%d levels)\tCtrl+Z"
 msgstr "Undo  (%d úrovní)\tCtrl+Z"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1687
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1700
 #, c-format
 msgid "Redo  (%d levels)\tCtrl+Y"
 msgstr "Redo  (%d úrovní)\tCtrl+Y"
@@ -5144,7 +5282,7 @@ msgid "No target: open a Memory Browser and right-click in hex/ASCII column"
 msgstr "Bez cieľa: otvorte Memory Browser a kliknite pravým v stĺpci hex/ASCII"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_char_inserter.cpp:284
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:333
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:337
 msgid "Region:"
 msgstr "Región:"
 
@@ -5314,7 +5452,7 @@ msgstr "Snímka Δ"
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:148
 #: src/ui-imgui/maxspeed_bench_window.cpp:156
 #: src/ui-imgui/plotter/plotter_window.cpp:414
-#: src/ui-imgui/topmenu/topmenu.cpp:41
+#: src/ui-imgui/topmenu/topmenu.cpp:53
 msgid "Reset"
 msgstr "Resetovať"
 
@@ -5324,7 +5462,7 @@ msgstr "Zmrazené bajty"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_layers.cpp:499
 #: src/ui-imgui/topmenu/menu_debugger.cpp:161
-#: src/ui-imgui/topmenu/menu_debugger.cpp:485
+#: src/ui-imgui/topmenu/menu_debugger.cpp:503
 msgid "Symbols"
 msgstr "Symboly"
 
@@ -5377,6 +5515,7 @@ msgid "Rotate 90 CW"
 msgstr "Otočiť 90 CW"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_pcg.cpp:250
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:428
 #: src/ui-imgui/debugger/sections/dbg_stack_panel.cpp:2538
 msgid "Clear"
 msgstr "Vymazať"
@@ -5524,6 +5663,8 @@ msgid "Monitor ROM"
 msgstr "Monitor ROM"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_regions.cpp:549
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:563
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:118
 msgid "VRAM"
 msgstr "VRAM"
 
@@ -5540,6 +5681,7 @@ msgid "Plane IV (8 KB) [exVRAM]"
 msgstr "Rovina IV (8 KB) [exVRAM]"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_regions.cpp:556
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:119
 msgid "PCG"
 msgstr "PCG"
 
@@ -5567,450 +5709,451 @@ msgstr "Banka 0xFF (64 KB)"
 msgid "Ramdisk STD"
 msgstr "Ramdisk STD"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:212
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:216
 msgid "Load BIN###mb_load_bin"
 msgstr "Načítať BIN###mb_load_bin"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:216
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:220
 msgid "Load .bin file into current region"
 msgstr "Načítať súbor .bin do aktuálneho regiónu"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:224
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:228
 msgid "Save BIN###mb_save_bin"
 msgstr "Uložiť BIN###mb_save_bin"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:229
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:233
 msgid "Save current region content into .bin file"
 msgstr "Uložiť obsah aktuálneho regiónu do súboru .bin"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:249
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:253
 msgid "Edit: ON###mb_edit_toggle"
 msgstr "Editácia: ZAP###mb_edit_toggle"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:250
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:254
 msgid "Edit: OFF###mb_edit_toggle"
 msgstr "Editácia: VYP###mb_edit_toggle"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:278
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:282
 msgid "Toggle edit mode (off by default for safety, F2 shortcut)"
 msgstr ""
 "Prepnúť režim editácie (štandardne vypnutý kvôli bezpečnosti, skratka F2)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:289
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:293
 msgid "Clear edited###mb_edit_clear"
 msgstr "Vyčistiť editované###mb_edit_clear"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:294
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:298
 #, c-format
 msgid "Clear recently-edited byte highlights (%d)"
 msgstr "Vyčistiť zvýraznenia nedávno editovaných bajtov (%d)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:417
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:421
 msgid "Select memory region category"
 msgstr "Vybrať kategóriu regiónu pamäte"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:464
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:468
 msgid "Memext memory type"
 msgstr "Typ pamäte Memext"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:469
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:505
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:550
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:473
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:509
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:554
 msgid "Bank:"
 msgstr "Banka:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:498
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:502
 msgid "Memext bank index"
 msgstr "Index banky Memext"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:534
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:538
 msgid "Ramdisk STD bank index"
 msgstr "Index banky Ramdisk STD"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:582
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:586
 msgid "Ramdisk PEZIK port 0xE8 bank index"
 msgstr "Index banky Ramdisk PEZIK port 0xE8"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:583
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:587
 msgid "Ramdisk PEZIK port 0x68 bank index"
 msgstr "Index banky Ramdisk PEZIK port 0x68"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:605
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:609
 msgid "Encoding:"
 msgstr "Kódovanie:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:628
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:632
 msgid "ASCII column encoding"
 msgstr "Kódovanie stĺpca ASCII"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:636
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:640
 msgid "Bytes/row:"
 msgstr "Bajtov/riadok:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:660
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:664
 msgid "Bytes per row (8/16/32)"
 msgstr "Bajtov na riadok (8/16/32)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:668
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:672
 msgid "ASCII###mb_ascii_toggle"
 msgstr "ASCII###mb_ascii_toggle"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:673
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:677
 msgid "Show or hide ASCII decoded column"
 msgstr "Zobraziť alebo skryť dekódovaný stĺpec ASCII"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:683
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:687
 msgid "PC###mb_pc_marker"
 msgstr "PC###mb_pc_marker"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:687
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:691
 msgid "Highlight row containing Z80 PC"
 msgstr "Zvýrazniť riadok obsahujúci Z80 PC"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:690
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:694
 msgid "SP###mb_sp_marker"
 msgstr "SP###mb_sp_marker"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:694
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:698
 msgid "Highlight row containing Z80 SP"
 msgstr "Zvýrazniť riadok obsahujúci Z80 SP"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:699
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:703
 msgid "Origin###mb_origin_labels"
 msgstr "Pôvod###mb_origin_labels"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:705
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:709
 msgid "Show per-row physical origin label (banking-aware)"
 msgstr "Zobraziť menovku fyzického pôvodu na riadok (s ohľadom na banking)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:724
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:728
 msgid "HEX:"
 msgstr "HEX:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:739
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:743
 msgid "Hex address (Enter or Goto)"
 msgstr "Hex adresa (Enter alebo Goto)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:745
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:749
 msgid "DEC:"
 msgstr "DEC:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:764
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:768
 msgid "Decimal address (Enter or Goto)"
 msgstr "Desiatková adresa (Enter alebo Goto)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:770
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:774
 msgid "Goto###mb_goto_btn"
 msgstr "Choď###mb_goto_btn"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:789
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:793
 msgid "Search###mb_search_btn"
 msgstr "Hľadať###mb_search_btn"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:793
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:797
 msgid "Toggle search panel"
 msgstr "Prepnúť panel hľadania"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:825
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:829
 msgid "R/W"
 msgstr "R/W"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:825
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:829
 msgid "R/O"
 msgstr "R/O"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:826
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:830
 msgid "mapped"
 msgstr "namapované"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:826
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:830
 msgid "not mapped"
 msgstr "nenamapované"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:828
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:832
 #, c-format
 msgid "Size: %u B | %s | %s | Z80 base 0x%04X"
 msgstr "Veľkosť: %u B | %s | %s | Z80 báza 0x%04X"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:832
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:836
 #, c-format
 msgid "Size: %u B | %s | %s"
 msgstr "Veľkosť: %u B | %s | %s"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:837
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:841
 msgid "Region disconnected - falling back to Logical"
 msgstr "Región odpojený - prepína sa na logický"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:875
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:929
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:879
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:933
 msgid "[PROHIBITED]"
 msgstr "[ZAKÁZANÉ]"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:878
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:882
 msgid ""
 "Prohibited mode active (OUT E5) - 0xE000-0xFFFF reads return shadow 0x1A"
 msgstr ""
 "Aktívny zakázaný režim (OUT E5) - čítania 0xE000-0xFFFF vracajú tieň 0x1A"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:885
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:889
 msgid "[SCRW640]"
 msgstr "[SCRW640]"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:888
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:892
 msgid ""
 "640px wide screen mode active (DMD bit 2) - VRAM II mapped to 0xA000-0xBFFF"
 msgstr ""
 "Aktívny režim širokej obrazovky 640px (DMD bit 2) - VRAM II namapovaná na "
 "0xA000-0xBFFF"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:895
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:899
 msgid "[HICOLOR]"
 msgstr "[HICOLOR]"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:898
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:902
 msgid "16-color mode active (DMD bit 1) - 4-plane VRAM addressing"
 msgstr "Aktívny 16-farebný režim (DMD bit 1) - 4-rovinné adresovanie VRAM"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:905
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:909
 msgid "[VBANK]"
 msgstr "[VBANK]"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:908
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:912
 msgid "Display bank toggled (DMD bit 5)"
 msgstr "Prepnutá zobrazovacia banka (DMD bit 5)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:915
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:919
 msgid "MZ-700 mode"
 msgstr "Režim MZ-700"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:915
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:919
 msgid "MZ-800 mode"
 msgstr "Režim MZ-800"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:917
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:921
 #, c-format
 msgid "DMD: %s (0x%02X)"
 msgstr "DMD: %s (0x%02X)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:921
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:925
 msgid "Display Mode Descriptor - GDG register, bit 3 = MZ-700 compat mode"
 msgstr ""
 "Display Mode Descriptor - register GDG, bit 3 = režim kompatibility MZ-700"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:932
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:936
 msgid ""
 "Prohibited mode active (OUT E5) - 0xE000-0xFFFF reads return shadow 0xFF"
 msgstr ""
 "Aktívny zakázaný režim (OUT E5) - čítania 0xE000-0xFFFF vracajú tieň 0xFF"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:964
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:968
 msgid " (current encoding affected)"
 msgstr " (aktuálne kódovanie ovplyvnené)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:967
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:971
 #, c-format
 msgid "KOI8-CS table not loaded - showing identity mapping%s"
 msgstr "Tabuľka KOI8-CS nie je načítaná - zobrazuje sa identické mapovanie%s"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1011
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1015
 msgid "<##mb_page_prev"
 msgstr "<##mb_page_prev"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1021
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1025
 msgid "Previous page (PgUp)"
 msgstr "Predchádzajúca strana (PgUp)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1028
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1032
 msgid ">##mb_page_next"
 msgstr ">##mb_page_next"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1038
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1042
 msgid "Next page (PgDn)"
 msgstr "Nasledujúca strana (PgDn)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1043
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1047
 #, c-format
 msgid "Page: %llu of: %llu"
 msgstr "Strana: %llu z: %llu"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1066
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1070
 msgid "Bytes (HEX + ASCII)"
 msgstr "Bajty (HEX + ASCII)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1067
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1071
 msgid "Byte sequence (hex, legacy)"
 msgstr "Sekvencia bajtov (hex, legacy)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1068
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1072
 msgid "ASCII (current encoding, legacy)"
 msgstr "ASCII (aktuálne kódovanie, legacy)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1069
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1073
 msgid "Word LE (16-bit)"
 msgstr "Word LE (16-bit)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1070
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1074
 msgid "Word BE (16-bit)"
 msgstr "Word BE (16-bit)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1071
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1075
 msgid "Masked (AA ?? BB)"
 msgstr "Maskovaný (AA ?? BB)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1072
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1076
 msgid "Regex (POSIX ERE)"
 msgstr "Regex (POSIX ERE)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1073
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1077
 msgid "Expression (per byte)"
 msgstr "Výraz (na bajt)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1085
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1089
 msgid "Current region"
 msgstr "Aktuálny región"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1086
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1090
 msgid "All regions (current arch)"
 msgstr "Všetky regióny (aktuálna architektúra)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1127
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1131
 msgid "Results###mb_search_results_hdr"
 msgstr "Výsledky###mb_search_results_hdr"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1132
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1136
 #, c-format
 msgid "Hits: %d"
 msgstr "Zhody: %d"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1134
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1138
 msgid "Clear###mb_search_results_clear"
 msgstr "Vyčistiť###mb_search_results_clear"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1151
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1155
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:483
 msgid "Region"
 msgstr "Región"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1152
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1156
 msgid "Preview (hex)"
 msgstr "Náhľad (hex)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1321
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1325
 #: src/ui-imgui/debugger/symbols/sym_window.cpp:608
 msgid "Search:"
 msgstr "Hľadať:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1366
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1370
 msgid "HEX bytes: AA BB CC (spaces optional)"
 msgstr "HEX bajty: AA BB CC (medzery voliteľné)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1392
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1396
 msgid ""
 "ASCII view (current encoding). Type to update HEX. Use [+] for special chars."
 msgstr ""
 "Pohľad ASCII (aktuálne kódovanie). Píšte na aktualizáciu HEX. Použite [+] "
 "pre špeciálne znaky."
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1405
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1409
 msgid "[+]###mb_search_insert_char"
 msgstr "[+]###mb_search_insert_char"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1408
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1412
 msgid "Search pattern"
 msgstr "Vzor hľadania"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1412
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1416
 msgid "Insert special character via Char Inserter (palette of MZ/KOI8 glyphs)"
 msgstr "Vložiť špeciálny znak cez Vkladač znakov (paleta glyfov MZ/KOI8)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1430
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1434
 msgid "H###mb_search_hist_btn"
 msgstr "H###mb_search_hist_btn"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1434
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1438
 msgid "Recent patterns"
 msgstr "Nedávne vzory"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1456
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1460
 msgid "Find Next###mb_search_next"
 msgstr "Nájsť ďalšie###mb_search_next"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1458
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1462
 msgid "Prev###mb_search_prev"
 msgstr "Predch.###mb_search_prev"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1460
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1464
 msgid "All###mb_search_all"
 msgstr "Všetky###mb_search_all"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1466
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1470
 msgid "Cancel###mb_search_cancel"
 msgstr "Zrušiť###mb_search_cancel"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1471
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1475
 msgid "Close###mb_search_close"
 msgstr "Zavrieť###mb_search_close"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1476
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1480
 msgid "Scope:"
 msgstr "Rozsah:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1491
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1495
 msgid "Case sens.###mb_search_case"
 msgstr "Rozlíš. veľkosť###mb_search_case"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1511
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1515
 #, c-format
 msgid "Error: %s"
 msgstr "Chyba: %s"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1513
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1517
 msgid "Canceled"
 msgstr "Zrušené"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1515
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1519
 #, c-format
 msgid "Match @ 0x%08X"
 msgstr "Zhoda @ 0x%08X"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1565
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1569
 #, c-format
 msgid "Cursor: 0x%08X = 0x%02X '%s' (%s)"
 msgstr "Kurzor: 0x%08X = 0x%02X '%s' (%s)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1571
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1575
 #, c-format
 msgid "Cursor: 0x%08X (no data)"
 msgstr "Kurzor: 0x%08X (žiadne dáta)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1582
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1586
 msgid "ASCII"
 msgstr "ASCII"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1582
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1586
 msgid "HEX"
 msgstr "HEX"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1584
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1588
 #, c-format
 msgid "Mode: %s (Tab to switch)"
 msgstr "Režim: %s (Tab na prepnutie)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1618
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1622
 msgid "Edit error"
 msgstr "Chyba editácie"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1664
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1668
 #, c-format
 msgid "PEZIK port %s bank %d | byte order: native (TODO BE/LE toggle V3+)"
 msgstr ""
 "PEZIK port %s banka %d | poradie bajtov: natívne (TODO prepínač BE/LE V3+)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1682
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1686
 #, c-format
 msgid "Annotation: %s"
 msgstr "Poznámka: %s"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:2245
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:2249
 msgid "No region available"
 msgstr "Nie je dostupný žiadny región"
 
@@ -6143,10 +6286,447 @@ msgstr "Kliknutie: rozbaliť do normálneho režimu"
 msgid "Click: collapse to compact mode"
 msgstr "Kliknutie: zbaliť do kompaktného režimu"
 
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:167
+msgid "Not enough memory for the sample."
+msgstr "Na vzorku nie je dosť pamäte."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:190
+msgid "This memory space is not present in the current configuration."
+msgstr "Tento priestor pamäte v aktuálnej zostave nie je."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:205
+#, c-format
+msgid ""
+"The space has %.1f MiB, more than 4 MiB. Enable \"Allow large space\" to "
+"search it."
+msgstr ""
+"Priestor má %.1f MiB, viac ako 4 MiB. Na hľadanie v ňom zapnite \"Povoliť "
+"veľký priestor\"."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:209
+msgid "Cannot start the search:"
+msgstr "Hľadanie nie je možné spustiť:"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:277
+#, c-format
+msgid "Removed %llu candidates."
+msgstr "Vyradených kandidátov: %llu."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:321
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:563
+msgid "User RAM"
+msgstr "Používateľská RAM"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:322
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:563
+msgid "Logical Z80"
+msgstr "Logický Z80"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:323
+msgid "VRAM 700 char"
+msgstr "VRAM 700 znaky"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:324
+msgid "VRAM 700 attr"
+msgstr "VRAM 700 atribúty"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:325
+#, c-format
+msgid "VRAM plane %d"
+msgstr "VRAM rovina %d"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:326
+msgid "CG-RAM"
+msgstr "CG-RAM"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:327
+#, c-format
+msgid "PCG %d"
+msgstr "PCG %d"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:328
+#, c-format
+msgid "MemExt %02X"
+msgstr "MemExt %02X"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:329
+#, c-format
+msgid "RAM disk %02X"
+msgstr "RAM disk %02X"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:330
+#, c-format
+msgid "PEZIK %d/%d"
+msgstr "PEZIK %d/%d"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:396
+#, c-format
+msgid "Write breakpoint %d created."
+msgstr "Bod prerušenia na zápis %d vytvorený."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:399
+msgid "The breakpoint could not be created."
+msgstr "Bod prerušenia sa nepodarilo vytvoriť."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:411
+msgid "Show in Memory Browser"
+msgstr "Zobraziť v prehliadači pamäte"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:414
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1418
+msgid "Add to Watch"
+msgstr "Pridať do Watch"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:426
+msgid "Watch needs a CPU address; this cell is not mapped to the CPU now."
+msgstr "Watch potrebuje adresu CPU; táto bunka teraz nie je namapovaná do CPU."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:428
+msgid "Add write breakpoint"
+msgstr "Pridať bod prerušenia na zápis"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:432
+msgid ""
+"A write breakpoint cannot match this cell (VRAM plane, CG-RAM, PCG, RAM disk "
+"or an unmapped MemExt bank)."
+msgstr ""
+"Bod prerušenia na zápis túto bunku nezachytí (VRAM rovina, CG-RAM, PCG, RAM "
+"disk alebo nenamapovaná banka MemExt)."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:434
+msgid "Freeze at current value"
+msgstr "Zmraziť na aktuálnej hodnote"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:439
+msgid "Freeze failed (the table holds at most 256 bytes)."
+msgstr "Zmrazenie zlyhalo (tabuľka pojme najviac 256 bajtov)."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:442
+msgid ""
+"The value is written back once per frame: the program sees its own change "
+"until the end of the frame."
+msgstr ""
+"Hodnota sa zapisuje späť raz za snímku: program svoju zmenu vidí až do konca "
+"snímky."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:447
+msgid "Copy address"
+msgstr "Kopírovať adresu"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:454
+msgid "Eliminate"
+msgstr "Vyradiť"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:465
+msgid "No candidates left. Undo the last step or start a new search."
+msgstr ""
+"Nezostal žiadny kandidát. Vráťte posledný krok alebo začnite nové hľadanie."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:469
+#, c-format
+msgid ""
+"%llu candidates - the list is shown below %d. Change the value in the "
+"program and filter again."
+msgstr ""
+"Kandidátov: %llu - zoznam sa zobrazí pod %d. Zmeňte hodnotu v programe a "
+"filtrujte znova."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:484
+msgid "Offset"
+msgstr "Offset"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:485
+msgid "Z80"
+msgstr "Z80"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:487
+#: src/ui-imgui/topmenu/replay_window.cpp:344
+msgid "Current"
+msgstr "Aktuálna"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:488
+msgid "Previous"
+msgstr "Predchádzajúca"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:489
+msgid "First"
+msgstr "Prvá"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:527
+msgid ""
+"The region was disconnected at the last sample; its candidates are kept "
+"unchanged."
+msgstr ""
+"Región bol pri poslednej vzorke odpojený; jeho kandidáti zostávajú bez zmeny."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:538
+msgid "disconnected"
+msgstr "odpojené"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:563
+msgid "MemExt banks"
+msgstr "Banky MemExt"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:563
+msgid "RAM disks"
+msgstr "RAM disky"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:563
+msgid "All writable"
+msgstr "Všetko zapisovateľné"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:567
+msgid "Space"
+msgstr "Priestor"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:569
+msgid ""
+"User RAM: 64 KB as the CPU reads RAM (with a MemExt the banks mapped at "
+"sample time - search the MemExt banks if the program switches them). Logical "
+"Z80: what the CPU sees now, including ROM, VRAM and the 0E000h ports (values "
+"from the last update)."
+msgstr ""
+"Používateľská RAM: 64 KB, ako CPU číta RAM (s MemExt banky namapované v čase "
+"vzorky - ak ich program prepína, hľadajte v bankách MemExt). Logický Z80: čo "
+"CPU vidí teraz, vrátane ROM, VRAM a portov 0E000h (hodnoty z poslednej "
+"aktualizácie)."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:597
+msgid "LE (Z80)"
+msgstr "LE (Z80)"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:597
+msgid "BE"
+msgstr "BE"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:600
+msgid "Byte order"
+msgstr "Poradie bajtov"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:602
+msgid "Digits: BE = the highest digit first (print order)."
+msgstr "Číslice: BE = najvyššia číslica prvá (poradie tlače)."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:606
+msgid "Aligned"
+msgstr "Zarovnané"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:609
+msgid "Raw 00h-09h"
+msgstr "Holé 00h-09h"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:609
+msgid "ASCII 30h-39h"
+msgstr "ASCII 30h-39h"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:609
+msgid "Display code 20h-29h"
+msgstr "Display kód 20h-29h"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:612
+msgid "Digits"
+msgstr "Číslice"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:615
+msgid "Leading spaces as zeros"
+msgstr "Medzery zľava ako nuly"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:617
+msgid "Space is 20h in ASCII and 00h in the display code."
+msgstr "Medzera je v ASCII 20h a v display kóde 00h."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:622
+msgid "Allow large space"
+msgstr "Povoliť veľký priestor"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:624
+msgid ""
+"Allow a space over 4 MiB (up to 32 MiB, e.g. a 16 MB RAM disk). The search "
+"keeps three samples plus the undo history in memory."
+msgstr ""
+"Povolí priestor nad 4 MiB (až 32 MiB, napr. RAM disk 16 MB). Hľadanie drží v "
+"pamäti tri vzorky a históriu undo."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:632
+msgid "New search"
+msgstr "Nové hľadanie"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:634
+msgid ""
+"Take a sample of the space; every position is a candidate. While the "
+"emulation runs, the sample is taken at the next frame."
+msgstr ""
+"Zaznamená vzorku priestoru; každá pozícia je kandidát. Počas behu emulácie "
+"sa vzorka zaznamená na najbližšej snímke."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:640
+msgid "Sample"
+msgstr "Vzorka"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:642
+msgid "New sample without filtering; filter then with \"Take new sample\" off."
+msgstr ""
+"Nová vzorka bez filtrovania; potom filtrujte s vypnutým \"Zaznamenať novú "
+"vzorku\"."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:648
+msgid "Undo"
+msgstr "Späť"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:653
+msgid "Redo"
+msgstr "Znova"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:657
+#, c-format
+msgid "Candidates: %llu  (step %u, sample at frame %llu)"
+msgstr "Kandidáti: %llu  (krok %u, vzorka zo snímky %llu)"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:661
+msgid "No search - choose the space and press New search."
+msgstr "Žiadne hľadanie - zvoľte priestor a stlačte Nové hľadanie."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:669
+msgid "equal to"
+msgstr "rovná sa"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:669
+msgid "not equal to"
+msgstr "rôzne od"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:669
+msgid "less than"
+msgstr "menšie ako"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:669
+msgid "less or equal"
+msgstr "menšie alebo rovné"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:669
+msgid "greater than"
+msgstr "väčšie ako"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:670
+msgid "greater or equal"
+msgstr "väčšie alebo rovné"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:670
+msgid "between"
+msgstr "medzi"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:670
+msgid "increased"
+msgstr "zvýšilo sa"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:670
+msgid "decreased"
+msgstr "znížilo sa"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:670
+msgid "increased by"
+msgstr "zvýšilo sa o"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:671
+msgid "decreased by"
+msgstr "znížilo sa o"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:671
+#: src/ui-imgui/debugger/watch/watch_window.cpp:830
+msgid "changed"
+msgstr "zmenené"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:671
+msgid "unchanged"
+msgstr "nezmenilo sa"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:671
+msgid "changed by"
+msgstr "zmenilo sa o"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:671
+msgid "bits under mask equal"
+msgstr "bity pod maskou rovné"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:673
+msgid "value"
+msgstr "hodnotou"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:673
+msgid "previous"
+msgstr "predchádzajúcou"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:673
+msgid "first"
+msgstr "prvou"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:677
+msgid "Filter"
+msgstr "Filter"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:697
+msgid "compared with"
+msgstr "v porovnaní s"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:701
+msgid "Difference"
+msgstr "Rozdiel"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:706
+msgid "and"
+msgstr "a"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:711
+msgid "Mask"
+msgstr "Maska"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:715
+msgid "Not"
+msgstr "Nie"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:717
+msgid "Take new sample"
+msgstr "Zaznamenať novú vzorku"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:719
+msgid ""
+"On: sample first and compare it with the previous sample. Off: compare the "
+"last sample with the one before it."
+msgstr ""
+"Zapnuté: najprv vzorka a porovnať ju s predchádzajúcou vzorkou. Vypnuté: "
+"porovnať poslednú vzorku s tou pred ňou."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:723
+msgid "Apply filter"
+msgstr "Použiť filter"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:725
+msgid "Preview"
+msgstr "Náhľad"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:727
+msgid ""
+"Mark the candidates the filter would remove, using the last sample (no new "
+"sample)."
+msgstr ""
+"Označí kandidátov, ktorých by filter vyradil, podľa poslednej vzorky (bez "
+"novej vzorky)."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:731
+msgid ""
+"Arithmetic without wrap-around: an u8 going 00h -> FFh is not \"decreased by "
+"1\"."
+msgstr "Aritmetika bez pretečenia: u8 z 00h na FFh nie je \"znížilo sa o 1\"."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:739
+msgid "Memory Search###memsearch_window"
+msgstr "Hľadanie v pamäti###memsearch_window"
+
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:110
 #: src/ui-imgui/memext/memext_load_dialog.cpp:107
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:101
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:259
+#: src/ui-imgui/topmenu/replay_window.cpp:223
+#: src/ui-imgui/topmenu/replay_window.cpp:229
 msgid "File"
 msgstr "Súbor"
 
@@ -6167,7 +6747,7 @@ msgid "Max Speed"
 msgstr "Maximálna rýchlosť"
 
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:160
-#: src/ui-imgui/topmenu/topmenu.cpp:36
+#: src/ui-imgui/topmenu/topmenu.cpp:48
 msgid "Pause Emulation"
 msgstr "Pozastaviť emuláciu"
 
@@ -6202,14 +6782,6 @@ msgstr ""
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:286
 msgid "Select trace output directory"
 msgstr "Vyberte výstupný adresár trace-suite"
-
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:306
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:348
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:391
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:488
-#: src/ui-imgui/videorec/videorec_menu.cpp:96
-msgid "Off"
-msgstr "Vypnuté"
 
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:308
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:354
@@ -6772,249 +7344,249 @@ msgstr "Funkcie###profiler_tab_func"
 msgid "Per PC###profiler_tab_pc"
 msgstr "Podľa PC###profiler_tab_pc"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1173
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1328
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1159
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1314
 msgid "no data"
 msgstr "žiadne dáta"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1182
-#: src/ui-imgui/debugger/psg_window.cpp:261
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1168
+#: src/ui-imgui/debugger/psg_window.cpp:263
 msgid "silent"
 msgstr "ticho"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1200
-#: src/ui-imgui/debugger/psg_window.cpp:280
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1186
+#: src/ui-imgui/debugger/psg_window.cpp:282
 msgid "DC"
 msgstr "DC"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1449
-#: src/ui-imgui/debugger/psg_window.cpp:72
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1435
+#: src/ui-imgui/debugger/psg_window.cpp:73
 msgid "TONE"
 msgstr "TÓN"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1451
-#: src/ui-imgui/debugger/psg_window.cpp:73
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1437
+#: src/ui-imgui/debugger/psg_window.cpp:74
 msgid "NOISE"
 msgstr "ŠUM"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1455
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1812
-#: src/ui-imgui/debugger/psg_window.cpp:592
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1441
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1772
+#: src/ui-imgui/debugger/psg_window.cpp:594
 msgid "Channel"
 msgstr "Kanál"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1813
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1773
 msgid "chip"
 msgstr "chip"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1816
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1776
 msgid "Pitch: Noise"
 msgstr "Výška: Šum"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1821
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1781
 msgid "Pitch"
 msgstr "Výška"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1822
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1782
 msgid "cents"
 msgstr "centov"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1824
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1784
 msgid "Duration"
 msgstr "Trvanie"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1825
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1785
 msgid "Velocity"
 msgstr "Sila úderu"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1838
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1798
 msgid "Volume changes"
 msgstr "Zmeny hlasitosti"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1842
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1802
 msgid "overflowed"
 msgstr "pretečené"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1846
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3218
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1806
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3178
 msgid "active"
 msgstr "aktívny"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1875
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1835
 msgid "Last 10s###PSGScopeRoll10s"
 msgstr "Posledných 10s###PSGScopeRoll10s"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1878
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1838
 msgid "Last 30s###PSGScopeRoll30s"
 msgstr "Posledných 30s###PSGScopeRoll30s"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1881
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1841
 msgid "All###PSGScopeRollAll"
 msgstr "Všetko###PSGScopeRollAll"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1885
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1845
 msgid "Channels:"
 msgstr "Kanály:"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1897
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1857
 msgid "CH3 (Noise)"
 msgstr "CH3 (Šum)"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1963
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1923
 msgid "No notes recorded yet. Play some audio to populate the piano roll."
 msgstr ""
 "Zatiaľ nie sú zaznamenané žiadne noty. Prehrajte zvuk pre naplnenie piano "
 "rollu."
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:2040
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:2000
 msgid "NS"
 msgstr "NS"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:2980
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:2940
 msgid "Export PSG notes as CSV"
 msgstr "Exportovať PSG noty ako CSV"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3008
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:2968
 msgid "Export PSG notes as MIDI"
 msgstr "Exportovať PSG noty ako MIDI"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3090
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3050
 msgid "Export error###PSGScopeExportError"
 msgstr "Chyba exportu###PSGScopeExportError"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3093
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3053
 msgid "Failed to open file for writing"
 msgstr "Nepodarilo sa otvoriť súbor pre zápis"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3097
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3057
 msgid "OK###PSGScopeExportErrorOK"
 msgstr "OK###PSGScopeExportErrorOK"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3127
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3087
 msgid "Export MIDI...###PSGScopeExportMidiBtn"
 msgstr "Exportovať MIDI...###PSGScopeExportMidiBtn"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3134
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3146
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3094
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3106
 msgid "No notes recorded yet"
 msgstr "Zatiaľ nie sú zaznamenané žiadne noty"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3139
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3099
 msgid "Export CSV...###PSGScopeExportCsvBtn"
 msgstr "Exportovať CSV...###PSGScopeExportCsvBtn"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3157
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3117
 msgid "Tempo BPM###PSGScopeTempoBpm"
 msgstr "Tempo BPM###PSGScopeTempoBpm"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3168
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3128
 msgid "Clear###PSGScopeClearBtn"
 msgstr "Vyčistiť###PSGScopeClearBtn"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3175
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3135
 msgid "Reset scope sample buffer and recorded notes"
 msgstr "Resetovať buffer vzoriek scope a zaznamenané noty"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3206
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3166
 msgid "Notes"
 msgstr "Noty"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3228
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3188
 msgid "Log samples###PSGScopeLogSamples"
 msgstr "Logovať vzorky###PSGScopeLogSamples"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3237
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3197
 msgid "Write per-frame sample log to TSV file"
 msgstr "Zapisovať log vzoriek per snímok do TSV súboru"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3242
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3202
 msgid "Log events###PSGScopeLogEvents"
 msgstr "Logovať udalosti###PSGScopeLogEvents"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3251
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3211
 msgid "Write state machine event log to TSV file"
 msgstr "Zapisovať log udalostí stavového automatu do TSV súboru"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3262
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3222
 msgid "Log writes###PSGScopeLogWrites"
 msgstr "Logovať zápisy###PSGScopeLogWrites"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3297
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3257
 msgid "Log every PSG register write to file (1:1 reconstruction)"
 msgstr "Logovať každý zápis do PSG registra do súboru (1:1 rekonštrukcia)"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3326
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3286
 msgid "PSG Audio Scope###PSGAudioScope"
 msgstr "PSG Audio Scope###PSGAudioScope"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3397
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3357
 msgid "PSG Left (chip 0)###PSGScopeLeftHdr"
 msgstr "PSG ľavý (chip 0)###PSGScopeLeftHdr"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3403
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3363
 msgid "PSG Right (chip 1)###PSGScopeRightHdr"
 msgstr "PSG pravý (chip 1)###PSGScopeRightHdr"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3412
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3372
 msgid "PSG (chip 0)###PSGScopeMonoHdr"
 msgstr "PSG (chip 0)###PSGScopeMonoHdr"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3420
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3380
 msgid "Piano roll###PSGScopePianoRollHdr"
 msgstr "Piano roll###PSGScopePianoRollHdr"
 
-#: src/ui-imgui/debugger/psg_window.cpp:82
+#: src/ui-imgui/debugger/psg_window.cpp:83
 msgid "DIV /16 (fast)"
 msgstr "DIV /16 (rýchlo)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:83
+#: src/ui-imgui/debugger/psg_window.cpp:84
 msgid "DIV /32 (mid)"
 msgstr "DIV /32 (stredne)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:84
+#: src/ui-imgui/debugger/psg_window.cpp:85
 msgid "DIV /64 (slow)"
 msgstr "DIV /64 (pomaly)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:85
+#: src/ui-imgui/debugger/psg_window.cpp:86
 msgid "DIV from CH2 tone"
 msgstr "DIV z tónu CH2"
 
-#: src/ui-imgui/debugger/psg_window.cpp:92
+#: src/ui-imgui/debugger/psg_window.cpp:93
 msgid "PERIODIC"
 msgstr "PERIODICKÝ"
 
-#: src/ui-imgui/debugger/psg_window.cpp:93
+#: src/ui-imgui/debugger/psg_window.cpp:94
 msgid "WHITE"
 msgstr "BIELY"
 
-#: src/ui-imgui/debugger/psg_window.cpp:116
+#: src/ui-imgui/debugger/psg_window.cpp:117
 msgid "0 dB (max)"
 msgstr "0 dB (max)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:118
+#: src/ui-imgui/debugger/psg_window.cpp:119
 msgid "silent (off)"
 msgstr "ticho (vypnuté)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:362
-#: src/ui-imgui/debugger/psg_window.cpp:412
-#: src/ui-imgui/debugger/psg_window.cpp:458
-#: src/ui-imgui/debugger/psg_window.cpp:536
+#: src/ui-imgui/debugger/psg_window.cpp:364
+#: src/ui-imgui/debugger/psg_window.cpp:414
+#: src/ui-imgui/debugger/psg_window.cpp:460
+#: src/ui-imgui/debugger/psg_window.cpp:538
 msgid "Bin/Note"
 msgstr "Bin/nota"
 
-#: src/ui-imgui/debugger/psg_window.cpp:368
+#: src/ui-imgui/debugger/psg_window.cpp:370
 msgid "Latched channel (CS)"
 msgstr "Zachyteny kanal (CS)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:369
+#: src/ui-imgui/debugger/psg_window.cpp:371
 msgid "Index kanalu (0..3) ktery prijme dalsi DATA byte."
 msgstr "Index kanala (0..3) ktory prijme dalsi DATA byte."
 
-#: src/ui-imgui/debugger/psg_window.cpp:374
+#: src/ui-imgui/debugger/psg_window.cpp:376
 msgid "Next DATA byte targets"
 msgstr "Ciel dalsieho DATA byte"
 
-#: src/ui-imgui/debugger/psg_window.cpp:377
+#: src/ui-imgui/debugger/psg_window.cpp:379
 msgid ""
 "Bit [4] posledniho LATCH bytu. 1 = attn, 0 = tone (TONE kanal) / noise cfg "
 "(CH3)."
@@ -7022,45 +7594,45 @@ msgstr ""
 "Bit [4] posledneho LATCH byte. 1 = attn, 0 = tone (TONE kanal) / noise cfg "
 "(CH3)."
 
-#: src/ui-imgui/debugger/psg_window.cpp:380
+#: src/ui-imgui/debugger/psg_window.cpp:382
 msgid "attenuation"
 msgstr "útlm"
 
-#: src/ui-imgui/debugger/psg_window.cpp:382
+#: src/ui-imgui/debugger/psg_window.cpp:384
 msgid "tone / noise cfg"
 msgstr "tone / noise cfg"
 
-#: src/ui-imgui/debugger/psg_window.cpp:416
+#: src/ui-imgui/debugger/psg_window.cpp:418
 msgid "Channel type"
 msgstr "Typ kanála"
 
-#: src/ui-imgui/debugger/psg_window.cpp:418
+#: src/ui-imgui/debugger/psg_window.cpp:420
 msgid "CH0-2 vzdy TONE, CH3 vzdy NOISE (initializace v psg_instance_init)."
 msgstr "CH0-2 vzdy TONE, CH3 vzdy NOISE (inicializacia v psg_instance_init)."
 
-#: src/ui-imgui/debugger/psg_window.cpp:423
+#: src/ui-imgui/debugger/psg_window.cpp:425
 msgid "Attenuation"
 msgstr "Útlm"
 
-#: src/ui-imgui/debugger/psg_window.cpp:426
+#: src/ui-imgui/debugger/psg_window.cpp:428
 msgid "4-bit volume: 0 = max (0 dB), krok -2 dB, 15 = silent (channel off)."
 msgstr ""
 "4-bitová hlasitosť: 0 = max (0 dB), krok -2 dB, 15 = ticho (kanál off).4-bit "
 "hlasitost: 0 = max (0 dB), krok -2 dB, 15 = silent (kanal vypnuty)."
 
-#: src/ui-imgui/debugger/psg_window.cpp:464
+#: src/ui-imgui/debugger/psg_window.cpp:466
 msgid "Tone divider (10-bit)"
 msgstr "Delic tonu (10-bit)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:467
+#: src/ui-imgui/debugger/psg_window.cpp:469
 msgid "10-bit value 0..1023. f_out = CPU_CLOCK / (32 * divider). <2 = DC."
 msgstr "10-bitová hodnota 0..1023. f_out = CPU_CLOCK / (32 * delic). <2 = DC."
 
-#: src/ui-imgui/debugger/psg_window.cpp:476
+#: src/ui-imgui/debugger/psg_window.cpp:478
 msgid "Frequency"
 msgstr "Frekvencia"
 
-#: src/ui-imgui/debugger/psg_window.cpp:479
+#: src/ui-imgui/debugger/psg_window.cpp:481
 msgid ""
 "CPU_CLOCK / (32 * divider). MZ-800: 3.5469 MHz, MZ-700/MZ-1500: 3.5796 MHz "
 "CPU clock."
@@ -7068,15 +7640,15 @@ msgstr ""
 "CPU_CLOCK / (32 * delic). MZ-800: 3.5469 MHz, MZ-700/MZ-1500: 3.5796 MHz CPU "
 "hodiny."
 
-#: src/ui-imgui/debugger/psg_window.cpp:482
+#: src/ui-imgui/debugger/psg_window.cpp:484
 msgid "DC (no oscillation)"
 msgstr "DC (bez oscilácie)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:496
+#: src/ui-imgui/debugger/psg_window.cpp:498
 msgid "MIDI note"
 msgstr "MIDI nota"
 
-#: src/ui-imgui/debugger/psg_window.cpp:499
+#: src/ui-imgui/debugger/psg_window.cpp:501
 msgid ""
 "12 * log2(f / 440) + 69. A4 = 440 Hz = 69. Cents = odchylka od rovnomerne "
 "temperace."
@@ -7084,31 +7656,31 @@ msgstr ""
 "12 * log2(f / 440) + 69. A4 = 440 Hz = 69. Cents = odchylka od rovnomerneho "
 "temperovania."
 
-#: src/ui-imgui/debugger/psg_window.cpp:539
+#: src/ui-imgui/debugger/psg_window.cpp:541
 msgid "Noise divider type"
 msgstr "Typ delica sumu"
 
-#: src/ui-imgui/debugger/psg_window.cpp:542
+#: src/ui-imgui/debugger/psg_window.cpp:544
 msgid "0..2 = fixed PSG dividery 16/32/64, 3 = CH2 tone divider rizeny shift."
 msgstr "0..2 = pevne PSG delice 16/32/64, 3 = CH2 tone divider riadeny shift."
 
-#: src/ui-imgui/debugger/psg_window.cpp:544
+#: src/ui-imgui/debugger/psg_window.cpp:546
 msgid "Noise feedback"
 msgstr "Spatna vazba sumu"
 
-#: src/ui-imgui/debugger/psg_window.cpp:547
+#: src/ui-imgui/debugger/psg_window.cpp:549
 msgid "Periodic = LFSR top bit only, White = XOR feedback (sirsi spektrum)."
 msgstr "Periodic = iba top bit LFSR, White = XOR feedback (sirsie spektrum)."
 
-#: src/ui-imgui/debugger/psg_window.cpp:552
+#: src/ui-imgui/debugger/psg_window.cpp:554
 msgid "Tone divider: N/A (NOISE channel)"
 msgstr "Tone divider: N/A (NOISE kanal)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:557
+#: src/ui-imgui/debugger/psg_window.cpp:559
 msgid "Waveform"
 msgstr "Priebeh"
 
-#: src/ui-imgui/debugger/psg_window.cpp:560
+#: src/ui-imgui/debugger/psg_window.cpp:562
 msgid ""
 "Oscilloscope view: TONE = square wave (4 periods fixed), NOISE = pseudo-"
 "random pattern. Amplitude scaled by attenuation."
@@ -7116,28 +7688,28 @@ msgstr ""
 "Pohľad osciloskopu: TONE = obdĺžnik (pevne 4 periódy), NOISE = pseudonáhodný "
 "vzor. Amplitúda škálovaná atenuáciou."
 
-#: src/ui-imgui/debugger/psg_window.cpp:576
+#: src/ui-imgui/debugger/psg_window.cpp:578
 msgid "Latch state"
 msgstr "Stav latch"
 
-#: src/ui-imgui/debugger/psg_window.cpp:611
+#: src/ui-imgui/debugger/psg_window.cpp:613
 msgid "PSG SN76489 State###PSGState"
 msgstr "Stav PSG SN76489###PSGState"
 
-#: src/ui-imgui/debugger/psg_window.cpp:626
+#: src/ui-imgui/debugger/psg_window.cpp:628
 msgid "PSG Left (chip 0)###PSGLeftHdr"
 msgstr "PSG lavy (chip 0)###PSGLeftHdr"
 
-#: src/ui-imgui/debugger/psg_window.cpp:633
+#: src/ui-imgui/debugger/psg_window.cpp:635
 msgid "PSG Right (chip 1)###PSGRightHdr"
 msgstr "PSG pravy (chip 1)###PSGRightHdr"
 
-#: src/ui-imgui/debugger/psg_window.cpp:643
+#: src/ui-imgui/debugger/psg_window.cpp:645
 msgid "PSG (chip 0)###PSGMonoHdr"
 msgstr "PSG (chip 0)###PSGMonoHdr"
 
 #: src/ui-imgui/debugger/qdisk_window.cpp:147
-#: src/ui-imgui/topmenu/menu_debugger.cpp:594
+#: src/ui-imgui/topmenu/menu_debugger.cpp:612
 msgid "QDisk State"
 msgstr "Stav QDisk"
 
@@ -7164,13 +7736,13 @@ msgid "Virtual mode"
 msgstr "Virtuálny režim"
 
 #: src/ui-imgui/debugger/ramdisk_window.cpp:139
-#: src/ui-imgui/topmenu/menu_debugger.cpp:600
+#: src/ui-imgui/topmenu/menu_debugger.cpp:618
 msgid "Memory Disk State"
 msgstr "Stav pamäťového disku"
 
 #: src/ui-imgui/debugger/ramdisk_window.cpp:146
-msgid "MR-1R18 (Standard)"
-msgstr "MR-1R18 (Štandard)"
+msgid "MZ-1R18 (Standard)"
+msgstr "MZ-1R18 (Štandard)"
 
 #: src/ui-imgui/debugger/ramdisk_window.cpp:153
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:96
@@ -7181,6 +7753,260 @@ msgstr "Pezik 0xE8 - 0xEF"
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:108
 msgid "Pezik 0x68 - 0x6F"
 msgstr "Pezik 0x68 - 0x6F"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:120
+#: src/ui-imgui/topmenu/devices/menu_memext.cpp:56
+msgid "MemExt"
+msgstr "MemExt"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:121
+#: src/ui-imgui/topmenu/devices/menu_rom.cpp:24
+msgid "ROM"
+msgstr "ROM"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:130
+msgid "Instruction"
+msgstr "Inštrukcia"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:131
+msgid "Interrupt (return address)"
+msgstr "Prerušenie (návratová adresa)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:132
+msgid "NMI (return address)"
+msgstr "NMI (návratová adresa)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:133
+#: src/ui-imgui/topmenu/menu_debugger.cpp:63
+msgid "Debugger"
+msgstr "Debugger"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:134
+msgid "Breakpoint poke"
+msgstr "Poke z breakpointu"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:135
+msgid "Freeze"
+msgstr "Zmrazenie"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:136
+msgid "Tape (CMT hack)"
+msgstr "Páska (CMT hack)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:137
+#: src/ui-imgui/memext/memext_load_dialog.cpp:162
+msgid "Load"
+msgstr "Načítať"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:157
+msgid "plane"
+msgstr "plán"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:188
+msgid "Command failed:"
+msgstr "Príkaz zlyhal:"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:289
+msgid ""
+"Enter the range as hex CPU addresses (From, optionally To), or leave both "
+"empty for all memory."
+msgstr ""
+"Zadajte rozsah ako hex adresy CPU (From, voliteľne To), alebo nechajte obe "
+"polia prázdne pre celú pamäť."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:311
+msgid "Seq"
+msgstr "Poradie"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:315
+msgid "Cell"
+msgstr "Bunka"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:316
+msgid "Old"
+msgstr "Pôvodná"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:317
+msgid "New"
+msgstr "Nová"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:318
+msgid "Source"
+msgstr "Zdroj"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:319
+msgid "Note"
+msgstr "Poznámka"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:348
+#, c-format
+msgid "%u bytes loaded"
+msgstr "nahraných %u bajtov"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:350
+msgid "dropped (ROM)"
+msgstr "zahodené (ROM)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:352
+msgid "value unchanged"
+msgstr "hodnota bez zmeny"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:365
+msgid "Stopped"
+msgstr "Zastavené"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:367
+msgid "Not started"
+msgstr "Nespustené"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:371
+#, c-format
+msgid ""
+"Records: %llu of %llu writes, overwritten %llu, dropped %llu, memory %.1f MB"
+msgstr ""
+"Záznamov: %llu z %llu zápisov, prepísaných %llu, zahodených %llu, pamäť %.1f "
+"MB"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:378
+msgid "Range: all memory"
+msgstr "Rozsah: celá pamäť"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:382
+#, c-format
+msgid "Range: %s %05X-%05X"
+msgstr "Rozsah: %s %05X-%05X"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:385
+#, c-format
+msgid "Range: CPU %04X-%04X"
+msgstr "Rozsah: CPU %04X-%04X"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:389
+#, c-format
+msgid "(+%u more)"
+msgstr "(+%u ďalšie)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:395
+msgid "From"
+msgstr "Od"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:397
+msgid "First CPU address (hex). Leave From and To empty to record all memory."
+msgstr ""
+"Prvá adresa CPU (hex). Pre záznam celej pamäte nechajte Od aj Do prázdne."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:401
+msgid "To"
+msgstr "Do"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:403
+msgid "Last CPU address (hex); empty = only the From address."
+msgstr "Posledná adresa CPU (hex); prázdne = len adresa Od."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:406
+msgid "Ring (keep newest)"
+msgstr "Kruh (drží najnovšie)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:406
+msgid "Fill (keep first)"
+msgstr "Plnenie (drží prvé)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:411
+msgid "Records"
+msgstr "Záznamov"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:413
+msgid "Log size in records (16-16777216), 32 bytes each."
+msgstr "Veľkosť záznamu v položkách (16-16777216), každá 32 bajtov."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:418
+msgid ""
+"Start recording; a running log is replaced. Reset and snapshot load empty "
+"the log."
+msgstr ""
+"Spustí záznam; bežiaci záznam sa nahradí. Reset a načítanie snapshotu záznam "
+"vyprázdni."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:423
+msgid "Stop"
+msgstr "Zastaviť"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:432
+msgid "(all memory: emulation is slower)"
+msgstr "(celá pamäť: emulácia je pomalšia)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:439
+msgid "Who wrote"
+msgstr "Kto zapísal"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:441
+msgid "CPU address"
+msgstr "Adresa CPU"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:444
+msgid "Find"
+msgstr "Nájsť"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:451
+msgid "Enter a hex CPU address."
+msgstr "Zadajte hex adresu CPU."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:455
+msgid "Include unchanged writes"
+msgstr "Vrátane zápisov bez zmeny"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:463
+msgid ""
+"Enter an address, or use \"Who wrote this byte?\" in the Memory Browser."
+msgstr ""
+"Zadajte adresu, alebo použite \"Kto zapísal tento bajt?\" v Memory Browseri."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:467
+msgid "This address is a memory-mapped I/O port, not a memory cell."
+msgstr "Táto adresa je port mapovaný do pamäte, nie pamäťová bunka."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:471
+msgid "No memory cell is mapped at this address."
+msgstr "Na tejto adrese nie je namapovaná žiadna pamäťová bunka."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:480
+#, c-format
+msgid "%s: last written by PC %04X (%s), record %u"
+msgstr "%s: naposledy zapísala PC %04X (%s), záznam %u"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:483
+#, c-format
+msgid "%s: not written since the log started"
+msgstr "%s: od spustenia záznamu nezapísané"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:490
+msgid ""
+"The write is no longer in the log (overwritten); only the last writer is "
+"known."
+msgstr ""
+"Zápis už v zázname nie je (prepísaný); známy je len posledný zapisovateľ."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:548
+msgid "RAM Write Log###ramlog_window"
+msgstr "Záznam zápisov do RAM###ramlog_window"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:574
+msgid "Newest writes"
+msgstr "Najnovšie zápisy"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:575
+msgid "Auto refresh"
+msgstr "Automaticky obnovovať"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:577
+#: src/ui-imgui/memext/memext_map_window.cpp:93
+#: src/ui-imgui/memext/memext_map_window.cpp:95
+msgid "Refresh"
+msgstr "Obnoviť"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:579
+msgid "Show unchanged writes"
+msgstr "Zobraziť zápisy bez zmeny"
 
 #: src/ui-imgui/debugger/sections/dbg_callstack.cpp:256
 msgid "Active###cs_active"
@@ -7365,7 +8191,7 @@ msgstr ""
 "Tip: RET pc ukazuje miesto divergencie. Otvorte v disasm pre analýzu "
 "volajúceho vzoru."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1337
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1339
 #, c-format
 msgid ""
 "Left-click: focus primary Disassembly at $%04X.\n"
@@ -7374,21 +8200,17 @@ msgstr ""
 "Ľavý klik: zameria hlavnú Disassembly na $%04X.\n"
 "Pravý klik: ďalšie ciele zamerania a kopírovanie."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1392
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1394
 #: src/ui-imgui/debugger/sections/dbg_stack_panel.cpp:1462
 msgid "Focus in Disassembly (main)"
 msgstr "Zamerať v Disassembly (hlavná)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1395
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1397
 #: src/ui-imgui/debugger/sections/dbg_stack_panel.cpp:1465
 msgid "Focus in Disassembly"
 msgstr "Zamerať v Disassembly"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1416
-msgid "Add to Watch"
-msgstr "Pridať do Watch"
-
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1423
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1425
 msgid ""
 "Creates/updates a $vars entry as a static snapshot.\n"
 "Open Vars window to view and edit."
@@ -7396,11 +8218,11 @@ msgstr ""
 "Vytvorí/aktualizuje záznam $vars ako statický snapshot.\n"
 "Otvorte okno Vars pre zobrazenie a úpravu."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1439
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1441
 msgid "Add breakpoint at"
 msgstr "Pridať breakpoint na"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1448
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1450
 msgid ""
 "Creates an execution breakpoint at the address held\n"
 "in the register. No-op if an existing BP occupies it."
@@ -7408,97 +8230,97 @@ msgstr ""
 "Vytvorí execution breakpoint na adrese v registri.\n"
 "Nič sa nestane, ak na adrese už existujúci BP je."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1462
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1464
 msgid "Copy hex"
 msgstr "Kopírovať hex"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1472
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1474
 msgid "Copy dec"
 msgstr "Kopírovať dec"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1488
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1490
 msgid "Copy bin"
 msgstr "Kopírovať bin"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1621
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1623
 msgid "Click to edit. Right-click for options."
 msgstr "Kliknutie pre úpravu. Pravý klik pre možnosti."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1625
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1627
 msgid "Click to pause and edit"
 msgstr "Kliknutie pre pauzu a úpravu"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1729
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1731
 msgid "Click to toggle"
 msgstr "Kliknutie pre prepnutie"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1731
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1733
 msgid "Click to pause and toggle"
 msgstr "Kliknutie pre pauzu a prepnutie"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1781
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1783
 msgid "Select interrupt mode"
 msgstr "Vybrať režim prerušenia"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1783
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1785
 msgid "Click to pause and change IM"
 msgstr "Kliknutie pre pauzu a zmenu IM"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1981
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1983
 msgid "S = Sign flag (bit 7 of last result)"
 msgstr "S = Sign flag (bit 7 posledného výsledku)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1982
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1984
 msgid "Z = Zero flag (result == 0)"
 msgstr "Z = Zero flag (výsledok == 0)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1983
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1985
 msgid "Undocumented copy of bit 5 of result"
 msgstr "Nedokumentovaná kópia bitu 5 výsledku"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1984
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1986
 msgid "H = Half carry flag (carry from bit 3 to 4, used by DAA)"
 msgstr "H = Half carry flag (prenos z bitu 3 do 4, používa DAA)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1985
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1987
 msgid "Undocumented copy of bit 3 of result"
 msgstr "Nedokumentovaná kópia bitu 3 výsledku"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1986
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1988
 msgid "P/V = Parity (logic ops) / Overflow (arithmetic)"
 msgstr "P/V = Parita (logické operácie) / Overflow (aritmetika)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1987
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1989
 msgid "N = Negative flag (last op was subtract, used by DAA)"
 msgstr "N = Negative flag (posledná operácia bola odčítanie, používa DAA)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1988
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1990
 msgid "C = Carry flag"
 msgstr "C = Carry flag"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2159
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2161
 msgid "(refresh pending)"
 msgstr "(čaká sa na obnovu)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2274
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2276
 msgid "Click to edit value"
 msgstr "Kliknutie pre úpravu hodnoty"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2282
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2284
 msgid "Set0###cpu_user_cyc_set0"
 msgstr "Set0###cpu_user_cyc_set0"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2289
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2291
 msgid "Set User cyc to zero (= origin to current total)"
 msgstr "Nastaví User cyc na nulu (= východzí bod = aktuálny celkový súčet)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2410
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2412
 #, c-format
 msgid "Cannot write ISR target: address $%04X points to read-only memory (%s)."
 msgstr ""
 "Nemožno zapísať cieľ ISR: adresa $%04X ukazuje na pamäť len na čítanie (%s)."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2416
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2418
 msgid "Change the bank mapping or edit VEC so it points to RAM."
 msgstr "Zmeňte mapovanie banky alebo upravte VEC tak, aby ukazoval do RAM."
 
@@ -7680,25 +8502,25 @@ msgstr "Disassembly #1"
 
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3299
 #: src/ui-imgui/topmenu/menu_debugger.cpp:177
-#: src/ui-imgui/topmenu/menu_debugger.cpp:458
+#: src/ui-imgui/topmenu/menu_debugger.cpp:476
 msgid "Disassembly #2"
 msgstr "Disassembly #2"
 
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3300
 #: src/ui-imgui/topmenu/menu_debugger.cpp:182
-#: src/ui-imgui/topmenu/menu_debugger.cpp:463
+#: src/ui-imgui/topmenu/menu_debugger.cpp:481
 msgid "Disassembly #3"
 msgstr "Disassembly #3"
 
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3301
 #: src/ui-imgui/topmenu/menu_debugger.cpp:187
-#: src/ui-imgui/topmenu/menu_debugger.cpp:468
+#: src/ui-imgui/topmenu/menu_debugger.cpp:486
 msgid "Disassembly #4"
 msgstr "Disassembly #4"
 
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3302
 #: src/ui-imgui/topmenu/menu_debugger.cpp:192
-#: src/ui-imgui/topmenu/menu_debugger.cpp:473
+#: src/ui-imgui/topmenu/menu_debugger.cpp:491
 msgid "Disassembly #5"
 msgstr "Disassembly #5"
 
@@ -9296,10 +10118,6 @@ msgstr "(nové)"
 msgid "(type changed)"
 msgstr "(zmenený typ)"
 
-#: src/ui-imgui/debugger/watch/watch_window.cpp:830
-msgid "changed"
-msgstr "zmenené"
-
 #: src/ui-imgui/debugger/watch/watch_window.cpp:871
 msgid "(N/A for scalar expr)"
 msgstr "(nedostupné pre skalárny výraz)"
@@ -9805,7 +10623,7 @@ msgstr "Znovu prehľadať zariadenia"
 msgid "Joystick"
 msgstr "Joystick"
 
-#: src/ui-imgui/main_window.cpp:105
+#: src/ui-imgui/main_window.cpp:110
 msgid "No audio device - running without sound"
 msgstr "Žiadne zvukové zariadenie - beží bez zvuku"
 
@@ -9870,69 +10688,73 @@ msgstr "Efekt. št. odch.:"
 msgid "Print to console"
 msgstr "Výpis do konzoly"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:324
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:328
 msgid "MCP Activity###mcp_activity_window"
 msgstr "Aktivita MCP###mcp_activity_window"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:333
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:337
 msgid "Clear##mcp_act_clear"
 msgstr "Vymazať##mcp_act_clear"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:344
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:348
 msgid "Pause##mcp_act_pause"
 msgstr "Pozastaviť##mcp_act_pause"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:353
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:357
 msgid "Auto-scroll##mcp_act_scroll"
 msgstr "Auto-posun##mcp_act_scroll"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:360
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:364
 msgid "Filter description..."
 msgstr "Filtrovať popis..."
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:371
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:375
 msgid "Origin:"
 msgstr "Pôvod:"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:373
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:377
 msgid "USER##mcp_act_org_user"
 msgstr "USER##mcp_act_org_user"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:375
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:379
 msgid "AI##mcp_act_org_mcp"
 msgstr "AI##mcp_act_org_mcp"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:377
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:381
 msgid "TEST##mcp_act_org_test"
 msgstr "TEST##mcp_act_org_test"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:379
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:383
 msgid "SYS##mcp_act_org_sys"
 msgstr "SYS##mcp_act_org_sys"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:415
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:419
 msgid "Entries (shown / total)"
 msgstr "Záznamy (zobrazené / celkom)"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:435
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:439
 msgid "Time##mcp_act_col_time"
 msgstr "Čas##mcp_act_col_time"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:437
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:441
 msgid "Origin##mcp_act_col_orig"
 msgstr "Pôvod##mcp_act_col_orig"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:439
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:443
 msgid "Cmd##mcp_act_col_cmd"
 msgstr "Príkaz##mcp_act_col_cmd"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:441
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:445
 msgid "Description##mcp_act_col_desc"
 msgstr "Popis##mcp_act_col_desc"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:521
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:525
 msgid "Open the related window"
 msgstr "Otvoriť súvisiace okno"
+
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:536
+msgid "rejected: state changed since it was read"
+msgstr "odmietnuté: stav sa od prečítania zmenil"
 
 #: src/ui-imgui/mcp_activity/mcp_settings_dialog.cpp:79
 msgid "127.0.0.1 (localhost only)"
@@ -10261,10 +11083,6 @@ msgstr "Od:"
 msgid "Size:"
 msgstr "Veľkosť:"
 
-#: src/ui-imgui/memext/memext_load_dialog.cpp:162
-msgid "Load"
-msgstr "Načítať"
-
 #: src/ui-imgui/memext/memext_load_dialog.cpp:177
 msgid "Cannot open file"
 msgstr "Nemožno otvoriť súbor"
@@ -10272,11 +11090,6 @@ msgstr "Nemožno otvoriť súbor"
 #: src/ui-imgui/memext/memext_map_window.cpp:87
 msgid "MemExt Map Settings"
 msgstr "Nastavenie mapy MemExt"
-
-#: src/ui-imgui/memext/memext_map_window.cpp:93
-#: src/ui-imgui/memext/memext_map_window.cpp:95
-msgid "Refresh"
-msgstr "Obnoviť"
 
 #: src/ui-imgui/memext/memext_map_window.cpp:106
 msgid "Bank size"
@@ -10563,45 +11376,49 @@ msgstr "Binárne súbory ROM"
 msgid "CMT Hack Patch ROM"
 msgstr "ROM CMT Hack patchu"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:60
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:82
 msgid "The emulator screen is not available"
 msgstr "Obrazovka emulátora nie je k dispozícii"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:95
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:123
 #, c-format
 msgid "Screenshot saved (%u x %u): %s"
 msgstr "Snímka obrazovky uložená (%u x %u): %s"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:99
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:127
 #, c-format
 msgid "Cannot save screenshot to '%s': %s"
 msgstr "Snímku obrazovky nemožno uložiť do '%s': %s"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:100
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:145
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:221
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:235
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:128
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:173
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:257
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:271
 msgid "Screenshot Error"
 msgstr "Chyba snímky obrazovky"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:130
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:162
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:158
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:190
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:635
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:644
 msgid "Save Screenshot"
 msgstr "Uložiť snímku obrazovky"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:161
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:189
 msgid "Screenshot"
 msgstr "Snímka obrazovky"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:165
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:193
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:635
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:645
 msgid "Save Screenshot As..."
 msgstr "Uložiť snímku obrazovky ako..."
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:170
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:198
 msgid "Record Changed Frames"
 msgstr "Nahrávať zmenené snímky"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:174
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:202
 msgid ""
 "Saves a PNG of every emulated frame that differs from the previous one (area "
 "and scale from Settings) until you stop it."
@@ -10609,89 +11426,97 @@ msgstr ""
 "Ukladá PNG každého emulovaného snímku, ktorý sa líši od predchádzajúceho "
 "(oblasť a mierka z nastavení), kým ho nezastavíte."
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:220
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:206
+msgid "Screenshot Control..."
+msgstr "Ovládanie screenshotov..."
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:256
 #, c-format
 msgid "Cannot start the frame series: %s"
 msgstr "Sériu snímok nemožno spustiť: %s"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:234
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:270
 #, c-format
 msgid "Frame series stopped after %u files: %s"
 msgstr "Séria snímok skončila po %u súboroch: %s"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:238
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:274
 #, c-format
 msgid "Frame series saved: %u files of %u frames to %s"
 msgstr "Séria snímok uložená: %u súborov z %u snímok do %s"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:253
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:289
 #, c-format
 msgid "FRAMES %u / %u"
 msgstr "SNÍMKY %u / %u"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:288
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:324
 msgid "Native (computer dots, 320 or 640 wide)"
 msgstr "Natívna (body počítača, šírka 320 alebo 640)"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:289
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:325
 msgid "1x"
 msgstr "1x"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:290
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:326
 msgid "2x (window at 100 %)"
 msgstr "2x (okno na 100 %)"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:291
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:327
 msgid "3x"
 msgstr "3x"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:292
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:328
 msgid "4x"
 msgstr "4x"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:307
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:343
 #, c-format
 msgid "Image size: %u x %u or %u x %u (640-dot modes)"
 msgstr "Veľkosť obrázka: %u x %u alebo %u x %u (režimy 640 bodov)"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:310
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:346
 #, c-format
 msgid "Image size: %u x %u"
 msgstr "Veľkosť obrázka: %u x %u"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:327
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:363
 msgid "Screenshot Settings"
 msgstr "Nastavenia snímky obrazovky"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:332
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:368
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:587
 msgid "Area"
 msgstr "Oblasť"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:333
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:369
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:588
 msgid "Whole frame with border"
 msgstr "Celý obraz s okrajom"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:336
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:372
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:587
 msgid "Picture without border"
 msgstr "Obraz bez okraja"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:342
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:378
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:591
 msgid "Scale"
 msgstr "Mierka"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:366
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:402
 msgid "1x drops every second column in the 640-dot modes."
 msgstr "1x v režimoch 640 bodov vynechá každý druhý stĺpec."
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:374
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:410
 msgid "(default: screenshots folder next to the emulator)"
 msgstr "(predvolený: adresár screenshots vedľa emulátora)"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:389
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:425
 msgid "Frame series: only changed frames"
 msgstr "Séria snímok: len zmenené snímky"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:391
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:427
 msgid ""
 "Checked: Record Changed Frames saves only frames that differ from the last "
 "saved one. Unchecked: every emulated frame."
@@ -10699,16 +11524,75 @@ msgstr ""
 "Začiarknuté: Nahrávať zmenené snímky uloží len snímky odlišné od poslednej "
 "uloženej. Nezačiarknuté: každá emulovaná snímka."
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:396
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:432
 #, c-format
 msgid "Save Screenshot (%s) saves the picture shown in the window."
 msgstr "Uložiť snímku obrazovky (%s) uloží obraz zobrazený v okne."
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:397
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:433
 #, c-format
 msgid "Record Changed Frames (%s) saves emulated frames into a new folder."
 msgstr ""
 "Nahrávať zmenené snímky (%s) ukladá emulované snímky do nového priečinka."
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:574
+msgid "Screenshot Control"
+msgstr "Ovládanie screenshotov"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:597
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:599
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:604
+msgid "Last screenshot"
+msgstr "Posledný screenshot"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:609
+#, c-format
+msgid "Recording: %u files of %u frames"
+msgstr "Nahráva: %u súborov z %u snímok"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:611
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:614
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:618
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:622
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:625
+msgid "Frame series"
+msgstr "Séria snímok"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:613
+#, c-format
+msgid "Writing: %u files"
+msgstr "Zapisuje: %u súborov"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:617
+#, c-format
+msgid "Stopped after %u files: %s"
+msgstr "Zastavené po %u súboroch: %s"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:620
+#, c-format
+msgid "Last: %u files of %u frames"
+msgstr "Posledná: %u súborov z %u snímok"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:628
+msgid "Series folder"
+msgstr "Priečinok série"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:635
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:647
+msgid "Start Frame Series"
+msgstr "Spustiť sériu snímok"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:636
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:647
+msgid "Stop Frame Series"
+msgstr "Ukončiť sériu snímok"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:653
+msgid ""
+"The frame series saves a PNG of every changed emulated frame into a new "
+"folder."
+msgstr ""
+"Séria snímok uloží PNG každej zmenenej emulovanej snímky do nového priečinka."
 
 #: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:157
 msgid "Snapshot Preview"
@@ -10732,7 +11616,7 @@ msgid "Emulator"
 msgstr "Emulátor"
 
 #: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:197
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:105
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:103
 msgid "Description"
 msgstr "Popis"
 
@@ -10748,57 +11632,57 @@ msgstr "Nie je možné prečítať metadáta snímku"
 msgid "Load Snapshot"
 msgstr "Načítať snímok"
 
-#: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:262
-msgid "Snapshot loaded"
-msgstr "Snímok načítaný"
-
-#: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:267
-msgid "Load failed"
-msgstr "Načítanie zlyhalo"
-
 #: src/ui-imgui/snapshot/snapshot_notification.cpp:87
 msgid "Snapshot Error"
 msgstr "Chyba snímku"
 
-#: src/ui-imgui/snapshot/snapshot_quicksave_handler.cpp:73
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:63
+msgid "Snapshot saved"
+msgstr "Snímok uložený"
+
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:64
+msgid "Save failed"
+msgstr "Uloženie zlyhalo"
+
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:71
+msgid "Snapshot loaded"
+msgstr "Snímok načítaný"
+
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:72
+msgid "Load failed"
+msgstr "Načítanie zlyhalo"
+
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:79
 msgid "Quick Save OK"
 msgstr "Rýchle uloženie OK"
 
-#: src/ui-imgui/snapshot/snapshot_quicksave_handler.cpp:76
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:80
 msgid "Quick Save failed"
 msgstr "Rýchle uloženie zlyhalo"
 
-#: src/ui-imgui/snapshot/snapshot_quicksave_handler.cpp:88
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:87
 msgid "Quick Load OK"
 msgstr "Rýchle načítanie OK"
 
-#: src/ui-imgui/snapshot/snapshot_quicksave_handler.cpp:92
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:88
 msgid "Quick Load failed"
 msgstr "Rýchle načítanie zlyhalo"
 
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:63
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:96
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:100
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:61
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:94
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:98
 msgid "Save Snapshot"
 msgstr "Uložiť snímok"
 
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:110
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:108
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:88
 msgid "Include RAM disk content"
 msgstr "Zahrnúť obsah RAM disku"
 
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:112
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:110
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:89
 msgid "Include MEMEXT content"
 msgstr "Zahrnúť obsah MEMEXT"
-
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:125
-msgid "Snapshot saved"
-msgstr "Snímok uložený"
-
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:129
-msgid "Save failed"
-msgstr "Uloženie zlyhalo"
 
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:59
 msgid "Snapshot Settings"
@@ -10817,7 +11701,7 @@ msgid "Compression level"
 msgstr "Úroveň kompresie"
 
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:97
-#: src/ui-imgui/topmenu/menu_snapshot.cpp:79
+#: src/ui-imgui/topmenu/menu_snapshot.cpp:93
 msgid "Quick Save"
 msgstr "Rýchle uloženie"
 
@@ -11120,10 +12004,6 @@ msgstr "Stav IDE8 (debugger)..."
 msgid "Select FLASH image file to open"
 msgstr "Vyberte súbor obrazu FLASH"
 
-#: src/ui-imgui/topmenu/devices/menu_memext.cpp:56
-msgid "MemExt"
-msgstr "MemExt"
-
 #: src/ui-imgui/topmenu/devices/menu_memext.cpp:64
 msgid "Model - 'Peroutka & Hučík'"
 msgstr "Model - 'Peroutka & Hučík'"
@@ -11385,16 +12265,16 @@ msgid "Memory Disk"
 msgstr "Pamäťový disk"
 
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:77
-msgid "MR-1R18 Compatible"
-msgstr "MR-1R18 kompatibilný"
+msgid "MZ-1R18 Compatible"
+msgstr "MZ-1R18 kompatibilný"
 
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:116
 msgid "Pezik Settings..."
 msgstr "Nastavenia Pezik..."
 
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:121
-msgid "MR-1R18 Options"
-msgstr "Nastavenia MR-1R18"
+msgid "MZ-1R18 Options"
+msgstr "Nastavenia MZ-1R18"
 
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:125
 msgid "64 KB"
@@ -11477,10 +12357,6 @@ msgstr "Centronics (predvolené)"
 #: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:80
 msgid " (locked: plotter connected)"
 msgstr " (uzamknuté: plotter pripojený)"
-
-#: src/ui-imgui/topmenu/devices/menu_rom.cpp:24
-msgid "ROM"
-msgstr "ROM"
 
 #: src/ui-imgui/topmenu/devices/menu_rom.cpp:54
 msgid "Settings for User Defined..."
@@ -11849,10 +12725,6 @@ msgstr "Nastavenie joysticku..."
 msgid "DbgTool"
 msgstr "DbgTool"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:63
-msgid "Debugger"
-msgstr "Debugger"
-
 #: src/ui-imgui/topmenu/menu_debugger.cpp:75
 msgid "MZ-800 Debugger"
 msgstr "MZ-800 Debugger"
@@ -11892,22 +12764,22 @@ msgid "Memory Browser"
 msgstr "Prehliadač pamäte"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:131
-#: src/ui-imgui/topmenu/menu_debugger.cpp:378
+#: src/ui-imgui/topmenu/menu_debugger.cpp:396
 msgid "Memory Browser #2"
 msgstr "Prehliadač pamäte #2"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:136
-#: src/ui-imgui/topmenu/menu_debugger.cpp:383
+#: src/ui-imgui/topmenu/menu_debugger.cpp:401
 msgid "Memory Browser #3"
 msgstr "Prehliadač pamäte #3"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:141
-#: src/ui-imgui/topmenu/menu_debugger.cpp:388
+#: src/ui-imgui/topmenu/menu_debugger.cpp:406
 msgid "Memory Browser #4"
 msgstr "Prehliadač pamäte #4"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:146
-#: src/ui-imgui/topmenu/menu_debugger.cpp:393
+#: src/ui-imgui/topmenu/menu_debugger.cpp:411
 msgid "Memory Browser #5"
 msgstr "Prehliadač pamäte #5"
 
@@ -11922,32 +12794,32 @@ msgid "Variables"
 msgstr "Premenné"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:202
-#: src/ui-imgui/topmenu/menu_debugger.cpp:539
+#: src/ui-imgui/topmenu/menu_debugger.cpp:557
 msgid "CTC State"
 msgstr "Stav CTC"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:207
-#: src/ui-imgui/topmenu/menu_debugger.cpp:543
+#: src/ui-imgui/topmenu/menu_debugger.cpp:561
 msgid "PPI State"
 msgstr "Stav PPI"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:215
-#: src/ui-imgui/topmenu/menu_debugger.cpp:548
+#: src/ui-imgui/topmenu/menu_debugger.cpp:566
 msgid "Z80 PIO State"
 msgstr "Stav Z80 PIO"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:224
-#: src/ui-imgui/topmenu/menu_debugger.cpp:554
+#: src/ui-imgui/topmenu/menu_debugger.cpp:572
 msgid "PSG State"
 msgstr "Stav PSG"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:231
-#: src/ui-imgui/topmenu/menu_debugger.cpp:561
+#: src/ui-imgui/topmenu/menu_debugger.cpp:579
 msgid "PSG Audio Scope"
 msgstr "PSG Audio Scope"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:238
-#: src/ui-imgui/topmenu/menu_debugger.cpp:568
+#: src/ui-imgui/topmenu/menu_debugger.cpp:586
 msgid "GDG State"
 msgstr "GDG State"
 
@@ -11955,39 +12827,48 @@ msgstr "GDG State"
 msgid "Stack Regions"
 msgstr "Oblasti zásobníka"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:376
+#: src/ui-imgui/topmenu/menu_debugger.cpp:375
+msgid "Memory Search"
+msgstr "Hľadanie v pamäti"
+
+#: src/ui-imgui/topmenu/menu_debugger.cpp:390
+msgid "RAM Write Log"
+msgstr "Záznam zápisov do RAM"
+
+#: src/ui-imgui/topmenu/menu_debugger.cpp:394
 msgid "Other memory browsers"
 msgstr "Iné prehliadače pamäte"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:415
+#: src/ui-imgui/topmenu/menu_debugger.cpp:433
 msgid "Memory Heatmap"
 msgstr "Heatmapa pamäte"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:426
+#: src/ui-imgui/topmenu/menu_debugger.cpp:444
 msgid "Char Inserter"
 msgstr "Vkladač znakov"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:444
+#: src/ui-imgui/topmenu/menu_debugger.cpp:462
 msgid "Disassembler"
 msgstr "Disassembler"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:456
+#: src/ui-imgui/topmenu/menu_debugger.cpp:474
 msgid "Other disassembly"
 msgstr "Ďalší disassembly"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:508
+#: src/ui-imgui/topmenu/menu_debugger.cpp:526
 msgid "I/O Ports"
 msgstr "I/O porty"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:518
+#: src/ui-imgui/topmenu/menu_debugger.cpp:536
+#: src/ui-imgui/topmenu/replay_window.cpp:248
 msgid "Events"
 msgstr "Udalosti"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:537
+#: src/ui-imgui/topmenu/menu_debugger.cpp:555
 msgid "Chips"
 msgstr "Čipy"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:585
+#: src/ui-imgui/topmenu/menu_debugger.cpp:603
 msgid "Storage"
 msgstr "Úložisko"
 
@@ -12011,19 +12892,197 @@ msgstr "Vývojársky režim"
 msgid "ImGui Demo"
 msgstr "ImGui Demo"
 
-#: src/ui-imgui/topmenu/menu_snapshot.cpp:62
+#: src/ui-imgui/topmenu/menu_replay.cpp:93
+msgid "Replay"
+msgstr "Záznam vstupov"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:101
+#: src/ui-imgui/topmenu/replay_window.cpp:309
+#: src/ui-imgui/topmenu/replay_window.cpp:320
+msgid "Record Inputs..."
+msgstr "Nahrať vstupy..."
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:105
+msgid ""
+"Record keyboard, joystick, resets and debugger writes from a start snapshot, "
+"to repeat the run exactly later."
+msgstr ""
+"Nahrať klávesnicu, joystick, resety a zápisy debuggera od štartovacieho "
+"snapshotu, aby sa beh dal neskôr presne zopakovať."
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:107
+#: src/ui-imgui/topmenu/replay_window.cpp:309
+#: src/ui-imgui/topmenu/replay_window.cpp:321
+msgid "Play Replay..."
+msgstr "Prehrať záznam..."
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:111
+#: src/ui-imgui/topmenu/replay_window.cpp:309
+#: src/ui-imgui/topmenu/replay_window.cpp:322
+msgid "Stop Replay"
+msgstr "Zastaviť záznam / prehrávanie"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:117
+#: src/ui-imgui/topmenu/replay_window.cpp:309
+#: src/ui-imgui/topmenu/replay_window.cpp:323
+msgid "Rewind"
+msgstr "Späť na checkpoint"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:121
+msgid ""
+"Go back to the previous checkpoint (again = further back). While recording, "
+"the inputs after the checkpoint are dropped and the recording goes on from "
+"there. Not possible past a write to a disk or the tape."
+msgstr ""
+"Návrat na predchádzajúci checkpoint (znova = ďalej späť). Pri zázname sa "
+"vstupy po checkpointe zahodia a záznam pokračuje odtiaľ. Nejde cez zápis na "
+"disk alebo na kazetu."
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:124
+msgid "Seek..."
+msgstr "Prejsť na snímku..."
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:129
+msgid ""
+"Jump the playback to a frame: back via a checkpoint, forward at maximum "
+"speed."
+msgstr ""
+"Skok prehrávania na snímku: späť cez checkpoint, dopredu maximálnou "
+"rýchlosťou."
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:130
+msgid "Replay Control..."
+msgstr "Ovládanie záznamu..."
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:138
+#, c-format
+msgid "Recording: frame %u, %u events"
+msgstr "Záznam: snímka %u, %u udalostí"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:141
+#, c-format
+msgid "Rewinds: %u"
+msgstr "Návratov späť: %u"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:146
+#, c-format
+msgid "Playing: frame %u / %u"
+msgstr "Prehrávanie: snímka %u / %u"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:149
+#, c-format
+msgid "Seeking to frame %u"
+msgstr "Prechod na snímku %u"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:153
+#, c-format
+msgid "Deviated: %s"
+msgstr "Odchýlené: %s"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:158
+#, c-format
+msgid "Last: %s"
+msgstr "Posledný: %s"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:162
+msgid "No replay"
+msgstr "Žiadny záznam"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:168
+msgid "Checkpoints: off"
+msgstr "Checkpointy: vypnuté"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:172
+#, c-format
+msgid "Checkpoints: %u (frames %u - %u, %u kB)"
+msgstr "Checkpointy: %u (snímky %u - %u, %u kB)"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:188
+msgid "Seek Replay"
+msgstr "Prejsť na snímku záznamu"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:206
+#, c-format
+msgid "Current frame %u of %u"
+msgstr "Aktuálna snímka %u z %u"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:211
+#: src/ui-imgui/topmenu/replay_window.cpp:332
+#: src/ui-imgui/topmenu/replay_window.cpp:339
+msgid "Seek"
+msgstr "Prejsť"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:245
+msgid "Record Inputs"
+msgstr "Nahrať vstupy"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:245
+msgid "Play Replay"
+msgstr "Prehrať záznam"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:261
+#: src/ui-imgui/topmenu/menu_replay.cpp:290
+msgid "Replay failed"
+msgstr "Záznam vstupov zlyhal"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:262
+#: src/ui-imgui/topmenu/menu_replay.cpp:291
+msgid "Replay Error"
+msgstr "Chyba záznamu vstupov"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:277
+msgid "Replay recorded"
+msgstr "Záznam vstupov uložený"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:281
+msgid "Replay ended"
+msgstr "Prehrávanie skončilo"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:285
+#, c-format
+msgid "Replay differs from the recording at frame %u (%s)"
+msgstr "Prehrávanie sa líši od záznamu na snímke %u (%s)"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:287
+msgid "Replay Desync"
+msgstr "Rozbehnutie prehrávania"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:344
+#, c-format
+msgid "REPLAY REC %u"
+msgstr "ZÁZNAM %u"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:348
+#, c-format
+msgid "REPLAY SEEK %u -> %u"
+msgstr "PRECHOD %u -> %u"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:352
+#, c-format
+msgid "REPLAY PLAY %u / %u%s"
+msgstr "PREHRÁVANIE %u / %u%s"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:353
+msgid " (deviated)"
+msgstr " (odchýlené)"
+
+#: src/ui-imgui/topmenu/menu_snapshot.cpp:72
 msgid "Load Snapshot..."
 msgstr "Načítať snímok..."
 
-#: src/ui-imgui/topmenu/menu_snapshot.cpp:67
+#: src/ui-imgui/topmenu/menu_snapshot.cpp:78
+msgid "Not available while a replay is recorded or played."
+msgstr "Počas záznamu alebo prehrávania vstupov nie je k dispozícii."
+
+#: src/ui-imgui/topmenu/menu_snapshot.cpp:81
 msgid "Save Snapshot..."
 msgstr "Uložiť snímok..."
 
-#: src/ui-imgui/topmenu/menu_snapshot.cpp:74
+#: src/ui-imgui/topmenu/menu_snapshot.cpp:88
 msgid "Quick Load"
 msgstr "Rýchle načítanie"
 
-#: src/ui-imgui/topmenu/menu_snapshot.cpp:86
+#: src/ui-imgui/topmenu/menu_snapshot.cpp:100
 msgid "Snapshot Setup..."
 msgstr "Nastavenia snímkov..."
 
@@ -12091,7 +13150,66 @@ msgstr "Nastavenia kontroly verzie"
 msgid "MCP Activity##menu_mcp_activity"
 msgstr "MCP Activity##menu_mcp_activity"
 
-#: src/ui-imgui/topmenu/topmenu.cpp:57
+#: src/ui-imgui/topmenu/replay_window.cpp:169
+msgid "Replay Control"
+msgstr "Ovládanie záznamu"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:209
+msgid "Seeking"
+msgstr "Prechod"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:239
+#, c-format
+msgid "%u / %u (%s / %s)"
+msgstr "%u / %u (%s / %s)"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:256
+#, c-format
+msgid "%u (frames %u - %u, %u kB)"
+msgstr "%u (snímky %u - %u, %u kB)"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:263
+msgid "Checkpoints"
+msgstr "Checkpointy"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:268
+msgid "Rewinds"
+msgstr "Návraty späť"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:273
+msgid "Seek target"
+msgstr "Cieľová snímka"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:279
+msgid "Deviated"
+msgstr "Odchýlené"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:329
+msgid ""
+"Rewind goes back to the previous checkpoint; while recording the inputs "
+"after it are dropped."
+msgstr ""
+"Rewind sa vráti na predchádzajúci checkpoint; pri zázname sa vstupy po ňom "
+"zahodia."
+
+#: src/ui-imgui/topmenu/replay_window.cpp:353
+#, c-format
+msgid "Frame %d = %s; back via a checkpoint, forward at maximum speed."
+msgstr "Snímka %d = %s; späť cez checkpoint, dopredu maximálnou rýchlosťou."
+
+#: src/ui-imgui/topmenu/replay_window.cpp:357
+msgid "Available while playing a replay."
+msgstr "Dostupné pri prehrávaní záznamu."
+
+#: src/ui-imgui/topmenu/topmenu.cpp:38
+msgid ""
+"Machine settings cannot be changed while a replay is recorded or played. "
+"Stop it in the Replay menu first."
+msgstr ""
+"Nastavenie stroja sa nedá meniť počas záznamu alebo prehrávania vstupov. "
+"Najprv ho zastavte v ponuke Záznam vstupov."
+
+#: src/ui-imgui/topmenu/topmenu.cpp:69
 msgid "About..."
 msgstr "O programe..."
 
@@ -12389,14 +13507,6 @@ msgstr "Šev v nahrávke (načítaný snímok)"
 msgid "Recording Remote Control"
 msgstr "Diaľkové ovládanie nahrávania"
 
-#: src/ui-imgui/videorec/videorec_remote_window.cpp:171
-msgid "State"
-msgstr "Stav"
-
-#: src/ui-imgui/videorec/videorec_remote_window.cpp:177
-msgid "Time"
-msgstr "Čas"
-
 #: src/ui-imgui/videorec/videorec_remote_window.cpp:180
 msgid "Video frames"
 msgstr "Snímky videa"
@@ -12425,10 +13535,6 @@ msgstr "Časová základňa"
 msgid "Last event"
 msgstr "Posledná udalosť"
 
-#: src/ui-imgui/videorec/videorec_remote_window.cpp:227
-msgid "Controls"
-msgstr "Ovládanie"
-
 #: src/ui-imgui/videorec/videorec_remote_window.cpp:268
 msgid "Marker label (empty = Marker N)"
 msgstr "Popis značky (prázdny = Marker N)"
@@ -12450,11 +13556,6 @@ msgstr "Platí od ďalšieho nahrávania."
 #, c-format
 msgid "Current recording: %s"
 msgstr "Aktuálna nahrávka: %s"
-
-#: src/ui-imgui/videorec/videorec_remote_window.cpp:320
-#, c-format
-msgid "Show or hide this window: %s"
-msgstr "Zobraziť/skryť toto okno: %s"
 
 #: src/ui-imgui/videorec/videorec_setup_dialog.cpp:58
 msgid "Cut"
@@ -12618,15 +13719,15 @@ msgid ""
 "Changes apply to the next recording (the time base switches immediately)."
 msgstr "Zmeny platia od ďalšieho nahrávania (časová základňa sa prepne hneď)."
 
-#: src/ui-imgui/vkbd_window.cpp:224
+#: src/ui-imgui/vkbd_window.cpp:225
 msgid "MZ-700 Virtual Keyboard"
 msgstr "MZ-700 Virtuálna klávesnica"
 
-#: src/ui-imgui/vkbd_window.cpp:226
+#: src/ui-imgui/vkbd_window.cpp:227
 msgid "MZ-1500 Virtual Keyboard"
 msgstr "MZ-1500 Virtuálna klávesnica"
 
-#: src/ui-imgui/vkbd_window.cpp:228
+#: src/ui-imgui/vkbd_window.cpp:229
 msgid "MZ-800 Virtual Keyboard"
 msgstr "MZ-800 Virtuálna klávesnica"
 

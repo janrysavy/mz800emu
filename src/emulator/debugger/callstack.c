@@ -595,15 +595,10 @@ void callstack_on_irq_accept ( uint16_t pc_before_irq, uint16_t isr_addr,
 }
 
 
-/* @todo Fáze 1C audit: v aktuálním mzarch (MZ-800/700/1500) NMI accept
- * site neexistuje - žádný HW source v emu modelu netáhne NMI pin
- * (z80_nmi() není voláno z mzarch hot path). Mzarch_nmi_cb v interrupt.c
- * je vázán na assertion (= setup nmi_pending), ne accept. Tato funkce
- * je tedy ve V1 nepoužitá - zůstává jako API contract pro budoucí HW
- * emu (NMI tlačítko, expanze) a pro symetrii s IRQ accept. Pokud by
- * NMI někdy reálně dispatch proběhl, push frame v shadow stacku
- * chybí - unwind přes iff_change_cb (reason RETN) ale shadow
- * auto-vyrovná přes divergence handling.
+/* Volá mzarch_main_process_interrupt() po přijetí NMI. Žádný HW zdroj
+ * v emu modelu (MZ-800/700/1500) NMI pin netáhne; NMI nastavuje jen MCP
+ * nmi_inject (z80_nmi). Mzarch_nmi_cb v interrupt.c je vázán na assertion
+ * (= setup nmi_pending), ne accept.
  *
  * Fáze 1C TODO/SP swap detekce (LD SP,nn / EX (SP),HL / ADD HL,SP atd.):
  * mimo scope V1. Potřebuje opcode classification (cputrack reuse) -

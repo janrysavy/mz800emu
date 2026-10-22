@@ -35,33 +35,27 @@ extern "C" {
 struct st_REGION_DESC;
 
 /**
- * @brief Maximální počet regionů ve snapshot bufferu.
- *
- * Horní hranice odhad: ~6 base + ~128 Memext + ~256 Ramdisk + 2 PEZIK
- * + 4 VRAM plane + 3 PCG + PROHIBITED. 512 bezpečně stačí.
- */
-#define MEMBROWSER_MAX_REGIONS 512
-
-/**
  * @brief Per-frame snapshot region listu.
  *
- * Drží volání pres dbgapi_regions_enumerate. UI ho čte read-only během
- * jednoho framu. Po edit / banking change se refreshne.
+ * Drží výsledek dbgapi_regions_enumerate_dup (všechny regiony sestavy, bez
+ * stropu na počet). UI ho čte read-only během jednoho framu. Po edit /
+ * banking change se refreshne.
  */
 typedef struct st_MEMBROWSER_REGION_SNAPSHOT
 {
     int count;                              /**< Skutečný počet enumerated regionů. */
-    struct st_REGION_DESC *items;           /**< Pole z dbgapi_regions_enumerate. */
+    struct st_REGION_DESC *items;           /**< Pole z dbgapi_regions_enumerate_dup (vlastní membrowser_io). */
 } st_MEMBROWSER_REGION_SNAPSHOT;
 
 /**
  * @brief Refresh region snapshot (volá se per frame nebo on demand).
  *
- * Naplní vnitřní static buffer pres dbgapi_regions_enumerate. Pointer
- * vrácený v out zůstává platný do dalšího refresh volání.
+ * Naplní vnitřní buffer přes dbgapi_regions_enumerate_dup (všechny regiony,
+ * bez stropu). Pointer vrácený v out zůstává platný do dalšího refresh
+ * volání (refresh předchozí buffer uvolní).
  *
  * @param[out] out Snapshot struktura (NESmí být NULL).
- * @return Počet enumerated regionů (0..MEMBROWSER_MAX_REGIONS).
+ * @return Počet enumerated regionů (0 = žádný).
  */
 int membrowser_io_refresh_regions ( st_MEMBROWSER_REGION_SNAPSHOT *out );
 

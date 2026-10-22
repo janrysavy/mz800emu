@@ -78,7 +78,7 @@ organization in the 16-colour mode.
 | `RF plane` | Mask of planes to read from |
 | `RF search` | Mask used for the bit-pattern search |
 | `VBANK (WF/RF)` | The VRAM bank currently active for CPU access |
-| `MZ700 WR latch` | One-shot WAIT latch used in MZ-700 compat mode |
+| `WRITE FF` | `set` until the GDG has written the last CPU write from its buffer into the VRAM; until then the next CPU access to the VRAM waits (MZ-800 and MZ-700 mode) |
 
 ### HW scroll
 
@@ -190,7 +190,7 @@ current raster state and the GDG tempo generator.
 |-------|---------|
 | `Scanline` | Current beam row (0 to the full frame line count) |
 | `Pixel clock` | Position within the current row (clock ticks since the start of the frame) |
-| `VBLN count` | Frames since reset / snapshot load (frame counter) |
+| `VBLN count` | Frames since the emulator started / snapshot load (frame counter; a machine reset does not restart it) |
 
 ### Blanking and sync flags
 

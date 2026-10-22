@@ -42,6 +42,7 @@
 #include "wd279x_internal.h"
 #include "fdc.h"
 #include "libs/dsk/dsk.h"
+#include "media_writes.h"
 
 /* Konstanty WDST_*, FDCPORT_* a deklarace helperů (current_drive,
  * drive_is_ready, compute_abstrack, set_track_position) jsou sdílené přes
@@ -425,6 +426,8 @@ static int flush_buffer_to_sector(st_WD279X *chip, struct st_FDDrive *drv)
 #endif
         return 0;
     }
+    /* Zápis na médium (checkpoint záznamu vstupů, media_writes.h). */
+    MEDIA_WRITES_NOTE();
 #ifdef FDC_DIAG
     fprintf(stderr, "fdc: FLUSHED abstrack=%u track=%u side=%u sector=0x%02X "
                     "buffer[0..7]=%02X %02X %02X %02X %02X %02X %02X %02X\n",

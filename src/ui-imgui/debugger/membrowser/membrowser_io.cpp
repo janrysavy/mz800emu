@@ -46,8 +46,8 @@ extern "C" {
  */
 #define MEMBROWSER_WRITE_TIMEOUT_MS 1000
 
-/* Static buffer pro region snapshot - vlastní per session, refresh přepíše. */
-static st_REGION_DESC s_regions_buf[MEMBROWSER_MAX_REGIONS];
+/* Buffer region snapshotu (dbgapi_regions_enumerate_dup), refresh ho nahradí. */
+static st_REGION_DESC *s_regions_buf = NULL;  /* g_free, nahrazuje ho refresh */
 static int s_regions_count = 0;
 
 
@@ -253,8 +253,11 @@ extern "C" int membrowser_io_refresh_regions ( st_MEMBROWSER_REGION_SNAPSHOT *ou
      * snapshot → no-op, cache zůstává. */
     static uint32_t s_last_fingerprint = 0;
 
-    int n = dbgapi_regions_enumerate ( s_regions_buf, MEMBROWSER_MAX_REGIONS );
-    if ( n < 0 ) n = 0;
+    int n = 0;
+    st_REGION_DESC *fresh = dbgapi_regions_enumerate_dup ( &n );
+    g_free ( s_regions_buf );
+    s_regions_buf = fresh;
+    if ( !s_regions_buf ) n = 0;
     s_regions_count = n;
 
     uint32_t fp = ( uint32_t ) n;

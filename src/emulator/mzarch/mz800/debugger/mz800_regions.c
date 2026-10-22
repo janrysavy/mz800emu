@@ -164,9 +164,11 @@ int mz800_regions_collect(st_REGION_DESC *out, int max_count)
 
     /* ---- Memext: RAM + FLASH banky. ---- *
      * Luftner: 128 RAM banks (4 KB) + 128 FLASH banks (rawbank 0x80..0xFF).
-     * PEHU: 64 RAM banks (MEMEXT_PEHU_BANKS), žádný FLASH.
+     * PEHU: 64 bank po 8 KB = 128 raw 4 KB kusů (MEMEXT_PEHU_RAW_BANKS),
+     * žádný FLASH.
      *
-     * Bank size = MEMEXT_RAW_BANK_SIZE = 0x1000 = 4 KB (per memext.h:45).
+     * Region = raw 4 KB kus (MEMEXT_RAW_BANK_SIZE), sub_id = raw index;
+     * PEHU banka b leží v kusech 2*b a 2*b + 1.
      *
      * Enumerujeme jen pokud Memext připojen - jinak by uživatel viděl
      * 256 disconnected entries. */
@@ -174,11 +176,11 @@ int mz800_regions_collect(st_REGION_DESC *out, int max_count)
         int is_luftner = MEMEXT_TEST_TYPE_LUFTNER ? 1 : 0;
         const char *type_label = is_luftner ? "Luftner" : "PEHU";
 
-        /* Počet RAM banek: 128 u Luftneru, 64 u PEHU.
-         * PEHU má interně 8 KB banky (MEMEXT_PEHU_BANK_SIZE), ale debug API
-         * iteruje přes raw 4 KB banky (= memext_get_ram_read_pointer_by_rawbank
-         * iteruje přes g_memext.RAM po 4 KB krocích bez ohledu na typ). */
-        int ram_bank_count = is_luftner ? MEMEXT_LUFTNER_BANKS : MEMEXT_PEHU_BANKS;
+        /* Počet raw 4 KB kusů RAM: 128 u Luftneru i u PEHU. PEHU má 8 KB
+         * banky (MEMEXT_PEHU_BANK_SIZE), debug API ale čte po raw kusech
+         * (memext_get_ram_read_pointer_by_rawbank), takže 64 bank PEHU =
+         * MEMEXT_PEHU_RAW_BANKS kusů. */
+        int ram_bank_count = is_luftner ? MEMEXT_LUFTNER_BANKS : MEMEXT_PEHU_RAW_BANKS;
 
         for (int bank = 0; bank < ram_bank_count; bank++) {
             snprintf(s_name_buf, sizeof(s_name_buf),

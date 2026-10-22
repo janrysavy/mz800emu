@@ -363,6 +363,30 @@ void test_all_traces_dir_passes(void)
     TEST_ASSERT_TRUE(run_validate(3, argv));
 }
 
+
+/* ========================================================================
+ * Testy: opakovaná VALUE option (sdlapp_option_count / _value_nth)
+ * ======================================================================== */
+
+void test_repeated_value_option_count_and_nth(void)
+{
+    /* Obě formy zápisu, mezi výskyty jiná volba; pouhý prefix jména
+     * (--di) se za výskyt nepočítá. */
+    char *argv[] = { (char *)"prog", (char *)"--dir", (char *)"a", (char *)"--no-save",
+                     (char *)"--dir=b", (char *)"--dir", (char *)"c" };
+    TEST_ASSERT_TRUE(run_validate(7, argv));
+    TEST_ASSERT_EQUAL_INT(3, sdlapp_option_count("--dir"));
+    TEST_ASSERT_EQUAL_STRING("a", sdlapp_option_value_nth("--dir", 0));
+    TEST_ASSERT_EQUAL_STRING("b", sdlapp_option_value_nth("--dir", 1));
+    TEST_ASSERT_EQUAL_STRING("c", sdlapp_option_value_nth("--dir", 2));
+    TEST_ASSERT_NULL(sdlapp_option_value_nth("--dir", 3));
+    TEST_ASSERT_NULL(sdlapp_option_value_nth("--dir", -1));
+    /* sdlapp_option_value() vrací dál první výskyt. */
+    TEST_ASSERT_EQUAL_STRING("a", sdlapp_option_value("--dir"));
+    TEST_ASSERT_EQUAL_INT(0, sdlapp_option_count("--mode"));
+    TEST_ASSERT_EQUAL_INT(0, sdlapp_option_count("--di"));
+}
+
 void test_all_traces_combined_with_per_subsystem_passes(void)
 {
     /* Realistický CLI: shorthand + jeden per-subsystem override.
@@ -438,6 +462,9 @@ int main(void)
     RUN_TEST(test_all_traces_mode_invalid_fails);
     RUN_TEST(test_all_traces_dir_passes);
     RUN_TEST(test_all_traces_combined_with_per_subsystem_passes);
+
+    /* opakovaná volba */
+    RUN_TEST(test_repeated_value_option_count_and_nth);
 
     return UNITY_END();
 }

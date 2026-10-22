@@ -14,10 +14,19 @@
  *     z debug vlákna (UI side) - není v emulátor hot path.
  *
  * ID stabilita:
- *   region.id je stabilní v rámci jedné session (pořadí zápisu při enumerate).
- *   Klient nesmí persistovat raw `id` mezi spuštěními. Pro persistenci je
- *   doporučeno persistovat dvojici (kind, sub_id) a při restartu znovu
- *   resolvovat na aktuální id přes enumerate.
+ *   region.id je index do výčtu a platí, dokud se nezmění sestava HW
+ *   (RAMdisk, MemExt, PEZIK, PROHIBITED, načtení snapshotu s jinou
+ *   sestavou). Změnu rozložení výčtu hlásí generace
+ *   (dbgapi_regions_layout_gen()); dbgapi_regions_read_gen() a
+ *   dbgapi_regions_write_gen() ID ze starší generace odmítnou. Klient nesmí
+ *   persistovat raw `id` mezi spuštěními. Pro persistenci je doporučeno
+ *   persistovat dvojici (kind, sub_id) a při restartu znovu resolvovat na
+ *   aktuální id přes enumerate.
+ *
+ * Paměťová bezpečnost:
+ *   read/write kontrolují v každé větvi živou velikost cílového bufferu
+ *   (RAMdisk STD podle g_ramdisk.std.size, banky MemExt podle pole), takže
+ *   ani deskriptor ze starší generace nečte ani nezapisuje mimo buffer.
  *
  * No-side-effect contract:
  *   - read: nikdy nesmí měnit chip state (auto-inc latch, GDG RF dispatch,
@@ -55,6 +64,7 @@
 #define DBGAPI_REGIONS_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -82,7 +92,7 @@ typedef enum en_REGION_KIND
     REGION_KIND_VRAM_700_ATTR,          /**< Atributová VRAM MZ-700 (1 KB v 0xD800-0xDBFF). */
     REGION_KIND_VRAM_PHYS_PLANE,        /**< MZ-800 fyzická plane I-IV (8 KB raw), sub_id = 0..3. */
     REGION_KIND_PCG_1500,               /**< MZ-1500 PCG bank 1..3 (8 KB), sub_id = 0..2. */
-    REGION_KIND_MEMEXT_RAM,             /**< Memext RAM bank (4 KB), sub_id = raw bank index 0..0x7F (Luftner) nebo 0..0x3F (PEHU). */
+    REGION_KIND_MEMEXT_RAM,             /**< Memext RAM bank (4 KB), sub_id = raw 4 KB index 0..0x7F (Luftner i PEHU; PEHU 8 KB banka b = raw 2*b a 2*b + 1). */
     REGION_KIND_MEMEXT_FLASH,           /**< Memext Luftner FLASH bank (4 KB), sub_id = raw bank index 0x80..0xFF. */
     REGION_KIND_RAMDISK_STD,            /**< Ramdisk STD bank (64 KB), sub_id = bank index 0..255. */
     REGION_KIND_RAMDISK_PEZIK,          /**< Ramdisk PEZIK bank (64 KB), sub_id = pezik_instance * 8 + bank_idx (0..7 = port 0x68 banks 0..7, 8..15 = port 0xE8 banks 0..7). */
@@ -152,6 +162,64 @@ typedef struct st_REGION_DESC
 int dbgapi_regions_enumerate(st_REGION_DESC *out, int max_count);
 
 /**
+ * @brief Obnoví vnitřní cache výčtu regionů podle aktuálního stavu HW.
+ *
+ * Stejné jako dbgapi_regions_enumerate() bez kopie ven. Použití: volající,
+ * který pak hledá v cache přes dbgapi_regions_find_kind() nebo
+ * dbgapi_regions_get() a potřebuje čerstvé příznaky connected/mapped_now
+ * (freeze jednou za snímek).
+ *
+ * @post Cache obsahuje všechny regiony aktuální sestavy (bez stropu); ID se
+ *       mohla po HW reconfigure posunout.
+ * @note Thread-safe (zámek cache), bez vedlejších efektů na stav čipů.
+ *       Může alokovat (cache roste podle počtu regionů).
+ */
+void dbgapi_regions_refresh(void);
+
+/**
+ * @brief Vrátí kopii celého výčtu regionů (bez stropu na počet).
+ *
+ * Obnoví cache jako dbgapi_regions_enumerate() a vrátí nově alokovanou kopii
+ * všech položek. Pro volající, kteří nesmí výčet useknout (Memory Browser,
+ * MCP `regions_list`): plná sestava MZ-800 (MemExt Luftner, RAMdisk STD 16 MB,
+ * oba PEZIKy) má přes 500 regionů.
+ *
+ * @param[out] out_count Počet položek ve vrácené kopii (0 = žádné); smí být NULL.
+ * @return Kopie pole (out[i].id == i), nebo NULL, když je výčet prázdný.
+ *         Vlastní volající, uvolní přes g_free().
+ * @note Thread-safe (zámek cache), bez vedlejších efektů na stav čipů.
+ */
+st_REGION_DESC *dbgapi_regions_enumerate_dup(int *out_count);
+
+/**
+ * @brief Deskriptor regionu podle ID z posledního výčtu.
+ *
+ * Bez nového výčtu (cache se plní jen tehdy, když je prázdná). ID platí
+ * do příští změny sestavy HW, viz dbgapi_regions_enumerate().
+ *
+ * @param[in]  region_id ID z dbgapi_regions_enumerate() a spol.
+ * @param[out] out       Kopie deskriptoru (zapsaná jen při úspěchu).
+ * @return true = ID existuje, false = neplatné ID nebo @p out == NULL.
+ * @note Thread-safe (zámek cache).
+ */
+bool dbgapi_regions_get(int region_id, st_REGION_DESC *out);
+
+/**
+ * @brief Najde region podle (kind, sub_id) v posledním výčtu.
+ *
+ * Bez nového výčtu (cache se plní jen tehdy, když je prázdná); čerstvý stav
+ * dá předchozí dbgapi_regions_refresh(). Vrací i odpojený nebo jen pro čtení
+ * region, rozhoduje volající podle @c connected a @c writable.
+ *
+ * @param[in]  kind   Druh regionu.
+ * @param[in]  sub_id Disambiguator (banka, plane, instance PEZIK).
+ * @param[out] out    Kopie deskriptoru (zapsaná jen při úspěchu).
+ * @return true = nalezeno, false = region v sestavě není nebo @p out == NULL.
+ * @note Thread-safe (zámek cache).
+ */
+bool dbgapi_regions_find_kind(en_REGION_KIND kind, int sub_id, st_REGION_DESC *out);
+
+/**
  * @brief No-side-effect read z regionu.
  *
  * Čte len bajtů z (region_id, offset). Žádný auto-inc latch, žádný GDG RF
@@ -169,10 +237,13 @@ int dbgapi_regions_enumerate(st_REGION_DESC *out, int max_count);
  * @param[in]  len         Počet bajtů k přečtení.
  * @return                 Počet skutečně přečtených bajtů (0..len), -1 při
  *                         chybě: out=NULL, len=0, region_id mimo rozsah,
- *                         offset >= size, region disconnected.
+ *                         offset >= size, region disconnected, region mimo
+ *                         živou velikost bufferu (deskriptor ze starší
+ *                         sestavy HW).
  *
  * @pre Caller musel zavolat dbgapi_regions_enumerate() a získat platné ID.
- *      Mezi enumerate a read se nesmí HW rekonfigurovat (jinak ID neplatí).
+ *      Po změně sestavy HW může ID ukazovat na jiný region; kontrolu
+ *      generace dělá dbgapi_regions_read_gen().
  * @post Žádný chip state se nezměnil.
  */
 int dbgapi_regions_read(int region_id, uint32_t offset, uint8_t *out, uint32_t len);
@@ -193,13 +264,113 @@ int dbgapi_regions_read(int region_id, uint32_t offset, uint8_t *out, uint32_t l
  * @param[in] len         Počet bajtů k zapsání.
  * @return                Počet skutečně zapsaných bajtů (0..len), -1 při
  *                        chybě: data=NULL, len=0, region_id mimo rozsah,
- *                        offset >= size, region disconnected, region R-only.
+ *                        offset >= size, region disconnected, region R-only,
+ *                        region mimo živou velikost bufferu (deskriptor ze
+ *                        starší sestavy HW).
  *
  * @pre Region musí být writable a connected.
  * @post Při úspěchu jsou data zapsaná do paměti; ostatní state nedotčen
  *       (banking, latch, atd.).
  */
 int dbgapi_regions_write(int region_id, uint32_t offset, const uint8_t *data, uint32_t len);
+
+/**
+ * @brief Návratový kód dbgapi_regions_read_gen() / dbgapi_regions_write_gen():
+ *        ID pochází ze staršího rozložení výčtu.
+ *
+ * Sestava HW se od výčtu, ze kterého volající ID má, změnila (RAMdisk,
+ * MemExt, PEZIK, PROHIBITED, načtení snapshotu s jinou sestavou). ID se
+ * mohla posunout nebo region zmizel; volající musí udělat nový výčet.
+ */
+#define DBGAPI_REGIONS_ERR_STALE (-2)
+
+/**
+ * @brief Generace rozložení výčtu regionů.
+ *
+ * Číslo se zvýší, kdykoli plnění cache (výčet, refresh, kontrola v
+ * dbgapi_regions_read_gen()) dá jiné rozložení než předchozí plnění:
+ * jiný počet regionů nebo jiný druh, sub_id, velikost, `writable` či
+ * `connected` některého z nich (`mapped_now` se mění s bankováním a do
+ * rozložení nepatří). Stejné rozložení generaci nemění, takže ID z výčtu
+ * platí, dokud se generace nezmění.
+ *
+ * Bez nového výčtu: vrací generaci posledního plnění cache.
+ *
+ * @return Generace >= 1, nebo 0, dokud se cache ještě nenaplnila.
+ * @note Thread-safe (zámek cache).
+ */
+uint32_t dbgapi_regions_layout_gen(void);
+
+/**
+ * @brief Jako dbgapi_regions_enumerate_dup(), navíc vrátí generaci rozložení.
+ *
+ * Kopie výčtu a generace pocházejí ze stejného plnění cache (pod jedním
+ * zámkem), takže generace přesně odpovídá vráceným ID.
+ *
+ * @param[out] out_count Počet položek ve vrácené kopii; smí být NULL.
+ * @param[out] out_gen   Generace rozložení (>= 1); smí být NULL.
+ * @return Viz dbgapi_regions_enumerate_dup(). Vlastní volající (g_free()).
+ * @note Thread-safe (zámek cache), bez vedlejších efektů na stav čipů.
+ */
+st_REGION_DESC *dbgapi_regions_enumerate_dup_gen(int *out_count, uint32_t *out_gen);
+
+/**
+ * @brief No-side-effect read s kontrolou, že ID platí pro aktuální sestavu HW.
+ *
+ * Při @p layout_gen != 0 nejdřív obnoví cache podle aktuálního stavu HW
+ * a porovná generaci rozložení s @p layout_gen (generace výčtu, ze kterého
+ * volající ID má). Při neshodě nic nečte a vrátí DBGAPI_REGIONS_ERR_STALE.
+ * Při @p layout_gen == 0 se chová přesně jako dbgapi_regions_read().
+ *
+ * @param[in]  region_id  ID z výčtu generace @p layout_gen.
+ * @param[in]  layout_gen Generace výčtu (dbgapi_regions_enumerate_dup_gen()),
+ *                        0 = bez kontroly.
+ * @param[in]  offset     Offset v rámci regionu.
+ * @param[out] out        Buffer pro výsledek; min @p len bajtů.
+ * @param[in]  len        Počet bajtů k přečtení.
+ * @return Počet přečtených bajtů, -1 při chybě jako dbgapi_regions_read(),
+ *         DBGAPI_REGIONS_ERR_STALE při změně rozložení.
+ * @note Obnova cache stojí jeden výčet (stovky regionů v plné sestavě);
+ *       určeno pro jednotlivé dotazy zvenčí (MCP), ne pro čtení po řádcích.
+ */
+int dbgapi_regions_read_gen(int region_id, uint32_t layout_gen,
+                            uint32_t offset, uint8_t *out, uint32_t len);
+
+/**
+ * @brief Zápis do regionu s kontrolou, že ID platí pro aktuální sestavu HW.
+ *
+ * Kontrola generace jako dbgapi_regions_read_gen(), jinak stejné jako
+ * dbgapi_regions_write() (včetně záznamu zápisů).
+ *
+ * @param[in] region_id  ID z výčtu generace @p layout_gen.
+ * @param[in] layout_gen Generace výčtu, 0 = bez kontroly.
+ * @param[in] offset     Offset v rámci regionu.
+ * @param[in] data       Data k zapsání.
+ * @param[in] len        Počet bajtů.
+ * @return Počet zapsaných bajtů, -1 při chybě jako dbgapi_regions_write(),
+ *         DBGAPI_REGIONS_ERR_STALE při změně rozložení (nic nezapsáno).
+ */
+int dbgapi_regions_write_gen(int region_id, uint32_t layout_gen,
+                             uint32_t offset, const uint8_t *data, uint32_t len);
+
+/**
+ * @brief Buňka záznamu zápisů (ramlog) pro bajt regionu.
+ *
+ * Stejný převod, jakým dbgapi_regions_write() zaznamená zápis. RAM regionu
+ * REGION_KIND_RAM se určí podle aktuálního mapování MemExt.
+ *
+ * @param kind       en_REGION_KIND.
+ * @param sub_id     sub_id regionu.
+ * @param offset     Offset v regionu.
+ * @param out_space  Výstup: en_RAMLOG_SPACE.
+ * @param out_offset Výstup: offset v prostoru.
+ * @return false = region neexistuje, offset je mimo region, nebo region
+ *         záznam zápisů nepokrývá (ROM, RAMdisk, Logical - ten se ptá
+ *         podle CPU adresy).
+ * @pre Volá se v emu vlákně (čte mapování paměti).
+ */
+bool dbgapi_regions_ramlog_cell(int kind, int sub_id, uint32_t offset,
+                                uint8_t *out_space, uint32_t *out_offset);
 
 #ifdef __cplusplus
 }

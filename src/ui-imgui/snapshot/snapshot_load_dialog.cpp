@@ -24,6 +24,7 @@
 
 #include "emulator.h"
 #include "ui-imgui/debugger/dbgapi_helpers.h"
+#include "ui-imgui/snapshot/snapshot_request_ui.h"
 
 extern "C"
 {
@@ -34,9 +35,6 @@ extern "C"
 extern "C" bool snapshot_ui_is_load_requested(void);
 extern "C" void snapshot_ui_clear_load_request(void);
 extern "C" bool snapshot_ui_was_running_before_pause(void);
-
-/* Deklarace z snapshot_notification.cpp */
-extern "C" void snapshot_notification_show(const char *message, bool is_error);
 
 /* Kešovaný náhled */
 static std::string s_cached_preview_path;
@@ -52,13 +50,15 @@ static bool s_file_dialog_open = false;
 /* Backend-neutral texture helpers are declared in iface_video_sdl3.h. */
 
 
-static void snapshot_load_restore_emulation(bool load_succeeded)
+/**
+ * @brief Obnoví běh po zavření dialogu bez načtení (Cancel) podle
+ *        `load_resume_mode`, stejně jako po úspěšném načtení.
+ *
+ * Výsledek skutečného načtení obsluhuje imgui_snapshot_request_results().
+ */
+static void snapshot_load_restore_emulation(void)
 {
     int mode = g_snapshot_settings.load_resume_mode;
-    if (!load_succeeded) {
-        /* Po selhání loadu nechat emulátor v pauze */
-        return;
-    }
     switch (mode) {
         case SNAPSHOT_RESUME_ALWAYS_RUN:
             dbg_ui_run();
@@ -260,23 +260,12 @@ extern "C" void imgui_snapshot_load_dialog(void)
             if (ImGuiFileDialog::Instance()->IsOk()) {
                 std::string path = ImGuiFileDialog::Instance()->GetFilePathName();
 
-                /* Provést načtení */
-                en_SNAPSHOT_RESULT result = snapshot_load(path.c_str());
-                if (result == SNAPSHOT_OK) {
-                    char msg[256];
-                    snprintf(msg, sizeof(msg), "%s: %s", _("Snapshot loaded"), path.c_str());
-                    snapshot_notification_show(msg, false);
-                    snapshot_load_restore_emulation(true);
-                } else {
-                    char msg[256];
-                    snprintf(msg, sizeof(msg), "%s: %s", _("Load failed"),
-                             snapshot_result_to_string(result));
-                    snapshot_notification_show(msg, true);
-                    snapshot_load_restore_emulation(false);
-                }
+                /* Načtení vyřídí emu vlákno v pauze; oznámení a obnovení
+                 * běhu dělá imgui_snapshot_request_results(). */
+                snapshot_ui_submit(SNAPSHOT_REQ_LOAD, path.c_str(), NULL);
             } else {
                 /* Cancel — obnovit předchozí stav */
-                snapshot_load_restore_emulation(true);
+                snapshot_load_restore_emulation();
             }
             ImGuiFileDialog::Instance()->Close();
             s_file_dialog_open = false;

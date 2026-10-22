@@ -35,11 +35,15 @@ static en_SNAPSHOT_RESULT snap_mzarch_save(st_SNAPSHOT_CONTEXT *ctx)
     snapshot_xml_write_hex8(w, "regDBUS_latch", g_mzarch_main.regDBUS_latch);
     snapshot_xml_write_int(w, "pio8255_ct53g7", g_mzarch_main.pio8255_ct53g7);
 
-    /* Event */
-    snapshot_xml_open_element(w, "event");
-    snapshot_xml_write_int(w, "event_name", (int)g_mzarch_main.event.event_name);
-    snapshot_xml_write_uint(w, "ticks", g_mzarch_main.event.ticks);
-    snapshot_xml_close_element(w); /* event */
+    /* Event - plánovaná událost hlavní smyčky. Při čekající pauze
+     * (MZEVENT_BREAK_EMULATION_PAUSED) nebo synchronizaci rychlosti je jiná
+     * při stejném stavu stroje, hash ji proto vynechá. */
+    if (!ctx->for_hash) {
+        snapshot_xml_open_element(w, "event");
+        snapshot_xml_write_int(w, "event_name", (int)g_mzarch_main.event.event_name);
+        snapshot_xml_write_uint(w, "ticks", g_mzarch_main.event.ticks);
+        snapshot_xml_close_element(w); /* event */
+    }
 
     /* Přerušení */
     snapshot_xml_write_uint(w, "interrupt", g_mzarch_main.interrupt);

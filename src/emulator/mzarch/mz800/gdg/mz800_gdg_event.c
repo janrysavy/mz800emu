@@ -103,7 +103,6 @@ static inline void gdg_process_events(void)
 
     case MZEVENT_GDG_HBLN_START:
         g_gdg.hbln = HBLN_ACTIVE;
-        g_vramctrl.mz700_wr_latch_is_used = 0;
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
         /* trace-suite hwlog: HBLN start edge (decimovaný). */
         if ( TEST_TRACE_HWLOG_DISPATCH ) {

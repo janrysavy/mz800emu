@@ -74,7 +74,7 @@ void imgui_menu_ramdisk(void)
             ImGui::BeginDisabled();
         };
 
-        if (MenuRadioItem(_("MR-1R18 Compatible"), RAMDISK_TEST_STD_CONNECTED))
+        if (MenuRadioItem(_("MZ-1R18 Compatible"), RAMDISK_TEST_STD_CONNECTED))
         {
             RAMDISK_DISCONNECT_ALL();
             ramdisk_std_init(RAMDISK_CONNECTED, g_ramdisk.std.type, g_ramdisk.std.size, g_ramdisk.std.filepath);
@@ -118,7 +118,7 @@ void imgui_menu_ramdisk(void)
             g_gui->showPezikSettingsWindow = true;
         };
 
-        ImGui::SeparatorText(_("MR-1R18 Options"));
+        ImGui::SeparatorText(_("MZ-1R18 Options"));
 
         if (ImGui::BeginMenu(_L("Size"), RAMDISK_TEST_STD_CONNECTED))
         {

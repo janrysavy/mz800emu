@@ -19,6 +19,7 @@
 
 #include "emulator.h"
 #include "ui-imgui/debugger/dbgapi_helpers.h"
+#include "ui-imgui/snapshot/snapshot_request_ui.h"
 
 extern "C"
 {
@@ -29,9 +30,6 @@ extern "C"
 extern "C" bool snapshot_ui_is_save_requested(void);
 extern "C" void snapshot_ui_clear_save_request(void);
 extern "C" bool snapshot_ui_was_running_before_pause(void);
-
-/* Deklarace z snapshot_notification.cpp */
-extern "C" void snapshot_notification_show(const char *message, bool is_error);
 
 /* Stav dialogu */
 static bool s_file_dialog_open = false;
@@ -117,20 +115,10 @@ extern "C" void imgui_snapshot_save_dialog(void)
         ImGui::Spacing();
 
         if (ImGui::Button(_L("Save"), ImVec2(120, 0))) {
-            /* Provést uložení */
-            en_SNAPSHOT_RESULT result = snapshot_save(s_selected_path,
-                                                      s_description[0] ? s_description : NULL);
-            if (result == SNAPSHOT_OK) {
-                char msg[256];
-                snprintf(msg, sizeof(msg), "%s: %.200s", _("Snapshot saved"), s_selected_path);
-                snapshot_notification_show(msg, false);
-            } else {
-                char msg[256];
-                snprintf(msg, sizeof(msg), "%s: %s", _("Save failed"),
-                         snapshot_result_to_string(result));
-                snapshot_notification_show(msg, true);
-            }
-            snapshot_save_restore_emulation();
+            /* Uložení vyřídí emu vlákno v pauze; oznámení a obnovení
+             * běhu dělá imgui_snapshot_request_results(). */
+            snapshot_ui_submit(SNAPSHOT_REQ_SAVE, s_selected_path,
+                               s_description[0] ? s_description : NULL);
             ImGui::CloseCurrentPopup();
         }
 

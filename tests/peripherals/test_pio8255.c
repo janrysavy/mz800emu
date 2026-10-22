@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "hw-generic/pio8255/pio8255.h"
+#include "hw-generic/gdg/gdg.h"
 
 void setUp(void) { }
 void tearDown(void) { }
@@ -240,7 +241,11 @@ void test_pio_port_b_column_0a_0f_no_select(void)
     memset(g_pio8255.vkbd_matrix, 0xFF, 10);
 }
 
-/* PIO — joystick enable signály */
+/* PIO - strobe joysticků: PA4 povoluje JOY1, PA5 JOY2, oba aktivní v L.
+ *
+ * Zdroj: SM str. 35 (báze hw/17-joystick.md). ROM @JOYIN strobuje oba
+ * zápisem 0CFh, Slap Fight každý zvlášť (0EFh pro JOY1, 0DFh pro JOY2).
+ * PA6 není zapojen a na povolení nemá vliv. */
 void test_pio_joystick_signals(void)
 {
     MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
@@ -255,6 +260,39 @@ void test_pio_joystick_signals(void)
         TEST_ASSERT_EQUAL_INT(!(value & 0x20), pio8255_pa5_get());
     }
     pio8255_write(0, saved);
+    /* klid: PA4 = PA5 = 1, nic nepovoleno */
+    pio8255_write(0, 0xFF);
+    TEST_ASSERT_EQUAL_INT(0, pio8255_pa4_get());
+    TEST_ASSERT_EQUAL_INT(0, pio8255_pa5_get());
+
+    /* PA4 = 0: jen JOY1 */
+    pio8255_write(0, 0xEF);
+    TEST_ASSERT_EQUAL_INT(1, pio8255_pa4_get());
+    TEST_ASSERT_EQUAL_INT(0, pio8255_pa5_get());
+
+    /* PA5 = 0: jen JOY2 */
+    pio8255_write(0, 0xDF);
+    TEST_ASSERT_EQUAL_INT(0, pio8255_pa4_get());
+    TEST_ASSERT_EQUAL_INT(1, pio8255_pa5_get());
+
+    /* PA4 = PA5 = 0 (ROM @JOYIN): oba */
+    pio8255_write(0, 0xCF);
+    TEST_ASSERT_EQUAL_INT(1, pio8255_pa4_get());
+    TEST_ASSERT_EQUAL_INT(1, pio8255_pa5_get());
+
+    /* PA6 = 0 při PA4 = PA5 = 1: nic */
+    pio8255_write(0, 0xBF);
+    TEST_ASSERT_EQUAL_INT(0, pio8255_pa4_get());
+    TEST_ASSERT_EQUAL_INT(0, pio8255_pa5_get());
+
+    /* Mode Set 8Ah vynuluje výstupní latch PA: oba strobe aktivní */
+    pio8255_write(0, 0xFF);
+    pio8255_write(3, 0x8A);
+    TEST_ASSERT_EQUAL_HEX8(0x00, pio8255_read(0));
+    TEST_ASSERT_EQUAL_INT(1, pio8255_pa4_get());
+    TEST_ASSERT_EQUAL_INT(1, pio8255_pa5_get());
+
+    pio8255_write(0, 0xFF);
 }
 
 /* PIO — vkbd probe: readback dosednutí klávesy (fix 0016 / cesta A)
@@ -339,6 +377,36 @@ void test_pio_autotype_matrix(void)
     TEST_ASSERT_TRUE(true);
 }
 
+/* PIO — autotype skončí v emulaci sám (vkbd_autotype = NULL na konci textu),
+ * ne až zásahem okna autotype z UI vlákna */
+void test_pio_autotype_ends_in_core(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    static char text[] = "AB";
+    pio8255_autotype_set_key_down_ms(1.0);
+    pio8255_autotype_set_key_up_ms(1.0);
+    pio8255_set_autotype(text);
+    TEST_ASSERT_NOT_NULL(g_pio8255.vkbd_autotype);
+
+    /* Čtení portu B s posunem času (0,1 ms na čtení) až do konce textu. */
+    int reads = 0;
+    while (g_pio8255.vkbd_autotype != NULL && reads < 10000) {
+        (void)pio8255_read(1);
+        g_gdg.total_elapsed.ticks += 1800;
+        reads++;
+    }
+    TEST_ASSERT_NULL_MESSAGE(g_pio8255.vkbd_autotype, "autotype did not end in the emulation");
+    TEST_ASSERT_EQUAL_INT(-1, g_pio8255.vkbd_autotype_col);
+    TEST_ASSERT_TRUE(reads > 2);
+
+    /* Po konci čte port B zase klávesnici. */
+    pio8255_keyboard_matrix_reset();
+    pio8255_vkbd_matrix_reset();
+    (void)pio8255_read(1);
+    TEST_ASSERT_NULL(g_pio8255.vkbd_autotype);
+}
+
 /* === MAIN === */
 
 int main(int argc, char *argv[])
@@ -365,6 +433,7 @@ int main(int argc, char *argv[])
     RUN_TEST(test_pio_vkbd_probe_landing);
     RUN_TEST(test_pio_vkbd_probe_invalid_arm);
     RUN_TEST(test_pio_autotype_matrix);
+    RUN_TEST(test_pio_autotype_ends_in_core);
 
     int result = UNITY_END();
     mztest_teardown();

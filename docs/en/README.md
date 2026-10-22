@@ -107,7 +107,7 @@ are rejected with an error - use `--help` for a generated listing.
 | `--all-traces-dir` | `<dirpath>` | Shorthand: set the target directory for ALL four trace-suite subsystems. Per-subsystem `--<sys>-dir` takes precedence. |
 | `--no-save-ini` | - | Do not write the `.ini` file at exit. CLI overrides become session-only. |
 | `--no-first-run-windows` | - | Suppress automatic opening of About + Version Check Setup windows on first run (when no `.ini` file exists). Useful for headless / scripted launches. |
-| `--headless` | - | Run the emulator without a GUI window and without audio output. The SDL3 video and audio subsystems run in no-op mode (no SDL window, no audio device opened). The framebuffer is still rendered into memory (ready for later MCP frame Resources). Intended for CI / batch / subprocess scenarios with no display or audio device available. The process keeps running until SIGINT (Ctrl+C) or an SDL quit event. Recommended to combine with `--no-first-run-windows`. |
+| `--headless` | - | Run the emulator without a GUI window and without audio output. The SDL3 video and audio subsystems run in no-op mode (no SDL window, no audio device opened). The framebuffer is still rendered into memory (ready for later MCP frame Resources). Intended for CI / batch / subprocess scenarios with no display or audio device available. The process keeps running until SIGINT (Ctrl+C), an SDL quit event or an exit condition of an unattended run (see below). Recommended to combine with `--no-first-run-windows`. |
 | `--maxspeed-bench` | - | Start directly in MAX SPEED and periodically (every 5 s) print the MAX SPEED benchmark report to the console (efficiency %, throughput, FB-FPS, distribution). Intended for headless emulation efficiency measurement. Combine with `--headless` and `--run-mzf`. See [`maxspeed-benchmark.md`](maxspeed-benchmark.md). |
 | `--speed` | `<percent\|max>` | Set the emulation speed at start: `max` = MAX SPEED (no real-time pacing), an integer 1-4000 = custom speed in percent (100 = normal). Works in the window and with `--headless` (where emulation otherwise runs in real time). Invalid value = error and exit. Combined with `--maxspeed-bench`, MAX SPEED wins. |
 | `--mode-switch` | `<700\|800>` | MZ-800 only: position of the rear mode switch (SW1) - `700` = MZ-700 mode, `800` = MZ-800 mode. The ROM reads the switch when it starts a program. Overrides the `[MZ800] mode_switch` value from the `.ini` (same as the Rear DIP Switch menu). Invalid value = error and exit. |
@@ -115,6 +115,17 @@ are rejected with an error - use `--help` for a generated listing.
 | `--record-frames` | `<count>` | Stop video recording after the given number of frames; with `--headless` the emulator then exits. |
 | `--audio-capture` | `<folder>` | Start an audio capture into the folder right after startup (channel levels, PSG writes, reference.wav, sdl.wav; the files are selected in Tools -> Audio Capture -> Settings...). See [`audio-capture.md`](audio-capture.md). |
 | `--audio-capture-frames` | `<count>` | Stop the audio capture after the given number of frames; with `--headless` the emulator then exits. |
+| `--exit-after-frames` | `<N>` | Unattended run: end after N emulated frames, exit code 0. See [Unattended runs](mcp-server/headless-mode.md#unattended-runs). |
+| `--timeout-frames`, `--timeout-seconds` | `<N>`, `<S>` | Unattended run: exit code 2 (timeout) after N frames / S emulated seconds, unless another condition came first. |
+| `--exit-on-pc`, `--fail-on-pc` | `<addr>[,skip=N][,code=C]` | Unattended run: end when the CPU executes the address; exit code C (default 0), or 1 for `--fail-on-pc`. Can be repeated. |
+| `--exit-on-write`, `--exit-on-out` | `<addr>[=VAL]...`, `<port>...` | Unattended run: end when the program writes to the memory address / I/O port; exit code = the written value, or `code=C`. Can be repeated. |
+| `--bpt` | `<file.bpt>` | Unattended run: load breakpoints from the file (the automatically loaded set and variables are not used in an unattended run, nothing is saved at exit). A breakpoint with the action `exit` ends the run. |
+| `--result-json`, `--automation-dir` | `<file>`, `<folder>` | Unattended run: write the result (reason, exit code, time, registers, hashes, artifacts) as JSON; `--automation-dir` also saves `screen.png`. |
+| `--exit-screenshot`, `--exit-snapshot` | `<file>` | Unattended run: save the final screen as PNG / the final state as a snapshot. |
+| `--replay-record` | `<file>` | Record the inputs of the run into a replay file (`.mzr`) from the first frame; the file is written when the emulator exits. See [Replay](replay.md). |
+| `--replay-hash-interval` | `<N>` | With `--replay-record`: frames between state hashes (1-100000, default 50). |
+| `--replay` | `<file>` | Play a replay file back from its start snapshot; live input is ignored, the playback pauses at the end or at the first differing frame. |
+| `--exit-at-replay-end`, `--replay-verify` | - | With `--replay`: end the run at the end of the playback - exit code 0, 4 when the state differs, 3 when the replay cannot start. `--replay-verify` also runs at MAX SPEED. |
 
 ### CDL export layout
 
@@ -125,7 +136,7 @@ the produced layout is:
 ```
 ./my-runs/
     session1.json                # meta + region table (text)
-    session1_bus.cdl             # 64K cells × 12 bytes (R, W, X uint32 LE)
+    session1_bus.cdl             # 64K cells × 16 bytes (R, W, X, S uint32 LE)
     session1_ram.cdl
     session1_rom-lower.cdl
     ...
@@ -211,6 +222,12 @@ Per-subsystem format details:
 
 Other debugger documents:
 
+- [`debugger/ram-write-log.md`](debugger/ram-write-log.md) - RAM Write Log:
+  who wrote a byte, write history of a cell, newest writes
+  (`--ramlog-*`, `[RAMLOG]`)
+- [`debugger/memory-search.md`](debugger/memory-search.md) - Memory Search:
+  find a variable (lives, score, timer) by narrowing candidates, then
+  Watch, write breakpoint or Freeze (`[MEMSEARCH_WINDOW]`)
 - [`debugger/disassembler-window.md`](debugger/disassembler-window.md) -
   standalone Disassembler window V1 (range disasm, S/L/D/W auto-labels,
   sym_db/CDL gating, export .asm/.s for pasmo/sjasmplus/sdcc-asz80)
@@ -255,6 +272,15 @@ folder what the sound hardware does: changes of the channel levels, PSG
 writes, the exact sound and the sound you hear (two WAV files to compare) -
 for finding sound bugs. Also from the command line (`--audio-capture`) and
 over MCP. For details see [`audio-capture.md`](audio-capture.md).
+
+## Replay
+
+Replay -> Record Inputs... records the inputs of a run (keyboard, joystick,
+resets, debugger writes) from a start snapshot; Replay -> Play Replay...
+repeats exactly the same run, also in a new process and at any speed, so a
+bug can be studied again and again with other breakpoints or trace, and
+stops at the first frame where the state differs. `--replay-verify` checks
+a recorded run in CI. For details see [`replay.md`](replay.md).
 
 ## MAX SPEED benchmark
 

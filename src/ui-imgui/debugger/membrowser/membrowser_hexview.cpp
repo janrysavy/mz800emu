@@ -45,6 +45,8 @@
 /* V2: cross-window Show in Memory Map - C-API header je k dispozici
  * i z C++ TU bez extern "C" wrapperu (header sám má extern "C" guard). */
 #include "ui-imgui/debugger/memmap/memmap_window.h"
+/* Who wrote this byte? - dotaz do okna RAM Write Log. */
+#include "ui-imgui/debugger/ramlog_window/ramlog_window.h"
 /* V6: fill dialog request hook a undo/redo stats pro context menu. */
 #include "membrowser_fill_dialog.h"
 #include "membrowser_undo.h"
@@ -1639,6 +1641,17 @@ extern "C" void membrowser_hexview_render_ex ( st_MEMBROWSER_STATE *st,
                 if ( char_idx > MEMBROWSER_PCG_CHAR_COUNT - 1 ) char_idx = MEMBROWSER_PCG_CHAR_COUNT - 1;
                 membrowser_pcg_window_focus_at ( extras->sub_id, char_idx );
                 if ( g_gui ) g_gui->showMembrowserPcgEditor = true;
+            }
+        }
+
+        /* Who wrote this byte? - poslední zapisovatel a historie zápisů bajtu
+         * z okna RAM Write Log (Logical = CPU adresa podle aktuálního
+         * mapování, ostatní regiony = buňka regionu). */
+        if ( ramlog_window_region_supported ( extras->region_kind ) ) {
+            ImGui::Separator ( );
+            if ( ImGui::MenuItem ( _( "Who wrote this byte?" ) ) ) {
+                ramlog_window_query_region ( extras->region_kind, extras->sub_id,
+                                             ( uint32_t ) target );
             }
         }
 

@@ -4,7 +4,7 @@
  *
  * Side-effect free ImGui okno pro live view stavu vsech paametovych disku
  * (ramdisku) emulatoru najednou:
- *   - MR-1R18 kompatibilni standardni ramdisk (`g_ramdisk.std`),
+ *   - MZ-1R18 kompatibilni standardni ramdisk (`g_ramdisk.std`),
  *   - Pezik 0xE8-0xEF (`g_ramdisk.pezik[RAMDISK_PEZIK_E8]`, jen MZ-700/MZ-800),
  *   - Pezik 0x68-0x6F (`g_ramdisk.pezik[RAMDISK_PEZIK_68]`).
  *
@@ -29,7 +29,7 @@ extern "C"
      * @brief Render Memory Disk State debugger okno.
      *
      * Vykresli ImGui okno s CollapsingHeader sekcemi pro kazdy typ ramdisku
-     * (MR-1R18 standard, Pezik E8, Pezik 68). Cte aktualni stav z globalniho
+     * (MZ-1R18 standard, Pezik E8, Pezik 68). Cte aktualni stav z globalniho
      * `g_ramdisk` pri kazdem volani (kazdy frame); zadny interni cache.
      *
      * @param p_open Pointer na bool s viditelnosti okna (ImGui idiom).

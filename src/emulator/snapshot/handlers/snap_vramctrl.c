@@ -1,6 +1,13 @@
 /**
  * @file snap_vramctrl.c
  * @brief Snapshot handler: VRAM Control — platformově specifický řadič VRAM
+ *
+ * MZ-800 ukládá registry WF/RF (stav WAIT u VRAM je v hw/gdg.xml,
+ * klíč vram_wrff_release). MZ-700 a MZ-1500 ukládají latch WAIT
+ * (mz700_wr_latch_is_used: první přístup do VRAM ve viditelné části řádku
+ * je bez WAIT, další s WAIT). Starší snapshot MZ-700 bez hw/vramctrl.xml
+ * načte latch jako po resetu; klíč mz700_wr_latch_is_used ze starších
+ * snapshotů MZ-800 se ignoruje.
  */
 
 #include <stdio.h>
@@ -13,6 +20,8 @@
 #include "mzarch/mz800/gdg/mz800_vramctrl.h"
 #elif MZARCH == 1500
 #include "mzarch/mz1500/gdg/mz1500_vramctrl.h"
+#elif MZARCH == 700
+#include "mzarch/mz700/gdg/mz700_vramctrl.h"
 #endif
 
 static en_SNAPSHOT_RESULT snap_vramctrl_save(st_SNAPSHOT_CONTEXT *ctx)
@@ -29,24 +38,6 @@ static en_SNAPSHOT_RESULT snap_vramctrl_save(st_SNAPSHOT_CONTEXT *ctx)
     snapshot_xml_write_uint(w, "regRF_PLANE", g_vramctrl.regRF_PLANE);
     snapshot_xml_write_uint(w, "regRF_SEARCH", g_vramctrl.regRF_SEARCH);
     snapshot_xml_write_uint(w, "regWFRF_VBANK", g_vramctrl.regWFRF_VBANK);
-    snapshot_xml_write_uint(w, "mz700_wr_latch_is_used", g_vramctrl.mz700_wr_latch_is_used);
-
-    snapshot_xml_close_element(w); /* vramctrl_state */
-
-    char *xml = snapshot_xml_writer_finish(w);
-    en_SNAPSHOT_RESULT res = snapshot_io_write_xml(ctx->io, "hw/vramctrl.xml", xml);
-    g_free(xml);
-
-    return res;
-
-#elif MZARCH == 1500
-    snapshot_xml_writer_t *w = snapshot_xml_writer_new();
-    snapshot_xml_write_header(w);
-
-    snapshot_xml_open_element(w, "vramctrl_state");
-
-    /* MZ-1500: pouze latch */
-    snapshot_xml_write_uint(w, "mz700_wr_latch_is_used", g_vramctrl.mz700_wr_latch_is_used);
 
     snapshot_xml_close_element(w); /* vramctrl_state */
 
@@ -57,15 +48,32 @@ static en_SNAPSHOT_RESULT snap_vramctrl_save(st_SNAPSHOT_CONTEXT *ctx)
     return res;
 
 #else
-    /* MZ-700: prázdný handler */
-    (void)ctx;
-    return SNAPSHOT_OK;
+    snapshot_xml_writer_t *w = snapshot_xml_writer_new();
+    snapshot_xml_write_header(w);
+
+    snapshot_xml_open_element(w, "vramctrl_state");
+
+    /* MZ-1500 a MZ-700: pouze latch */
+    snapshot_xml_write_uint(w, "mz700_wr_latch_is_used", g_vramctrl.mz700_wr_latch_is_used);
+
+    snapshot_xml_close_element(w); /* vramctrl_state */
+
+    char *xml = snapshot_xml_writer_finish(w);
+    en_SNAPSHOT_RESULT res = snapshot_io_write_xml(ctx->io, "hw/vramctrl.xml", xml);
+    g_free(xml);
+
+    return res;
 #endif
 }
 
 static en_SNAPSHOT_RESULT snap_vramctrl_load(st_SNAPSHOT_CONTEXT *ctx)
 {
-#if MZARCH == 800 || MZARCH == 1500
+#if MZARCH == 700
+    /* Starší snapshot MZ-700 hw/vramctrl.xml nemá (handler byl prázdný):
+     * latch WAIT jako po resetu. */
+    g_vramctrl.mz700_wr_latch_is_used = 0;
+    if (!snapshot_io_entry_exists(ctx->io, "hw/vramctrl.xml")) return SNAPSHOT_OK;
+#endif
     char *xml = NULL;
     en_SNAPSHOT_RESULT res = snapshot_io_read_xml(ctx->io, "hw/vramctrl.xml", &xml);
     if (res != SNAPSHOT_OK) {
@@ -100,21 +108,15 @@ static en_SNAPSHOT_RESULT snap_vramctrl_load(st_SNAPSHOT_CONTEXT *ctx)
     snapshot_xml_read_uint(r, "regRF_PLANE", &g_vramctrl.regRF_PLANE);
     snapshot_xml_read_uint(r, "regRF_SEARCH", &g_vramctrl.regRF_SEARCH);
     snapshot_xml_read_uint(r, "regWFRF_VBANK", &g_vramctrl.regWFRF_VBANK);
-#endif
-
-    /* Společný pro MZ-800 i MZ-1500 */
+#else
+    /* MZ-700 a MZ-1500: latch WAIT */
     snapshot_xml_read_uint(r, "mz700_wr_latch_is_used", &g_vramctrl.mz700_wr_latch_is_used);
+#endif
 
     snapshot_xml_leave_element(r); /* vramctrl_state */
     snapshot_xml_reader_free(r);
 
     return SNAPSHOT_OK;
-
-#else
-    /* MZ-700: prázdný handler */
-    (void)ctx;
-    return SNAPSHOT_OK;
-#endif
 }
 
 void snap_vramctrl_register(void)

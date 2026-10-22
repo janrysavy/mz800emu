@@ -20,6 +20,11 @@
 
 #include "debugger/dbgapi_cmdrq.h"
 #include "debugger/dbgapi_emu.h"
+#include "debugger/dbgapi_regions.h"
+#include "debugger/replay_dbg.h"
+#include "debugger/coverage/coverage_hook.h"
+#include "debugger/trace/ramlog.h"
+#include "state_hash.h"
 #include "debugger/breakpoints.h"
 #include "debugger/bptmap.h"
 #include "debugger/debugger.h"
@@ -27,6 +32,7 @@
 #include "mzarch/mzarch.h"
 #include "mzarch/mzarch_platform_functions.h"
 #include "hw-generic/memory/memory.h"
+#include "mzarch/mz800/memory/mz800_memory.h"
 #include "libs/cpu-z80/z80.h"
 
 #include <string.h>
@@ -1117,6 +1123,703 @@ void test_cmd_history_get_null_result_fails ( void ) {
 }
 
 
+/* Pozice ringu se čte ve stejném příkazu jako řádky (data_ptr = unsigned*),
+ * ne až po návratu mimo emu vlákno (MCP history_get). */
+void test_cmd_history_get_returns_position ( void ) {
+    g_debugger_history.position = 7;
+    st_DEBUGGER_HISTORY_ROW out[ DEBUGGER_HISTORY_LENGTH ];
+    unsigned position = 0xFFFFFFFFu;
+    bool ok = call_dispatch ( DBGAPI_CMD_HISTORY_GET, &position, out );
+    TEST_ASSERT_TRUE ( ok );
+    TEST_ASSERT_EQUAL_UINT ( 7, position );
+}
+
+
+/* ========================================================================= */
+/*  CMD_MEM_WRITE_CHECKED - zamítnutí kontrolou regionu                      */
+/* ========================================================================= */
+
+
+/**
+ * @brief Zamítnutý zápis (ROM) skončí neúspěchem příkazu, ne úspěchem.
+ *
+ * Dřív handler při zamítnutí vracel rq->success = true; Activity pak
+ * zamítnutý mem_write ukázala jako provedený a záznam vstupů ho
+ * zaznamenal. Test namapuje dolní ROM (0000h-0FFFh) a mapování po sobě
+ * vrátí.
+ */
+void test_cmd_mem_write_checked_rejected_fails ( void ) {
+    const uint8_t saved_map = g_memory.map;
+    g_memory.map |= MEMORY_MZ800_MAP_FLAG_ROM_0000;
+    memory_reconnect_ram ( );
+    TEST_ASSERT_EQUAL_INT ( MEMMAP_KIND_ROM_LOW, memmap_query ( 0x0 ) );
+
+    uint8_t data[2] = { 0x12, 0x34 };
+    st_DBGAPI_MEM_WRITE_CHECKED_PARAM p;
+    memset ( &p, 0, sizeof ( p ) );
+    p.addr = 0x0100;
+    p.length = 2;
+    p.data = data;
+    p.success = 1;
+    bool ok = call_dispatch ( DBGAPI_CMD_MEM_WRITE_CHECKED, &p, NULL );
+
+    g_memory.map = saved_map;
+    memory_reconnect_ram ( );
+
+    TEST_ASSERT_FALSE ( ok );
+    TEST_ASSERT_EQUAL_UINT8 ( 0, p.success );
+    TEST_ASSERT_EQUAL_HEX16 ( 0x0100, p.first_failed_addr );
+    TEST_ASSERT_EQUAL_UINT8 ( MEMMAP_KIND_ROM_LOW, p.first_failed_kind );
+}
+
+
+/**
+ * @brief Povolený zápis (RAM) skončí úspěchem příkazu i zápisu.
+ */
+void test_cmd_mem_write_checked_ram_succeeds ( void ) {
+    int page = -1;
+    for ( int p = 1; p < 16; p++ ) {
+        if ( memmap_query ( (uint8_t) p ) == MEMMAP_KIND_RAM ) {
+            page = p;
+            break;
+        };
+    };
+    if ( page < 0 ) TEST_IGNORE_MESSAGE ( "no RAM page mapped" );
+
+    uint16_t addr = (uint16_t) ( ( page << 12 ) + 0x100 );
+    uint8_t data[2] = { 0x5A, 0xA5 };
+    st_DBGAPI_MEM_WRITE_CHECKED_PARAM p;
+    memset ( &p, 0, sizeof ( p ) );
+    p.addr = addr;
+    p.length = 2;
+    p.data = data;
+    bool ok = call_dispatch ( DBGAPI_CMD_MEM_WRITE_CHECKED, &p, NULL );
+    TEST_ASSERT_TRUE ( ok );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, p.success );
+}
+
+
+/**
+ * @brief Ověří, že celý prostor 0000h-FFFFh obsahuje bajt @p value.
+ * @param value Očekávaný bajt.
+ * @param what Popis kroku do zprávy testu.
+ */
+static void assert_full_64k ( uint8_t value, const char *what ) {
+    uint8_t *buf = g_malloc ( 0x10000 );
+    st_DBGAPI_MEM_PARAM rp = { 0x0000, 0x10000, buf };
+    TEST_ASSERT_TRUE_MESSAGE ( call_dispatch ( DBGAPI_CMD_MEM_READ, &rp, NULL ), what );
+    uint32_t bad = 0x10000;
+    for ( uint32_t i = 0; i < 0x10000; i++ ) {
+        if ( buf[ i ] != value ) {
+            bad = i;
+            break;
+        };
+    };
+    g_free ( buf );
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE ( 0x10000, bad, what );
+}
+
+
+/**
+ * @brief Zápis celých 64 KiB (addr 0, délka 65536) přes MEM_WRITE_CHECKED,
+ *        MEM_WRITE_FORCE i přes přehrání zaznamenaného zápisu (N61).
+ *
+ * Délka se dřív předávala v uint16_t a 65536 přeteklo na 0: MEM_WRITE_CHECKED
+ * skončil chybou regionu na 0000h, MEM_WRITE_FORCE "uspěl" bez zápisu
+ * a přehrání záznamu zapsalo 0 bajtů. Test přepne mapování na samou RAM
+ * (map = 0, bez ROM, CG-ROM, VRAM a mapovaných portů), po sobě vrátí
+ * mapování i obsah paměti.
+ */
+/**
+ * @brief Volání DBGAPI_CMD_COVERAGE s danou operací.
+ * @param op    Operace.
+ * @param level Úroveň (START).
+ * @param snap  Cíl snímku (SNAPSHOT), jinak NULL.
+ * @param st    Výstup stavu po operaci.
+ * @return rq->success.
+ */
+static bool coverage_cmd ( en_DBGAPI_COVERAGE_OP op, en_COVERAGE_LEVEL level,
+                           st_COVERAGE_SNAPSHOT *snap, st_COVERAGE_STATUS *st ) {
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset ( &p, 0, sizeof ( p ) );
+    p.op = op;
+    p.cfg.level = level;
+    p.cfg.key = COVERAGE_KEY_OPCODE;
+    p.cfg.capacity = 64;
+    p.reset = true;
+    p.snap = snap;
+    bool ok = call_dispatch ( DBGAPI_CMD_COVERAGE, &p, NULL );
+    if ( st ) *st = p.out_status;
+    return ok;
+}
+
+
+/**
+ * @brief DBGAPI_CMD_COVERAGE a háček po instrukci nad skutečnou pamětí a CPU.
+ *
+ * START branch zapne bit masky háčků bez logovacích callbacků, krok JR NZ
+ * (bajty z paměti po kroku) dá výsledek podle F. START detail vynutí
+ * logovací callbacky; krok bere bajty ze záznamu fetch, buňka je RAM (nebo
+ * banka MemExt) na adrese kroku; chybějící bajt v záznamu =
+ * fetch_fallback. STOP vrátí
+ * masku i callbacky.
+ */
+void test_cmd_coverage_hook ( void ) {
+    z80_t *cpu = g_mzarch_main.cpu;
+    z80_mread_cb cb_before = cpu->mread_cb;
+    static const uint8_t jrnz[] = { 0x20, 0x10 };
+    st_DBGAPI_MEM_PARAM mp = { .addr = 0x3000, .len = 2, .buf = (uint8_t *) jrnz };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_WRITE_FORCE, &mp, NULL ) );
+
+    st_COVERAGE_STATUS st;
+    TEST_ASSERT_TRUE ( coverage_cmd ( DBGAPI_COVERAGE_OP_START, COVERAGE_LEVEL_BRANCH, NULL, &st ) );
+    TEST_ASSERT_TRUE ( st.active );
+    TEST_ASSERT_TRUE ( g_mzarch_post_insn_hooks & MZARCH_POST_INSN_COVERAGE );
+    TEST_ASSERT_EQUAL_INT ( 0, g_coverage_need_fetch );
+    TEST_ASSERT_TRUE ( cpu->mread_cb == cb_before );
+
+    cpu->af.l = 0x00;   /* NZ -> skok */
+    st_MZARCH_INSN_INFO insn = { .pc = 0x3000, .next_pc = 0x3012, .tstates = 12, .wait = 0 };
+    coverage_hook_on_instruction ( &insn );
+
+    st_COVERAGE_SNAPSHOT *snap = g_new0 ( st_COVERAGE_SNAPSHOT, 1 );
+    TEST_ASSERT_TRUE ( coverage_cmd ( DBGAPI_COVERAGE_OP_SNAPSHOT, COVERAGE_LEVEL_BRANCH, snap, &st ) );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x01, snap->exec[ 0x3000 >> 3 ] );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x01, snap->taken[ 0x3000 >> 3 ] );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x00, snap->not_taken[ 0x3000 >> 3 ] );
+    TEST_ASSERT_NULL ( snap->units );
+    TEST_ASSERT_EQUAL_UINT32 ( 1, st.branches_taken_only );
+
+    /* detail: bajty ze záznamu fetch (v paměti jiný obsah, rozhoduje fetch) */
+    TEST_ASSERT_TRUE ( coverage_cmd ( DBGAPI_COVERAGE_OP_START, COVERAGE_LEVEL_DETAIL, NULL, &st ) );
+    TEST_ASSERT_EQUAL_INT ( 1, g_coverage_need_fetch );
+    TEST_ASSERT_TRUE ( TEST_DEBUGGER_NEED_DEBUG_CALLBACKS );
+    TEST_ASSERT_TRUE ( cpu->mread_cb != cb_before );
+    g_debugger_insn_fetch.addr = 0x3000;
+    g_debugger_insn_fetch.count = 2;
+    g_debugger_insn_fetch.byte[ 0 ] = 0x28;   /* JR Z */
+    g_debugger_insn_fetch.byte[ 1 ] = 0x10;
+    cpu->af.l = 0x00;   /* NZ -> JR Z propadne */
+    insn.next_pc = 0x3002;
+    coverage_hook_on_instruction ( &insn );
+    g_debugger_insn_fetch.count = 1;          /* operand chybí -> fallback */
+    coverage_hook_on_instruction ( &insn );
+
+    TEST_ASSERT_TRUE ( coverage_cmd ( DBGAPI_COVERAGE_OP_SNAPSHOT, COVERAGE_LEVEL_DETAIL, snap, &st ) );
+    TEST_ASSERT_EQUAL_UINT32 ( 1, snap->n_units );
+    TEST_ASSERT_NOT_NULL ( snap->units );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x28, snap->units[ 0 ].key[ 0 ] );
+    TEST_ASSERT_EQUAL_UINT32 ( 2, snap->units[ 0 ].not_taken );
+    /* Stránka 3 čte z hlavní RAM, nebo s připojeným MemExt z jeho banky 0. */
+    uint8_t space = COVERAGE_CELL_SPACE ( snap->units[ 0 ].cell );
+    TEST_ASSERT_TRUE ( space == RAMLOG_SPACE_RAM || space == RAMLOG_SPACE_MEMEXT );
+    TEST_ASSERT_EQUAL_HEX32 ( 0x3000, COVERAGE_CELL_OFFSET ( snap->units[ 0 ].cell ) );
+    TEST_ASSERT_TRUE ( snap->units[ 0 ].flags & COVERAGE_F_FETCH_FALLBACK );
+    TEST_ASSERT_EQUAL_UINT64 ( 1, st.fetch_fallback );
+    TEST_ASSERT_FALSE ( st.complete );
+    coverage_snapshot_clear ( snap );
+    g_free ( snap );
+
+    st_COVERAGE_STATUS mk;
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset ( &p, 0, sizeof ( p ) );
+    p.op = DBGAPI_COVERAGE_OP_MARK;
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_COVERAGE, &p, NULL ) );
+    TEST_ASSERT_EQUAL_UINT32 ( 1, p.out_epoch );
+
+    TEST_ASSERT_TRUE ( coverage_cmd ( DBGAPI_COVERAGE_OP_STOP, COVERAGE_LEVEL_DETAIL, NULL, &mk ) );
+    TEST_ASSERT_FALSE ( mk.active );
+    TEST_ASSERT_TRUE ( mk.has_data );
+    TEST_ASSERT_FALSE ( g_mzarch_post_insn_hooks & MZARCH_POST_INSN_COVERAGE );
+    TEST_ASSERT_EQUAL_INT ( 0, g_coverage_need_fetch );
+    TEST_ASSERT_TRUE ( cpu->mread_cb == cb_before );
+    coverage_free ( );
+}
+
+
+void test_cmd_mem_write_full_64k ( void ) {
+    const uint8_t saved_map = g_memory.map;
+    g_memory.map = 0;
+    memory_reconnect_ram ( );
+    bool all_ram = true;
+    for ( int pg = 0; pg < 16; pg++ ) {
+        if ( memmap_query ( (uint8_t) pg ) != MEMMAP_KIND_RAM ) all_ram = false;
+    };
+    if ( !all_ram ) {
+        g_memory.map = saved_map;
+        memory_reconnect_ram ( );
+        TEST_IGNORE_MESSAGE ( "map 0 is not all RAM" );
+    };
+
+    uint8_t *saved = g_malloc ( 0x10000 );
+    uint8_t *pattern = g_malloc ( 0x10000 );
+    st_DBGAPI_MEM_PARAM sp = { 0x0000, 0x10000, saved };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_READ, &sp, NULL ) );
+
+    /* MEM_WRITE_CHECKED: kontrola regionu přes všech 16 stránek projde. */
+    memset ( pattern, 0x5A, 0x10000 );
+    st_DBGAPI_MEM_WRITE_CHECKED_PARAM cp;
+    memset ( &cp, 0, sizeof ( cp ) );
+    cp.addr = 0x0000;
+    cp.length = 0x10000;
+    cp.data = pattern;
+    bool ok_checked = call_dispatch ( DBGAPI_CMD_MEM_WRITE_CHECKED, &cp, NULL );
+    uint8_t checked_success = cp.success;
+    assert_full_64k ( 0x5A, "mem_write_checked" );
+
+    /* MEM_WRITE_FORCE. */
+    memset ( pattern, 0xA5, 0x10000 );
+    st_DBGAPI_MEM_PARAM fp = { 0x0000, 0x10000, pattern };
+    bool ok_force = call_dispatch ( DBGAPI_CMD_MEM_WRITE_FORCE, &fp, NULL );
+    assert_full_64k ( 0xA5, "mem_write_force" );
+
+    /* Záznam a přehrání zápisu 64 KiB. */
+    memset ( pattern, 0x3C, 0x10000 );
+    st_DBGAPI_MEM_PARAM rp = { 0x0000, 0x10000, pattern };
+    char *args = replay_dbg_args_to_json ( DBGAPI_CMD_MEM_WRITE_FORCE, &rp );
+    TEST_ASSERT_NOT_NULL ( args );
+    char *err = NULL;
+    bool ok_replay = replay_dbg_execute ( "mem_write_force", args, &err );
+    g_free ( args );
+    assert_full_64k ( 0x3C, "replay mem_write_force" );
+
+    st_DBGAPI_MEM_PARAM wp = { 0x0000, 0x10000, saved };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_WRITE, &wp, NULL ) );
+    g_free ( saved );
+    g_free ( pattern );
+    g_memory.map = saved_map;
+    memory_reconnect_ram ( );
+
+    TEST_ASSERT_TRUE ( ok_checked );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, checked_success );
+    TEST_ASSERT_TRUE ( ok_force );
+    TEST_ASSERT_TRUE_MESSAGE ( ok_replay, err ? err : "" );
+    g_free ( err );
+}
+
+
+/* ========================================================================= */
+/*  CMD_STATE_OBSERVE - registry a okna paměti z jednoho okamžiku (M10)       */
+/* ========================================================================= */
+
+
+/**
+ * @brief Najde stránku 4 KiB s RAM (1..15), jinak test přeskočí.
+ * @return Adresa 100h bajtů za začátkem stránky.
+ */
+static uint16_t observe_ram_addr ( void ) {
+    for ( int p = 1; p < 16; p++ ) {
+        if ( memmap_query ( (uint8_t) p ) == MEMMAP_KIND_RAM ) {
+            return (uint16_t) ( ( p << 12 ) + 0x100 );
+        };
+    };
+    TEST_IGNORE_MESSAGE ( "no RAM page mapped" );
+    return 0;
+}
+
+
+/**
+ * @brief Okno CPU i okno regionu RAM vrátí zapsaná data, registry a čas
+ *        odpovídají stavu, hash části cpu se rovná state_hash_part().
+ */
+void test_cmd_state_observe_windows_regs_hash ( void ) {
+    uint16_t addr = observe_ram_addr ( );
+    uint8_t pattern[ 4 ] = { 0x11, 0x22, 0x33, 0x44 };
+    st_DBGAPI_MEM_PARAM wp = { addr, 4, pattern };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_WRITE, &wp, NULL ) );
+    z80_set_reg ( g_mzarch_main.cpu, Z80_REG_HL, 0xBEEF );
+    g_emulator.paused = true;
+
+    uint8_t cpu_buf[ 4 ] = { 0 };
+    uint8_t reg_buf[ 4 ] = { 0 };
+    st_DBGAPI_OBSERVE_WINDOW w[ 2 ];
+    memset ( w, 0, sizeof ( w ) );
+    w[ 0 ].start = addr;
+    w[ 0 ].len = 4;
+    w[ 0 ].buf = cpu_buf;
+    w[ 1 ].by_region = 1;
+    w[ 1 ].region_kind = REGION_KIND_RAM;
+    w[ 1 ].sub_id = 0;
+    w[ 1 ].start = addr;
+    w[ 1 ].len = 4;
+    w[ 1 ].buf = reg_buf;
+
+    st_DBGAPI_STATE_OBSERVE_PARAM *p = g_new0 ( st_DBGAPI_STATE_OBSERVE_PARAM, 1 );
+    p->windows = w;
+    p->window_count = 2;
+    p->hash_mask = 1u << STATE_HASH_CPU;
+    p->want_memory_map = 1;
+    p->which = DBGAPI_CPU_PANEL_WANT_RASTER;
+    bool ok = call_dispatch ( DBGAPI_CMD_STATE_OBSERVE, p, NULL );
+    g_emulator.paused = false;
+
+    TEST_ASSERT_TRUE ( ok );
+    TEST_ASSERT_EQUAL_UINT8 ( DBGAPI_OBSERVE_WINDOW_OK, w[ 0 ].status );
+    TEST_ASSERT_EQUAL_UINT8 ( DBGAPI_OBSERVE_WINDOW_OK, w[ 1 ].status );
+    TEST_ASSERT_EQUAL_HEX8_ARRAY ( pattern, cpu_buf, 4 );
+    TEST_ASSERT_EQUAL_HEX8_ARRAY ( pattern, reg_buf, 4 );
+    TEST_ASSERT_EQUAL_UINT32 ( 0x10000, w[ 1 ].region_size );
+    TEST_ASSERT_EQUAL_HEX16 ( 0xBEEF, p->panel.regs[ Z80_REG_HL ] );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, p->panel.raster_valid );
+    TEST_ASSERT_EQUAL_UINT8 ( 0, p->panel.im2_valid );
+    TEST_ASSERT_EQUAL_UINT8 ( 0, p->running );
+    TEST_ASSERT_EQUAL_UINT32 ( g_mzarch_main.cpu->total_cycles, p->total_cycles );
+
+    char want[ STATE_HASH_HEX_LEN + 1 ];
+    TEST_ASSERT_TRUE ( state_hash_part ( STATE_HASH_CPU, want ) );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, p->hash_ok[ STATE_HASH_CPU ] );
+    TEST_ASSERT_EQUAL_STRING ( want, p->hash_hex[ STATE_HASH_CPU ] );
+    TEST_ASSERT_EQUAL_UINT8 ( 0, p->hash_ok[ STATE_HASH_RAM ] );
+
+    TEST_ASSERT_EQUAL_INT ( 16, p->memory_map.slot_count );
+    for ( uint8_t page = 0; page < 16; page++ ) {
+        TEST_ASSERT_EQUAL_UINT8 ( (uint8_t) memmap_query ( page ), p->page_kind[ page ] );
+    };
+    g_free ( p );
+}
+
+
+/**
+ * @brief Nedostupný region a okno přes konec regionu: příkaz uspěje,
+ *        okno má status a vynulovaný buffer.
+ */
+void test_cmd_state_observe_unavailable_and_out_of_range ( void ) {
+    uint8_t gone[ 8 ];
+    uint8_t over[ 8 ];
+    memset ( gone, 0xEE, sizeof ( gone ) );
+    memset ( over, 0xEE, sizeof ( over ) );
+    st_DBGAPI_OBSERVE_WINDOW w[ 2 ];
+    memset ( w, 0, sizeof ( w ) );
+    w[ 0 ].by_region = 1;
+    w[ 0 ].region_kind = REGION_KIND_RAMDISK_PEZIK;
+    w[ 0 ].sub_id = 200;
+    w[ 0 ].len = 8;
+    w[ 0 ].buf = gone;
+    w[ 1 ].by_region = 1;
+    w[ 1 ].region_kind = REGION_KIND_RAM;
+    w[ 1 ].start = 0xFFFC;
+    w[ 1 ].len = 8;
+    w[ 1 ].buf = over;
+
+    st_DBGAPI_STATE_OBSERVE_PARAM *p = g_new0 ( st_DBGAPI_STATE_OBSERVE_PARAM, 1 );
+    p->windows = w;
+    p->window_count = 2;
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_STATE_OBSERVE, p, NULL ) );
+    TEST_ASSERT_EQUAL_UINT8 ( DBGAPI_OBSERVE_WINDOW_UNAVAILABLE, w[ 0 ].status );
+    TEST_ASSERT_EQUAL_UINT8 ( DBGAPI_OBSERVE_WINDOW_OUT_OF_RANGE, w[ 1 ].status );
+    TEST_ASSERT_EQUAL_UINT32 ( 0x10000, w[ 1 ].region_size );
+    for ( int i = 0; i < 8; i++ ) {
+        TEST_ASSERT_EQUAL_HEX8 ( 0, gone[ i ] );
+        TEST_ASSERT_EQUAL_HEX8 ( 0, over[ i ] );
+    };
+    g_free ( p );
+}
+
+
+/**
+ * @brief Neplatné parametry: příkaz selže a okna nečte.
+ */
+void test_cmd_state_observe_limits ( void ) {
+    static uint8_t big[ 0x10000 ];
+    uint8_t one[ 4 ];
+    st_DBGAPI_OBSERVE_WINDOW w[ 17 ];
+    st_DBGAPI_STATE_OBSERVE_PARAM *p = g_new0 ( st_DBGAPI_STATE_OBSERVE_PARAM, 1 );
+
+    /* 17 oken. */
+    memset ( w, 0, sizeof ( w ) );
+    for ( int i = 0; i < 17; i++ ) {
+        w[ i ].len = 1;
+        w[ i ].buf = one;
+    };
+    p->windows = w;
+    p->window_count = 17;
+    TEST_ASSERT_FALSE ( call_dispatch ( DBGAPI_CMD_STATE_OBSERVE, p, NULL ) );
+
+    /* Součet nad 64 KiB. */
+    memset ( w, 0, sizeof ( w ) );
+    w[ 0 ].len = 0x10000;
+    w[ 0 ].buf = big;
+    w[ 1 ].len = 1;
+    w[ 1 ].buf = one;
+    p->window_count = 2;
+    TEST_ASSERT_FALSE ( call_dispatch ( DBGAPI_CMD_STATE_OBSERVE, p, NULL ) );
+
+    /* CPU okno přes 0FFFFh, nulová délka, chybějící buffer. */
+    memset ( w, 0, sizeof ( w ) );
+    w[ 0 ].start = 0xFFFF;
+    w[ 0 ].len = 2;
+    w[ 0 ].buf = one;
+    p->window_count = 1;
+    TEST_ASSERT_FALSE ( call_dispatch ( DBGAPI_CMD_STATE_OBSERVE, p, NULL ) );
+    w[ 0 ].start = 0;
+    w[ 0 ].len = 0;
+    TEST_ASSERT_FALSE ( call_dispatch ( DBGAPI_CMD_STATE_OBSERVE, p, NULL ) );
+    w[ 0 ].len = 1;
+    w[ 0 ].buf = NULL;
+    TEST_ASSERT_FALSE ( call_dispatch ( DBGAPI_CMD_STATE_OBSERVE, p, NULL ) );
+
+    /* Okna chybí, ale počet nenulový; NULL parametr. */
+    p->windows = NULL;
+    TEST_ASSERT_FALSE ( call_dispatch ( DBGAPI_CMD_STATE_OBSERVE, p, NULL ) );
+    TEST_ASSERT_FALSE ( call_dispatch ( DBGAPI_CMD_STATE_OBSERVE, NULL, NULL ) );
+
+    /* Bez oken je to platné čtení jen registrů a času. */
+    p->window_count = 0;
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_STATE_OBSERVE, p, NULL ) );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, p->panel.regs_valid );
+    g_free ( p );
+}
+
+
+/* ========================================================================= */
+/*  Podmíněné zápisy (observe-cas M10, V1)                                    */
+/* ========================================================================= */
+
+
+/**
+ * @brief SHA-256 bloku (GLib), binárně.
+ * @param data Data.
+ * @param len Délka.
+ * @param[out] out 32 bajtů.
+ */
+static void cond_sha256 ( const uint8_t *data, size_t len, uint8_t out[ 32 ] ) {
+    GChecksum *cs = g_checksum_new ( G_CHECKSUM_SHA256 );
+    g_checksum_update ( cs, data, (gssize) len );
+    gsize dlen = 32;
+    g_checksum_get_digest ( cs, out, &dlen );
+    g_checksum_free ( cs );
+}
+
+
+/**
+ * @brief Zapíše do RAM výchozí obsah a vrátí jeho hash.
+ * @param addr Adresa (RAM).
+ * @param data 4 bajty.
+ * @param[out] hash SHA-256 zapsaných bajtů.
+ */
+static void cond_prepare ( uint16_t addr, const uint8_t data[ 4 ], uint8_t hash[ 32 ] ) {
+    st_DBGAPI_MEM_PARAM wp = { addr, 4, (uint8_t *) data };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_WRITE, &wp, NULL ) );
+    cond_sha256 ( data, 4, hash );
+}
+
+
+/**
+ * @brief MEM_WRITE_CHECKED: správný hash zapíše a vrátí before/after,
+ *        neplatný hash nic nezapíše a skončí neúspěchem příkazu.
+ */
+void test_cond_mem_write_checked ( void ) {
+    uint16_t addr = observe_ram_addr ( );
+    const uint8_t old_data[ 4 ] = { 1, 2, 3, 4 };
+    uint8_t new_data[ 4 ] = { 9, 8, 7, 6 };
+    uint8_t h_old[ 32 ], h_new[ 32 ];
+    cond_prepare ( addr, old_data, h_old );
+    cond_sha256 ( new_data, 4, h_new );
+
+    st_DBGAPI_WRITE_COND c;
+    memset ( &c, 0, sizeof ( c ) );
+    c.has_expected = 1;
+    memcpy ( c.expected, h_old, 32 );
+    st_DBGAPI_MEM_WRITE_CHECKED_PARAM p;
+    memset ( &p, 0, sizeof ( p ) );
+    p.addr = addr;
+    p.length = 4;
+    p.data = new_data;
+    p.cond = &c;
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_WRITE_CHECKED, &p, NULL ) );
+    TEST_ASSERT_EQUAL_UINT8 ( 0, c.precondition_failed );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, c.hashes_valid );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, c.written );
+    TEST_ASSERT_EQUAL_HEX8_ARRAY ( h_old, c.before, 32 );
+    TEST_ASSERT_EQUAL_HEX8_ARRAY ( h_new, c.after, 32 );
+
+    /* Druhý zápis se stejným (už starým) hashem: odmítnout, nic nezapsat. */
+    uint8_t other[ 4 ] = { 0xAA, 0xAA, 0xAA, 0xAA };
+    p.data = other;
+    p.success = 1;
+    TEST_ASSERT_FALSE ( call_dispatch ( DBGAPI_CMD_MEM_WRITE_CHECKED, &p, NULL ) );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, c.precondition_failed );
+    TEST_ASSERT_EQUAL_UINT8 ( 0, c.written );
+    TEST_ASSERT_EQUAL_UINT8 ( 0, p.success );
+    TEST_ASSERT_EQUAL_HEX8_ARRAY ( h_new, c.before, 32 );
+    uint8_t now[ 4 ];
+    st_DBGAPI_MEM_PARAM rp = { addr, 4, now };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_READ, &rp, NULL ) );
+    TEST_ASSERT_EQUAL_HEX8_ARRAY ( new_data, now, 4 );
+
+    /* Jen want_hashes: zapíše, vrátí oba hashe. */
+    memset ( &c, 0, sizeof ( c ) );
+    c.want_hashes = 1;
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_WRITE_CHECKED, &p, NULL ) );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, c.written );
+    TEST_ASSERT_EQUAL_HEX8_ARRAY ( h_new, c.before, 32 );
+}
+
+
+/**
+ * @brief MEM_WRITE_CHECKED do ROM s neplatným hashem: má přednost chyba
+ *        regionu, podmínka se nevyhodnotí.
+ */
+void test_cond_mem_write_checked_region_first ( void ) {
+    const uint8_t saved_map = g_memory.map;
+    g_memory.map |= MEMORY_MZ800_MAP_FLAG_ROM_0000;
+    memory_reconnect_ram ( );
+    uint8_t data[ 2 ] = { 0x12, 0x34 };
+    st_DBGAPI_WRITE_COND c;
+    memset ( &c, 0, sizeof ( c ) );
+    c.has_expected = 1;
+    memset ( c.expected, 0xEE, 32 );
+    st_DBGAPI_MEM_WRITE_CHECKED_PARAM p;
+    memset ( &p, 0, sizeof ( p ) );
+    p.addr = 0x0100;
+    p.length = 2;
+    p.data = data;
+    p.cond = &c;
+    bool ok = call_dispatch ( DBGAPI_CMD_MEM_WRITE_CHECKED, &p, NULL );
+    g_memory.map = saved_map;
+    memory_reconnect_ram ( );
+    TEST_ASSERT_FALSE ( ok );
+    TEST_ASSERT_EQUAL_UINT8 ( MEMMAP_KIND_ROM_LOW, p.first_failed_kind );
+    TEST_ASSERT_EQUAL_UINT8 ( 0, c.precondition_failed );
+}
+
+
+/**
+ * @brief Souběh s člověkem: mezi čtením agenta a podmíněným zápisem MCP
+ *        přepíše tentýž rozsah zápis z GUI (původ USER) -> odmítnuto;
+ *        zápis GUI jinam -> podmíněný zápis projde.
+ */
+void test_cond_mem_write_force_user_race ( void ) {
+    uint16_t addr = observe_ram_addr ( );
+    const uint8_t base[ 4 ] = { 0x10, 0x20, 0x30, 0x40 };
+    uint8_t h_read[ 32 ];
+    cond_prepare ( addr, base, h_read );
+
+    /* Člověk v Memory Browseru přepíše druhý bajt. */
+    uint8_t human = 0x77;
+    st_DBGAPI_MEM_PARAM hp = { (uint16_t) ( addr + 1 ), 1, &human };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_WRITE, &hp, NULL ) );
+
+    uint8_t agent[ 4 ] = { 0xA1, 0xA2, 0xA3, 0xA4 };
+    st_DBGAPI_WRITE_COND c;
+    memset ( &c, 0, sizeof ( c ) );
+    c.has_expected = 1;
+    memcpy ( c.expected, h_read, 32 );
+    st_DBGAPI_MEM_PARAM ap = { addr, 4, agent, &c };
+    TEST_ASSERT_FALSE ( call_dispatch ( DBGAPI_CMD_MEM_WRITE_FORCE, &ap, NULL ) );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, c.precondition_failed );
+    uint8_t now[ 4 ];
+    st_DBGAPI_MEM_PARAM rp = { addr, 4, now };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_READ, &rp, NULL ) );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x77, now[ 1 ] );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x10, now[ 0 ] );
+
+    /* Člověk změní bajt mimo rozsah: podmínka platí, zápis projde. */
+    cond_prepare ( addr, base, h_read );
+    st_DBGAPI_MEM_PARAM hp2 = { (uint16_t) ( addr + 8 ), 1, &human };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_WRITE, &hp2, NULL ) );
+    memset ( &c, 0, sizeof ( c ) );
+    c.has_expected = 1;
+    memcpy ( c.expected, h_read, 32 );
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_WRITE_FORCE, &ap, NULL ) );
+    TEST_ASSERT_EQUAL_UINT8 ( 0, c.precondition_failed );
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_MEM_READ, &rp, NULL ) );
+    TEST_ASSERT_EQUAL_HEX8_ARRAY ( agent, now, 4 );
+}
+
+
+/**
+ * @brief REGIONS_WRITE (RAM): podmínka nad bajty regionu, před i po zápisu.
+ */
+void test_cond_regions_write ( void ) {
+    uint16_t addr = observe_ram_addr ( );
+    const uint8_t base[ 4 ] = { 5, 6, 7, 8 };
+    uint8_t h_old[ 32 ], h_new[ 32 ];
+    cond_prepare ( addr, base, h_old );
+    st_REGION_DESC d;
+    dbgapi_regions_refresh ( );
+    TEST_ASSERT_TRUE ( dbgapi_regions_find_kind ( REGION_KIND_RAM, 0, &d ) );
+
+    uint8_t data[ 4 ] = { 0xC1, 0xC2, 0xC3, 0xC4 };
+    cond_sha256 ( data, 4, h_new );
+    st_DBGAPI_WRITE_COND c;
+    memset ( &c, 0, sizeof ( c ) );
+    c.has_expected = 1;
+    memset ( c.expected, 0x00, 32 );
+    st_DBGAPI_REGIONS_WRITE_PARAM p;
+    memset ( &p, 0, sizeof ( p ) );
+    p.region_id = d.id;
+    p.offset = addr;
+    p.data = data;
+    p.len = 4;
+    p.cond = &c;
+    TEST_ASSERT_FALSE ( call_dispatch ( DBGAPI_CMD_REGIONS_WRITE, &p, NULL ) );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, c.precondition_failed );
+    TEST_ASSERT_EQUAL_HEX8_ARRAY ( h_old, c.before, 32 );
+
+    memcpy ( c.expected, h_old, 32 );
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_REGIONS_WRITE, &p, NULL ) );
+    TEST_ASSERT_EQUAL_INT ( 4, p.out_count );
+    TEST_ASSERT_EQUAL_UINT8 ( 0, c.precondition_failed );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, c.written );
+    TEST_ASSERT_EQUAL_HEX8_ARRAY ( h_new, c.after, 32 );
+}
+
+
+/**
+ * @brief SET_REG s expected: CAS na registr, previous vždy.
+ */
+void test_cond_set_reg ( void ) {
+    z80_set_reg ( g_mzarch_main.cpu, Z80_REG_HL, 0x1234 );
+    st_DBGAPI_REG_PARAM p = { (uint8_t) Z80_REG_HL, 0x5678, 1, 0x1111, 0, 0 };
+    TEST_ASSERT_FALSE ( call_dispatch ( DBGAPI_CMD_SET_REG, &p, NULL ) );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, p.precondition_failed );
+    TEST_ASSERT_EQUAL_HEX16 ( 0x1234, p.previous );
+    TEST_ASSERT_EQUAL_HEX16 ( 0x1234, z80_get_reg ( g_mzarch_main.cpu, Z80_REG_HL ) );
+
+    p.expected = 0x1234;
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_SET_REG, &p, NULL ) );
+    TEST_ASSERT_EQUAL_UINT8 ( 0, p.precondition_failed );
+    TEST_ASSERT_EQUAL_HEX16 ( 0x5678, z80_get_reg ( g_mzarch_main.cpu, Z80_REG_HL ) );
+
+    /* Bez podmínky: zapíše a vrátí previous. */
+    st_DBGAPI_REG_PARAM q = { (uint8_t) Z80_REG_HL, 0x0001 };
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_SET_REG, &q, NULL ) );
+    TEST_ASSERT_EQUAL_HEX16 ( 0x5678, q.previous );
+}
+
+
+/**
+ * @brief SET_CPU_FLAGS s expect_mask: při neshodě nic nezapsat, prev_* vždy.
+ */
+void test_cond_set_cpu_flags ( void ) {
+    z80_t *cpu = g_mzarch_main.cpu;
+    cpu->iff1 = 1;
+    cpu->im = 1;
+    cpu->r = 0x85;
+    st_DBGAPI_CPU_FLAGS p;
+    memset ( &p, 0, sizeof ( p ) );
+    p.update_mask = DBGAPI_CPU_FLAGS_UM_IFF1 | DBGAPI_CPU_FLAGS_UM_R_FULL;
+    p.iff1 = 0;
+    p.r_reg = 0x10;
+    p.expect_mask = DBGAPI_CPU_FLAGS_UM_IFF1 | DBGAPI_CPU_FLAGS_UM_R_FULL;
+    p.exp_iff1 = 1;
+    p.exp_r = 0x05;
+    TEST_ASSERT_FALSE ( call_dispatch ( DBGAPI_CMD_SET_CPU_FLAGS, &p, NULL ) );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, p.precondition_failed );
+    TEST_ASSERT_EQUAL_UINT8 ( 0x85, p.prev_r );
+    TEST_ASSERT_TRUE ( cpu->iff1 );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x85, cpu->r );
+
+    p.exp_r = 0x85;
+    TEST_ASSERT_TRUE ( call_dispatch ( DBGAPI_CMD_SET_CPU_FLAGS, &p, NULL ) );
+    TEST_ASSERT_EQUAL_UINT8 ( 0, p.precondition_failed );
+    TEST_ASSERT_EQUAL_UINT8 ( 1, p.prev_iff1 );
+    TEST_ASSERT_FALSE ( cpu->iff1 );
+    TEST_ASSERT_EQUAL_HEX8 ( 0x10, cpu->r );
+}
+
+
 /* ========================================================================= */
 /*  MAIN                                                                      */
 /* ========================================================================= */
@@ -1224,6 +1927,23 @@ int main ( int argc, char *argv[] ) {
 
     RUN_TEST ( test_cmd_history_get_copies_buffer );
     RUN_TEST ( test_cmd_history_get_null_result_fails );
+    RUN_TEST ( test_cmd_history_get_returns_position );
+
+    RUN_TEST ( test_cmd_mem_write_checked_rejected_fails );
+    RUN_TEST ( test_cmd_mem_write_full_64k );
+    RUN_TEST ( test_cmd_coverage_hook );
+    RUN_TEST ( test_cmd_mem_write_checked_ram_succeeds );
+
+    RUN_TEST ( test_cmd_state_observe_windows_regs_hash );
+    RUN_TEST ( test_cmd_state_observe_unavailable_and_out_of_range );
+    RUN_TEST ( test_cmd_state_observe_limits );
+
+    RUN_TEST ( test_cond_mem_write_checked );
+    RUN_TEST ( test_cond_mem_write_checked_region_first );
+    RUN_TEST ( test_cond_mem_write_force_user_race );
+    RUN_TEST ( test_cond_regions_write );
+    RUN_TEST ( test_cond_set_reg );
+    RUN_TEST ( test_cond_set_cpu_flags );
 
     int result = UNITY_END ( );
 

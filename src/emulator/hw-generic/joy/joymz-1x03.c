@@ -137,15 +137,19 @@ uint8_t joymz_get_status_bits14(uint64_t total_ticks)
 {
     (void) total_ticks; /* lazy implementace cte in-frame ticks z g_gdg */
 
-    uint8_t mask = 0x1E; /* default: vsechny 4 bity HIGH (released / pulse done) */
-    static const uint8_t MASK[2][2] = { { 0x02, 0x04 }, { 0x08, 0x10 } };
-
     /* Predpoklad: volajici jiz testoval JOYMZ_TEST_ANY_ACTIVE. Pokud sem
      * tedy dorazime, alespon jeden joystick device je type != JOY_TYPE_NONE. */
 
     /* Snapshot vstupu z iface_joy. Refreshuje connected flag dle joy.dev[].type
      * a primarne axis/btn fields ze ziveho stavu. */
     joymz_refresh_from_iface_joy();
+    return joymz_peek_status_bits14();
+}
+
+uint8_t joymz_peek_status_bits14(void)
+{
+    uint8_t mask = 0x1E; /* default: vsechny 4 bity HIGH (released / pulse done) */
+    static const uint8_t MASK[2][2] = { { 0x02, 0x04 }, { 0x08, 0x10 } };
 
     /* SIGNAL_GDG_VBLNK = g_gdg.vbln. Konvence:
      *   VBLN_OFF    (= 1) -> fyzicky VBLK = HIGH (display)
@@ -248,6 +252,11 @@ uint8_t joymz_get_status_bits14(uint64_t total_ticks)
 {
     (void) total_ticks;
     /* Bity 1-4 vsechny HIGH (= zadny joystick). */
+    return 0x1E;
+}
+
+uint8_t joymz_peek_status_bits14(void)
+{
     return 0x1E;
 }
 

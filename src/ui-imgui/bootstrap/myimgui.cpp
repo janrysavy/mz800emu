@@ -440,6 +440,13 @@ gboolean myimgui_init_cb(SdlAppWindow *win, gpointer user_data)
      * menu Debugger -> Stack History nebo Alt+Shift+H. Persistence přes
      * [STACK_PANEL] show_history_window. */
     gui->showStackHistoryWindow = false;
+    /* RAM Write Log - default closed; menu Debugger -> RAM Write Log nebo
+     * "Who wrote this byte?" v Memory Browseru. Viditelnost se neukládá. */
+    gui->showRamlogWindow = false;
+    /* Memory Search - default closed; menu Debugger -> Memory Search nebo
+     * Alt+Shift+E. Viditelnost se neukládá (nastavení okna ano, sekce
+     * [MEMSEARCH_WINDOW]). */
+    gui->showMemorySearchWindow = false;
     /* Callstack (mutant callstack Fáze 2C): samostatné plovoucí okno se
      * shadow stackem volání. Default closed, user otevírá přes menu
      * Debugger -> Callstack. */
@@ -462,7 +469,7 @@ gboolean myimgui_init_cb(SdlAppWindow *win, gpointer user_data)
     gui->showGdgStateWindow = false;
 
     /* memory-disk-state: storage state inspector okna. Memory Disk State
-     * ukazuje stav vsech ramdisku (MR-1R18 STD + Pezik E8/68), IDE8 State
+     * ukazuje stav vsech ramdisku (MZ-1R18 STD + Pezik E8/68), IDE8 State
      * stav IDE8 radice (Master + Slave). Side-effect free read, default
      * closed, user otevira pres menu Debugger nebo Devices. Visibilita se
      * nepersistuje (= konzistentni s FDC State / QDisk State). */

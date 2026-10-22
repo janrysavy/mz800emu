@@ -13,7 +13,11 @@
  * - hlavičky WAV a počty vzorků, bloky SDL během rozjezdu se zahodí,
  * - konec po `frames`, při skoku času zpět a stopem; capture.json
  *   (absolutní začátek a konec v taktech GDG, hodiny platformy),
- * - chyby startu (už běží, žádný výstup, nelze vytvořit složku).
+ * - chyby startu (už běží, žádný výstup, nelze vytvořit složku),
+ * - paměť zachycení: ringy levels a psg_writes odpovídají CSV, přetečení
+ *   ringu (first_seq), segment a čitelnost po stopu, zachycení jen do
+ *   paměti bez složky, souhrn snímku (hrany, čas a energie úrovně, RMS
+ *   reference) a PCM ringy bajtově shodné s reference.wav a sdl.wav.
  *
  * @par Licence: GPLv3
  */
@@ -22,6 +26,7 @@
 
 #include <glib.h>
 #include <glib/gstdio.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "audio_capture.h"
@@ -311,6 +316,289 @@ void test_audio_capture_start_errors(void)
 }
 
 
+/** @brief Celý držený obsah proudu (kopie od first_seq). */
+static st_AUDIO_CAPTURE_STREAM_COPY copy_all(en_AUDIO_CAPTURE_STREAM st)
+{
+    st_AUDIO_CAPTURE_STREAM_COPY c;
+    TEST_ASSERT_TRUE(audio_capture_stream_copy(st, 0, UINT64_MAX, 64u * 1024u * 1024u, &c));
+    return c;
+}
+
+
+/** @brief Ringy levels a psg_writes nesou totéž co events.csv a psg_writes.csv. */
+void test_audio_capture_memory_matches_csv(void)
+{
+    st_AUDIO_CAPTURE_PARAMS p = params(false, 0);
+    p.memory = true;
+    TEST_ASSERT_TRUE(audio_capture_start(&p, NULL, 0));
+    audio_capture_on_frame(T0);
+    audio_capture_on_change(1, 13, T0 + 100);
+    g_psg_module.psg[0].latch_cs = 1;
+    g_psg_module.psg[0].latch_attn = 1;
+    g_psg_module.psg[0].channel[1].attn = 2;
+    audio_capture_on_psg_write(T0 + 200, PSG_CH_LEFT, 0xB2);
+    audio_capture_on_frame(T0 + T_FRAME);
+    audio_capture_on_change(0, 15, T0 + T_FRAME + 5);
+    st_AUDIO_CAPTURE_STATUS st;
+    audio_capture_get_status(&st);
+    TEST_ASSERT_TRUE(st.memory);
+    TEST_ASSERT_EQUAL_UINT(1, st.streams[AUDIO_CAPTURE_STREAM_LEVELS].present);
+    TEST_ASSERT_FALSE(st.streams[AUDIO_CAPTURE_STREAM_PCM_SDL].present);
+    TEST_ASSERT_EQUAL_UINT64(st.events, st.streams[AUDIO_CAPTURE_STREAM_LEVELS].next_seq);
+    TEST_ASSERT_TRUE(audio_capture_stop());
+
+    st_AUDIO_CAPTURE_STREAM_COPY lv = copy_all(AUDIO_CAPTURE_STREAM_LEVELS);
+    TEST_ASSERT_FALSE(lv.live);
+    TEST_ASSERT_EQUAL_UINT64(AUDIO_SRC_CHANNELS_COUNT + 2, lv.data_count);
+    TEST_ASSERT_EQUAL_UINT64(T0, lv.origin_ticks);
+    const st_AUDIO_CAPTURE_LEVEL_REC *l = (const st_AUDIO_CAPTURE_LEVEL_REC *) lv.data;
+    /* Řádky "100,...,0,psg0_0,13" a "T_FRAME+5,...,1,ctc0,15" (absolutní čas v ringu). */
+    const st_AUDIO_CAPTURE_LEVEL_REC *a = &l[AUDIO_SRC_CHANNELS_COUNT];
+    TEST_ASSERT_EQUAL_UINT64(T0 + 100, a->t);
+    TEST_ASSERT_EQUAL_UINT32(0, a->frame);
+    TEST_ASSERT_EQUAL_UINT8(1, a->src);
+    TEST_ASSERT_EQUAL_UINT8(13, a->level);
+    TEST_ASSERT_EQUAL_UINT64(T0 + T_FRAME + 5, a[1].t);
+    TEST_ASSERT_EQUAL_UINT32(1, a[1].frame);
+    TEST_ASSERT_EQUAL_UINT8(0, a[1].src);
+    TEST_ASSERT_EQUAL_UINT8(15, a[1].level);
+    audio_capture_stream_copy_clear(&lv);
+
+    st_AUDIO_CAPTURE_STREAM_COPY ps = copy_all(AUDIO_CAPTURE_STREAM_PSG_WRITES);
+    TEST_ASSERT_EQUAL_UINT64(1, ps.data_count);
+    const st_AUDIO_CAPTURE_PSG_REC *w = (const st_AUDIO_CAPTURE_PSG_REC *) ps.data;
+    /* psg_writes.csv: "200,...,0,1,B2,1,volume,2" */
+    TEST_ASSERT_EQUAL_UINT64(T0 + 200, w->t);
+    TEST_ASSERT_EQUAL_UINT8(PSG_CH_LEFT, w->psg);
+    TEST_ASSERT_EQUAL_UINT8(0xB2, w->byte);
+    TEST_ASSERT_EQUAL_UINT8(1, w->channel);
+    TEST_ASSERT_EQUAL_UINT8(AUDIO_CAPTURE_PSG_REG_VOLUME, w->reg);
+    TEST_ASSERT_EQUAL_UINT16(2, w->value);
+    audio_capture_stream_copy_clear(&ps);
+    char *csv = read_file("psg_writes.csv", NULL);
+    TEST_ASSERT_NOT_NULL(strstr(csv, ",0,1,B2,1,volume,2\n"));
+    g_free(csv);
+}
+
+
+/** @brief Malý ring: přepisuje nejstarší, first_seq roste; kopie začne od first_seq. */
+void test_audio_capture_memory_ring_overflow(void)
+{
+    st_AUDIO_CAPTURE_PARAMS p = params(false, 0);
+    p.events = p.psg_writes = p.reference_wav = false;
+    p.memory = true;
+    p.ring_levels = 4;
+    TEST_ASSERT_TRUE(audio_capture_start(&p, NULL, 0));
+    audio_capture_on_frame(T0);                        /* výchozí úrovně = prvních N záznamů */
+    for (unsigned i = 0; i < 10; i++) audio_capture_on_change(0, (uint8_t) ((i & 1) ? 0 : 15), T0 + 10 + i);
+    st_AUDIO_CAPTURE_STATUS st;
+    audio_capture_get_status(&st);
+    uint64_t total = AUDIO_SRC_CHANNELS_COUNT + 10;
+    TEST_ASSERT_EQUAL_UINT64(total, st.streams[AUDIO_CAPTURE_STREAM_LEVELS].next_seq);
+    TEST_ASSERT_EQUAL_UINT64(total - 4, st.streams[AUDIO_CAPTURE_STREAM_LEVELS].first_seq);
+    TEST_ASSERT_EQUAL_UINT64(4, st.streams[AUDIO_CAPTURE_STREAM_LEVELS].capacity);
+
+    st_AUDIO_CAPTURE_STREAM_COPY c;
+    TEST_ASSERT_TRUE(audio_capture_stream_copy(AUDIO_CAPTURE_STREAM_LEVELS, 0, 100, 1u << 20, &c));
+    TEST_ASSERT_TRUE(c.live);
+    TEST_ASSERT_EQUAL_UINT64(total - 4, c.data_seq);
+    TEST_ASSERT_EQUAL_UINT64(4, c.data_count);
+    const st_AUDIO_CAPTURE_LEVEL_REC *l = (const st_AUDIO_CAPTURE_LEVEL_REC *) c.data;
+    TEST_ASSERT_EQUAL_UINT64(T0 + 16, l[0].t);         /* 7. změna (i = 6) */
+    TEST_ASSERT_EQUAL_UINT64(T0 + 19, l[3].t);
+    audio_capture_stream_copy_clear(&c);
+
+    /* Strop bajtů: jen 2 záznamy. */
+    TEST_ASSERT_TRUE(audio_capture_stream_copy(AUDIO_CAPTURE_STREAM_LEVELS, total - 3, 100,
+                                               2 * sizeof(st_AUDIO_CAPTURE_LEVEL_REC), &c));
+    TEST_ASSERT_EQUAL_UINT64(total - 3, c.data_seq);
+    TEST_ASSERT_EQUAL_UINT64(2, c.data_count);
+    audio_capture_stream_copy_clear(&c);
+}
+
+
+/** @brief Segment roste se startem, data předchozího zachycení platí do dalšího startu. */
+void test_audio_capture_memory_segment(void)
+{
+    st_AUDIO_CAPTURE_PARAMS p = params(false, 0);
+    p.memory = true;
+    TEST_ASSERT_TRUE(audio_capture_start(&p, NULL, 0));
+    st_AUDIO_CAPTURE_STATUS st;
+    audio_capture_get_status(&st);
+    unsigned seg = st.segment;
+    TEST_ASSERT_TRUE(seg > 0);
+    audio_capture_on_frame(T0);
+    audio_capture_on_change(0, 15, T0 + 1);
+    TEST_ASSERT_TRUE(audio_capture_stop());
+
+    st_AUDIO_CAPTURE_STREAM_COPY c = copy_all(AUDIO_CAPTURE_STREAM_LEVELS);
+    TEST_ASSERT_EQUAL_UINT(seg, c.segment);
+    TEST_ASSERT_FALSE(c.live);
+    TEST_ASSERT_TRUE(c.present);
+    TEST_ASSERT_EQUAL_UINT64(AUDIO_SRC_CHANNELS_COUNT + 1, c.next_seq);
+    audio_capture_stream_copy_clear(&c);
+
+    /* Nový start bez paměti: segment + 1, ringy uvolněné. */
+    st_AUDIO_CAPTURE_PARAMS q = params(false, 0);
+    TEST_ASSERT_TRUE(audio_capture_start(&q, NULL, 0));
+    c = copy_all(AUDIO_CAPTURE_STREAM_LEVELS);
+    TEST_ASSERT_EQUAL_UINT(seg + 1, c.segment);
+    TEST_ASSERT_FALSE(c.present);
+    TEST_ASSERT_EQUAL_UINT64(0, c.next_seq);
+    TEST_ASSERT_NULL(c.data);
+    audio_capture_stream_copy_clear(&c);
+    audio_capture_get_status(&st);
+    TEST_ASSERT_FALSE(st.memory);
+    TEST_ASSERT_EQUAL_UINT64(0, st.memory_bytes);
+}
+
+
+/** @brief Zachycení jen do paměti: bez složky a capture.json. */
+void test_audio_capture_memory_only(void)
+{
+    st_AUDIO_CAPTURE_PARAMS p = params(false, 3);
+    p.events = p.psg_writes = p.reference_wav = false;
+    p.memory = true;
+    char *sub = g_build_filename(s_dir, "not_created", NULL);
+    g_strlcpy(p.dir, sub, sizeof(p.dir));
+    char err[AUDIO_CAPTURE_TEXT_MAX];
+    TEST_ASSERT_TRUE_MESSAGE(audio_capture_start(&p, err, sizeof(err)), err);
+    st_AUDIO_CAPTURE_STATUS st;
+    audio_capture_get_status(&st);
+    TEST_ASSERT_EQUAL_STRING("", st.dir);
+    TEST_ASSERT_TRUE(st.memory_bytes > 0);
+    for (unsigned f = 0; f <= 3; f++) audio_capture_on_frame(T0 + f * T_FRAME);
+    audio_capture_get_status(&st);
+    TEST_ASSERT_FALSE(st.active);
+    TEST_ASSERT_EQUAL_STRING("Frame count reached", st.stop_reason);
+    TEST_ASSERT_EQUAL_UINT64(3, st.streams[AUDIO_CAPTURE_STREAM_FRAMES].next_seq);
+    TEST_ASSERT_FALSE(g_file_test(sub, G_FILE_TEST_EXISTS));
+    g_free(sub);
+}
+
+
+/** @brief Souhrn snímku: obdélník na psg0_1 -> hrany, čas a energie úrovně; RMS reference. */
+void test_audio_capture_memory_frame_summary(void)
+{
+    st_AUDIO_CAPTURE_PARAMS p = params(false, 0);
+    p.events = p.psg_writes = p.reference_wav = false;
+    p.memory = true;
+    TEST_ASSERT_TRUE(audio_capture_start(&p, NULL, 0));
+    audio_capture_on_frame(T0);
+    /* 10 změn po 1000 taktech: 15 v [1000,2000), [3000,4000), ... = 5x 1000 taktů. */
+    for (unsigned k = 1; k <= 10; k++) {
+        audio_capture_on_change(2, (uint8_t) ((k & 1) ? 15 : 0), T0 + k * 1000u);
+    }
+    audio_capture_on_frame(T0 + T_FRAME);
+    audio_capture_on_frame(T0 + 2 * T_FRAME);           /* ticho */
+    TEST_ASSERT_TRUE(audio_capture_stop());
+
+    st_AUDIO_CAPTURE_STREAM_COPY c = copy_all(AUDIO_CAPTURE_STREAM_FRAMES);
+    TEST_ASSERT_EQUAL_UINT64(2, c.data_count);
+    const st_AUDIO_CAPTURE_FRAME_REC *f = (const st_AUDIO_CAPTURE_FRAME_REC *) c.data;
+    TEST_ASSERT_EQUAL_UINT64(T0, f[0].t);
+    TEST_ASSERT_EQUAL_UINT32(0, f[0].frame);
+    TEST_ASSERT_EQUAL_UINT32(T_FRAME, f[0].len_ticks);
+    TEST_ASSERT_EQUAL_UINT32(10, f[0].ch[2].edges);
+    TEST_ASSERT_EQUAL_UINT32(5000, f[0].ch[2].on_ticks);
+    TEST_ASSERT_EQUAL_UINT32(225u * 5000u, f[0].ch[2].energy);
+    TEST_ASSERT_EQUAL_UINT8(15, f[0].ch[2].max_level);
+    TEST_ASSERT_EQUAL_UINT8(0, f[0].ch[2].end_level);
+    TEST_ASSERT_EQUAL_UINT32(0, f[0].ch[1].edges);
+    TEST_ASSERT_TRUE(f[0].flags & AUDIO_CAPTURE_FRAME_FLAG_REF);
+    TEST_ASSERT_FALSE(f[0].flags & AUDIO_CAPTURE_FRAME_FLAG_SDL);
+    TEST_ASSERT_TRUE(f[0].ref_samples > 0);
+    TEST_ASSERT_TRUE(f[0].ref_rms[0] > 0);             /* obdélník je slyšet */
+    TEST_ASSERT_EQUAL_UINT32(1, f[1].frame);
+    TEST_ASSERT_EQUAL_UINT64(T0 + T_FRAME, f[1].t);
+    TEST_ASSERT_EQUAL_UINT32(0, f[1].ch[2].edges);
+    TEST_ASSERT_EQUAL_UINT32(0, f[1].ch[2].on_ticks);
+    audio_capture_stream_copy_clear(&c);
+}
+
+
+/** @brief PCM ringy obsahují bajtově totéž co reference.wav a sdl.wav. */
+void test_audio_capture_memory_pcm_matches_wav(void)
+{
+    st_AUDIO_CAPTURE_PARAMS p = params(true, 0);
+    p.memory = true;
+    p.pcm_reference = true;
+    p.pcm_sdl = true;
+    TEST_ASSERT_TRUE(audio_capture_start(&p, NULL, 0));
+    float block[2 * 300];
+    for (int i = 0; i < 600; i++) block[i] = (float) ((i % 7) - 3) / 8.0f;
+    for (unsigned f = 0; f < 10; f++) {
+        if (f == 7) audio_capture_on_change(3, 12, T0 + f * T_FRAME + 500);
+        audio_capture_on_frame(T0 + f * T_FRAME);
+        audio_capture_sdl_output(block, 300);
+    }
+    TEST_ASSERT_TRUE(audio_capture_stop());
+
+    const char *names[2] = { "reference.wav", "sdl.wav" };
+    const en_AUDIO_CAPTURE_STREAM streams[2] = { AUDIO_CAPTURE_STREAM_PCM_REFERENCE, AUDIO_CAPTURE_STREAM_PCM_SDL };
+    for (int k = 0; k < 2; k++) {
+        gsize len = 0;
+        char *wav = read_file(names[k], &len);
+        st_AUDIO_CAPTURE_STREAM_COPY c = copy_all(streams[k]);
+        TEST_ASSERT_TRUE_MESSAGE(c.data_count > 0, names[k]);
+        TEST_ASSERT_EQUAL_UINT64_MESSAGE(len - 44, c.data_count * 4, names[k]);
+        TEST_ASSERT_EQUAL_MEMORY_MESSAGE(wav + 44, c.data, (size_t) (len - 44), names[k]);
+        audio_capture_stream_copy_clear(&c);
+        g_free(wav);
+    }
+    st_AUDIO_CAPTURE_STREAM_COPY fr = copy_all(AUDIO_CAPTURE_STREAM_FRAMES);
+    const st_AUDIO_CAPTURE_FRAME_REC *f = (const st_AUDIO_CAPTURE_FRAME_REC *) fr.data;
+    TEST_ASSERT_TRUE(fr.data_count >= 3);
+    TEST_ASSERT_TRUE(f[fr.data_count - 1].flags & AUDIO_CAPTURE_FRAME_FLAG_SDL);
+    TEST_ASSERT_EQUAL_UINT16(1, f[fr.data_count - 1].sdl_blocks);
+    TEST_ASSERT_EQUAL_UINT32(300, f[fr.data_count - 1].sdl_samples);
+    TEST_ASSERT_TRUE(f[fr.data_count - 1].sdl_peak[0] > 0);
+    audio_capture_stream_copy_clear(&fr);
+}
+
+
+/**
+ * @brief Doba kopie 4 MiB z ringu (strop jedné kopie trace_read a PCM výřezu).
+ *
+ * Kopie drží zámek modulu, na který čeká i vlákno SDL zvuku. Test čas jen
+ * měří a vypíše (bez meze, čas závisí na stroji); ověří úplnost kopie.
+ */
+void test_audio_capture_memory_copy_time(void)
+{
+    st_AUDIO_CAPTURE_PARAMS p = params(false, 0);
+    p.events = p.psg_writes = p.reference_wav = false;
+    p.memory = true;
+    TEST_ASSERT_TRUE(audio_capture_start(&p, NULL, 0));
+    audio_capture_on_frame(T0);
+    const uint32_t n = (4u << 20) / sizeof(st_AUDIO_CAPTURE_LEVEL_REC);
+    for (uint32_t i = 0; i < n; i++) audio_capture_on_change(0, (uint8_t) ((i & 1) ? 15 : 0), T0 + 1 + i);
+    st_AUDIO_CAPTURE_STREAM_COPY c;
+    gint64 best = G_MAXINT64, worst = 0;
+    for (int k = 0; k < 5; k++) {
+        gint64 t0 = g_get_monotonic_time();
+        TEST_ASSERT_TRUE(audio_capture_stream_copy(AUDIO_CAPTURE_STREAM_LEVELS, 0, UINT64_MAX, 4u << 20, &c));
+        gint64 dt = g_get_monotonic_time() - t0;
+        TEST_ASSERT_EQUAL_UINT64(n, c.data_count);
+        audio_capture_stream_copy_clear(&c);
+        if (dt < best) best = dt;
+        if (dt > worst) worst = dt;
+    }
+    printf("audio_capture_stream_copy 4 MiB: best of 5 = %lld us, worst = %lld us\n",
+           (long long) best, (long long) worst);
+}
+
+
+/** @brief Paměť jako jediný výstup je platný výběr; bez výstupu chyba zmiňuje memory. */
+void test_audio_capture_memory_start_errors(void)
+{
+    char err[AUDIO_CAPTURE_TEXT_MAX];
+    st_AUDIO_CAPTURE_PARAMS none = params(false, 0);
+    none.events = none.psg_writes = none.reference_wav = false;
+    TEST_ASSERT_FALSE(audio_capture_start(&none, err, sizeof(err)));
+    TEST_ASSERT_NOT_NULL(strstr(err, "memory"));
+}
+
+
 int main(int argc, char *argv[])
 {
     mztest_parse_args(argc, argv);
@@ -323,5 +611,13 @@ int main(int argc, char *argv[])
     RUN_TEST(test_audio_capture_sdl_warmup);
     RUN_TEST(test_audio_capture_timeline_restart);
     RUN_TEST(test_audio_capture_start_errors);
+    RUN_TEST(test_audio_capture_memory_matches_csv);
+    RUN_TEST(test_audio_capture_memory_ring_overflow);
+    RUN_TEST(test_audio_capture_memory_segment);
+    RUN_TEST(test_audio_capture_memory_only);
+    RUN_TEST(test_audio_capture_memory_frame_summary);
+    RUN_TEST(test_audio_capture_memory_pcm_matches_wav);
+    RUN_TEST(test_audio_capture_memory_start_errors);
+    RUN_TEST(test_audio_capture_memory_copy_time);
     return UNITY_END();
 }

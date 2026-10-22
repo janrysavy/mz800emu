@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 #include "emulator.h"
+#include "replay.h"
 #include "customspeed.h"
 
 #include "mzarch/mzarch.h"
@@ -61,6 +62,8 @@
 #include "debugger/trace/cputrack.h"
 #include "debugger/trace/iorqlog.h"
 #include "debugger/trace/intlog.h"
+#include "debugger/trace/ramlog_hook.h"
+#include "debugger/coverage/coverage_hook.h"
 #include "debugger/trace/hwlog.h"
 #include "debugger/trace/marklog.h"
 #include "debugger/bptmap.h"
@@ -264,6 +267,12 @@ void mzarch_platform_fn_reset_request(void)
     {
         return;
     };
+    /* Záznam vstupů: reset se provede až v bodě hranice snímku, kde ho
+     * záznam uloží (replay.h); při přehrávání znamená odchýlení. */
+    if (replay_divert_reset_request())
+    {
+        return;
+    };
     APP_MUTEX_LOCK(g_mzarch_main.reset_request_mutex);
     g_mzarch_main.reset_request = true;
     APP_MUTEX_UNLOCK(g_mzarch_main.reset_request_mutex);
@@ -280,7 +289,8 @@ void mzarch_platform_fn_debugger_state_changed(bool active)
      *
      * trace-suite subsystémy (cputrack/iorqlog/intlog/hwlog) jsou nezávislé:
      *  - cputrack hookuje až po z80_step v mzarch_main_emulator_run smyčce,
-     *    nepotřebuje swap memory callbacků
+     *    swap memory callbacků potřebuje kvůli bajtům instrukce z fetch
+     *    (g_debugger_insn_fetch, viz TEST_DEBUGGER_NEED_DEBUG_CALLBACKS)
      *  - iorqlog/intlog/hwlog mají vlastní hook strategii (Fáze 3-5)
      */
     /* Pořadí kritické: nejdřív update trace-suite active flagů (může změnit
@@ -291,6 +301,8 @@ void mzarch_platform_fn_debugger_state_changed(bool active)
     intlog_recompute_active(active);
     hwlog_recompute_active(active);
     marklog_recompute_active(active);
+    ramlog_recompute_active(active);
+    coverage_recompute_active();
 
     bool need_debug = TEST_DEBUGGER_NEED_DEBUG_CALLBACKS;
 
@@ -300,6 +312,16 @@ void mzarch_platform_fn_debugger_state_changed(bool active)
         z80_set_mwrite(g_mzarch_main.cpu, memory_write_with_logging_cb, NULL);
         z80_set_pread(g_mzarch_main.cpu, port_read_with_logging_cb, NULL);
         z80_set_pwrite(g_mzarch_main.cpu, port_write_with_logging_cb, NULL);
+    }
+    else if (g_ramlog_active)
+    {
+        /* Záznam zápisů bez jiné diagnostiky (ramlog, háček A): jen write
+         * callback se záznamem, čtení a porty čisté; RAM fast-path vyřadí
+         * sledované stránky (mz800_ram_fastpath_rebuild). */
+        z80_set_mread(g_mzarch_main.cpu, memory_read_cb, NULL);
+        z80_set_mwrite(g_mzarch_main.cpu, ramlog_hook_cpu_write_cb, NULL);
+        z80_set_pread(g_mzarch_main.cpu, port_read_cb, NULL);
+        z80_set_pwrite(g_mzarch_main.cpu, port_write_cb, NULL);
     }
     else
     {

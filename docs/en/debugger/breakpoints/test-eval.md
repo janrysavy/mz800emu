@@ -65,31 +65,25 @@ hook context).
   like `IsWrite && Value == 0x42` are always false in Test Eval.
 - **`self_id`** - explicitly -1, not the ID of any BP (not even the
   one being edited).
-- **I/O port read** `port[N]` - returns 0 (a safety measure so that
-  Test Eval has no side-effects on live I/O).
 
-## Threading caveat
+The I/O port read `port[N]` works as everywhere else: a probe without
+side effects (see `expression-syntax.md`: for most chips it returns a
+cached chip state or the bus latch instead of the value an `IN` would
+read).
 
-Test Eval is called from the UI thread (= main thread, ImGui render
-loop). The context reads the live CPU struct and memory subsystem
-which are mutated by the emulator thread.
+## When the expression is evaluated
 
-**A race with the emulator thread** is technically possible:
+The emulator itself evaluates the expression, not the window. All
+identifiers of one expression come from the same moment:
 
-- If the emulator is running (= not paused), CPU registers change
-  between the evaluations of individual identifiers in the
-  expression (= the expression `A == HL` can see A from one cycle and
-  HL from another).
-- A memory deref `[addr]` goes through banking, which may switch
-  mid-eval.
+- **Paused emulation** - evaluated right away (within about 20 ms), the
+  result is the state the debugger shows.
+- **Running emulation** - evaluated at the end of the current frame. The
+  result is the state at that moment, which keeps changing; it is fine
+  for "right now A is 0x42", not for precise debugging.
 
-Practical situation:
-
-- **Paused emu** (the debugger halted execution) - ctx is stable, the
-  result is deterministic.
-- **Running emu** - the result is a best-effort snapshot. Per-frame
-  consistency is OK for human interpretation ("right now A is
-  probably 0x42"); it is not for precise debugging.
+If the emulator does not answer within one second, the result is
+`ERR: The emulator did not respond in time.`
 
 Recommendation: use Test Eval **while the debugger is paused** (=
 classic workflow before pressing Run).
@@ -178,8 +172,10 @@ give a meaningful result:
   For per-frame relative timing it is OK.
 - **Side-effect memory read** `[addr]!` - parsed, but the `!` flag is
   ignored in Test Eval (= always a regular memory read without
-  side-effect, see `expression-syntax.md`).
-- **Side-effect port read** `port[N]!` - ditto.
+  side-effect: MEM_R breakpoints on the address do not fire, see
+  `expression-syntax.md`).
+- **Side-effect port read** `port[N]!` - ditto: read as the probe
+  `port[N]`, the chip state does not change.
 - **Hit count / skip count semantics** - per-BP runtime state, the
   expression has no access to it.
 

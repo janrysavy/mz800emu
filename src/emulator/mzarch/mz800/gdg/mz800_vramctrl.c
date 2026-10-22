@@ -61,8 +61,11 @@
  *			- 1. bit, rovina II.
  *			- 0. bit, rovina I.
  *
- *	* bit 4 RF registru je propojen s bitem 4. WF registru (TODO: neoveroval jsem - tvrdi to v SM800)
+ *	* bit 4 RF registru a bit 4 WF registru je jeden spolecny latch B/A (zapis RF i WF ho prepise;
+ *	  overeno simulaci netlistu GDG, latch xF604_88_18)
  * 	* bit 4 je pouzit pouze v rezimech 320x200/4 (A/B) a 640x200/2 (A/B)
+ *	* v techze rezimech bit 4 spolu s DMD bit 0 rozhoduje, zda se na adresu CPU pristupu
+ *	  uplatni HW scroll - viz vramctrl_mz800_cpu_scroll_applies()
  *
  *	Pokud neni nastaven search, tak cteme tu rovinu, ktera je vybrana ( bit ma nastaveno 1).
  *      	Cteni z vice rovin neni podporovano a vraci 0x00.
@@ -138,7 +141,6 @@ void vramctrl_reset(void)
     g_vramctrl.regRF_PLANE = 0x01;
     g_vramctrl.regRF_SEARCH = 0;
     g_vramctrl.regWFRF_VBANK = 0;
-    g_vramctrl.mz700_wr_latch_is_used = 0;
 }
 
 /*******************************************************************************
@@ -195,10 +197,45 @@ void vramctrl_mz800_set_wf_rf_reg(int addr, uint8_t value)
 #define ADDR_IS_ODD (addr & 0x01)
 
 /**
- * Proste cteni z VRAM v rezimu MZ-800
+ * @brief Zjistí, zda se na adresu CPU přístupu do VRAM uplatní HW scroll.
  *
- * @param addr
- * @return
+ * GDG přičítá scroll offset (SOF) k adrese CPU přístupu jen tehdy, když bit
+ * B/A (bit 4 WF/RF, sdílený latch `regWFRF_VBANK`) ukazuje na právě zobrazenou
+ * frame, tj. B/A == DMD bit 0. Přístup do nezobrazené frame jde na neposunutou
+ * adresu. V režimech s HICOLOR (320x200@16, 640x200@4) se posun uplatní vždy.
+ * Platí pro čtení i zápis, pro všechny operace RF a WF.
+ *
+ * Zdroj: netlist GDG (GDG_core.vhd) - hradlo NXOR xF512_74_17 nad
+ * synchronizovaným DMD(0) (xF612_20_2) a latchem B/A (xF604_88_18) hradluje
+ * přičtení SOF v multiplexeru bus_nSOFmxSW; simulace netlistu pro zápis
+ * a čtení ve všech grafických režimech a pro všech 8 operací WF (SINGLE až
+ * PSET, gdg-mz800 `probe_scroll_wmd.c`); měření na reálném MZ-800 (zápis
+ * SINGLE v 320x200@4).
+ *
+ * Display (framebuffer) posouvá vždy, tato podmínka se ho netýká. V režimu
+ * MZ-700 (DMD bit 3 = 1) se posun na CPU přístup neuplatní nikdy (netlist).
+ *
+ * @pre Volá se jen v režimu MZ-800 (DMD bit 3 = 0).
+ * @return true, pokud se má adresa přepočítat přes hwscroll_shift_addr().
+ */
+static inline bool vramctrl_mz800_cpu_scroll_applies(void)
+{
+    if (GDG_MZ800_DMD_TEST_HICOLOR)
+    {
+        return true;
+    };
+    return (GDG_MZ800_DMD_TEST_VBANK ? 1u : 0u) == g_vramctrl.regWFRF_VBANK;
+}
+
+/**
+ * @brief Čtení bajtu z VRAM v režimu MZ-800 podle registru RF.
+ *
+ * Přepočítá CPU offset na fyzickou adresu v rovině (640x200: offset / 2,
+ * HW scroll jen pokud vramctrl_mz800_cpu_scroll_applies()) a vrátí výsledek
+ * operace READ nebo SEARCH.
+ *
+ * @param addr Offset ve VRAM okně (0x0000 - 0x3FFF).
+ * @return Přečtený bajt; 0xFF pro nevybranou rovinu nebo chybějící exVRAM.
  */
 static inline uint8_t vramctrl_mz800_memop_read_byte_internal(uint16_t addr)
 {
@@ -216,7 +253,11 @@ static inline uint8_t vramctrl_mz800_memop_read_byte_internal(uint16_t addr)
         phy_vram_addr = phy_vram_addr >> 1;
     };
 
-    phy_vram_addr = hwscroll_shift_addr(phy_vram_addr);
+    /* HW scroll jen pro zobrazenou frame (nebo HICOLOR) */
+    if (vramctrl_mz800_cpu_scroll_applies())
+    {
+        phy_vram_addr = hwscroll_shift_addr(phy_vram_addr);
+    };
 
     if (g_vramctrl.regRF_SEARCH)
     {
@@ -594,14 +635,14 @@ static inline uint8_t vramctrl_mz800_memop_read_byte_internal(uint16_t addr)
 }
 
 /**
- * Cteni z VRAM v rezimu MZ-800 - s ohledem na synchronizaci a HDL-presnym WAIT.
+ * @brief Čtení z VRAM v režimu MZ-800 se synchronizací a WAIT.
  *
- * Sync je dvouchodovy:
- *  1. Standardni mreq() sync - posune g_gdg.total_elapsed.ticks na konec
- *     aktualniho M-cyklu (T3f).
- *  2. HDL-presny WAIT (INSIDEOP_MREQ_MZ800_VRAMCTRL_READ) - pokud jsme
- *     uvnitr horke faze po predchozim WRITE, pripocte 6-9 TW WAIT podle
- *     tw_wr[]. READ neaktualizuje stav horke faze.
+ * Synchronizace má dva kroky:
+ *  1. mzarch_main_insideop_mreq() posune g_gdg.total_elapsed.ticks na konec
+ *     aktuálního M-cyklu,
+ *  2. INSIDEOP_MREQ_MZ800_VRAMCTRL_READ přidá WAIT podle modelu
+ *     mz800_vramwait.h: každé čtení čeká na CPU slot GDG (2-5 TW, po zápisu
+ *     déle). Stav WRITE FF čtení nemění.
  *
  * @param addr Mz800 VRAM offset (0x0000 - 0x3FFF, addr & 0x3fff aplikovano volajicim).
  * @return Bajt prectreny z VRAM (s aplikaci RF/SEARCH logiky).
@@ -615,15 +656,15 @@ inline uint8_t vramctrl_mz800_memop_read_byte_sync(uint16_t addr)
 }
 
 /**
- * Zapis do VRAM v rezimu MZ-800 - s ohledem na synchronizaci a HDL-presnym WAIT.
+ * @brief Zápis do VRAM v režimu MZ-800 se synchronizací a WAIT.
  *
- * Sync je dvouchodovy:
- *  1. Standardni mreq() sync - posune g_gdg.total_elapsed.ticks na konec
- *     aktualniho M-cyklu (T3f).
- *  2. HDL-presny WAIT (INSIDEOP_MREQ_MZ800_VRAMCTRL_WRITE) - pokud jsme
- *     uvnitr predchozi horke faze, pripocte 3-6 TW WAIT podle tw_ww[].
- *     Vzdy startuje novou horkou fazi (32 CLK0 v 320x200, 17 CLK0
- *     v 640x200) od T3f tohoto WRITE.
+ * Synchronizace má dva kroky:
+ *  1. mzarch_main_insideop_mreq() posune g_gdg.total_elapsed.ticks na konec
+ *     aktuálního M-cyklu,
+ *  2. INSIDEOP_MREQ_MZ800_VRAMCTRL_WRITE přidá WAIT podle modelu
+ *     mz800_vramwait.h: zápis jde přes jednobajtový buffer a čeká jen na
+ *     dokončení předchozího zápisu; zároveň naplánuje vlastní zápis do DRAM
+ *     (g_gdg.vram_wrff_release).
  *
  * @param addr  Mz800 VRAM offset (0x0000 - 0x3FFF).
  * @param value Bajt k zapisu (interpretace dle WF_MODE).
@@ -648,25 +689,19 @@ inline uint8_t vramctrl_mz800_memop_read_byte(uint16_t addr)
 }
 
 /**
- * Zapis do VRAM v rezimu MZ-800
+ * @brief Plán zápisu do VRAM v režimu MZ-800: fyzická adresa a zapisované roviny.
  *
- * TODO: ten write je 1:1 prepis z VHDL ... asi by jej slo zrychlit
+ * Čistá funkce stavu GDG (DMD, hwscroll, WF_MODE, WF_PLANE, VBANK), bez
+ * vedlejších efektů; zápis (vramctrl_mz800_memop_write_byte()) a záznam
+ * zápisů debuggeru (vramctrl_mz800_write_target()) tak počítají totéž.
  *
- * @param addr
- * @param value
+ * @param addr    Mz800 VRAM offset (0x0000 - 0x3FFF).
+ * @param out_phy Výstup: fyzická adresa v rovině (po 640 a hwscroll, pokud
+ *                se na CPU přístup uplatní - vramctrl_mz800_cpu_scroll_applies()).
+ * @return Maska rovin DEF_PLANE1..DEF_PLANE4 (WE), které zápis změní.
  */
-inline void vramctrl_mz800_memop_write_byte(uint16_t addr, uint8_t value)
+static inline int vramctrl_mz800_write_plan(uint16_t addr, int *out_phy)
 {
-
-    /* TODO: meli by jsme volat asi jen pokud se pise do viditelne VRAM */
-    framebuffer_MZ800_screen_changed();
-
-    /* Signál pro debugger_memory_write_byte: tento zápis v aktuálním banking
-     * kontextu skončil ve VRAM. Při debuggerem-iniciovaném zápisu (memop_call)
-     * pak na konci debugger_memory_write_byte() proběhne screen refresh,
-     * pokud je v menu zapnutý "Auto refresh on edit". */
-    VRAMCTRL_DBG_NOTIFY_VRAM_TOUCH();
-
     /* Obecna dostupnost jednotlivych rovin */
     int avlb_plane;
 
@@ -679,8 +714,6 @@ inline void vramctrl_mz800_memop_write_byte(uint16_t addr, uint8_t value)
     /* Pokud jsme v rozliseni 640x200, tak potrebujeme vedet, zda se saha na dudy^H^H^H^Hsudy, nebo lichy byte */
     int addr_is_odd = addr & 0x01;
 
-    uint8_t wrvalue = 0;
-
     /* Skutecna adresa ve VRAM */
     int phy_vram_addr = addr;
 
@@ -690,7 +723,11 @@ inline void vramctrl_mz800_memop_write_byte(uint16_t addr, uint8_t value)
         phy_vram_addr = phy_vram_addr >> 1;
     };
 
-    phy_vram_addr = hwscroll_shift_addr(phy_vram_addr);
+    /* HW scroll jen pro zobrazenou frame (nebo HICOLOR) */
+    if (vramctrl_mz800_cpu_scroll_applies())
+    {
+        phy_vram_addr = hwscroll_shift_addr(phy_vram_addr);
+    };
 
     addr_is_odd = addr & 0x01;
 
@@ -911,6 +948,46 @@ inline void vramctrl_mz800_memop_write_byte(uint16_t addr, uint8_t value)
             };
         };
     };
+
+    *out_phy = phy_vram_addr;
+    return WE;
+}
+
+
+void vramctrl_mz800_write_target(uint16_t addr, unsigned *out_phy, unsigned *out_we)
+{
+    int phy = 0;
+    int we = vramctrl_mz800_write_plan(addr, &phy);
+    *out_phy = (unsigned) phy;
+    *out_we = (unsigned) we;
+}
+
+
+/**
+ * Zapis do VRAM v rezimu MZ-800
+ *
+ * TODO: ten write je 1:1 prepis z VHDL ... asi by jej slo zrychlit
+ *
+ * @param addr
+ * @param value
+ */
+inline void vramctrl_mz800_memop_write_byte(uint16_t addr, uint8_t value)
+{
+
+    /* TODO: meli by jsme volat asi jen pokud se pise do viditelne VRAM */
+    framebuffer_MZ800_screen_changed();
+
+    /* Signál pro debugger_memory_write_byte: tento zápis v aktuálním banking
+     * kontextu skončil ve VRAM. Při debuggerem-iniciovaném zápisu (memop_call)
+     * pak na konci debugger_memory_write_byte() proběhne screen refresh,
+     * pokud je v menu zapnutý "Auto refresh on edit". */
+    VRAMCTRL_DBG_NOTIFY_VRAM_TOUCH();
+
+    /* Do kterych rovin a na kterou fyzickou adresu se bude psat */
+    int phy_vram_addr;
+    int WE = vramctrl_mz800_write_plan(addr, &phy_vram_addr);
+
+    uint8_t wrvalue = 0;
 
     /******************************************************************************/
     /*		Nyni uz jsme pripraveni podle typu operace provest zapis do VRAM  */

@@ -1052,6 +1052,86 @@ void fdc_mount_dskfile(st_FDC *fdc, unsigned drive_id, char *filename)
     ui_fdc_set_dsk(drive_id, drv->filename);
 }
 
+uint8_t *fdc_drive_copy_image(st_FDC *fdc, unsigned drive_id, size_t *size)
+{
+    if (size)
+        *size = 0;
+    if (!fdc || drive_id >= FDC_NUM_DRIVES || !size)
+        return NULL;
+    st_FDDrive *drv = &fdc->drive[drive_id];
+    if (!drv->mounted || !drv->handler_valid)
+        return NULL;
+
+    if (drv->handler.type == HANDLER_TYPE_MEMORY)
+    {
+        st_HANDLER_MEMSPC *ms = &drv->handler.spec.memspec;
+        if (!ms->ptr || ms->size == 0)
+            return NULL;
+        *size = ms->size;
+        return (uint8_t *)g_memdup2(ms->ptr, ms->size);
+    }
+
+    /* DIRECT: obsah je v souboru, zápisy jdou přes FILE* - nejdřív flush. */
+    if (drv->handler.spec.filespec.fh)
+        fflush(drv->handler.spec.filespec.fh);
+    gchar *data = NULL;
+    gsize len = 0;
+    if (!g_file_get_contents(drv->filename, &data, &len, NULL) || len == 0)
+    {
+        g_free(data);
+        return NULL;
+    }
+    *size = len;
+    return (uint8_t *)data;
+}
+
+int fdc_mount_dsk_buffer(st_FDC *fdc, unsigned drive_id, const uint8_t *data, size_t size,
+                         int readonly, const char *label)
+{
+    if (!fdc || drive_id >= FDC_NUM_DRIVES || !data || size == 0 || size > G_MAXUINT32)
+        return EXIT_FAILURE;
+
+    st_FDDrive *drv = &fdc->drive[drive_id];
+    fdc_drive_close(fdc, drive_id);
+
+    st_HANDLER *h = generic_driver_open_memory(&drv->handler, &g_memory_driver_static, (uint32_t)size);
+    if ((h == NULL) || (g_memory_driver_static.err != GENERIC_DRIVER_ERROR_NONE) || (drv->handler.err != HANDLER_ERROR_NONE))
+    {
+        fprintf(stderr, "%s(%d): cannot allocate DSK image '%s' (%u B)\n", __FILE__, __LINE__,
+                label ? label : "", (unsigned)size);
+        return EXIT_FAILURE;
+    }
+    memcpy(drv->handler.spec.memspec.ptr, data, size);
+    drv->handler_valid = 1;
+
+    g_strlcpy(drv->filename, label ? label : "replay", sizeof(drv->filename));
+    drv->storage_mode = FDC_STORAGE_DISCARD;
+    drv->user_readonly = readonly ? 1 : 0;
+    drv->fs_readonly = 0;
+    drv->readonly = drv->user_readonly;
+    generic_driver_set_handler_readonly_status(&drv->handler, drv->readonly);
+
+    if (EXIT_SUCCESS != dsk_get_geometry(&drv->handler, &drv->geometry))
+    {
+        fprintf(stderr, "%s(%d): invalid DSK image '%s'\n", __FILE__, __LINE__, drv->filename);
+        fdc_drive_close(fdc, drive_id);
+        ui_fdc_set_dsk(drive_id, drv->filename);
+        return EXIT_FAILURE;
+    }
+    drv->geometry_valid = 1;
+    drv->mounted = 1;
+    ui_fdc_set_dsk(drive_id, drv->filename);
+    return EXIT_SUCCESS;
+}
+
+void fdc_umount_keep_cfg(st_FDC *fdc, unsigned drive_id)
+{
+    if (!fdc || drive_id >= FDC_NUM_DRIVES)
+        return;
+    fdc_drive_close(fdc, drive_id);
+    ui_fdc_set_dsk(drive_id, fdc->drive[drive_id].filename);
+}
+
 void fdc_umount(st_FDC *fdc, unsigned drive_id)
 {
     if (!fdc || drive_id >= FDC_NUM_DRIVES)

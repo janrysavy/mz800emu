@@ -2,7 +2,8 @@
  * test_snapshot_mgr.c — unit testy pro snapshot manager
  *
  * Testuje: snapshot_register_component, snapshot_save, snapshot_load,
- *          snapshot_read_metadata, snapshot_result_to_string
+ *          snapshot_read_metadata, snapshot_result_to_string,
+ *          snapshot_hash_components
  *
  * Licence: GPLv3
  */
@@ -16,6 +17,9 @@
 #include "emulator/snapshot/snapshot_io.h"
 #include "emulator/emulator.h"
 #include "hw-generic/memory/memory.h"
+#include "hw-generic/pio8255/pio8255.h"
+#include "hw-generic/gdg/gdg.h"
+#include "mzarch/mzarch.h"
 
 static const char *TMP_FILE = "tests/data/tmp/test_mgr.mzs";
 
@@ -122,6 +126,77 @@ void test_mgr_save_load_roundtrip(void)
     TEST_ASSERT_EQUAL_MEMORY(backup, &g_memory.RAM[0x1000], 256);
 
     g_emulator.paused = false;
+}
+
+/* hash komponent: stejný stav = stejný hash, změna stavu = jiný hash,
+ * pořadí jmen ani neznámé jméno výsledek nemění */
+void test_mgr_hash_components(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    const char *names[] = { "pio8255", "ctc8253" };
+    const char *reversed[] = { "ctc8253", "pio8255", "no-such-component" };
+    char h1[65], h2[65], h3[65];
+
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_OK, snapshot_hash_components(names, 2, h1, sizeof(h1)));
+    TEST_ASSERT_EQUAL_INT(64, (int)strlen(h1));
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_OK, snapshot_hash_components(reversed, 3, h2, sizeof(h2)));
+    TEST_ASSERT_EQUAL_STRING(h1, h2);
+
+    uint8_t saved = g_pio8255.keyboard_matrix[3];
+    g_pio8255.keyboard_matrix[3] = (uint8_t)(saved ^ 0x10);
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_OK, snapshot_hash_components(names, 2, h3, sizeof(h3)));
+    g_pio8255.keyboard_matrix[3] = saved;
+    TEST_ASSERT_NOT_EQUAL(0, strcmp(h1, h3));
+
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_OK, snapshot_hash_components(names, 2, h3, sizeof(h3)));
+    TEST_ASSERT_EQUAL_STRING(h1, h3);
+
+    /* malý výstup */
+    char small[8];
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_ERR_IO, snapshot_hash_components(names, 2, small, sizeof(small)));
+}
+
+
+/* hash komponent nevidí stav řízení a vykreslení (for_hash), vidí výslednou
+ * klávesovou matici bez ohledu na to, který zdroj klávesu drží */
+void test_mgr_hash_components_canonical(void)
+{
+    MZTEST_REQUIRE_LEVEL(MZTEST_LEVEL_UNIT);
+
+    const char *names[] = { "mzarch", "gdg", "pio8255" };
+    char base[65], h[65];
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_OK, snapshot_hash_components(names, 3, base, sizeof(base)));
+
+    /* plánovaná událost hlavní smyčky (např. čekající pauza) */
+    st_EMUEVENT saved_ev = g_mzarch_main.event;
+    g_mzarch_main.event.event_name = MZEVENT_BREAK_EMULATION_PAUSED;
+    g_mzarch_main.event.ticks = 0;
+    /* průběh vykreslení obrazu */
+    unsigned saved_r = g_gdg.screen_is_already_rendered_at_beam_pos;
+    unsigned saved_b = g_gdg.last_updated_border_pixel;
+    g_gdg.screen_is_already_rendered_at_beam_pos = saved_r + 77;
+    g_gdg.last_updated_border_pixel = saved_b + 5;
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_OK, snapshot_hash_components(names, 3, h, sizeof(h)));
+    g_mzarch_main.event = saved_ev;
+    g_gdg.screen_is_already_rendered_at_beam_pos = saved_r;
+    g_gdg.last_updated_border_pixel = saved_b;
+    TEST_ASSERT_EQUAL_STRING(base, h);
+
+    /* klávesa ve vkbd_matrix (HID) = táž klávesa v keyboard_matrix */
+    uint8_t saved_km = g_pio8255.keyboard_matrix[4];
+    uint8_t saved_vk = g_pio8255.vkbd_matrix[4];
+    g_pio8255.keyboard_matrix[4] = 0xFF;
+    g_pio8255.vkbd_matrix[4] = 0x7F;
+    char via_vkbd[65], via_kbd[65];
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_OK, snapshot_hash_components(names, 3, via_vkbd, sizeof(via_vkbd)));
+    g_pio8255.keyboard_matrix[4] = 0x7F;
+    g_pio8255.vkbd_matrix[4] = 0xFF;
+    TEST_ASSERT_EQUAL_INT(SNAPSHOT_OK, snapshot_hash_components(names, 3, via_kbd, sizeof(via_kbd)));
+    g_pio8255.keyboard_matrix[4] = saved_km;
+    g_pio8255.vkbd_matrix[4] = saved_vk;
+    TEST_ASSERT_EQUAL_STRING(via_vkbd, via_kbd);
+    TEST_ASSERT_NOT_EQUAL(0, strcmp(base, via_kbd));
 }
 
 /* save bez pauzy → ERR_NOT_PAUSED */
@@ -289,6 +364,8 @@ int main(int argc, char *argv[])
 
     /* full */
     RUN_TEST(test_mgr_multiple_save_load);
+    RUN_TEST(test_mgr_hash_components);
+    RUN_TEST(test_mgr_hash_components_canonical);
 
     int result = UNITY_END();
     mztest_teardown();

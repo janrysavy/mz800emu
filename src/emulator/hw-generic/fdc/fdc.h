@@ -300,6 +300,53 @@ extern "C"
     extern void fdc_mount_dskfile(st_FDC *fdc, unsigned drive_id, char *filename);
 
     /**
+     * @brief Kopie obsahu nasazeného DSK obrazu (záznam vstupů).
+     *
+     * U režimů cached a discard je to obsah paměťového obrazu (včetně změn
+     * dosud nezapsaných do souboru), u direct obsah souboru (po fflush).
+     *
+     * @param fdc      instance FDC řadiče
+     * @param drive_id index mechaniky (0..3)
+     * @param[out] size velikost kopie v bajtech
+     * @return nová kopie (g_free), nebo NULL (mechanika bez obrazu, chyba čtení)
+     * @pre Emu vlákno nebo pozastavená emulace.
+     */
+    extern uint8_t *fdc_drive_copy_image(st_FDC *fdc, unsigned drive_id, size_t *size);
+
+    /**
+     * @brief Nasadí DSK obraz z paměti bez zápisu do INI (přehrání vstupů).
+     *
+     * Předchozí obraz se zavře jako při běžném odpojení (cached se zapíše do
+     * souboru). Nový obraz je paměťová kopie @p data v režimu discard: zápisy
+     * emulovaného programu se do žádného souboru nedostanou. Hlavička DSK se
+     * neopravuje (obraz je přesně ten ze záznamu). INI klíče mechaniky se
+     * nemění, UI dostane @p label.
+     *
+     * @param fdc      instance FDC řadiče
+     * @param drive_id index mechaniky (0..3)
+     * @param data     obsah obrazu (zkopíruje se)
+     * @param size     velikost v bajtech (> 0)
+     * @param readonly 1 = jen pro čtení (WRITE odmítne)
+     * @param label    jméno pro `filename` a UI (např. jméno původního souboru)
+     * @return EXIT_SUCCESS; EXIT_FAILURE (alokace, neplatná geometrie) -
+     *         mechanika pak zůstane bez obrazu
+     * @pre Emu vlákno nebo pozastavená emulace.
+     */
+    extern int fdc_mount_dsk_buffer(st_FDC *fdc, unsigned drive_id, const uint8_t *data, size_t size,
+                                    int readonly, const char *label);
+
+    /**
+     * @brief Odpojí obraz bez zápisu do INI (přehrání vstupů).
+     *
+     * Jako fdc_umount() (cached se zapíše do souboru), ale INI klíč cesty
+     * zůstane, takže obraz jde později vrátit přes fdc_mount_dskfile().
+     *
+     * @param fdc      instance FDC řadiče
+     * @param drive_id index mechaniky (0..3)
+     */
+    extern void fdc_umount_keep_cfg(st_FDC *fdc, unsigned drive_id);
+
+    /**
      * @brief Vrátí cestu k aktuálně mountnutému DSK pro danou mechaniku.
      *
      * @param fdc instance FDC řadiče (NULL = vrátí NULL)

@@ -7,6 +7,8 @@
  * si drží volbu uživatele (snapshot_config_pin_ini_value). Příznak
  * backuped (záloha Pezik ramdisku do souboru hosta) je uživatelská
  * preference: ukládá se kvůli starším verzím, při načtení se ignoruje.
+ * Po načtení se buffery přizpůsobí obnovenému připojení a velikosti
+ * (ramdisk_fit_buffers_after_load), protože jsou alokované podle INI.
  */
 
 #include "snapshot/snapshot_mgr.h"
@@ -99,6 +101,10 @@ static en_SNAPSHOT_RESULT snap_ramdisk_load(st_SNAPSHOT_CONTEXT *ctx)
         return SNAPSHOT_ERR_XML_PARSE;
     }
 
+    /* Velikost, podle které je STD buffer alokovaný (před přepisem ze
+     * snapshotu), pro ramdisk_fit_buffers_after_load(). */
+    en_RAMDISK_BANKMASK std_alloc_size = g_ramdisk.std.size;
+
     /* STD ramdisk */
     if (snapshot_xml_enter_element(r, "std")) {
         int ival;
@@ -148,6 +154,11 @@ static en_SNAPSHOT_RESULT snap_ramdisk_load(st_SNAPSHOT_CONTEXT *ctx)
 
     snapshot_xml_leave_element(r); /* ramdisk_state */
     snapshot_xml_reader_free(r);
+
+    /* connected/size ze snapshotu se můžou lišit od konfigurace, podle
+     * které jsou buffery alokované: bez přizpůsobení by obsah i přístupy
+     * CPU šly mimo buffer (větší size) nebo na NULL (připojení bez bufferu). */
+    ramdisk_fit_buffers_after_load(std_alloc_size);
 
     /* Načtení obsahu STD ramdisku (pokud binární soubor existuje) */
     if (g_ramdisk.std.connected && g_ramdisk.std.memory != NULL

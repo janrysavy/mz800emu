@@ -111,9 +111,8 @@ void test_gdg_mirror_snapshot_vramctrl_hwscroll_sanity(void)
     TEST_ASSERT_TRUE(snap.vc_rf_search <= 0x0F);
     /* VBANK je 0 nebo 1 */
     TEST_ASSERT_TRUE(snap.vc_wfrf_vbank == 0 || snap.vc_wfrf_vbank == 1);
-    /* MZ-700 WAIT latch flag - 0 nebo 1 */
-    TEST_ASSERT_TRUE(snap.vc_mz700_wr_latch_is_used == 0
-                     || snap.vc_mz700_wr_latch_is_used == 1);
+    /* WRITE FF modelu WAIT u VRAM - 0 nebo 1 */
+    TEST_ASSERT_TRUE(snap.vc_vram_wrff_set == 0 || snap.vc_vram_wrff_set == 1);
 
     /* HW scroll enabled - 0 nebo 1 */
     TEST_ASSERT_TRUE(snap.hs_enabled == 0 || snap.hs_enabled == 1);

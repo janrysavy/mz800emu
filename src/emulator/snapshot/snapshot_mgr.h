@@ -29,6 +29,10 @@ typedef struct st_SNAPSHOT_CONTEXT {
     int format_version;           /* Verze formátu */
     int architecture;             /* MZARCH hodnota */
     bool saving;                  /* true = save, false = load */
+    bool for_hash;                /* true = save jen pro hash stavu (snapshot_hash_components):
+                                   * handler vynechá pole, která nejsou stavem stroje, ale
+                                   * řízení emulátoru nebo průběhu vykreslení pro hostitele
+                                   * (mění se např. při pauze, při stejném emulovaném stavu) */
 } st_SNAPSHOT_CONTEXT;
 
 

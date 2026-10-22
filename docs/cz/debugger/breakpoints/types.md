@@ -54,6 +54,8 @@ RANGE / MASK pro bank ID (jen v zone MMEXT_BANK).
 ## MEM_R
 
 **Sémantika:** fire když CPU čte byte z paměti na zadané adrese.
+Čtení samotným debuggerem (disassembler, Memory Browser, Watch, zásobník,
+MCP `mem_read` a `dasm`) ho nespustí.
 
 **Relevantní pole:** stejné jako PC_EXEC (addr / addr_end / mask /
 zone / bank). Zone awareness: `MEM_R` v zone `ROM_LOWER` střelí jen
@@ -65,11 +67,12 @@ pokud čtená adresa je aktuálně mapovaná v ROM (= banking-aware).
 - `Value` = bajt který se právě čte
 - `IsRead = 1`, `IsWrite = 0`, `IsExec = 0`, `IsPort = 0`
 - `BankAddr` = aktivní zone pro `Address`
+- `InsnPC` = adresa čtoucí instrukce (`PC` už je za ní)
 
 **Use case:**
 
 - Watch zápisu/čtení proměnné: `Type: MEM_R, Address: 0xE100, Action:
-  log "read $%X = %X (PC=%X)", Address, Value, PC`.
+  log "read $%X = %X (PC=%X)", Address, Value, InsnPC`.
 - Detekovat ROM dump pokus: `Type: MEM_R, Address: 0x0000, End Addr:
   0x0FFF, Match Mode: RANGE`.
 
@@ -78,7 +81,9 @@ pokud čtená adresa je aktuálně mapovaná v ROM (= banking-aware).
 ## MEM_W
 
 **Sémantika:** stejné jako MEM_R, ale pro zápis. Fire před fyzickým
-zápisem (= condition může číst starou hodnotu).
+zápisem (= condition může číst starou hodnotu). Zápis debuggerem (Memory
+Browser, MCP `mem_write` a `region_write`, zmrazení bajtů) ho nespustí,
+akce `poke` z Action DSL ano.
 
 **Kontext:**
 

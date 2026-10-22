@@ -6,6 +6,7 @@
 #include <SDL3/SDL.h>
 #include "iface-video/sdl3/iface_video_sdl3.h"
 #include "ui-imgui/display_picture.h"
+#include <SDL3/SDL_opengl.h>
 #include <cstring>
 
 // Lokalizace
@@ -17,6 +18,7 @@
 #include "hw-generic/pio8255/pio8255.h"
 #include "imgui_windows.h"
 #include "emulator/emulator.h"
+#include "emulator/replay.h"
 
 #include "mzarch/mzarch_config.h"
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
@@ -25,6 +27,8 @@
 #include "ui-imgui/debugger/sections/dbg_focus_to.h"
 #include "ui-imgui/debugger/sections/dbg_inline_asm.h"
 #include "ui-imgui/debugger/profiler/profiler_window.h"
+#include "ui-imgui/debugger/ramlog_window/ramlog_window.h"
+#include "ui-imgui/debugger/memsearch_window/memsearch_window.h"
 /* Per-chip-panels F1 scaffold: per-chip detail okna pro CTC/PPI/PIO/PSG. */
 #include "ui-imgui/debugger/ctc_window.h"
 #include "ui-imgui/debugger/ppi_window.h"
@@ -74,6 +78,7 @@ extern "C"
     void snapshot_notification_show(const char *message, bool is_error);
     bool snapshot_notification_error_active(void);
     void imgui_snapshot_quicksave_handler(void);
+    void imgui_snapshot_request_results(void);
 
     /* Jazyk */
     void imgui_language_window(void);
@@ -220,7 +225,11 @@ static void ShowFullScreenImageEmulatorWindow(VideoTexture texture)
     if (!rpcOwnsKeyboard && !g_gui->MainWindowHasFocus && pvevious_MainWindowHasFocus)
     {
         g_gui->haveKeyboardEvents = FALSE;
-        pio8255_keyboard_matrix_reset();
+        /* Ztráta fokusu = žádná klávesa; přes záznam vstupů (replay.h),
+         * při záznamu se klidová matice převezme na hranici snímku. */
+        uint8_t idle_matrix[10];
+        memset(idle_matrix, 0xff, sizeof(idle_matrix));
+        replay_host_keyboard_submit(idle_matrix, -1, 0xff);
     };
     pvevious_MainWindowHasFocus = g_gui->MainWindowHasFocus;
     if (!rpcOwnsKeyboard && g_gui->haveKeyboardEvents)
@@ -246,6 +255,8 @@ static void ShowFullScreenImageEmulatorWindow(VideoTexture texture)
     imgui_screenshot_series_overlay();
     /* Indikátor zachycení zvuku (pod indikátorem série, jen UI) */
     imgui_audio_capture_overlay();
+    /* Indikátor záznamu / přehrání vstupů (levý dolní roh, jen UI) */
+    imgui_replay_overlay();
     ImGui::PopStyleVar(2);
 
     // bool isPopupOpen = ImGui::IsPopupOpen("ContextMenu", ImGuiPopupFlags_AnyPopup);
@@ -352,7 +363,7 @@ void imgui_main_window(VideoTexture texture)
 #if CFG_HWEXT_HAVE_RAMDISK
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
     /* memory-disk-state: Memory Disk State debugger okno - stav vsech
-     * ramdisku (MR-1R18 STD + Pezik E8/68). Side-effect free, per frame. */
+     * ramdisku (MZ-1R18 STD + Pezik E8/68). Side-effect free, per frame. */
     if (g_gui->showRamdiskStateWindow)
         imgui_ramdisk_state_window(&g_gui->showRamdiskStateWindow);
 #endif
@@ -407,6 +418,12 @@ void imgui_main_window(VideoTexture texture)
     imgui_snapshot_load_dialog();
     imgui_snapshot_setup_dialog();
     imgui_snapshot_quicksave_handler();
+    /* Výsledky snapshotů vyřízených emu vláknem: oznámení, obnovení běhu. */
+    imgui_snapshot_request_results();
+
+    /* Záznam a přehrání vstupů: dialogy nabídky Replay a oznámení výsledku */
+    imgui_replay_dialogs();
+    imgui_replay_window();
 
     /* Video záznam: dialog nastavení, okno dálkového ovládání + notifikace událostí (před vykreslením notifikace) */
     imgui_videorec_setup_dialog();
@@ -415,10 +432,12 @@ void imgui_main_window(VideoTexture texture)
 
     /* Screenshot: dialog nastavení (Tools -> Screenshot -> Settings...) */
     imgui_screenshot_setup_dialog();
+    imgui_screenshot_window();
     imgui_screenshot_series_poll();
 
     /* Zachycení zvuku: dialog nastavení a notifikace konce (Tools -> Audio Capture) */
     imgui_audio_capture_setup_dialog();
+    imgui_audio_capture_window();
     imgui_audio_capture_poll();
 
     /* Upozornění na běh bez audio zařízení (jednou, před vykreslením notifikace) */
@@ -557,6 +576,17 @@ void imgui_main_window(VideoTexture texture)
      * History nebo Alt+Shift+H. */
     if (g_gui->showStackHistoryWindow)
         stack_history_window_render(&g_gui->showStackHistoryWindow);
+
+    /* RAM Write Log - záznam zápisů do paměti. Otevírá se přes menu
+     * Debugger -> RAM Write Log nebo "Who wrote this byte?" v Memory
+     * Browseru. */
+    if (g_gui->showRamlogWindow)
+        ramlog_window_render(&g_gui->showRamlogWindow);
+
+    /* Memory Search - postupné hledání proměnných. Otevírá se přes menu
+     * Debugger -> Memory Search nebo Alt+Shift+E. */
+    if (g_gui->showMemorySearchWindow)
+        memsearch_window_render(&g_gui->showMemorySearchWindow);
 
     /* Callstack (mutant callstack, Fáze 2C) - samostatné plovoucí okno
      * se shadow stackem volání (CALL/RST/IRQ/NMI). Toggle přes menu

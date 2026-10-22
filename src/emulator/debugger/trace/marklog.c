@@ -181,7 +181,7 @@ void marklog_record ( uint16_t marker_id )
  * =========================================================================== */
 
 /**
- * @brief Vybuduje JSON fragment s registrem markerů pro meta.json.
+ * @brief Vybuduje JSON fragment s registrem markerů pro manifest <name>.json.
  *
  * Klíče = stringified id ("0", "1", ...), hodnoty = registered name.
  * Pokud je registr prázdný, vrací validní (prázdný) "markers" objekt.
@@ -261,6 +261,7 @@ int marklog_start ( void )
         return -1;
     }
     s_writer_open = 1;
+    tlog_writer_set_record_size ( &s_writer, TLOG_RECORD_SIZE_EVENT24 );
 
     char *hdr = build_subsys_header_json ( );
     tlog_writer_update_meta ( &s_writer, hdr );
@@ -313,6 +314,35 @@ int marklog_is_truncated ( void )
 }
 
 
+int marklog_save_segment ( const char *path )
+{
+    /* Vzor sdílený s cputrack_save_segment / iorqlog_save_segment - viz tam
+     * pro detaily semantiky. */
+    int was_active = ( g_marklog_active != 0 );
+
+    /* Prázdná cesta = "force save now": flush rozdělaného segmentu BEZ
+     * uzavření/reopenu (segment pokračuje do téhož manifestu, mzdos 0022). */
+    if ( !( path && path[ 0 ] ) ) {
+        if ( s_writer_open ) {
+            uint64_t now_px = tlog_common_get_pxclk_total ( );
+            uint64_t now_cpu = tlog_common_get_cpuclk_total ( );
+            uint32_t now_sc = tlog_common_get_screens_total ( );
+            tlog_writer_flush_chunk ( &s_writer, now_px, now_cpu, now_sc );
+        }
+        return 0;
+    }
+
+    if ( s_writer_open ) {
+        marklog_stop ( );
+    }
+    reclife_redirect_path ( &g_marklog_config.dir, &g_marklog_config.name, path );
+    if ( was_active ) {
+        return marklog_start ( );
+    }
+    return 0;
+}
+
+
 /* Sdílený lifecycle deskriptor (reclife) - viz cputrack.c pro detaily vzoru. */
 static const st_RECLIFE_DESC s_marklog_reclife = {
     .subsys_name = "marklog",
@@ -321,7 +351,7 @@ static const st_RECLIFE_DESC s_marklog_reclife = {
     .fn_start    = marklog_start,
     .fn_stop     = marklog_stop,
     .fn_reset    = NULL,
-    .fn_save     = NULL,
+    .fn_save     = marklog_save_segment,
 };
 
 
@@ -397,6 +427,11 @@ void marklog_apply_cli_options ( void )
         if ( g_ascii_strcasecmp ( v, "on" ) == 0 ) g_marklog_config.stdout_enabled = 1;
         else if ( g_ascii_strcasecmp ( v, "off" ) == 0 ) g_marklog_config.stdout_enabled = 0;
     }
+}
+
+const st_TLOG_WRITER *marklog_get_writer ( void )
+{
+    return &s_writer;
 }
 
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */

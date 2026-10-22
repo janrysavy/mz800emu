@@ -27,6 +27,7 @@ two advantages over Tools:
 | URI | Content |
 |-----|---------|
 | `emulator://breakpoints` | Active BPs with id/addr/type/hit |
+| `emulator://run/history` | Newest 32 stop records (reason, PC, who started the run, length), same as `emu_get_stop_history` |
 | `emulator://callstack` | Single-shadow callstack snapshot |
 | `emulator://profiler` | Per-function profile data (excl/incl cycles) |
 | `emulator://symbols` | Symbol table listing (cap 10000, truncated flag) |
@@ -76,8 +77,8 @@ two advantages over Tools:
 | `emulator://input/keyboard/matrix_info` | Static symbolic key name table (col, bit, needs_shift) |
 | `emulator://input/joystick/state` | Per-port (0, 1) connected flag, state bits, device name |
 | `emulator://frame/framebuffer/info` | Framebuffer shape, pixel_format=index8, dirty flag, 16-entry palette |
-| `emulator://frame/screenshot.raw` | RGBA8888 base64 buffer (auto downscale 1/2/4) + `fallback_source` |
-| `emulator://frame/screenshot` | PNG base64 (`format: "png"`, full frame, stb_image_write encoder) |
+| `emulator://frame/screenshot.raw` | RGBA8888 base64 buffer (auto downscale 1/2/4) + `fallback_source`, `image_sha256`, `vram_sha256`, `beam` |
+| `emulator://frame/screenshot` | PNG base64 (`format: "png"`, full frame, stb_image_write encoder) + `image_sha256`, `vram_sha256`, `beam` |
 | `emulator://video/text_dump` | 40x25 chars + attributes (Sharp ASCII) from MZ-700 text VRAM |
 
 ### AI reference docs

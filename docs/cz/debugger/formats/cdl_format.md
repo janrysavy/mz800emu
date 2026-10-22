@@ -5,13 +5,16 @@
 **CDL** (Code/Data Logger), interně též označovaný jako **Memory Heatmap**,
 je modul mz800new emulátoru, který během běhu programu počítá přístupy CPU
 ke každé paměťové buňce a každému I/O portu. Pro každou cellu ukládá
-trojici 32-bit čítačů:
+čtyři 32-bit čítače:
 
 - **R** (read) - počet datových čtení (mimo M1 cyklus a operand bajt
   právě dekódované instrukce)
-- **W** (write) - počet zápisů
+- **W** (write) - počet zápisů mimo stack regiony
 - **X** (execute) - počet čtení jako součást právě dekódované instrukce
   (M1 opcode fetch a navazující operand bajty)
+- **S** (stack write) - počet zápisů do aktivního stack regionu. Zápis
+  se počítá buď jako W, nebo jako S, nikdy oboje. Bez definovaného stack
+  regionu zůstává S nulové.
 
 Klasický CDL bitmap (FCEUX-style) lze z counterů triviálně odvodit
 předpisem `flag = (count > 0)`.
@@ -63,15 +66,16 @@ struct {
     uint32_t r;     // Little-endian
     uint32_t w;     // Little-endian
     uint32_t x;     // Little-endian
+    uint32_t s;     // Little-endian
 };
 ```
 
-Velikost cell je 12 bajtů. Endianita zápisu je host byte order; na všech
+Velikost cell je 16 bajtů. Endianita zápisu je host byte order; na všech
 podporovaných platformách emulátoru (Windows x86_64, Linux x86_64) je to
 little-endian. Toto je explicitně deklarováno v `meta.json`
-poli `cell_layout`.
+v polích `cell_size_bytes` a `cell_layout`.
 
-Velikost souboru = `size_cells * 12 B`. Konkrétní velikosti jsou
+Velikost souboru = `size_cells * 16 B`. Konkrétní velikosti jsou
 arch-specific - viz tabulky níže.
 
 ## meta.json
@@ -85,11 +89,11 @@ JSON soubor s následující strukturou:
   "mzarch": 800,
   "created_at": "2026-05-01T00:38:42",
   "file_prefix": "snap1",
-  "cell_size_bytes": 12,
-  "cell_layout": "r:uint32_le, w:uint32_le, x:uint32_le",
+  "cell_size_bytes": 16,
+  "cell_layout": "r:uint32_le, w:uint32_le, x:uint32_le, s:uint32_le",
   "regions": [
-    { "name": "bus", "file": "snap1_bus.cdl", "size_cells": 65536, "size_bytes": 786432 },
-    { "name": "ram", "file": "snap1_ram.cdl", "size_cells": 65536, "size_bytes": 786432 },
+    { "name": "bus", "file": "snap1_bus.cdl", "size_cells": 65536, "size_bytes": 1048576 },
+    { "name": "ram", "file": "snap1_ram.cdl", "size_cells": 65536, "size_bytes": 1048576 },
     ...
   ]
 }
@@ -107,7 +111,9 @@ Klíčová pole:
 - `file_prefix` - basename meta souboru bez `.json`. Slouží jen jako
   human-readable identifikace; konkrétní cesty k souborům jsou v
   `regions[].file`.
-- `cell_size_bytes` - velikost jedné cell v bajtech, vždy `12`.
+- `cell_size_bytes` - velikost jedné cell v bajtech, `16`. Čtenář má
+  velikost cell brát z tohoto pole; import v emulátoru jinou hodnotu
+  odmítne.
 - `cell_layout` - popis bajtového layoutu cell, slouží pro dokumentaci.
 - `regions[]` - seznam exportovaných regionů. Každý region má
   symbolický `name`, relativní `file` (vůči adresáři meta souboru),
@@ -121,7 +127,7 @@ mohou indexovat podle jména (`name`).
 | Verze | Změna |
 |-------|-------|
 | 1 | Původní layout. Region soubory pojmenované přímo `<region>.cdl` (bez prefixu), v adresáři jen samotný `meta.json`. |
-| 2 | Přidán `created_at` a `file_prefix`. Region soubory pojmenované `<prefix>_<region>.cdl` v adresáři meta souboru. Import musí číst `regions[].file` (nikoli odvozovat z `name`). |
+| 2 | Přidán `created_at` a `file_prefix`. Region soubory pojmenované `<prefix>_<region>.cdl` v adresáři meta souboru. Import musí číst `regions[].file` (nikoli odvozovat z `name`). Cell má ve všech vydaných verzích 16 B s čítačem S (`cell_size_bytes` 16). |
 
 ## MZ-800 (a MZ-700 mód)
 
@@ -138,33 +144,34 @@ Programy mohou záměrně přepínat režimy, aby využily různé seskládání
 fyzických bank do logických plane. Per-mode recording umožňuje rozlišit
 co se dělalo v jakém režimu, fyzický pohled odráží sumu reálných HW operací.
 
-Dohromady **22 regionů**, celkem cca **4 MB** dat:
+Dohromady **22 regionů**, celkem cca **5 MB** dat (s připojeným Memextem
+navíc 8 MB `memext.cdl`):
 
 | Soubor | Cells | Bytes | Popis |
 |--------|-------|-------|-------|
-| `bus.cdl` | 65536 | 786432 | Logická CPU adresa 0000h-FFFFh |
-| `ram.cdl` | 65536 | 786432 | Hlavní DRAM 64 KB (i pod ROM) |
-| `rom-lower.cdl` | 4096 | 49152 | ROM monitor 0000h-0FFFh |
-| `rom-cg.cdl` | 4096 | 49152 | CG-ROM 1000h-1FFFh |
-| `rom-upper.cdl` | 8192 | 98304 | ROM monitor E000h-FFFFh |
-| `vram.cdl` | 32768 | 393216 | **Fyzická VRAM 32 KB - linear stack 4 bank po 8 KB (VRAM1..4)** |
-| `vram700-cg.cdl` | 4096 | 49152 | MZ-700 CG-RAM (bus C000-CFFF) |
-| `vram700.cdl` | 4096 | 49152 | MZ-700 text+attr VRAM (bus D000-DFFF) |
-| `vram800-320x200_16-I.cdl` | 8192 | 98304 | 320@HICOLOR mode, logická plane I |
-| `vram800-320x200_16-II.cdl` | 8192 | 98304 | 320@HICOLOR, plane II |
-| `vram800-320x200_16-III.cdl` | 8192 | 98304 | 320@HICOLOR, plane III |
-| `vram800-320x200_16-IV.cdl` | 8192 | 98304 | 320@HICOLOR, plane IV |
-| `vram800-320x200_4A-I.cdl` | 8192 | 98304 | 320@4 banka A, plane I |
-| `vram800-320x200_4A-II.cdl` | 8192 | 98304 | 320@4 banka A, plane II |
-| `vram800-320x200_4B-I.cdl` | 8192 | 98304 | 320@4 banka B, plane I |
-| `vram800-320x200_4B-II.cdl` | 8192 | 98304 | 320@4 banka B, plane II |
-| `vram800-640x200_4-I.cdl` | 16384 | 196608 | 640@4 mode, plane I |
-| `vram800-640x200_4-II.cdl` | 16384 | 196608 | 640@4 mode, plane II |
-| `vram800-640x200_2A.cdl` | 16384 | 196608 | 640@2 banka A |
-| `vram800-640x200_2B.cdl` | 16384 | 196608 | 640@2 banka B |
-| `iorq-8bit.cdl` | 256 | 3072 | 8-bit I/O porty 00h-FFh |
-| `iorq-gdg.cdl` | 256 | 3072 | 16-bit GDG sub-funkce, placeholder |
-| `memext.cdl` | 524288 | 6291456 | Memext RAM, flat 512 KB (jen pokud je Memext připojen) |
+| `bus.cdl` | 65536 | 1048576 | Logická CPU adresa 0000h-FFFFh |
+| `ram.cdl` | 65536 | 1048576 | Hlavní DRAM 64 KB (i pod ROM) |
+| `rom-lower.cdl` | 4096 | 65536 | ROM monitor 0000h-0FFFh |
+| `rom-cg.cdl` | 4096 | 65536 | CG-ROM 1000h-1FFFh |
+| `rom-upper.cdl` | 8192 | 131072 | ROM monitor E000h-FFFFh |
+| `vram.cdl` | 32768 | 524288 | **Fyzická VRAM 32 KB - linear stack 4 bank po 8 KB (VRAM1..4)** |
+| `vram700-cg.cdl` | 4096 | 65536 | MZ-700 CG-RAM (bus C000-CFFF) |
+| `vram700.cdl` | 4096 | 65536 | MZ-700 text+attr VRAM (bus D000-DFFF) |
+| `vram800-320x200_16-I.cdl` | 8192 | 131072 | 320@HICOLOR mode, logická plane I |
+| `vram800-320x200_16-II.cdl` | 8192 | 131072 | 320@HICOLOR, plane II |
+| `vram800-320x200_16-III.cdl` | 8192 | 131072 | 320@HICOLOR, plane III |
+| `vram800-320x200_16-IV.cdl` | 8192 | 131072 | 320@HICOLOR, plane IV |
+| `vram800-320x200_4A-I.cdl` | 8192 | 131072 | 320@4 banka A, plane I |
+| `vram800-320x200_4A-II.cdl` | 8192 | 131072 | 320@4 banka A, plane II |
+| `vram800-320x200_4B-I.cdl` | 8192 | 131072 | 320@4 banka B, plane I |
+| `vram800-320x200_4B-II.cdl` | 8192 | 131072 | 320@4 banka B, plane II |
+| `vram800-640x200_4-I.cdl` | 16384 | 262144 | 640@4 mode, plane I |
+| `vram800-640x200_4-II.cdl` | 16384 | 262144 | 640@4 mode, plane II |
+| `vram800-640x200_2A.cdl` | 16384 | 262144 | 640@2 banka A |
+| `vram800-640x200_2B.cdl` | 16384 | 262144 | 640@2 banka B |
+| `iorq-8bit.cdl` | 256 | 4096 | 8-bit I/O porty 00h-FFh |
+| `iorq-gdg.cdl` | 256 | 4096 | 16-bit GDG sub-funkce, placeholder |
+| `memext.cdl` | 524288 | 8388608 | Memext RAM, flat 512 KB (jen pokud je Memext připojen) |
 
 ### Layout `vram.cdl` (fyzická 32 KB)
 
@@ -279,7 +286,8 @@ Příklad zápisu na bus 0x8000 v módu 640x200@4 do obou logických plane:
 ### IORQ regiony
 
 `iorq-8bit.cdl` zaznamenává 8-bit I/O porty (`port & 0xFF`). Logují se
-jen R a W counters, X u portů nedává smysl (Z80 nečte port jako instrukci).
+jen R a W counters, X a S u portů nedávají smysl (Z80 nečte port jako
+instrukci).
 
 `iorq-gdg.cdl` je rezervován pro 16-bit GDG sub-funkce přes high byte
 B registru (jediné zařízení v MZ-800 s 16-bit IORQ adresováním). Aktuálně
@@ -310,20 +318,21 @@ nemá WF/RF registry, nemá GDG 16-bit IORQ. Místo toho má 3 PCG banky
 (programovatelný character generator) a CGROM viděnou na sběrnici skrz
 SPEC bity v banking mapě.
 
-Dohromady **9 regionů**, celkem cca **1.9 MB** dat:
+Dohromady **9 regionů**, celkem cca **2,9 MB** dat (s připojeným Memextem
+navíc 8 MB `memext.cdl`):
 
 | Soubor | Region | Cells | Bytes | Popis |
 |--------|--------|-------|-------|-------|
-| `bus.cdl` | bus | 65536 | 786432 | Logická CPU adresa 0000h-FFFFh |
-| `ram.cdl` | ram | 65536 | 786432 | Hlavní DRAM 64 KB |
-| `rom.cdl` | rom | 16384 | 196608 | Monitor ROM, 16 KB (lower 0000h + upper E010h-FFFFh v jednom blob) |
-| `cgrom.cdl` | cgrom | 4096 | 49152 | CG-ROM 4 KB (mapovaná na D000h-DFFFh nebo E000h-EFFFh přes SPEC=1) |
-| `vram.cdl` | vram | 4096 | 49152 | Znaková + atributová VRAM, 4 KB |
-| `pcg-1.cdl` | pcg-1 | 8192 | 98304 | PCG bank 1, 8 KB - v hardware nese R složku barvy spritu |
-| `pcg-2.cdl` | pcg-2 | 8192 | 98304 | PCG bank 2, 8 KB - G složka |
-| `pcg-3.cdl` | pcg-3 | 8192 | 98304 | PCG bank 3, 8 KB - B složka |
-| `iorq-8bit.cdl` | iorq-8bit | 256 | 3072 | 8-bit I/O porty 00h-FFh |
-| `memext.cdl` | memext | 524288 | 6291456 | Memext RAM, flat 512 KB (jen pokud je Memext připojen) |
+| `bus.cdl` | bus | 65536 | 1048576 | Logická CPU adresa 0000h-FFFFh |
+| `ram.cdl` | ram | 65536 | 1048576 | Hlavní DRAM 64 KB |
+| `rom.cdl` | rom | 16384 | 262144 | Monitor ROM, 16 KB (lower 0000h + upper E010h-FFFFh v jednom blob) |
+| `cgrom.cdl` | cgrom | 4096 | 65536 | CG-ROM 4 KB (mapovaná na D000h-DFFFh nebo E000h-EFFFh přes SPEC=1) |
+| `vram.cdl` | vram | 4096 | 65536 | Znaková + atributová VRAM, 4 KB |
+| `pcg-1.cdl` | pcg-1 | 8192 | 131072 | PCG bank 1, 8 KB - v hardware nese R složku barvy spritu |
+| `pcg-2.cdl` | pcg-2 | 8192 | 131072 | PCG bank 2, 8 KB - G složka |
+| `pcg-3.cdl` | pcg-3 | 8192 | 131072 | PCG bank 3, 8 KB - B složka |
+| `iorq-8bit.cdl` | iorq-8bit | 256 | 4096 | 8-bit I/O porty 00h-FFh |
+| `memext.cdl` | memext | 524288 | 8388608 | Memext RAM, flat 512 KB (jen pokud je Memext připojen) |
 
 ### Mapování CPU sběrnice na regiony
 
@@ -385,19 +394,17 @@ def load_cdl(meta_path):
     meta_path = Path(meta_path)
     meta = json.loads(meta_path.read_text())
     base_dir = meta_path.parent
+    k = meta["cell_size_bytes"] // 4          # čítačů uint32 na cell (4)
     cells = {}
     for region in meta["regions"]:
         data = (base_dir / region["file"]).read_bytes()
         n = region["size_cells"]
-        # 3 uint32 LE per cell
-        counters = struct.unpack(f"<{3*n}I", data)
-        cells[region["name"]] = [
-            (counters[3*i], counters[3*i+1], counters[3*i+2])
-            for i in range(n)
-        ]
+        counters = struct.unpack(f"<{k*n}I", data)
+        # (r, w, x, s) pro každou cell
+        cells[region["name"]] = [tuple(counters[k*i:k*i+k]) for i in range(n)]
     return meta, cells
 
 meta, cells = load_cdl("./cdl-export/snap1.json")
 # Příklad: bajty v RAM, které byly někdy spuštěny jako kód
-code_bytes = [i for i, (r, w, x) in enumerate(cells["ram"]) if x > 0]
+code_bytes = [i for i, c in enumerate(cells["ram"]) if c[2] > 0]
 ```

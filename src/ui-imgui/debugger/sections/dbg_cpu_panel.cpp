@@ -889,12 +889,14 @@ static bool cpu_panel_write_reg(int reg_id, uint16_t new_value)
         mp.addr = target_addr;
         mp.length = 2;
         mp.data = data;
-        if (!dbgapi_ui_submit_cmd_sync(&g_dbgapi_cmdrq_queue,
-                                        DBGAPI_CMD_MEM_WRITE_CHECKED,
-                                        &mp, NULL, 50))
+        en_DBGAPI_SUBMIT_STATUS st = dbgapi_ui_submit_cmd_sync_ex (
+            &g_dbgapi_cmdrq_queue, DBGAPI_CMD_MEM_WRITE_CHECKED,
+            DBGAPI_CMD_ORIGIN_USER, &mp, NULL, 50 );
+        if (st != DBGAPI_SUBMIT_OK && st != DBGAPI_SUBMIT_FAILED)
         {
             /* Cmd dispatch selhal (= timeout / queue full) - neuspěch
-             * bez modal warning. */
+             * bez modal warning. Zamítnutí kontrolou regionu je
+             * DBGAPI_SUBMIT_FAILED s mp.success == 0 (řeší se níže). */
             return false;
         };
 

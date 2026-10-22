@@ -41,6 +41,7 @@
 #include "memory/memory.h"
 #include "mzarch/mzarch.h"
 #include "cmt.h"
+#include "replay.h"
 
 #include "iface/iface_audio.h"
 #include "hw-generic/gdg/framebuffer.h"
@@ -57,6 +58,17 @@
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "debugger/trace/eventlog.h"
+#include "debugger/trace/ramlog.h"
+#include "debugger/coverage/coverage_hook.h"
+#include "mzarch/mzarch.h"
+/**
+ * @brief Záznam zápisů: načtení CMT hackem se zdrojem CMT_HACK, insn_pc = PC
+ *        CPU v okamžiku pasti ROM.
+ * @param call Volání memory_load_block().
+ */
+#define CMTHACK_RAMLOG_LOAD(call) do {         uint32_t cmthack_rl_saved = ramlog_source_push(RAMLOG_SRC_CMT_HACK, (uint16_t) g_mzarch_main.cpu->pc);         call;         ramlog_source_pop(cmthack_rl_saved);     } while (0)
+#else
+#define CMTHACK_RAMLOG_LOAD(call) call
 #endif
 
 st_CMTHACK g_cmthack;
@@ -180,6 +192,11 @@ void cmthack_result(en_LOADRET result)
  * varování a emulace běží dál. Načíst pásku v takovém režimu lze reálnou
  * páskou (CMT hack vypnout, [CMTHACK] enable = 0 nebo MCP cmt_hack_set).
  *
+ * Záznam vstupů: výběr v dialogu (i zrušení a headless Break) se zapíše do
+ * záznamu i s obsahem souboru (replay_cmthack_note()); při přehrávání se
+ * dialog neotevře a použije se další soubor ze záznamu
+ * (replay_cmthack_playback()), i bez GUI.
+ *
  * @pre EMU vlákno, uvnitř instrukce OUT (01h) se zapnutým CMT hack patchem.
  * @post Hlavička je v RAM na adrese z HL a ROM dostala výsledek OK, nebo ROM
  *       dostala Break či chybu. Zvuk a měření MAX SPEED jsou obnovené.
@@ -193,12 +210,34 @@ void cmthack_load_file(void)
      * ignored by the observer; they are not fabricated instructions. */
     zic_semantic_override(g_mzarch_main.cpu->instruction_coverage,
                           ZIC_SEMANTIC_CMTHACK_FILE);
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* Pokrytí kódu: hack zasáhl během právě vykonávané instrukce (OUT). */
+    coverage_hook_note_cmt_trap();
+#endif
+    /* Přehrání vstupů: soubor ze záznamu místo dialogu (i bez GUI). */
+    char *replay_file = NULL;
+    if (replay_cmthack_playback(&replay_file))
+    {
+        const char *ext = replay_file ? cmtext_get_filename_extension(replay_file) : NULL;
+        if (ext && ((0 == strcasecmp(ext, "mzf")) || (0 == strcasecmp(ext, "m12"))))
+        {
+            cmthack_load_mzf_filename(replay_file);
+        }
+        else
+        {
+            cmthack_result(LOADRET_BREAK);
+        };
+        g_free(replay_file);
+        return;
+    };
+
     if (!baseui_filechooser_can_wait())
     {
         /* Headless: dialog by nikdo nezavřel a EMU vlákno by stálo navždy. */
         fprintf(stderr, "WARNING: CMT hack needs the GUI file dialog to load a tape file; "
                         "no GUI in headless mode, load cancelled (Break). "
                         "Disable the CMT hack to load from the virtual tape.\n");
+        replay_cmthack_note(NULL);
         cmthack_result(LOADRET_BREAK);
         return;
     };
@@ -209,6 +248,8 @@ void cmthack_load_file(void)
     framebuffer_flush_full_screen();
 
     char *filename = baseui_filechooser_open_file_wait(BASEUI_FCHOOSER_CAT_MZF, _("Select a MZF File"), ".mzf, .m12, .*", NULL, NULL, g_cmthack.last_filename, NULL);
+    /* Záznam vstupů: výběr (i zrušení) se uloží i s obsahem souboru. */
+    replay_cmthack_note(filename);
 
     if (filename == NULL)
     {
@@ -274,7 +315,7 @@ void cmthack_load_mzf_filename(const char *filename)
         cmthack_result(LOADRET_ERROR);
         return;
     };
-    memory_load_block(buff, reg_hl, sizeof(st_MZF_HEADER), MEMORY_LOAD_MAPED);
+    CMTHACK_RAMLOG_LOAD(memory_load_block(buff, reg_hl, sizeof(st_MZF_HEADER), MEMORY_LOAD_MAPED));
 
     int test_fname_term = mzf_header_test_fname_terminator(&g_cmthack.mzf_handler);
 
@@ -291,7 +332,7 @@ void cmthack_load_mzf_filename(const char *filename)
             uint8_t buff = MZF_FNAME_TERMINATOR;
             if (g_cmthack.fix_fname_terminator)
             {
-                memory_load_block(&buff, (reg_hl + sizeof(st_MZF_FILENAME) - 2), 1, MEMORY_LOAD_MAPED);
+                CMTHACK_RAMLOG_LOAD(memory_load_block(&buff, (reg_hl + sizeof(st_MZF_FILENAME) - 2), 1, MEMORY_LOAD_MAPED));
             }
             printf(" (!mising 0x0d%s)", (g_cmthack.fix_fname_terminator) ? " - fixed" : "");
         }
@@ -334,6 +375,10 @@ void cmthack_read_mzf_body(void)
 {
     zic_semantic_override(g_mzarch_main.cpu->instruction_coverage,
                           ZIC_SEMANTIC_CMTHACK_BODY);
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* Pokrytí kódu: hack zasáhl během právě vykonávané instrukce (OUT). */
+    coverage_hook_note_cmt_trap();
+#endif
     unsigned reg_hl;
     unsigned reg_bc;
 
@@ -370,7 +415,7 @@ void cmthack_read_mzf_body(void)
         return;
     };
 
-    memory_load_block(data, reg_hl, reg_bc, MEMORY_LOAD_MAPED);
+    CMTHACK_RAMLOG_LOAD(memory_load_block(data, reg_hl, reg_bc, MEMORY_LOAD_MAPED));
 
     printf("\nCMT hack: load 0x%04x bytes from MZF body to addr 0x%04x.\n", reg_bc, reg_hl);
 

@@ -44,6 +44,7 @@
 #include <json-glib/json-glib.h>
 
 #include "bp_vars.h"
+#include "automation.h" /* automation_is_active */
 #include "cfgmain.h"
 #include "main.h"   /* g_sdlapp */
 #include "libs/sdlapp/sdlapp_paths.h"
@@ -612,7 +613,9 @@ void bp_vars_cfg_init ( void ) {
 
     /* Auto-load: REPLACE mode (= soubor je single source of truth pro start).
      * Pokud soubor neexistuje, storage zůstane prázdný (= žádná chyba). */
-    if ( s_vars_cfg.auto_load ) {
+    /* Ne v automatickém běhu: proměnné z jiné relace by ovlivnily test
+     * (proměnné přijdou z --bpt, viz automation_is_active). */
+    if ( s_vars_cfg.auto_load && !automation_is_active ( ) ) {
         char errbuf[256] = {0};
         if ( !bp_vars_load_from_filepath ( NULL, BP_VARS_LOAD_REPLACE, errbuf, sizeof ( errbuf ) ) ) {
             fprintf ( stderr, "BP_VARS WARNING: auto-load failed: %s\n", errbuf );

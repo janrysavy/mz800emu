@@ -118,6 +118,12 @@ uint32_t build_revision_get_int(void)
     return 0;
 }
 
+/* automation.c (result.json) uvádí krátký hash commitu buildu. */
+const char *build_revision_get_commit_short(void)
+{
+    return "test";
+}
+
 /* ================================================================
  * baseui stubs (filechooser a message dialogy)
  *

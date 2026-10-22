@@ -93,7 +93,8 @@ Strom respektuje rozdíly mezi mz800, mz700 a mz1500:
 - **CG-RAM** (4 KB, jen v 700 módu)
 - **PCG bank 1 / 2 / 3** (8 KB každá, jen MZ-1500)
 - **Memext** (Luftner / PEHU, jen pokud connected)
-  - RAM bank 0x00 .. 0xN
+  - RAM bank 0x00 .. 0x7F (po 4 KB; 8 KB banka PEHU N je zobrazená jako dvě
+    4 KB části 2*N a 2*N + 1)
   - FLASH bank 0x00 .. 0xN (Luftner, read-only)
 - **Ramdisk STD** (pokud connected, počet bank podle typu)
 - **Ramdisk PEZIK port 0x68** + **port 0xE8** (pokud connected)

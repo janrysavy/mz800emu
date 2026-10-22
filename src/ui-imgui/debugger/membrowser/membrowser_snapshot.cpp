@@ -105,21 +105,14 @@ extern "C" bool membrowser_snapshot_take ( int region_id )
     ensure_init ( );
     if ( region_id < 0 ) return false;
 
-    /* Enumerate aktuální regiony pro získání size. dbgapi_regions_read
-     * sám clamp-uje na region size, ale potřebujeme předem znát kolik
-     * alokovat. */
-    static st_REGION_DESC tmp_regions[512];
-    int n = dbgapi_regions_enumerate ( tmp_regions, 512 );
-    if ( n <= 0 ) return false;
-
-    uint32_t region_size = 0;
-    for ( int i = 0; i < n; i++ ) {
-        if ( tmp_regions[i].id == region_id ) {
-            region_size = tmp_regions[i].size;
-            if ( !tmp_regions[i].connected ) return false;
-            break;
-        }
-    }
+    /* Velikost regionu z výčtu (bez stropu na počet regionů).
+     * dbgapi_regions_read sám clamp-uje na region size, ale potřebujeme
+     * předem znát kolik alokovat. */
+    dbgapi_regions_refresh ( );
+    st_REGION_DESC desc;
+    if ( !dbgapi_regions_get ( region_id, &desc ) ) return false;
+    if ( !desc.connected ) return false;
+    uint32_t region_size = desc.size;
     if ( region_size == 0 ) return false;
 
     uint32_t take_size = region_size;

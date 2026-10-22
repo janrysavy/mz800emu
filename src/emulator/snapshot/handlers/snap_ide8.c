@@ -4,7 +4,10 @@
  *
  * Připojení disků (connected) je stav stroje: snapshot ho obnoví pro běh,
  * INI ([IDE8] hdd0_connected, hdd1_connected) si drží volbu uživatele
- * (snapshot_config_pin_ini_value).
+ * (snapshot_config_pin_ini_value). Připojit disk jde jen s obrazem
+ * otevřeným v tomto procesu; snapshot s připojeným diskem do procesu bez
+ * obrazu nechá disk odpojený (varování). total_blocks se nenačítá, patří
+ * k otevřenému souboru.
  */
 
 #include "snapshot/snapshot_mgr.h"
@@ -131,9 +134,22 @@ static en_SNAPSHOT_RESULT snap_ide8_load(st_SNAPSHOT_CONTEXT *ctx)
         if (snapshot_xml_enter_element(r, elem_name)) {
             st_IDE8_DRIVE *drv = &g_ide8.drive[i];
 
-            /* connected jen pro běh - INI hodnota se připne. */
+            /* connected jen pro běh - INI hodnota se připne. Připojený disk
+             * potřebuje obraz otevřený v tomto procesu (otevřený je právě
+             * tehdy, když je disk připojený před loadem): bez něj zůstane
+             * odpojený, jinak by první příkaz pracoval s neplatným souborem.
+             * Odpojení ze snapshotu obraz zavře. */
             unsigned ini_connected = (unsigned)drv->connected;
-            if (snapshot_xml_read_int(r, "connected", &ival)) drv->connected = (en_IDE8_STATE)ival;
+            if (snapshot_xml_read_int(r, "connected", &ival)) {
+                if ((en_IDE8_STATE)ival == IDE8_STATE_CONNECTED) {
+                    if (ini_connected != IDE8_STATE_CONNECTED) {
+                        SNAP_WARN("ide8", "HDD%d connected in snapshot, but no disk image is open; "
+                                  "the drive stays disconnected", i);
+                    }
+                } else if (ini_connected == IDE8_STATE_CONNECTED) {
+                    ide8_drive_set_connected((en_IDE8_DRIVE)i, IDE8_STATE_DISCONNECTED);
+                }
+            }
             snapshot_config_pin_ini_value("IDE8", (i == IDE8_DRIVE_MASTER) ? "hdd0_connected" : "hdd1_connected",
                                           ini_connected);
             snapshot_xml_read_int(r, "geo_c", &drv->geo_c);
@@ -146,7 +162,8 @@ static en_SNAPSHOT_RESULT snap_ide8_load(st_SNAPSHOT_CONTEXT *ctx)
             if (snapshot_xml_read_int(r, "busmode", &ival)) drv->busmode = (en_IDE8_BUSMODE)ival;
             if (snapshot_xml_read_hex8(r, "status", &hval8)) drv->status = hval8;
             if (snapshot_xml_read_hex32(r, "block", &hval32)) drv->block = hval32;
-            if (snapshot_xml_read_hex32(r, "total_blocks", &hval32)) drv->total_blocks = hval32;
+            /* total_blocks je velikost otevřeného obrazu (ide8_drive_open_image),
+             * ne stav stroje: zůstane podle souboru v tomto procesu. */
 
             /* Cesta k image souboru (informativní) */
             char *fpath = NULL;

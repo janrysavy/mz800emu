@@ -1116,6 +1116,33 @@ def _data_or_error(resp: dict[str, Any]) -> dict[str, Any]:
     return {"error": resp.get("error", "emu returned no data")}
 
 
+def _write_cond_payload(payload: dict[str, Any],
+                        expected_sha256: Optional[str],
+                        want_hashes: bool) -> Optional[str]:
+    """Doplní do požadavku zápisu podmínku ``expected_sha256`` a ``want_hashes``.
+
+    Podmíněný zápis (observe-cas M10): emulátor zapíše jen tehdy, když
+    SHA-256 přepisovaného rozsahu souhlasí s ``expected_sha256``; kontrola
+    i zápis proběhnou v emu vlákně v jednom příkazu.
+
+    Args:
+        payload: data požadavku (doplní se na místě).
+        expected_sha256: 64 hex znaků, nebo None (bez podmínky).
+        want_hashes: True = vrátit ``before_sha256`` / ``after_sha256``.
+
+    Returns:
+        None = OK, jinak text chyby pro klienta (anglicky).
+    """
+    if expected_sha256 is not None:
+        if (not isinstance(expected_sha256, str) or len(expected_sha256) != 64
+                or any(c not in "0123456789abcdefABCDEF" for c in expected_sha256)):
+            return "expected_sha256 must be 64 hex digits"
+        payload["expected_sha256"] = expected_sha256
+    if want_hashes:
+        payload["want_hashes"] = True
+    return None
+
+
 async def _shutdown_emu() -> None:
     """Graceful shutdown emu backendu a uzavření transportu.
 
@@ -1208,14 +1235,152 @@ async def emu_ping() -> str:
     return json.dumps(_data_or_error(resp))
 
 
+def _deadline_arg(deadline_frames: int | None, deadline_ms: int | None,
+                  deadline_ticks: int | None) -> tuple[dict | None, str | None]:
+    """Sestaví parametr ``deadline`` z nejvýš jedné z hodnot (frames / ms / ticks).
+
+    Returns:
+        (deadline dict nebo None, chybová hláška nebo None).
+    """
+    given = [(k, v) for k, v in (("frames", deadline_frames),
+                                 ("emulated_ms", deadline_ms),
+                                 ("ticks", deadline_ticks)) if v is not None]
+    if not given:
+        return None, None
+    if len(given) > 1:
+        return None, ("give at most one of deadline_frames, deadline_ms, "
+                      "deadline_ticks")
+    key, value = given[0]
+    if not isinstance(value, int) or value < 1:
+        return None, f"deadline {key} must be a positive integer"
+    return {key: value}, None
+
+
 @mcp.tool()
-async def emu_pause() -> str:
+async def emu_pause(if_run_seq: int | None = None) -> str:
     """Pause emulation (stop the CPU instruction stream).
 
-    Returns ``{"paused": true}`` on success. Idempotent (safe to call
-    when emulator is already paused).
+    Returns ``{"paused": true, "was_running": <bool>, "paused_now": <bool>,
+    "run_seq": <int>}``. Idempotent (safe to call when emulator is already
+    paused; a pause of a paused emulator is not a new stop and sends no
+    ``paused`` event).
+
+    With ``if_run_seq`` the call pauses only while run number
+    ``if_run_seq`` is running (the number returned by ``emu_resume``,
+    ``emu_run_until_addr``, ``emu_step_out`` or ``emu_get_state``). It
+    never stops a run that someone else started meanwhile, e.g. the user
+    in the GUI; then ``paused`` is false and ``skipped`` is
+    ``"run_seq_mismatch"`` (or ``"not_running"``).
+
+    Args:
+        if_run_seq: pause only this run (optional).
     """
-    resp = await _send_request("pause")
+    args: dict[str, Any] = {}
+    if if_run_seq is not None:
+        if not isinstance(if_run_seq, int) or if_run_seq < 0:
+            return json.dumps({"error": "if_run_seq must be >= 0"})
+        args["if_run_seq"] = if_run_seq
+    resp = await _send_request("pause", args or None)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_resume(deadline_frames: int | None = None,
+                     deadline_ms: int | None = None,
+                     deadline_ticks: int | None = None) -> str:
+    """Resume emulation without blocking (free run), optionally with a deadline.
+
+    Returns at once with ``{"running": true, "run_seq": <int>,
+    "already_running": <bool>}``. The run continues until a breakpoint,
+    a pause or the deadline stops it. Wait for the stop with
+    ``emu_wait_stop(run_seq)``; the stop also sends the event ``paused``.
+
+    A deadline limits the run in emulated time (not wall clock) and is
+    deterministic: ``deadline_frames`` stops exactly at the N-th frame
+    boundary, ``deadline_ms`` / ``deadline_ticks`` stop at the first
+    emulation event point at or after the deadline (less than one frame
+    late). The stop has the reason ``"deadline"``. A deadline holds until
+    the next pause. Give at most one of the three.
+
+    Args:
+        deadline_frames: stop after N frame boundaries (1..1000000).
+        deadline_ms: stop after N ms of emulated time (1..86400000).
+        deadline_ticks: stop after N GDG clock ticks.
+
+    Returns:
+        JSON as above plus ``deadline_ticks`` (deadline length in GDG ticks)
+        when a deadline was given.
+    """
+    deadline, err = _deadline_arg(deadline_frames, deadline_ms, deadline_ticks)
+    if err:
+        return json.dumps({"error": err})
+    args: dict[str, Any] = {"frames": 0}
+    if deadline is not None:
+        args["deadline"] = deadline
+    resp = await _send_request("run", args)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_wait_stop(run_seq: int | None = None,
+                        timeout_ms: int = 5000) -> str:
+    """Wait until a run of the emulator stops, and tell why and where.
+
+    A run is the time between leaving a pause (resume, a step, a run to an
+    address) and the next pause. Every run has a number ``run_seq``
+    (returned by ``emu_resume``, ``emu_run_until_addr``, ``emu_step_out``,
+    ``emu_step_into``, ``emu_step_over``, ``emu_pause``, ``emu_get_state``).
+    Without ``run_seq`` the tool waits for the current run (or returns the
+    last one when the emulator is paused).
+
+    Returns ``{"done": true, "run_seq", "record": {...}}`` once the run
+    stopped, or ``{"done": false, "running": true, ...}`` after
+    ``timeout_ms``; then call the tool again. The record has ``reason``
+    (``"run_to"``, ``"breakpoint"``, ``"deadline"``, ``"frames"``,
+    ``"step"``, ``"manual"``, ``"exit"``, ``"bp_action_saturation"``,
+    ``"event_trigger"``, ``"replay"``, ``"replay_end"``, ``"replay_desync"``,
+    ``"replay_seek"``),
+    ``pc``, ``bp_id`` (breakpoint), ``started_by`` /
+    ``start_cmd`` (who started the run: ``"mcp"`` or ``"user"`` in the
+    GUI), ``stopped_by`` (who paused it, for ``"manual"``),
+    ``start_ticks`` / ``stop_ticks`` (GDG ticks since the emulator started -
+    a machine reset does not restart them; same as ``Cycle`` in breakpoint
+    expressions), ``elapsed_ticks`` and ``frame``.
+    ``history_lost: true`` means the run stopped but its record is no longer
+    in the history (32 newest).
+
+    Args:
+        run_seq: run number to wait for (optional).
+        timeout_ms: longest wait in ms (0..25000, default 5000).
+    """
+    if not isinstance(timeout_ms, int) or timeout_ms < 0 or timeout_ms > 25000:
+        return json.dumps({"error": "timeout_ms must be in range 0..25000"})
+    args: dict[str, Any] = {"timeout_ms": timeout_ms}
+    if run_seq is not None:
+        if not isinstance(run_seq, int) or run_seq < 0:
+            return json.dumps({"error": "run_seq must be >= 0"})
+        args["run_seq"] = run_seq
+    resp = await _send_request(
+        "wait_stop", args, timeout_s=SEND_TIMEOUT_S + timeout_ms / 1000.0)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_get_stop_history(limit: int = 32) -> str:
+    """Return the newest stop records of the emulator (oldest first).
+
+    Each record describes one run: why and where it stopped, who started
+    it (``started_by``: ``"mcp"`` for the agent, ``"user"`` for the GUI)
+    and how long it ran, see ``emu_wait_stop``. Use it to notice that the
+    user started or paused the emulator in the GUI. Also available as the
+    resource ``emulator://run/history``.
+
+    Args:
+        limit: number of newest records (1..32, default 32).
+    """
+    if not isinstance(limit, int) or limit < 1 or limit > 32:
+        return json.dumps({"error": "limit must be in range 1..32"})
+    resp = await _send_request("get_stop_history", {"limit": limit})
     return json.dumps(_data_or_error(resp))
 
 
@@ -1235,7 +1400,8 @@ async def emu_get_registers() -> str:
 
 
 @mcp.tool()
-async def emu_set_register(reg: str, value: int) -> str:
+async def emu_set_register(reg: str, value: int,
+                           expected: Optional[int] = None) -> str:
     """Write a 16-bit value to a Z80 register.
 
     Accepts the same case-insensitive register names returned by
@@ -1256,10 +1422,24 @@ async def emu_set_register(reg: str, value: int) -> str:
         reg: register name (case-insensitive).
         value: 16-bit value 0..65535 (for ``IR``: I in the high
             byte, R in the low byte).
+        expected: conditional write (compare-and-swap) - write only if
+            the register still holds this value; compared and written in
+            one step in the emulator thread. On a mismatch nothing is
+            written and the error is ``Precondition failed: register <reg>
+            changed (expected=0x...., current=0x....)``.
+
+    Returns:
+        JSON ``{"reg", "value", "previous"}`` - ``previous`` is the value
+        before the write.
     """
     if not (0 <= value <= 0xFFFF):
         return json.dumps({"error": "value must be in range 0..65535"})
-    resp = await _send_request("set_register", {"reg": reg, "value": value})
+    payload: dict[str, Any] = {"reg": reg, "value": value}
+    if expected is not None:
+        if not (0 <= expected <= 0xFFFF):
+            return json.dumps({"error": "expected must be in range 0..65535"})
+        payload["expected"] = expected
+    resp = await _send_request("set_register", payload)
     return json.dumps(_data_or_error(resp))
 
 
@@ -1306,27 +1486,41 @@ async def emu_history_get() -> str:
 
 
 @mcp.tool()
-async def emu_mem_read(addr: int, length: int = 16) -> str:
+async def emu_mem_read(addr: int, length: int = 16, want_data: bool = True) -> str:
     """Read N bytes from Z80 memory at a given address.
 
     The address is interpreted via the current Z80 memory map (banking
     state applies). Returns a JSON object with fields ``addr`` (int),
-    ``len`` (int) and ``data_b64`` (base64-encoded raw bytes).
+    ``len`` (int), ``sha256`` (SHA-256 of the bytes, 64 lowercase hex
+    digits) and ``data_b64`` (base64-encoded raw bytes). With
+    ``want_data=False`` only the hash is returned - compare it with a
+    previous read to see whether the memory changed without downloading
+    it.
 
     See ``emulator://docs/memory_layout`` for per-platform memory maps,
     banking via IORQ ports 0xE0..0xE6 and key ROM entry points; live
     banking snapshot is in ``emulator://memory/map``.
 
+    To read registers together with memory from the same moment (the
+    emulator may run between two calls), use ``emu_state_observe``.
+
     Args:
         addr: Z80 memory address (0-65535).
-        length: number of bytes to read (1-256). Defaults to 16.
+        length: number of bytes to read (1-65536, ``addr + length`` at
+            most 0x10000, so all 64 KiB in one call only from address
+            0). Defaults to 16. Above a few KiB prefer
+            ``want_data=False`` to keep the response small.
+        want_data: False = only ``sha256``, no ``data_b64``.
     """
-    resp = await _send_request("mem_read", {"addr": addr, "len": length})
+    resp = await _send_request("mem_read", {"addr": addr, "len": length,
+                                            "want_data": bool(want_data)})
     return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
-async def emu_mem_write(addr: int, data_hex: str) -> str:
+async def emu_mem_write(addr: int, data_hex: str,
+                        expected_sha256: Optional[str] = None,
+                        want_hashes: bool = False) -> str:
     """Write bytes to Z80 memory at a given address.
 
     WARNING: This is a destructive operation. Writes to ROM, CG-ROM,
@@ -1351,11 +1545,28 @@ async def emu_mem_write(addr: int, data_hex: str) -> str:
             accepted; both upper and lower case digits. The decoded byte
             count plus addr must not exceed 0x10000.
 
+        expected_sha256: conditional write - write only if the SHA-256 of
+            exactly the bytes being overwritten still equals this value
+            (take it from ``emu_mem_read(addr, len, want_data=False)`` or
+            a ``emu_state_observe`` window of the same range). The check
+            and the write run together in the emulator thread. If the
+            memory changed, nothing is written and the error starts with
+            ``Precondition failed:``. The region check runs first.
+            Note: the address goes through the current memory map; if the
+            banking changed but the bytes happen to be equal, the write
+            lands elsewhere - use ``emu_region_write`` for a physical cell.
+        want_hashes: also return ``before_sha256`` and ``after_sha256``
+            without a condition.
+
     Returns:
-        On success: JSON ``{"addr": <int>, "length": <int>}``.
+        On success: JSON ``{"addr": <int>, "length": <int>}``, with a
+        condition or ``want_hashes`` also ``before_sha256`` and
+        ``after_sha256``.
         On failure: JSON ``{"error": "<text>"}`` with a region check
         diagnostic (e.g. ``"MEM_WRITE region check failed at 0x0000
-        (kind=1)"``).
+        (kind=1)"``) or ``"Precondition failed: memory changed
+        (expected_sha256=..., current_sha256=...)"``. See
+        ``emulator://docs/conditional_writes``.
     """
     if not isinstance(data_hex, str) or not data_hex:
         return json.dumps({"error": "data_hex must be a non-empty string"})
@@ -1366,8 +1577,11 @@ async def emu_mem_write(addr: int, data_hex: str) -> str:
         return json.dumps({"error": "data_hex must have even number of hex digits"})
     if any(c not in "0123456789abcdefABCDEF" for c in stripped):
         return json.dumps({"error": "data_hex contains non-hex characters"})
-    resp = await _send_request(
-        "mem_write", {"addr": addr, "data_hex": data_hex})
+    payload: dict[str, Any] = {"addr": addr, "data_hex": data_hex}
+    err = _write_cond_payload(payload, expected_sha256, want_hashes)
+    if err:
+        return json.dumps({"error": err})
+    resp = await _send_request("mem_write", payload)
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "mem_write failed")})
     return json.dumps(_data_or_error(resp))
@@ -1391,7 +1605,10 @@ async def emu_run(frames: int) -> str:
 
     Response includes ``actual_frames`` (frames actually run), ``stopped_by``
     (why it stopped: ``"frames"`` = ran the full count, ``"breakpoint"`` = a
-    breakpoint paused it first, ``"manual"`` = a manual/UI pause, ``"timeout"``
+    breakpoint paused it first, ``"manual"`` = a manual/UI pause, ``"run_to"`` = a
+    temporary breakpoint (run-to-cursor / step over), ``"exit"`` = an exit
+    condition (breakpoint action ``exit``; the emulator only pauses, the event
+    ``paused`` carries ``exit_code``), ``"timeout"``
     = safety timeout, ``"unknown"`` = other) and ``complete`` (= true only when
     the full requested count was reached, i.e. ``stopped_by == "frames"``).
 
@@ -1583,12 +1800,16 @@ async def emu_step_into() -> str:
     address (= the tool steps INTO the subroutine, unlike
     ``emu_step_over``).
 
-    The emulator must be paused before calling this tool; otherwise the
-    backend pauses it first and the step does NOT execute (caller must
-    invoke ``emu_step_into`` again after the pause settles).
+    The emulator must be paused before calling this tool. In a paused
+    emulator the tool returns after the step executed (``completed:
+    true``). On a running emulator nothing happens and the emulator keeps
+    running (``completed: false``, ``running: true``); call ``emu_pause``
+    first.
 
     Returns:
-        JSON ``{"stepped": true}`` on success.
+        JSON ``{"stepped": true, "completed": <bool>, "running": <bool>,
+        "run_seq": <int>}``. ``stepped`` is always true (compatibility);
+        ``completed`` tells whether the step really executed.
     """
     resp = await _send_request("step_into")
     if not resp.get("success", False):
@@ -1600,16 +1821,22 @@ async def emu_step_into() -> str:
 async def emu_step_over() -> str:
     """Execute one instruction, treating CALL/RST as atomic.
 
-    For ordinary instructions behaves like ``emu_step_into``. For
-    CALL/RST/DJNZ and block instructions, a temporary breakpoint is
-    placed at the return address and the emulator runs until it hits
-    that BP (= the subroutine is executed as one logical step).
+    For ordinary instructions behaves like ``emu_step_into`` (returns
+    after the step executed, ``completed: true``). For CALL/RST/DJNZ and
+    block instructions, a temporary breakpoint is placed at the return
+    address and the emulator runs until it hits that BP (= the subroutine
+    is executed as one logical step): the tool returns at once with
+    ``completed: false``, ``running: true`` and the stop emits the event
+    ``paused`` with ``reason: "run_to"``. Wait for it with
+    ``emu_wait_stop(run_seq)``.
 
-    Requires paused state; the backend rejects the call when emulation
-    is running.
+    Requires paused state; on a running emulator the call only pauses it
+    (``paused_only: true``, nothing stepped).
 
     Returns:
-        JSON ``{"stepped": true}`` on success.
+        JSON ``{"stepped": true, "completed": <bool>, "running": <bool>,
+        "run_seq": <int>}`` (plus ``paused_only``). ``stepped`` is always
+        true (compatibility).
     """
     resp = await _send_request("step_over")
     if not resp.get("success", False):
@@ -1633,7 +1860,8 @@ async def emu_step_n(count: int) -> str:
 
     Returns:
         JSON ``{"count": <int>, "requested": <int>, "partial": <bool>}``
-        where ``count`` is the actual number of executed steps.
+        where ``count`` is the actual number of executed steps. The tool
+        returns after the last step executed.
     """
     if not isinstance(count, int):
         return json.dumps({"error": "count must be an integer"})
@@ -1646,14 +1874,25 @@ async def emu_step_n(count: int) -> str:
 
 
 @mcp.tool()
-async def emu_run_until_addr(addr: int, max_cycles: int = 10_000_000) -> str:
+async def emu_run_until_addr(addr: int, max_cycles: int = 10_000_000,
+                             deadline_frames: int | None = None,
+                             deadline_ms: int | None = None,
+                             deadline_ticks: int | None = None) -> str:
     """Run emulation until PC reaches the given address.
 
     Places a temporary breakpoint at ``addr`` and resumes emulation.
     The backend pauses when PC equals ``addr`` (or when a permanent
-    breakpoint hits first). Use ``emu_status`` to poll progress; the
-    emulator currently does not automatically time out (the
-    ``max_cycles`` argument is reserved for future timeout support).
+    breakpoint hits first) and emits the event ``paused`` with
+    ``{"reason": "run_to", "pc": addr}`` (a permanent breakpoint that
+    stops instead gives ``reason: "breakpoint"``, never both). Wait for
+    the stop with ``emu_wait_stop(run_seq)`` (or the ``paused`` event).
+
+    Without a deadline the run has no limit: when ``addr`` is never
+    reached, the emulator runs until paused. Give a deadline in emulated
+    time (``deadline_frames``, ``deadline_ms`` or ``deadline_ticks``, at
+    most one, see ``emu_resume``) to stop it deterministically with the
+    reason ``"deadline"``. ``max_cycles`` is informative only (echoed,
+    never enforced).
 
     The emulator must be paused before calling this tool. If it is
     running, the call returns an error ("Emulator is running ...") and
@@ -1662,19 +1901,26 @@ async def emu_run_until_addr(addr: int, max_cycles: int = 10_000_000) -> str:
 
     Args:
         addr: target Z80 PC address (0-65535).
-        max_cycles: informative timeout in Z80 T-states; in V0.B.6 it
-            is echoed back but not enforced by the backend.
+        max_cycles: informative value in Z80 T-states (echoed back).
+        deadline_frames: stop after N frame boundaries.
+        deadline_ms: stop after N ms of emulated time.
+        deadline_ticks: stop after N GDG clock ticks.
 
     Returns:
-        JSON ``{"addr": <int>, "max_cycles": <int>, "running": true}``
-        on success.
+        JSON ``{"addr": <int>, "max_cycles": <int>, "running": true,
+        "run_seq": <int>}`` (plus ``deadline_ticks``) on success.
     """
     if not isinstance(addr, int) or addr < 0 or addr > 0xFFFF:
         return json.dumps({"error": "addr must be in range 0..65535"})
     if not isinstance(max_cycles, int) or max_cycles < 1:
         return json.dumps({"error": "max_cycles must be a positive integer"})
-    resp = await _send_request(
-        "run_until_addr", {"addr": addr, "max_cycles": max_cycles})
+    deadline, err = _deadline_arg(deadline_frames, deadline_ms, deadline_ticks)
+    if err:
+        return json.dumps({"error": err})
+    args: dict[str, Any] = {"addr": addr, "max_cycles": max_cycles}
+    if deadline is not None:
+        args["deadline"] = deadline
+    resp = await _send_request("run_until_addr", args)
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "run_until_addr failed")})
@@ -2586,32 +2832,48 @@ async def emu_symbol_list(prefix: str = "", limit: int = 100) -> str:
 
 
 @mcp.tool()
-async def emu_step_out(max_cycles: int = 10_000_000) -> str:
+async def emu_step_out(max_cycles: int = 10_000_000,
+                       deadline_frames: int | None = None,
+                       deadline_ms: int | None = None,
+                       deadline_ticks: int | None = None) -> str:
     """Run until RET from current Z80 subroutine (callstack frame pop).
 
     Uses shadow callstack tracking to look up the return address of the
     top frame, then sets a temporary breakpoint and runs until PC reaches
-    it. Useful for the "step out of this function" debug workflow.
+    it (the stop emits the event ``paused`` with ``reason: "run_to"``).
+    Useful for the "step out of this function" debug workflow.
 
     Requires callstack tracking to be active (toggle via the Callstack
     debugger window or the --callstack CLI flag). Requires emulator
     to be paused before invocation.
 
+    Wait for the stop with ``emu_wait_stop(run_seq)``. When the function
+    may never return, give a deadline in emulated time (at most one of
+    ``deadline_frames``, ``deadline_ms``, ``deadline_ticks``, see
+    ``emu_resume``); the run then stops with the reason ``"deadline"``.
+
     Args:
-        max_cycles: informational T-state cap (default 10M). Not strictly
-            enforced in V1.A.3 - the temporary breakpoint mechanism runs
-            until hit; the client should poll ``emu_get_state`` and pause
-            manually if the function never returns.
+        max_cycles: informative value (default 10M), echoed back, never
+            enforced.
+        deadline_frames: stop after N frame boundaries.
+        deadline_ms: stop after N ms of emulated time.
+        deadline_ticks: stop after N GDG clock ticks.
 
     Returns:
         JSON ``{"return_addr": <int>, "max_cycles": <int>, "running":
-        true}`` on success, or ``{"error": "..."}`` if callstack tracking
-        is inactive, the stack is empty, or the emulator is already
-        running.
+        true, "run_seq": <int>}`` (plus ``deadline_ticks``) on success, or
+        ``{"error": "..."}`` if callstack tracking is inactive, the stack
+        is empty, or the emulator is already running.
     """
     if not isinstance(max_cycles, int) or max_cycles < 1:
         return json.dumps({"error": "max_cycles must be >= 1"})
-    resp = await _send_request("step_out", {"max_cycles": max_cycles})
+    deadline, err = _deadline_arg(deadline_frames, deadline_ms, deadline_ticks)
+    if err:
+        return json.dumps({"error": err})
+    args: dict[str, Any] = {"max_cycles": max_cycles}
+    if deadline is not None:
+        args["deadline"] = deadline
+    resp = await _send_request("step_out", args)
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "step_out failed")})
     return json.dumps(_data_or_error(resp))
@@ -2637,11 +2899,16 @@ async def emu_run_until_raster(line: int, col: int = -1,
         col: target raster column on the target line (-1 = any column).
         max_cycles: safety cap on T-states spent polling (default 10M).
 
+    The loop runs in the emulator's request thread and cannot be
+    cancelled; it ends after at most 20 s of wall-clock time
+    (``time_limited: true``) so that the call answers before the 30 s
+    transport limit. The emulator then stays paused where the loop got.
+
     Returns:
         JSON ``{"scanline": <int>, "column_pixel": <int>, "frame_number":
         <int>, "total_cycles": <int>, "delta_cycles": <int>, "reached":
-        <bool>}``. ``reached=false`` means the loop timed out at the
-        safety cap.
+        <bool>, "time_limited": <bool>}``. ``reached=false`` means the
+        loop stopped at the safety cap or at the time limit.
     """
     if not isinstance(line, int) or line < 0 or line > 511:
         return json.dumps({"error": "line must be 0..511"})
@@ -2679,9 +2946,12 @@ async def emu_run_until_tstate(target_total_cycles: int,
         max_cycles: safety cap on delta T-states from the start of the
             polling loop (default 10M).
 
+    Like ``emu_run_until_raster`` the loop ends after at most 20 s of
+    wall-clock time (``time_limited: true``).
+
     Returns:
         JSON ``{"total_cycles": <int>, "target": <int>, "delta_cycles":
-        <int>, "reached": <bool>}``.
+        <int>, "reached": <bool>, "time_limited": <bool>}``.
     """
     if not isinstance(target_total_cycles, int) or target_total_cycles < 0:
         return json.dumps(
@@ -2721,10 +2991,16 @@ async def emu_run_until_event(kind: str,
         params: kind-specific parameters (optional).
         max_cycles: safety cap on T-states (default 10M).
 
+    The wait ends after at most 20 s of wall-clock time
+    (``time_limited: true``; for ``breakpoint_hit`` the emulator is then
+    paused). For long waits prefer ``emu_resume`` with a deadline and
+    ``emu_wait_stop``.
+
     Returns:
         JSON ``{"kind": <str>, "reached": <bool>, "delta_cycles": <int>,
-        ...}`` plus kind-specific fields (``frames_done`` for
-        ``frame_done``, ``paused`` for ``breakpoint_hit``).
+        "time_limited": <bool>, ...}`` plus kind-specific fields
+        (``frames_done`` for ``frame_done``, ``paused`` for
+        ``breakpoint_hit``).
     """
     if kind not in ("frame_done", "breakpoint_hit", "io_write"):
         return json.dumps(
@@ -2764,10 +3040,21 @@ async def emu_event_subscribe(topics: list[str]) -> str:
       BP would otherwise stop the emulator). Payload:
       ``{id, addr, type, hits, trap_id}``. The ``trap_id`` is used in
       ``emu_trap_respond``.
-    * ``paused`` - emulator paused for any reason (BP hit, manual pause,
-      step complete). Payload: ``{reason, pc}``.
-    * ``step_done`` - declared topic, emit hook scheduled for V1.A.5+
-      (requires mzarch step-complete hook).
+    * ``paused`` - exactly one event for every stop of the emulator
+      (breakpoint, temporary breakpoint, step, ``emu_run`` frames,
+      deadline, manual pause, exit). Payload: ``{reason, pc, run_seq,
+      step, start_ticks, stop_ticks, elapsed_ticks, frame, started_by,
+      start_cmd, stopped_by}`` plus ``bp_id`` (breakpoint), ``exit_code`` /
+      ``exit_reason`` / ``message`` (exit), ``bytes`` / ``detail``
+      (``bp_action_saturation``). Same fields as the record of
+      ``emu_wait_stop``.
+    * ``resumed`` - the emulator left a pause into a run (not for a single
+      step), also when the user resumed it in the GUI. Payload:
+      ``{run_seq, pc, started_by, start_cmd, start_ticks, deadline}``.
+    * ``step_done`` - a single step finished. Payload: ``{pc, cycles,
+      ticks, run_seq}`` (``cycles`` is a 32-bit T-state counter that wraps
+      after about 20 minutes of emulation, ``ticks`` are 64-bit GDG ticks
+      since the emulator started).
     * ``io_write`` - declared topic, emit hook scheduled for V1.A.5+
       (requires Z80 OUT hot-path hook).
 
@@ -2841,9 +3128,12 @@ async def emu_event_poll(timeout_ms: int = 0,
         return json.dumps({"error": "max_events must be in 1..100"})
     if not isinstance(timeout_ms, int) or timeout_ms < 0 or timeout_ms > 60000:
         return json.dumps({"error": "timeout_ms must be in 0..60000"})
+    # Backend smí čekat až timeout_ms: limit odpovědi = čekání + běžná
+    # rezerva SEND_TIMEOUT_S, jinak by poll nad 30 s skončil chybou wrapperu.
     resp = await _send_request(
         "event_poll",
-        {"timeout_ms": timeout_ms, "max_events": max_events})
+        {"timeout_ms": timeout_ms, "max_events": max_events},
+        timeout_s=SEND_TIMEOUT_S + timeout_ms / 1000.0)
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "event_poll failed")})
@@ -3007,7 +3297,9 @@ async def emu_nmi_inject() -> str:
 
 
 @mcp.tool()
-async def emu_mem_write_force(addr: int, data_hex: str) -> str:
+async def emu_mem_write_force(addr: int, data_hex: str,
+                              expected_sha256: Optional[str] = None,
+                              want_hashes: bool = False) -> str:
     """Write bytes to Z80 memory without region-write checks.
 
     Unlike ``emu_mem_write`` (which refuses to write into ROM, CG-ROM,
@@ -3022,18 +3314,27 @@ async def emu_mem_write_force(addr: int, data_hex: str) -> str:
     Args:
         addr: Z80 address (0-65535).
         data_hex: hex string of bytes (even length, e.g. ``"3E01C9"``).
+            The decoded byte count plus addr must not exceed 0x10000
+            (all 64 KiB in one call only from address 0).
+        expected_sha256: conditional write, same as ``emu_mem_write``.
+        want_hashes: also return ``before_sha256`` and ``after_sha256``.
 
     Returns:
-        JSON ``{"addr": <int>, "length": <int>}`` on success or
-        ``{"error": "..."}`` on failure.
+        JSON ``{"addr": <int>, "length": <int>}`` (plus the hashes with a
+        condition or ``want_hashes``) on success or ``{"error": "..."}``
+        on failure; ``Precondition failed:`` = memory changed, nothing
+        written.
     """
     if not isinstance(addr, int) or addr < 0 or addr > 0xFFFF:
         return json.dumps({"error": "addr must be 0..65535"})
     if not isinstance(data_hex, str) or not data_hex or len(data_hex) % 2 != 0:
         return json.dumps(
             {"error": "data_hex must be a non-empty even-length hex string"})
-    resp = await _send_request(
-        "mem_write_force", {"addr": addr, "data_hex": data_hex})
+    payload: dict[str, Any] = {"addr": addr, "data_hex": data_hex}
+    err = _write_cond_payload(payload, expected_sha256, want_hashes)
+    if err:
+        return json.dumps({"error": err})
+    resp = await _send_request("mem_write_force", payload)
     if not resp.get("success", False):
         return json.dumps(
             {"error": resp.get("error", "mem_write_force failed")})
@@ -3331,10 +3632,27 @@ async def emu_cdl_export(path: str) -> str:
 # The data streams continuously to chunk files under the channel's
 # configured dir/name. ``emu_trace_save`` finalizes the current segment
 # (flush + close) and may redirect the NEXT segment to a named path.
+# ``emu_trace_status`` / ``emu_trace_read`` read the records page by page
+# (cursor, filter, character budget), also while recording runs.
 
 # Valid trace channel identifiers (kept in sync with the C dispatch
 # layer in src/emulator/mcp/dispatch.c::_trace_parse_channel).
-_TRACE_CHANNELS = ("cputrack", "iorqlog", "intlog", "hwlog")
+_TRACE_CHANNELS = ("cputrack", "iorqlog", "intlog", "hwlog", "marklog")
+
+# Channels readable with emu_trace_status / emu_trace_read: the trace-suite
+# channels plus the Event Viewer ring (``eventlog``, controlled by
+# emu_eventlog_start/stop/clear, not by emu_trace_start).
+_TRACE_READ_CHANNELS = _TRACE_CHANNELS + ("eventlog", "audio_psg_writes",
+                                          "audio_levels", "audio_frames",
+                                          "ramlog")
+
+
+def _trace_read_validate_channel(channel: str) -> "str | None":
+    """Return an error message if ``channel`` cannot be read with trace_read."""
+    if not isinstance(channel, str) or channel not in _TRACE_READ_CHANNELS:
+        return ("channel must be one of: "
+                + ", ".join(_TRACE_READ_CHANNELS))
+    return None
 
 
 def _trace_validate_channel(channel: str) -> "str | None":
@@ -3362,7 +3680,8 @@ async def emu_trace_start(channel: str) -> str:
     from the current emulator state.
 
     Args:
-        channel: One of ``cputrack``, ``iorqlog``, ``intlog``, ``hwlog``.
+        channel: One of ``cputrack``, ``iorqlog``, ``intlog``, ``hwlog``,
+            ``marklog``.
 
     Returns:
         JSON ``{"started": true}`` on success or ``{"error": "..."}``.
@@ -3384,7 +3703,8 @@ async def emu_trace_stop(channel: str) -> str:
     the current segment. The recorded chunk files stay on disk.
 
     Args:
-        channel: One of ``cputrack``, ``iorqlog``, ``intlog``, ``hwlog``.
+        channel: One of ``cputrack``, ``iorqlog``, ``intlog``, ``hwlog``,
+            ``marklog``.
 
     Returns:
         JSON ``{"stopped": true}`` on success or ``{"error": "..."}``.
@@ -3400,15 +3720,20 @@ async def emu_trace_stop(channel: str) -> str:
 
 @mcp.tool()
 async def emu_trace_reset(channel: str) -> str:
-    """Reset (discard) the current trace segment of a channel.
+    """Flush the current trace segment of a channel to disk (nothing is discarded).
 
-    The streamed trace logs have no counters like CDL, so a reset means
-    closing the current segment and reopening a fresh one (the previous
-    contents become a separate, finalized segment). For ``cputrack`` the
-    HALT/self-loop collapse state is reset as well.
+    The streamed trace logs have no counters like CDL. A reset writes the
+    pending chunk and the manifest (``<name>.json``) of the current segment
+    to disk and recording continues in the **same** segment; already
+    recorded data stay. For ``cputrack`` the HALT/self-loop collapse state
+    is reset as well: the T-states of a collapsed run that are not written
+    yet are dropped and the next instruction starts a new record.
+    To start a separate segment, use ``emu_trace_save`` with a new path,
+    or ``emu_trace_stop`` and ``emu_trace_start``.
 
     Args:
-        channel: One of ``cputrack``, ``iorqlog``, ``intlog``, ``hwlog``.
+        channel: One of ``cputrack``, ``iorqlog``, ``intlog``, ``hwlog``,
+            ``marklog``.
 
     Returns:
         JSON ``{"reset": true}`` on success or ``{"error": "..."}``.
@@ -3436,7 +3761,8 @@ async def emu_trace_save(channel: str, path: str = "") -> str:
     ``trace_stop`` - that closes the segment with the correct manifest.
 
     Args:
-        channel: One of ``cputrack``, ``iorqlog``, ``intlog``, ``hwlog``.
+        channel: One of ``cputrack``, ``iorqlog``, ``intlog``, ``hwlog``,
+            ``marklog``.
         path: Optional output path for the next segment (the basename
             becomes the chunk-file prefix; the directory is created if
             missing on the next start). Empty string = keep current
@@ -3455,6 +3781,460 @@ async def emu_trace_save(channel: str, path: str = "") -> str:
     resp = await _send_request("trace_save", data)
     if not resp.get("success", False):
         return json.dumps({"error": resp.get("error", "trace_save failed")})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_ramlog_start(ranges: list[dict[str, Any]] | None = None,
+                           mode: str = "ring",
+                           capacity: int = 1048576) -> str:
+    """Start the RAM write log: record every write into the given memory ranges.
+
+    Each record: time (GDG ticks), the address of the writing instruction
+    (``pc``), the CPU address, the physical cell (``space`` + ``offset``:
+    ``ram``, ``vram``, ``pcg``, ``memext``; ``rom`` = write dropped under
+    ROM), old and new value and the source (``insn``, ``int_ack`` /
+    ``nmi_ack`` = return address pushed when an interrupt is accepted,
+    ``debugger``, ``poke``, ``freeze``, ``cmt_hack``, ``load`` = one summary
+    record of a loaded block). A banked address is a different cell: the
+    same CPU address 8000h can be RAM or VRAM. A write into the MZ-800
+    graphics VRAM gives one record per written plane.
+
+    Read the records with ``emu_trace_read(channel="ramlog")`` (writes that
+    did not change the cell are hidden unless ``filter={"all": true}``),
+    ask ``emu_ramlog_who_wrote`` (last writer from a per-cell map - works
+    even after the ring wrapped) or ``emu_ramlog_writers`` (all writing
+    instructions of a range). Starting again replaces the previous log;
+    reset and snapshot load clear it.
+
+    Args:
+        ranges: ``[{"from": 0x4000, "to": 0x40FF}]`` (CPU addresses) or
+            ``[{"space": "vram", "from": 0, "to": 0x1FFF}]`` (cells), at
+            most 16; empty = all memory (slower: no RAM fast path for
+            writes).
+        mode: ``"ring"`` (keep the newest records) or ``"fill"`` (keep the
+            first ``capacity`` records, count the rest as ``dropped``).
+        capacity: Records in the ring (16-16777216, 32 B each).
+
+    Returns:
+        Status (see ``emu_ramlog_status``) or ``{"error": ...}``.
+    """
+    data: dict[str, Any] = {"mode": mode, "capacity": capacity}
+    if ranges:
+        data["ranges"] = [dict(r) for r in ranges]
+    resp = await _send_request("ramlog_start", data)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_ramlog_stop() -> str:
+    """Stop the RAM write log; the records stay readable until the next start.
+
+    Returns:
+        Status (see ``emu_ramlog_status``).
+    """
+    resp = await _send_request("ramlog_stop", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_ramlog_clear() -> str:
+    """Empty the RAM write log (new segment); a running log continues.
+
+    Returns:
+        Status (see ``emu_ramlog_status``).
+    """
+    resp = await _send_request("ramlog_clear", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_ramlog_status() -> str:
+    """State of the RAM write log.
+
+    Returns:
+        ``{"active", "allocated", "segment", "mode", "capacity",
+        "first_seq", "next_seq", "total", "dropped", "overwritten",
+        "memory_bytes", "ranges"}``. ``first_seq`` > 0 = the ring
+        overwrote its oldest records; ``dropped`` > 0 = the ``fill`` ring
+        is full.
+    """
+    resp = await _send_request("ramlog_status", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_ramlog_who_wrote(addr: int = -1, space: str = "", offset: int = -1,
+                               limit: int = 20,
+                               include_unchanged: bool = False) -> str:
+    """Who wrote a memory cell: last writer and the write history.
+
+    Give ``addr`` (CPU address in the current banking; the MZ-800 graphics
+    VRAM gives its 4 planes) or ``space`` + ``offset`` (a physical cell, as
+    in the ``ramlog`` rows).
+
+    Args:
+        addr: CPU address 0-FFFFh.
+        space: ``ram``, ``vram``, ``pcg``, ``memext`` or ``rom``.
+        offset: Offset in the space.
+        limit: Max history records per cell (0-1000).
+        include_unchanged: Include writes that did not change the cell.
+
+    Returns:
+        ``{"active", "segment", "mmio", "cells": [{"space", "offset",
+        "plane"?, "last": {"seq", "pc", "src", "in_ring"} | null,
+        "history": [{"seq", "t", "frame", "pc", "addr", "old", "new",
+        "src", "tin"?, ...}]}]}`` (history newest first; ``t`` = start
+        of the writing instruction, ``tin`` = T-state inside it). ``last`` comes from a
+        per-cell map and is kept even when the ring overwrote the record
+        (``in_ring: false``).
+    """
+    data: dict[str, Any] = {"limit": limit, "all": include_unchanged}
+    if addr >= 0:
+        data["addr"] = addr
+    else:
+        data["space"] = space
+        data["offset"] = offset
+    resp = await _send_request("ramlog_who_wrote", data)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_ramlog_writers(from_addr: int, to_addr: int = -1, space: str = "",
+                             limit: int = 50,
+                             include_unchanged: bool = False) -> str:
+    """Which instructions wrote into a range (grouped by writing instruction).
+
+    Without ``space`` the range is CPU addresses at the time of the write;
+    with ``space`` it is cell offsets in that space.
+
+    Args:
+        from_addr: First address / offset.
+        to_addr: Last address / offset (-1 = from_addr).
+        space: Empty, or ``ram``, ``vram``, ``pcg``, ``memext``, ``rom``.
+        limit: Max writers (1-5000), most writes first.
+        include_unchanged: Include writes that did not change the cell.
+
+    Returns:
+        ``{"active", "segment", "total", "truncated", "writers": [{"pc",
+        "src", "count", "first_seq", "last_seq"}]}``.
+    """
+    data: dict[str, Any] = {"from": from_addr,
+                            "to": from_addr if to_addr < 0 else to_addr,
+                            "limit": limit, "all": include_unchanged}
+    if space:
+        data["space"] = space
+    resp = await _send_request("ramlog_writers", data)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_trace_status(channel: str = "") -> str:
+    """State of trace-suite channels for paged reading (``emu_trace_read``).
+
+    Args:
+        channel: One of ``cputrack``, ``iorqlog``, ``intlog``, ``hwlog``,
+            ``marklog``, ``eventlog`` (Event Viewer ring),
+            ``audio_psg_writes``, ``audio_levels``, ``audio_frames``
+            (audio capture memory); empty = all.
+
+    Returns:
+        JSON ``{"channels": [{channel, segment, live, truncated,
+        first_seq, next_seq, lost, record_size, format_version, chunks,
+        bytes_on_disk, dir, name, has_time}]}``. ``segment`` 0 means the
+        channel has recorded nothing yet; after ``emu_trace_stop`` the
+        last segment stays readable (``live: false``) until the next
+        start of the channel.
+    """
+    data: dict[str, Any] = {}
+    if channel:
+        err = _trace_read_validate_channel(channel)
+        if err is not None:
+            return json.dumps({"error": err})
+        data["channel"] = channel
+    resp = await _send_request("trace_status", data)
+    if not resp.get("success", False):
+        return json.dumps({"error": resp.get("error", "trace_status failed")})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_coverage_start(level: str = "branch", key: str = "opcode",
+                             capacity: int = 65536, reset: bool = False,
+                             reset_on_discontinuity: bool = False) -> str:
+    """Start code coverage: which instructions ran and which branches went which way.
+
+    ``level="branch"`` keys by logical PC: executed addresses and, for every
+    conditional instruction (JR/JP/CALL/RET cc, DJNZ, LDIR/CPIR/INIR/OTIR
+    and their decrementing forms), whether the condition was true
+    (``taken``: jump, call, return, next block iteration) and/or false.
+    About +16-29 % emulation time (measured). The bytes are decoded from memory after
+    the step.
+
+    ``level="detail"`` adds one unit per (physical cell of the first byte,
+    PC, code version) with counters ``exec``, ``taken``, ``not_taken``,
+    the last operand and the last next PC. The same PC in RAM and in ROM,
+    or in another MemExt bank, is a different unit. ``key="opcode"``: a
+    new version only when the opcode bytes change (self-modified operands
+    stay one unit flagged ``operand_varied``); ``key="full_bytes"``: the
+    first 4 bytes of the step including operands. Bytes come from the
+    instruction fetch (exactly what the CPU read), which forces the slow
+    memory callbacks: about +78-115 % emulation time (measured).
+
+    Reset, snapshot load and replay seek/rewind do not clear the data, they
+    are counted in ``discontinuities`` (``reset_on_discontinuity=true``
+    clears instead). Read with ``emu_coverage_read``; recipe in
+    ``emulator://docs/coverage``.
+
+    Args:
+        level: ``"branch"`` or ``"detail"``.
+        key: ``"opcode"`` or ``"full_bytes"`` (detail only).
+        capacity: Detail units (1-1048576, 32 B each); a unit that does not
+            fit is counted in ``dropped`` and ``complete`` turns false.
+        reset: True = start with empty data; False = continue the existing
+            data if level, key and capacity are the same.
+        reset_on_discontinuity: Clear the data on reset / snapshot load.
+
+    Returns:
+        Status (see ``emu_coverage_status``) or ``{"error": ...}``.
+    """
+    resp = await _send_request("coverage_start", {
+        "level": level, "key": key, "capacity": capacity, "reset": bool(reset),
+        "reset_on_discontinuity": bool(reset_on_discontinuity)})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_coverage_stop() -> str:
+    """Stop code coverage collection; the data stay readable.
+
+    Returns:
+        Status (see ``emu_coverage_status``).
+    """
+    resp = await _send_request("coverage_stop", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_coverage_reset() -> str:
+    """Clear the coverage data (new ``generation``); a running collection continues.
+
+    Returns:
+        Status (see ``emu_coverage_status``).
+    """
+    resp = await _send_request("coverage_reset", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_coverage_status() -> str:
+    """Code coverage status and completeness.
+
+    Fields: ``active``, ``level``, ``key``, ``units`` (detail: units,
+    branch: executed addresses), ``capacity``, ``complete`` (nothing
+    dropped, all bytes from the fetch, no saturated counter), ``dropped``,
+    ``fetch_fallback``, ``saturated``, ``discontinuities``,
+    ``host_state_edits`` (PC or AF changed by the debugger),
+    ``instructions`` (steps without idle HALT), ``halt_idle``, ``epoch``,
+    ``generation`` and ``branches`` {``decisions``, ``both``,
+    ``taken_only``, ``not_taken_only``}.
+
+    Returns:
+        Status JSON.
+    """
+    resp = await _send_request("coverage_status", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_coverage_mark() -> str:
+    """Start a new coverage epoch ("from now on").
+
+    Every address and unit remembers the epoch in which it first ran;
+    ``emu_coverage_read(filter={"new_since_epoch": N})`` then lists only
+    code that ran for the first time after the mark (e.g. what a key press
+    or a game level added).
+
+    Returns:
+        Status with the new ``epoch``.
+    """
+    resp = await _send_request("coverage_mark", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_coverage_read(cursor: str = "", columns: list[str] | None = None,
+                            filter: dict[str, Any] | None = None,
+                            limit: int = 500, max_chars: int = 20000) -> str:
+    """Read code coverage rows page by page, sorted by PC.
+
+    branch rows (executed addresses): ``pc``, ``state``, ``int_entry``,
+    ``first_epoch``. detail rows (units): ``pc``, ``space``, ``offset``,
+    ``key`` (opcode bytes in hex), ``len``, ``exec``, ``taken``,
+    ``not_taken``, ``state``, ``operand`` (last operand, null without one),
+    ``next_pc``, ``first_epoch``, ``flags``. ``state`` is ``none``
+    (unconditional), ``unobserved``, ``taken_only``, ``not_taken_only`` or
+    ``both``. Rows are arrays in the order of ``columns``.
+
+    Args:
+        cursor: ``next_cursor`` of the previous page; empty = from the start.
+            After ``emu_coverage_reset`` or a new start an old cursor fails
+            with ``segment_replaced:``.
+        columns: Subset of the columns of the level (default all).
+        filter: ``pc_from``, ``pc_to``, ``space`` (detail: ram, vram, pcg,
+            memext, rom, bus), ``state`` (one name or a list; also
+            ``"partial"`` = one branch only, ``"decision"`` = any
+            conditional), ``new_since_epoch``, ``flags`` (list, any of:
+            decision, operand_varied, int_entry, cmt_trap, fetch_fallback,
+            saturated, halt, cell_bus, prefix_split, key_truncated).
+        limit: Rows per page (1-5000).
+        max_chars: Page size limit in characters (1000-45000).
+
+    Returns:
+        Status fields plus ``columns``, ``rows``, ``returned``,
+        ``page_full``, ``end_of_data`` and ``next_cursor``.
+    """
+    data: dict[str, Any] = {"limit": limit, "max_chars": max_chars}
+    if cursor:
+        data["cursor"] = cursor
+    if columns:
+        data["columns"] = list(columns)
+    if filter:
+        data["filter"] = dict(filter)
+    resp = await _send_request("coverage_read", data)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_coverage_export(path: str, format: str = "json") -> str:
+    """Write all coverage rows into a file (overwritten).
+
+    ``format="json"``: ``{"format": "mz800emu-coverage/1", "status",
+    "columns", "rows": [{...}]}``; ``format="csv"``: header and rows, flags
+    separated by ``|``. Two JSON exports of two runs can be compared to
+    find code that ran in only one of them.
+
+    Args:
+        path: Target file path (as seen by the emulator process).
+        format: ``"json"`` or ``"csv"``.
+
+    Returns:
+        Status plus ``path``, ``format`` and ``rows``.
+    """
+    resp = await _send_request("coverage_export", {"path": path, "format": format})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_trace_read(channel: str, cursor: str = "", start: str = "oldest",
+                         limit: int = 200, format: str = "rows",
+                         columns: list[str] | None = None,
+                         filter: dict[str, Any] | None = None,
+                         max_chars: int = 20000,
+                         max_scan: int = 2000000) -> str:
+    """Read one page of trace-suite, Event Viewer or audio capture records,
+    also while running.
+
+    Records are numbered by ``seq`` within a ``segment`` (one recording).
+    Page through with ``next_cursor``; ``end_of_data: true`` means the page
+    reached the newest record (run the emulator and read on with the same
+    cursor). Data still in RAM is readable too - no need to stop or save
+    the trace first. A cursor from an older segment (the channel was
+    restarted) returns an error starting with ``segment_replaced:``;
+    read again from the start.
+
+    Columns (``rows``, values in this canonical order):
+      cputrack: seq, pc, bytes, asm, t_std, wait, t, sym
+      iorqlog:  seq, t, frame, pos, type, dir, src, addr, value, pulse
+      intlog:   seq, t, frame, pos, class, chip, pin, edge, state
+      hwlog:    seq, t, frame, pos, chip, sub, payload
+      marklog:  seq, t, frame, pos, id, name
+      eventlog: seq, t, frame, pos, cat, sub, pc, text
+      audio_psg_writes: seq, t, time_us, frame, psg, byte, ch, reg, value,
+                hz, note
+      audio_levels: seq, t, time_us, frame, channel, level
+      audio_frames: seq, t, time_us, len_ticks, edges, on_pct, rms_level,
+                max_level, ref_rms, ref_peak, sdl_rms, sdl_peak, sdl_blocks
+      ramlog:   seq, t, frame, pc, sym, addr, space, offset, plane, old, new,
+                src, flags, count, tin
+    ``t`` is in GDG ticks since emulation start (cputrack: start of the
+    instruction, only with ``has_time``, i.e. no PC range record filter).
+    cputrack ``asm`` is decoded from the recorded bytes (not current
+    memory); an interrupt acknowledge record shows ``INT ACK``. The
+    Event Viewer ring (``eventlog``) overwrites its oldest events: a cursor
+    below ``first_seq`` is no error, the page starts at ``first_seq`` and
+    ``gap`` names the lost range.
+
+    The ``audio_*`` channels read the memory of the audio capture
+    (``emu_audio_capture_start`` with ``memory=True``, the default): the
+    same data as psg_writes.csv and events.csv plus one summary row per
+    audio frame (``seq`` = frame). ``time_us`` counts from the capture
+    start; ``hz``/``note`` are given for a new tone divider (``reg``
+    ``tone``), computed with the emulator's PSG formula. ``audio_frames``
+    lists per-channel arrays in the order of ``emu_audio_capture_status``
+    ``channels``: ``edges`` (level changes), ``on_pct`` (time with level >
+    0), ``rms_level`` (0-15), ``max_level``; ``ref_*`` / ``sdl_*`` are
+    ``[L, R]`` int16 RMS / peak of the reference render and the output
+    path (null when not captured). These rings drop their oldest records
+    when full (``gap``); the next capture start replaces them
+    (``segment_replaced``).
+
+    Args:
+        channel: ``cputrack``, ``iorqlog``, ``intlog``, ``hwlog``,
+            ``marklog``, ``eventlog``, ``audio_psg_writes``,
+            ``audio_levels``, ``audio_frames`` or ``ramlog`` (RAM write
+            log, see ``emu_ramlog_start``).
+        cursor: ``next_cursor`` of the previous page (takes precedence over
+            ``start``).
+        start: ``"oldest"``, ``"newest"`` (last ``limit`` records) or
+            ``"seq:N"``.
+        limit: Max rows per page (1-5000); with ``raw_b64`` the record
+            count (0 = as many as fit in 1 MiB).
+        format: ``"rows"`` (decoded) or ``"raw_b64"`` (raw records, no
+            filter; ``record_size`` and ``format_version`` describe them).
+        columns: Subset of the channel's columns (default all).
+        filter: Optional keys ``pc_from``/``pc_to`` (cputrack), ``port``
+            (<= 0xFF matches the low byte), ``dir`` (``in``/``out``),
+            ``type`` (``iorq``, ``mreq_mapped``, ``iorq_unconnected``)
+            (iorqlog), ``chip``/``sub`` (hwlog), ``marker`` (marklog id),
+            ramlog: ``pc_from``/``pc_to`` (writing instruction),
+            ``addr_from``/``addr_to`` (CPU address), ``space``, ``src``,
+            ``all`` (also writes that did not change the cell or were
+            dropped under ROM - hidden by default),
+            ``channels`` (list of channel names such as ``"ctc0"``,
+            ``"psg0_1"``; audio_levels, audio_psg_writes), ``reg``
+            (``tone_lo``, ``tone``, ``volume``, ``noise``; audio_psg_writes),
+            ``t_from``/``t_to`` (channels with ``t``).
+        max_chars: Character budget of a ``rows`` page (1000-45000); the
+            whole response stays within it.
+        max_scan: Max records examined per call; when exhausted the page
+            returns ``scan_exhausted: true`` and a cursor to continue.
+
+    Returns:
+        JSON with ``channel``, ``segment``, ``first_seq``, ``next_seq``,
+        ``live``, ``truncated``, ``lost``, ``gap``, ``scanned``,
+        ``matched``, ``scan_exhausted``, ``page_full``, ``end_of_data``,
+        ``columns`` + ``rows`` (or ``record_size``, ``format_version``,
+        ``from_seq``, ``count``, ``data_b64``) and ``next_cursor``; or
+        ``{"error": "..."}``.
+    """
+    err = _trace_read_validate_channel(channel)
+    if err is not None:
+        return json.dumps({"error": err})
+    data: dict[str, Any] = {"channel": channel, "limit": limit,
+                            "format": format, "max_chars": max_chars,
+                            "max_scan": max_scan}
+    if cursor:
+        data["cursor"] = cursor
+    else:
+        data["from"] = start
+    if columns:
+        data["columns"] = list(columns)
+    if filter:
+        data["filter"] = dict(filter)
+    resp = await _send_request("trace_read", data)
+    if not resp.get("success", False):
+        return json.dumps({"error": resp.get("error", "trace_read failed")})
     return json.dumps(_data_or_error(resp))
 
 
@@ -5053,7 +5833,8 @@ async def emu_get_cpu_flags() -> str:
 @mcp.tool()
 async def emu_set_cpu_flags(iff1: int = -1, iff2: int = -1,
                             im: int = -1, i: int = -1,
-                            r: int = -1) -> str:
+                            r: int = -1,
+                            expected: Optional[dict[str, int]] = None) -> str:
     """Selectively update Z80 interrupt-related state (IFF1/IFF2/IM/I/R).
 
     WARNING: This is a destructive operation. Each argument is optional
@@ -5074,15 +5855,21 @@ async def emu_set_cpu_flags(iff1: int = -1, iff2: int = -1,
         r: Memory Refresh register (0..255). All 8 bits are written,
             including bit 7, the same as the LD R,A instruction (the
             refresh counter itself only increments bits 0-6).
+        expected: conditional write - expected current values of the
+            fields being written, e.g. ``{"iff1": 1}`` together with
+            ``iff1=0`` (only fields this call writes; ``r`` compares the
+            whole byte). On a mismatch nothing is written and the error
+            starts with ``Precondition failed: cpu flags changed``.
 
     Returns:
-        JSON ``{"updated": ["iff1", "im", ...], "values": {...}}``
-        where ``updated`` lists the field names that were written and
-        ``values`` echoes their final values. ``{"error": "..."}``
+        JSON ``{"updated": ["iff1", "im", ...], "values": {...},
+        "previous": {...}}`` where ``updated`` lists the field names that
+        were written, ``values`` echoes their final values and
+        ``previous`` their values before the write. ``{"error": "..."}``
         is returned when no field is provided or the IM value is out
         of range.
     """
-    payload: dict[str, int] = {}
+    payload: dict[str, Any] = {}
     if iff1 >= 0:
         if iff1 not in (0, 1):
             return json.dumps({"error": "iff1 must be 0 or 1"})
@@ -5107,6 +5894,8 @@ async def emu_set_cpu_flags(iff1: int = -1, iff2: int = -1,
         return json.dumps(
             {"error": "no field specified - provide at least one of "
                        "iff1/iff2/im/i/r"})
+    if expected:
+        payload["expected"] = dict(expected)
     resp = await _send_request("set_cpu_flags", payload)
     return json.dumps(_data_or_error(resp))
 
@@ -5175,6 +5964,65 @@ async def emu_get_cpu_panel_batch(want_im2: bool = False,
     if want_last_instr:
         payload["want_last_instr"] = True
     resp = await _send_request("get_cpu_panel_batch", payload or None)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_state_observe(windows: list[dict[str, Any]],
+                            include: list[str] | None = None,
+                            hashes: list[str] | None = None,
+                            want_data: bool = True) -> str:
+    """Read registers, flags and several memory windows from ONE moment.
+
+    Use this instead of ``emu_get_cpu_panel_batch`` + ``emu_mem_read``
+    whenever registers and memory must belong together (a pointer and the
+    data it points to, a counter and its register copy). Two separate
+    calls always come from two different moments while the emulator runs;
+    this tool reads everything in one pass of the emulator thread. While
+    running the moment is the start of a video frame (the call waits up
+    to one frame, about 20 ms); in pause it is the paused state.
+
+    Each window is either a CPU address range read through the current
+    memory map, ``{"addr": 0x3000, "len": 2}``, or a physical region from
+    ``emu_regions_list`` addressed by kind and sub_id (not by region id,
+    so it stays valid after a hardware change),
+    ``{"region": {"kind": "vram_phys_plane", "sub_id": 0}, "offset": 0,
+    "length": 256}``. Optional per window: ``name`` (echoed back, max 64
+    characters) and ``want_data``. At most 16 windows and 65536 bytes in
+    total. Reads have no side effects.
+
+    Each returned window has ``sha256`` (same as ``emu_mem_read`` /
+    ``emu_region_read`` of the same range - pass it as ``expected_sha256``
+    to a conditional write) and ``data_b64`` unless ``want_data`` is
+    false. A region that is not connected gives the window
+    ``error: "region_unavailable"`` and ``complete: false``; the call
+    still succeeds. Prefer ``want_data=False`` above a few KiB to keep the
+    response small. See ``emulator://docs/state_observe``.
+
+    Args:
+        windows: list of 0..16 windows (see above).
+        include: optional sections ``raster``, ``im2``, ``last_instr``
+            (schema of ``emu_get_cpu_panel_batch``) and ``memory_map``
+            (16 slots of 4 KiB with the page ``kind`` of the current
+            banking).
+        hashes: optional SHA-256 of whole state parts ``cpu``, ``ram``,
+            ``vram``, ``memext``, ``pcg`` (same definition as replay and
+            ``result.json``; a part that does not exist is ``null``).
+        want_data: default for windows without their own ``want_data``.
+
+    Returns:
+        JSON object with ``run_seq``, ``running``, ``stable`` (true only
+        in pause), ``drain`` (``frame`` or ``paused``), ``time``
+        (``frame``, ``frame_ticks``, ``total_cycles``), ``regs``,
+        ``flags``, ``windows``, ``complete`` and the requested optional
+        sections.
+    """
+    payload: dict[str, Any] = {"windows": windows, "want_data": bool(want_data)}
+    if include:
+        payload["include"] = include
+    if hashes:
+        payload["hashes"] = hashes
+    resp = await _send_request("state_observe", payload)
     return json.dumps(_data_or_error(resp))
 
 
@@ -5643,14 +6491,19 @@ async def emu_regions_list() -> str:
     """List all physical memory regions of the current architecture.
 
     Returns a snapshot of regions (ROM lower/upper, CG-ROM, VRAM,
-    CG-RAM/PCG, MemExt banks, Ramdisk banks, ...) with metadata. IDs
-    are session-stable but become invalid after HW reconfigure
-    (= peripheral attach/detach, media insert). Re-list after such
-    operations.
+    CG-RAM/PCG, MemExt banks, Ramdisk banks, ...) with metadata. An
+    ``id`` is an index into the list and stays valid until the hardware
+    configuration changes (RAMdisk, MemExt, PEZIK, loading a snapshot
+    with a different configuration). ``layout_gen`` identifies the
+    layout of the list; ``emu_region_read`` / ``emu_region_write`` with
+    an ``id`` from an older list fail with ``stale region id`` - call
+    this tool again. To keep an address across such changes, store
+    ``kind`` and ``sub_id``.
 
     Returns:
         JSON ``{"regions": [{id, kind, sub_id, name, logical_base,
-        size, writable, connected, mapped_now}, ...], "count": int}``.
+        size, writable, connected, mapped_now}, ...], "count": int,
+        "layout_gen": int}``.
 
         - ``kind`` is one of: ``logical, ram, rom_lower, rom_upper,
           cgrom, cgram_700, vram_700_char, vram_700_attr,
@@ -5669,7 +6522,8 @@ async def emu_regions_list() -> str:
 
 @mcp.tool()
 async def emu_region_read(region_id: int, offset: int = 0,
-                          length: int = 256) -> str:
+                          length: int = 256, want_data: bool = True,
+                          layout_gen: int = 0) -> str:
     """Read raw bytes from a physical memory region (bypass Z80
     banking).
 
@@ -5678,16 +6532,21 @@ async def emu_region_read(region_id: int, offset: int = 0,
     of the emulator - exactly what the GUI Memory browser sees.
 
     Args:
-        region_id: ID from a previous ``emu_regions_list`` call. IDs
-            are stable per session, invalid after HW reconfigure.
+        region_id: ID from a previous ``emu_regions_list`` call. Invalid
+            after a hardware configuration change (error
+            ``stale region id``).
         offset: Byte offset within the region (0..size-1).
         length: Number of bytes to read (1..65536). Clamps to region
             size if ``offset+length > size``.
+        want_data: False = only ``sha256``, no ``data_b64``.
+        layout_gen: ``layout_gen`` of the list ``region_id`` comes from;
+            0 = the last ``emu_regions_list`` call of any client.
 
     Returns:
         JSON ``{"region_id": int, "offset": int, "length": int,
-        "data_b64": "..."}``. ``length`` reflects the actual number of
-        bytes read after clamping. On error: ``{"error": "..."}``.
+        "sha256": "...", "data_b64": "..."}``. ``length`` reflects the
+        actual number of bytes read after clamping, ``sha256`` is the
+        SHA-256 of those bytes. On error: ``{"error": "..."}``.
     """
     if region_id < 0:
         return json.dumps({"error": "region_id must be >= 0"})
@@ -5695,15 +6554,21 @@ async def emu_region_read(region_id: int, offset: int = 0,
         return json.dumps({"error": "offset must be >= 0"})
     if length < 1 or length > 65536:
         return json.dumps({"error": "length must be in range 1..65536"})
-    resp = await _send_request("region_read",
-                               {"region_id": region_id,
-                                "offset": offset, "length": length})
+    if layout_gen < 0:
+        return json.dumps({"error": "layout_gen must be >= 0"})
+    params = {"region_id": region_id, "offset": offset, "length": length,
+              "want_data": bool(want_data)}
+    if layout_gen:
+        params["layout_gen"] = layout_gen
+    resp = await _send_request("region_read", params)
     return json.dumps(_data_or_error(resp))
 
 
 @mcp.tool()
 async def emu_region_write(region_id: int, offset: int,
-                           data_b64: str) -> str:
+                           data_b64: str, layout_gen: int = 0,
+                           expected_sha256: Optional[str] = None,
+                           want_hashes: bool = False) -> str:
     """Write raw bytes into a physical memory region (bypass Z80
     banking).
 
@@ -5721,10 +6586,24 @@ async def emu_region_write(region_id: int, offset: int,
         region_id: ID from a previous ``emu_regions_list`` call.
         offset: Byte offset within the region (0..size-1).
         data_b64: Base64-encoded bytes (max 65536 bytes per call).
+        layout_gen: As for ``emu_region_read``; with an ``id`` from an
+            older list nothing is written.
+        expected_sha256: conditional write - write only if the SHA-256 of
+            the bytes being overwritten (after clipping at the region
+            end) still equals this value, e.g. the ``sha256`` of
+            ``emu_region_read`` or of a ``emu_state_observe`` region window
+            of the same range. Checked and written in one step in the
+            emulator thread; on a mismatch nothing is written and the
+            error starts with ``Precondition failed:``. A physical region
+            is not affected by banking, so this is the safest conditional
+            write. Errors of the id, ``layout_gen`` and read-only regions
+            come first.
+        want_hashes: also return ``before_sha256`` and ``after_sha256``.
 
     Returns:
-        JSON ``{"region_id", "offset", "length", "written"}``. On
-        error ``{"error": "..."}``.
+        JSON ``{"region_id", "offset", "length", "written"}`` (plus
+        ``before_sha256`` / ``after_sha256`` with a condition or
+        ``want_hashes``). On error ``{"error": "..."}``.
     """
     if region_id < 0:
         return json.dumps({"error": "region_id must be >= 0"})
@@ -5732,10 +6611,16 @@ async def emu_region_write(region_id: int, offset: int,
         return json.dumps({"error": "offset must be >= 0"})
     if not data_b64:
         return json.dumps({"error": "data_b64 must be non-empty"})
-    resp = await _send_request("region_write",
-                               {"region_id": region_id,
-                                "offset": offset,
-                                "data_b64": data_b64})
+    if layout_gen < 0:
+        return json.dumps({"error": "layout_gen must be >= 0"})
+    params: dict[str, Any] = {"region_id": region_id, "offset": offset,
+                              "data_b64": data_b64}
+    if layout_gen:
+        params["layout_gen"] = layout_gen
+    err = _write_cond_payload(params, expected_sha256, want_hashes)
+    if err:
+        return json.dumps({"error": err})
+    resp = await _send_request("region_write", params)
     return json.dumps(_data_or_error(resp))
 
 
@@ -6032,6 +6917,17 @@ async def resource_state() -> str:
     data = resp.get("data", {}) or {}
     data["transport"] = TRANSPORT_KIND
     return json.dumps(data)
+
+
+@mcp.resource("emulator://run/history")
+async def resource_run_history() -> str:
+    """Newest stop records of the emulator (oldest first, up to 32).
+
+    Same content as ``emu_get_stop_history``: why and where each run
+    stopped, who started it and how long it ran.
+    """
+    resp = await _send_request("get_stop_history", {"limit": 32})
+    return json.dumps(_data_or_error(resp))
 
 
 @mcp.resource("emulator://cpu/registers")
@@ -7135,7 +8031,9 @@ async def resource_frame_screenshot_raw() -> str:
     and reports the value actually used.
 
     ``source_screen_id`` is the frame counter at the moment of the
-    snapshot - lets the client deduplicate identical screenshots.
+    snapshot - lets the client deduplicate identical screenshots. The
+    reply also carries ``image_sha256``, ``vram_sha256``, ``beam`` and
+    ``paused`` (see ``emu_frame_hash``).
 
     ``available=false`` is returned only when the emulator has not yet
     emitted a single frame (``fbsnapshot_pixels`` is NULL).
@@ -7170,6 +8068,264 @@ async def resource_frame_screenshot() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_frame_screenshot")
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_frame_hash() -> str:
+    """SHA-256 of the screen picture and of the video memory, without the data.
+
+    ``image_sha256`` hashes the picture from the same source as a
+    screenshot: the palette index of every pixel (row by row), then the
+    16 palette colours as R, G, B. ``vram_sha256`` hashes the video
+    memory (MZ-800: all four planes; MZ-700 / MZ-1500: character and
+    attribute VRAM). The picture also depends on GDG registers (palette,
+    mode, border), the VRAM hash does not - compare both when needed.
+
+    Paused in the middle of a frame, part of the picture is still from
+    the previous frame and the hash depends on the beam position
+    (``beam``: ``frame``, ``scanline``, ``column``); compare pictures at a
+    frame boundary (after ``emu_run(frames)`` or ``deadline_frames``).
+    The screenshot resources return the same ``image_sha256``.
+
+    Returns:
+        JSON ``{"available": <bool>, "image_sha256": str, "vram_sha256":
+        str, "source_screen_id": int, "image_source": "sdl_snapshot" |
+        "gdg_live", "width": int, "height": int, "beam": {...},
+        "paused": <bool>}``.
+    """
+    resp = await _send_request("frame_hash")
+    return json.dumps(_data_or_error(resp))
+
+
+# ---------------------------------------------------------------------------
+# Replay: record inputs once, play them back exactly (replay-core)
+# ---------------------------------------------------------------------------
+
+#: Seconds the wrapper waits for a replay request (the emulator waits up
+#: to 10 s for the emulation thread, a start also saves / loads a snapshot).
+_REPLAY_TIMEOUT_S = 20.0
+
+
+@mcp.tool()
+async def emu_replay_record_start(path: str, hash_interval: int = 50,
+                                  description: Optional[str] = None,
+                                  checkpoint_interval: Optional[int] = None,
+                                  checkpoint_count: Optional[int] = None) -> str:
+    """Start recording the emulator inputs into a replay file (``.mzr``).
+
+    The recording starts from a complete snapshot of the machine (always
+    with the RAM disk) plus the contents of the mounted disks and tape
+    (up to 64 MB together) and stores every change of the keyboard matrix
+    and joystick state at a frame boundary (host joystick read once per
+    frame), resets, autotype, tape control (``emu_cmt_play`` / ``_stop`` /
+    ``_pause`` / ``_eject``, ``emu_cmt_tape_seek``, ``emu_cmt_record``)
+    and debugger writes (``emu_mem_write``, ``emu_set_register``,
+    ``emu_io_write``, region writes, IRQ / NMI injection), plus SHA-256
+    hashes of the CPU, RAM, MemExt, VRAM, PCG and peripherals every
+    ``hash_interval`` frames. Play it back with ``emu_replay_play``: the
+    run repeats exactly, also in a new process without the media files
+    and at any speed, so you can repeat a bug with other breakpoints,
+    trace or ramlog.
+
+    While recording:
+
+    * keyboard input from the GUI is taken at the next frame boundary,
+    * a write or input change while paused **between** frame boundaries
+      (after a step or a breakpoint) is refused - pause at a boundary
+      with ``emu_run(frames=N)`` or a ``deadline`` first; while running,
+      writes are taken at the frame boundary automatically,
+    * tape control is recorded like a write (refused between boundaries),
+    * loading a snapshot, media, inserting a tape, tape speed / polarity,
+      the CMT hack, settings and Freeze Bytes are refused (they cannot be
+      repeated).
+
+    When the emulation runs, it pauses at the next frame boundary, the
+    recording starts and the emulation runs on; when paused it stays
+    paused.
+
+    Every ``checkpoint_interval`` frames a checkpoint (a snapshot in
+    memory) is kept, the last ``checkpoint_count`` of them; go back to one
+    with ``emu_replay_rewind`` and record a different path from there.
+
+    Args:
+        path: Replay file on the emulator host (overwritten on stop).
+        hash_interval: Frames between state hashes (1..100000).
+        description: Optional text stored in the manifest.
+        checkpoint_interval: Frames between checkpoints (0..100000, 0 = no
+            checkpoints); default from the ``[REPLAY]`` INI section (250).
+        checkpoint_count: Checkpoints kept (1..1000); default from the INI
+            (60).
+
+    Returns:
+        JSON with the replay status (see ``emu_replay_status``), or an
+        error (``recording or playback is already running``, ``autotype
+        is running``, ``Freeze Bytes are active``, ``the tape is
+        recording``, ...).
+    """
+    data: dict[str, Any] = {"path": path, "hash_interval": hash_interval}
+    if description is not None:
+        data["description"] = description
+    if checkpoint_interval is not None:
+        data["checkpoint_interval"] = checkpoint_interval
+    if checkpoint_count is not None:
+        data["checkpoint_count"] = checkpoint_count
+    resp = await _send_request("replay_record_start", data, timeout_s=_REPLAY_TIMEOUT_S)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_replay_record_stop() -> str:
+    """Stop recording and save the replay file.
+
+    Stopped at a frame boundary (running, or paused after
+    ``emu_run(frames=N)``), the replay ends with a final state hash.
+    Stopped in a pause between boundaries, it ends at the last boundary.
+
+    Returns:
+        JSON status with ``outcome: "recorded"`` and ``outcome_message``
+        (frames, events, file), or an error (``no recording is
+        running``, a write error).
+    """
+    resp = await _send_request("replay_record_stop", timeout_s=_REPLAY_TIMEOUT_S)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_replay_play(path: str, pause_after_load: bool = False,
+                          checkpoint_interval: Optional[int] = None,
+                          checkpoint_count: Optional[int] = None) -> str:
+    """Play a replay file back from its start snapshot.
+
+    Live input (GUI keyboard, virtual keyboard, MCP keys) is ignored
+    during playback. Every recorded hash is compared; the first frame
+    where the state differs stops the playback (pause reason
+    ``replay_desync``, ``outcome: "desync"``, ``desync_parts`` such as
+    ``cpu``, ``ram``, ``vram``, ``periph``, ``time``). The stored disks
+    and tape are mounted from copies (original files and INI unchanged,
+    the INI media return after the end). At the end the emulation
+    pauses with reason ``replay_end`` (``outcome: "ended"``); wait for it
+    with ``emu_wait_stop`` or poll ``emu_replay_status``.
+
+    Breakpoints, trace and ramlog may stay on. A write to the machine
+    during playback (``emu_mem_write``, a breakpoint ``poke`` / ``set``
+    action, Freeze Bytes, reset, loading a snapshot, tape control) marks
+    the playback as ``deviated``: it goes on, but hashes are no longer
+    checked.
+
+    Jump to any frame with ``emu_replay_seek`` (back via the checkpoints
+    kept during this playback).
+
+    Args:
+        path: Replay file on the emulator host.
+        pause_after_load: True = stay paused after loading the start
+            snapshot (set breakpoints, then ``emu_resume``); False = run.
+        checkpoint_interval: Frames between checkpoints of this playback
+            (0..100000, 0 = none: every seek back starts from the
+            beginning); default from the INI (250).
+        checkpoint_count: Checkpoints kept (1..1000); default from the INI
+            (60).
+
+    Returns:
+        JSON status (``mode: "playing"``, ``frames``), or an error (file
+        not readable, other platform or TV system, replay with debugger
+        events in a build without the debugger, a joystick port connected
+        only in one of the two, the CMT hack set differently, an image not
+        stored in the replay that differs from the mounted one).
+    """
+    data: dict[str, Any] = {"path": path, "pause_after_load": pause_after_load}
+    if checkpoint_interval is not None:
+        data["checkpoint_interval"] = checkpoint_interval
+    if checkpoint_count is not None:
+        data["checkpoint_count"] = checkpoint_count
+    resp = await _send_request("replay_play", data, timeout_s=_REPLAY_TIMEOUT_S)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_replay_play_stop() -> str:
+    """Stop a running playback (``outcome: "stopped"``); live input works again.
+
+    Returns:
+        JSON status, or an error (``no playback is running``).
+    """
+    resp = await _send_request("replay_play_stop", timeout_s=_REPLAY_TIMEOUT_S)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_replay_rewind(frames: int = 0) -> str:
+    """Go back to a checkpoint of the running recording or playback.
+
+    While recording: the machine returns to the checkpoint, the inputs and
+    hashes after it are dropped, ``rerecord_count`` grows by one and the
+    recording goes on from there (the emulation stays paused at the
+    checkpoint frame boundary; ``emu_resume`` to continue). While playing:
+    the same as ``emu_replay_seek`` to that checkpoint.
+
+    A checkpoint after which a disk (FDC, Quick Disk, IDE8) or the tape was
+    written or the tape ejected cannot be used: checkpoints do not hold
+    media contents. While recording the rewind is then refused; while
+    playing the seek starts the playback again from the beginning.
+
+    Args:
+        frames: 0 = one checkpoint back (the newest one before the current
+            frame; call again to go further); N = the newest checkpoint at
+            least N frames back.
+
+    Returns:
+        JSON status (``frame`` = checkpoint frame, ``rerecord_count``,
+        ``checkpoints``), or an error (``checkpoints are off``, ``no
+        checkpoint at or before frame N``, ``a disk or the tape was written
+        or ejected after frame N``, ``nothing is recording or playing``).
+    """
+    resp = await _send_request("replay_rewind", {"frames": frames}, timeout_s=_REPLAY_TIMEOUT_S)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_replay_seek(frame: int) -> str:
+    """Jump the running playback to a frame.
+
+    Forward: the playback runs on at MAX SPEED and stops at the frame
+    boundary of ``frame`` (pause reason ``replay_seek``; wait with
+    ``emu_wait_stop``). Back: the newest usable checkpoint at or before
+    ``frame`` is loaded (otherwise the playback starts again from the
+    beginning with clean copies of the media) and the rest is played at
+    MAX SPEED. Hashes are checked all the way; breakpoints stay active and
+    may stop the seek early. The speed before the seek returns at the end.
+    A frame past the end of the replay is limited to the end.
+
+    Args:
+        frame: Target frame counted from the start of the replay.
+
+    Returns:
+        JSON status right after the start: ``seeking: true`` = running to
+        ``seek_target``, ``false`` = already standing at the frame; or an
+        error (``seek works only during playback``).
+    """
+    resp = await _send_request("replay_seek", {"frame": frame}, timeout_s=_REPLAY_TIMEOUT_S)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_replay_status() -> str:
+    """Status of recording and playback.
+
+    Returns:
+        JSON ``{"mode": "off" | "recording" | "playing", "frame": int,
+        "frames": int (replay length while playing), "events": int,
+        "hashes": int, "hash_interval": int, "warnings": int,
+        "deviated": bool, "deviation": str, "path": str, "outcome":
+        "none" | "recorded" | "ended" | "desync" | "stopped" | "error",
+        "outcome_frame": int, "outcome_message": str, "desync_parts":
+        [str], "rerecord_count": int, "seeking": bool, "seek_target": int,
+        "checkpoints": {"interval": int, "capacity": int, "count": int,
+        "first_frame": int, "last_frame": int, "bytes": int}}``.
+        ``outcome*`` describe the last finished recording or playback;
+        ``first_frame`` / ``last_frame`` are present only with ``count`` > 0.
+    """
+    resp = await _send_request("replay_status")
     return json.dumps(_data_or_error(resp))
 
 
@@ -7469,7 +8625,10 @@ async def emu_profiler_pc_bitmap() -> str:
 async def emu_audio_capture_start(dir: str = "", frames: int = 0,
                                   events: bool = True, psg_writes: bool = True,
                                   reference_wav: bool = True,
-                                  sdl_wav: bool = True) -> str:
+                                  sdl_wav: bool = True, memory: bool = True,
+                                  pcm: list[str] | None = None,
+                                  memory_minutes: int = 10,
+                                  pcm_seconds: int = 60) -> str:
     """Start capturing what the sound hardware does - for finding sound bugs.
 
     Files written into ``dir`` in emulated time:
@@ -7495,6 +8654,16 @@ async def emu_audio_capture_start(dir: str = "", frames: int = 0,
     * ``capture.json`` - platform, clock, channel names, counts, stop
       reason (written at the end).
 
+    With ``memory`` (default) the capture also keeps rings in memory that
+    can be read while it runs and after it ends, until the next start -
+    no file access needed (also for a remote client): ``emu_trace_read``
+    channels ``audio_psg_writes``, ``audio_levels`` (the CSV rows) and
+    ``audio_frames`` (one summary per audio frame),
+    ``emu_audio_capture_summary`` (what happened: silence, notes, speaker
+    tone or PCM, reference vs output path) and ``emu_audio_capture_pcm``
+    (a short PCM window). A capture to memory only (all four files off)
+    creates no folder.
+
     ``ticks`` are GDG clock ticks since the start (``gdg_clk_hz`` in
     capture.json), ``frame`` is the audio frame (one video frame) since
     the start. The capture begins at the end of the next audio frame; with
@@ -7510,16 +8679,28 @@ async def emu_audio_capture_start(dir: str = "", frames: int = 0,
         frames: stop automatically after this many audio frames (0 = until
             ``emu_audio_capture_stop``, at most one hour).
         events, psg_writes, reference_wav, sdl_wav: which files to write.
+        memory: keep the capture memory (rings of PSG writes, level
+            changes and frame summaries; levels 1M records = 16 MiB,
+            PSG writes 256k = 6 MiB).
+        pcm: PCM rings in memory: ``["reference"]`` (default), ``["sdl"]``,
+            both (needed for ``ref_vs_sdl`` in the summary) or ``[]``;
+            10.6 MB per minute and source.
+        memory_minutes: length of the frame summary ring (1-120).
+        pcm_seconds: length of the PCM rings (1-3600); older audio is
+            dropped.
 
     Returns:
         Capture status (see ``emu_audio_capture_status``) with
         ``pending: true``, or an error (already running, nothing selected,
-        folder cannot be created).
+        folder cannot be created, not enough memory).
     """
     data: dict[str, Any] = {"frames": frames, "events": events,
                             "psg_writes": psg_writes,
                             "reference_wav": reference_wav,
-                            "sdl_wav": sdl_wav}
+                            "sdl_wav": sdl_wav, "memory": memory,
+                            "pcm": ["reference"] if pcm is None else list(pcm),
+                            "memory_minutes": memory_minutes,
+                            "pcm_seconds": pcm_seconds}
     if dir:
         data["dir"] = dir
     resp = await _send_request("audio_capture_start", data)
@@ -7551,9 +8732,111 @@ async def emu_audio_capture_status() -> str:
         "dir": str, "stop_reason": str ("Stopped", "Frame count reached",
         "Safety limit reached", "Emulation timeline restarted (reset or
         snapshot load)", "Error", "Emulator exit" or "" while running),
-        "last_error": str}``.
+        "last_error": str, "segment": int (capture number since the
+        emulator start; a new start replaces the memory), "origin_ticks":
+        int | null (absolute GDG ticks of time 0), "channels": [names in
+        the order of the audio_frames arrays], "stereo": bool, "memory":
+        null | {"bytes": int, "streams": {"psg_writes" | "levels" |
+        "frames" | "pcm_reference" | "pcm_sdl": {"record_size",
+        "capacity", "first_seq", "next_seq"}}}}``. ``first_seq`` > 0 means
+        the ring dropped its oldest records; PCM ``seq`` = sample index
+        (44100 Hz) since the start.
     """
     resp = await _send_request("audio_capture_status", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_audio_capture_summary(frame_from: int = 0, frame_to: int = -1,
+                                    silence_rms: int = 64,
+                                    max_notes: int = 200,
+                                    lag_frames: int = -1,
+                                    max_lag_frames: int = 8) -> str:
+    """Summary of the audio capture memory - what the sound did, as text.
+
+    Needs a capture started with ``memory=True`` (the default of
+    ``emu_audio_capture_start``); works while it runs and after it ends.
+
+    Returns ``frames`` [from, to] (audio frames since the capture start),
+    ``frames_available``, ``fps``, ``platform``, ``stereo``;
+    ``sound_spans`` / ``silent_spans`` ([[from, to], ...], at most 50
+    each, ``*_total`` = all; silent = reference RMS below
+    ``silence_rms``, ``silence_rule``); ``channels`` (per channel:
+    ``active_frames``, ``edges``, ``max_level``, ``on_pct``,
+    ``est_hz_median`` = level changes / 2 per second); ``psg_notes``
+    (``ch``, ``note`` such as ``"A4"`` or ``"noise"``, ``cents``, ``hz``,
+    ``divider``, ``from_frame``, ``to_frame``, ``max_level``; replayed
+    from the PSG writes with the emulator's PSG formula;
+    ``psg_state_incomplete`` = the oldest writes were dropped, notes at the
+    start may be wrong); ``ctc0`` (speaker: ``edges``,
+    ``edge_interval_hist_us`` [[bucket_from_us, count]], ``likely``
+    ``tone`` / ``pcm`` / ``irregular`` / ``silent`` - a heuristic
+    estimate, see ``likely_rule``); ``ref_vs_sdl`` (needs
+    ``pcm=["reference", "sdl"]``: ``lag_samples``, ``lag_frames``,
+    ``diff_rms`` / ``diff_max`` (-1..1 units, mono), ``reference_rms``,
+    ``worst_frames`` [[frame, diff_rms]], ``sdl_missing_blocks``; at most
+    2 s are compared).
+
+    Args:
+        frame_from: First frame (default 0 = oldest kept).
+        frame_to: Last frame (-1 = newest).
+        silence_rms: Silence threshold, int16 RMS of the reference (0-32767).
+        max_notes: Max notes listed (1-2000).
+        lag_frames: Output path delay in frames; -1 = search it.
+        max_lag_frames: Largest delay searched (1-60).
+    """
+    data = {"frame_from": frame_from, "frame_to": frame_to,
+            "silence_rms": silence_rms, "max_notes": max_notes,
+            "lag_frames": lag_frames, "max_lag_frames": max_lag_frames}
+    resp = await _send_request("audio_capture_summary", data)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_audio_capture_pcm(source: str = "reference", frame_from: int = 0,
+                                frames: int = 25, sample_from: int = -1,
+                                samples: int = 0, rate: int = 11025,
+                                stereo: bool = False,
+                                encoding: str = "wav_b64",
+                                max_bytes: int = 32768) -> str:
+    """A short PCM window from the audio capture memory (WAV or raw, base64).
+
+    Needs ``pcm`` with the source at ``emu_audio_capture_start``
+    (``reference`` is kept by default). The default window (25 frames,
+    11025 Hz mono, 32 KiB) stays below 50 000 characters. Resampling is
+    averaging (an analysis preview); ``rate=44100, stereo=True`` returns
+    exactly the samples of reference.wav / sdl.wav. Page through longer
+    audio with ``sample_from=next_sample``.
+
+    Args:
+        source: ``"reference"`` (render in emulated time) or ``"sdl"``
+            (output path).
+        frame_from: Start at this audio frame (used when ``sample_from``
+            < 0).
+        frames: Length in frames (used when ``samples`` is 0).
+        sample_from: Start sample (44100 Hz) since the capture start.
+        samples: Length in 44100 Hz samples.
+        rate: Output rate 1000-44100 Hz.
+        stereo: Two channels (default mono = average of L and R).
+        encoding: ``"wav_b64"`` (WAV file) or ``"pcm_b64"`` (raw int16
+            little endian).
+        max_bytes: Data limit before base64 (1024-4194304); a longer window
+            is cut (``truncated: true``).
+
+    Returns:
+        ``{"source", "segment", "live", "rate", "channels", "from_sample",
+        "samples", "frames_out", "next_sample", "end_of_data",
+        "truncated", "available": [first, next], "gap", "encoding",
+        "data_b64"}`` or ``{"error": ...}``.
+    """
+    data: dict[str, Any] = {"source": source, "frame_from": frame_from,
+                            "frames": frames, "rate": rate, "stereo": stereo,
+                            "encoding": encoding, "max_bytes": max_bytes}
+    if sample_from >= 0:
+        data["sample_from"] = sample_from
+    if samples > 0:
+        data["samples"] = samples
+    resp = await _send_request("audio_capture_pcm", data)
     return json.dumps(_data_or_error(resp))
 
 
@@ -7630,6 +8913,308 @@ async def resource_periph_beeper() -> str:
     if _transport is None or not _transport.is_alive():
         return json.dumps({"connected": False})
     resp = await _send_request("get_periph_beeper")
+    return json.dumps(_data_or_error(resp))
+
+
+# === memsearch - Freeze Bytes a postupné hledání proměnných ============
+# Freeze Bytes přes MCP (dřív jen GUI) a stavový vyhledávač proměnných:
+# sezení drží kandidáty a vzorky paměti, filtr je zužuje. Kandidát se pak
+# řeší existujícími nástroji (emu_watch_add, emu_bp_create_with_init,
+# emu_freeze_add) podle polí z emu_memsearch_list.
+
+
+@mcp.tool()
+async def emu_freeze_add(kind: str, offset: int, value: int = -1,
+                         bytes: list[int] | None = None, sub_id: int = 0) -> str:
+    """Freeze a byte (or consecutive bytes) of a memory region.
+
+    WARNING: This is a destructive operation (it writes into emulated
+    memory). The frozen value is written back once per emulated frame
+    (Freeze Bytes, at most 256 bytes in total), so the program can see its
+    own write until the end of the frame: a game that decrements lives and
+    tests them in the same frame still sees the change. An existing entry
+    only gets the new value.
+
+    Args:
+        kind: Region kind as in ``emu_regions_list`` (``"ram"``,
+            ``"memext_ram"``, ``"vram_phys_plane"``, ...). The region must be
+            present and writable.
+        offset: Offset inside the region (the ``region_offset`` of an
+            ``emu_memsearch_list`` item).
+        value: Byte value 0-255 (give either ``value`` or ``bytes``).
+        bytes: Values 0-255 from ``offset`` on (1-64 items), e.g. both bytes
+            of a 16-bit counter in address order.
+        sub_id: Region disambiguator (bank, plane), default 0.
+
+    Returns:
+        JSON ``{"added": n, "frozen": total}`` or ``{"error": ...}``.
+    """
+    data: dict[str, Any] = {"kind": kind, "sub_id": sub_id, "offset": offset}
+    if bytes is not None:
+        data["bytes"] = list(bytes)
+    else:
+        data["value"] = value
+    resp = await _send_request("freeze_add", data)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_freeze_remove(kind: str = "", offset: int = -1, length: int = 1,
+                            sub_id: int = 0, all: bool = False) -> str:
+    """Unfreeze bytes frozen by ``emu_freeze_add`` or the GUI.
+
+    Args:
+        kind: Region kind as in ``emu_regions_list``.
+        offset: First offset inside the region.
+        length: Number of consecutive bytes (1-256).
+        sub_id: Region disambiguator, default 0.
+        all: True = unfreeze everything (other arguments are ignored).
+
+    Returns:
+        JSON ``{"removed": n}`` or ``{"error": ...}``.
+    """
+    if all:
+        data: dict[str, Any] = {"all": True}
+    else:
+        data = {"kind": kind, "sub_id": sub_id, "offset": offset, "length": length}
+    resp = await _send_request("freeze_remove", data)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_freeze_list() -> str:
+    """List the frozen bytes (also those frozen in the GUI Memory Browser).
+
+    Returns:
+        JSON ``{"count", "max": 256, "entries": [{"kind", "sub_id",
+        "offset", "value"}]}``.
+    """
+    resp = await _send_request("freeze_list", {})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_memsearch_start(space: str | list[dict[str, Any]] = "ram",
+                              type: str = "u8", width: int = 0,
+                              endian: str = "", aligned: bool = False,
+                              digit_encoding: str = "display",
+                              leading_space: bool = True,
+                              op: str = "", value: int | None = None,
+                              value2: int | None = None, mask: int | None = None,
+                              negate: bool = False,
+                              allow_large: bool = False) -> str:
+    """Start a variable search (cheat search): take a memory sample, every
+    position is a candidate, optionally keep only those equal to a value.
+
+    The search finds lives, score, timers and coordinates by narrowing:
+    change the value in the game (``emu_input_send_keys``, ``emu_run``),
+    then ``emu_memsearch_filter`` (e.g. ``op="dec_by", value=1`` after
+    losing a life) until few candidates remain, then ``emu_memsearch_list``.
+    Samples are taken by the emulator thread at the next frame boundary
+    (or at once when paused), consistently for the whole space. Sessions
+    are separate from the GUI Memory Search window; at most 8 are open.
+
+    Args:
+        space: Preset ``"ram"`` (User RAM 64 KB, default), ``"logical"``
+            (what the CPU sees now, incl. ROM and VRAM), ``"vram"`` (VRAM
+            700 text/attributes and MZ-800 VRAM planes), ``"memext"``,
+            ``"ramdisk"``, ``"all_writable"``; or a list of
+            ``{"kind", "sub_id", "offset", "length"}`` (kinds as in
+            ``emu_regions_list``, length defaults to the region end).
+            With a MemExt that switches banks, User RAM shows whatever is
+            mapped at sample time - search the ``memext`` banks instead.
+        type: ``u8`` (default), ``s8``, ``u16``, ``s16``, ``u24``, ``s24``,
+            ``u32``, ``s32``, ``bcd`` (packed, 2 digits per byte, a nibble
+            above 9 = not a candidate) or ``digits`` (one digit per byte).
+        width: Bytes for ``bcd`` (1-4, default 2) and ``digits`` (1-8,
+            default 4); integers take the width from the type name.
+        endian: ``"le"`` (default for integers and BCD, Z80 order) or
+            ``"be"`` (default for digits = print order, highest first).
+        aligned: Only offsets divisible by the width.
+        digit_encoding: ``"raw"`` (00h-09h), ``"ascii"`` (30h-39h) or
+            ``"display"`` (Sharp MZ display code 20h-29h, default).
+        leading_space: Digits: leading spaces count as zeros (ASCII 20h,
+            display code 00h).
+        op, value, value2, mask, negate: Optional first filter, it can only
+            compare with a value (e.g. ``op="eq", value=3``). See
+            ``emu_memsearch_filter``.
+        allow_large: Allow a space over 4 MiB (up to 32 MiB; the session
+            keeps three samples plus undo history).
+
+    Returns:
+        JSON ``{"session_id", "space_size", "spans": [{"kind", "sub_id",
+        "offset", "length", "connected"}], "candidates", "step",
+        "sample_frame", "undo_depth", "redo_depth"}`` or ``{"error": ...}``.
+    """
+    data: dict[str, Any] = {"space": space, "type": type, "aligned": aligned,
+                            "digit_encoding": digit_encoding,
+                            "leading_space": leading_space,
+                            "allow_large": allow_large}
+    if width:
+        data["width"] = width
+    if endian:
+        data["endian"] = endian
+    if op:
+        data["op"] = op
+        data["negate"] = negate
+        for k, v in (("value", value), ("value2", value2), ("mask", mask)):
+            if v is not None:
+                data[k] = v
+    resp = await _send_request("memsearch_start", data)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_memsearch_filter(session_id: int, op: str, value: int | None = None,
+                               compare_to: str = "", value2: int | None = None,
+                               mask: int | None = None, negate: bool = False,
+                               sample: bool = True) -> str:
+    """Narrow the candidates of a search session.
+
+    By default a new sample is taken first and compared with the previous
+    sample (``compare_to="previous"``), with the first sample of the search
+    (``"first"``) or with ``value`` (``"value"``). ``sample=False`` compares
+    the last sample with the one before it (e.g. after
+    ``emu_memsearch_sample``). Arithmetic is on the decoded values without
+    wrap-around: an u8 going 00h -> FFh is not ``dec_by 1``. Candidates in a
+    region that got disconnected stay unchanged.
+
+    Args:
+        session_id: From ``emu_memsearch_start``.
+        op: ``eq``, ``ne``, ``lt``, ``le``, ``gt``, ``ge``, ``between``
+            (``value`` <= x <= ``value2``), ``inc``, ``dec``, ``inc_by``,
+            ``dec_by``, ``changed``, ``unchanged``, ``changed_by``
+            (difference ``value``), ``mask_eq`` (bits under ``mask``,
+            integer types only).
+        value: Value, difference or lower bound.
+        compare_to: ``"value"``, ``"previous"`` or ``"first"``. Default:
+            ``"previous"`` for inc/dec/changed/..., otherwise ``"value"``
+            when ``value`` is given.
+        value2: Upper bound for ``between``.
+        mask: Bit mask for ``mask_eq``.
+        negate: Invert the condition (an invalid BCD / digit value is
+            removed anyway).
+        sample: Take a new sample first (default True).
+
+    Returns:
+        JSON ``{"removed", "candidates", "step", "sample_frame",
+        "undo_depth", "redo_depth"}`` or ``{"error": ...}``.
+    """
+    data: dict[str, Any] = {"session_id": session_id, "op": op,
+                            "negate": negate, "sample": sample}
+    if compare_to:
+        data["compare_to"] = compare_to
+    for k, v in (("value", value), ("value2", value2), ("mask", mask)):
+        if v is not None:
+            data[k] = v
+    resp = await _send_request("memsearch_filter", data)
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_memsearch_sample(session_id: int) -> str:
+    """Take a new sample without filtering (it becomes the "previous" value
+    for the next filter with ``sample=False``).
+
+    Args:
+        session_id: From ``emu_memsearch_start``.
+
+    Returns:
+        JSON session state (``candidates``, ``step``, ``sample_frame``, ...).
+    """
+    resp = await _send_request("memsearch_sample", {"session_id": session_id})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_memsearch_undo(session_id: int) -> str:
+    """Undo the last step of a search session (candidates and the reference
+    samples; undoing the start leaves the session without a sample).
+
+    Args:
+        session_id: From ``emu_memsearch_start``.
+
+    Returns:
+        JSON session state with ``started`` or ``{"error": "nothing to undo"}``.
+    """
+    resp = await _send_request("memsearch_undo", {"session_id": session_id})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_memsearch_redo(session_id: int) -> str:
+    """Redo a step undone by ``emu_memsearch_undo``.
+
+    Args:
+        session_id: From ``emu_memsearch_start``.
+
+    Returns:
+        JSON session state or ``{"error": "nothing to redo"}``.
+    """
+    resp = await _send_request("memsearch_redo", {"session_id": session_id})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_memsearch_list(session_id: int, offset: int = 0, limit: int = 100) -> str:
+    """List candidates of a search session (one page).
+
+    Each item tells where the value lives and how to act on it:
+    ``kind`` / ``sub_id`` / ``region_offset`` (for ``emu_freeze_add`` and
+    ``emu_region_read``), ``z80_addr`` (CPU address for ``emu_watch_add``,
+    null when the cell is not mapped to the CPU or is a VRAM plane /
+    RAM disk) and ``bp_hint`` (``addr``, ``fields``, ``values`` ready for
+    ``emu_bp_create_with_init`` - a write breakpoint in the right zone:
+    ``RAM`` for User RAM, ``VRAM_FB`` for VRAM 700, ``MMEXT_BANK`` with
+    ``bank_offset`` for a PEHU bank; null where a write breakpoint cannot
+    match the cell). ``cur`` / ``prev`` / ``first`` are the decoded values
+    (null = invalid BCD / digits or disconnected region), ``cur_hex`` the
+    bytes in address order.
+
+    Args:
+        session_id: From ``emu_memsearch_start``.
+        offset: Index of the first candidate.
+        limit: Items per page (1-1000).
+
+    Returns:
+        JSON ``{"total", "offset", "items": [{"index", "space_offset",
+        "kind", "sub_id", "region_offset", "connected", "cur", "prev",
+        "first", "cur_hex", "z80_addr", "bp_hint"}], "candidates", "step",
+        ...}``.
+    """
+    resp = await _send_request("memsearch_list", {"session_id": session_id,
+                                                  "offset": offset, "limit": limit})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_memsearch_eliminate(session_id: int, space_offsets: list[int]) -> str:
+    """Remove chosen candidates by hand (undoable).
+
+    Args:
+        session_id: From ``emu_memsearch_start``.
+        space_offsets: ``space_offset`` values from ``emu_memsearch_list``
+            (at most 1000).
+
+    Returns:
+        JSON ``{"removed", "candidates", "step", ...}``.
+    """
+    resp = await _send_request("memsearch_eliminate", {"session_id": session_id,
+                                                       "space_offsets": list(space_offsets)})
+    return json.dumps(_data_or_error(resp))
+
+
+@mcp.tool()
+async def emu_memsearch_close(session_id: int) -> str:
+    """Close a search session and free its memory.
+
+    Args:
+        session_id: From ``emu_memsearch_start``.
+
+    Returns:
+        JSON ``{"closed": true}`` or ``{"error": ...}``.
+    """
+    resp = await _send_request("memsearch_close", {"session_id": session_id})
     return json.dumps(_data_or_error(resp))
 
 

@@ -97,7 +97,8 @@ bool dbgapi_emu_has_pending(st_DBGAPI_CMDRQ_QUEUE *queue);
  * Vrací ukazatel na slot, nebo NULL pokud je fronta prázdná.
  *
  * Sloty zrušené odesílatelem po timeoutu (DBGAPI_CMDSTATE_CANCELLED)
- * přeskočí a uvolní - takový příkaz se neprovede. Vrácený slot označí
+ * přeskočí a uvolní - takový příkaz se neprovede. Sloty vykonané už mimo
+ * pořadí (done_early, dbgapi_emu_dequeue_matching()) jen přeskočí. Vrácený slot označí
  * jako vyzvednutý (dequeued = true); od té chvíle ho odesílatel nezruší
  * a čeká na dbgapi_emu_complete().
  *
@@ -105,6 +106,30 @@ bool dbgapi_emu_has_pending(st_DBGAPI_CMDRQ_QUEUE *queue);
  * Emulátor musí zpracovat příkaz a zavolat complete() před dalším dequeue().
  */
 st_DBGAPI_CMDRQ *dbgapi_emu_dequeue(st_DBGAPI_CMDRQ_QUEUE *queue);
+
+/**
+ * @brief Vyjme první čekající příkaz, který vyhoví @p match (i mimo pořadí).
+ *
+ * Prochází frontu od head k tail a vrátí první slot ve stavu PENDING, jehož
+ * příkaz (bez BLOCKING flagu) @p match přijme. Ostatní příkazy nechá ve
+ * frontě v původním pořadí. Slot v hlavě fronty se vyjme jako
+ * u dbgapi_emu_dequeue(); slot uprostřed fronty dostane done_early a
+ * dbgapi_emu_dequeue() ho později jen přeskočí. Vrácený slot je označený
+ * jako vyzvednutý (odesílatel ho po timeoutu nezruší).
+ *
+ * Použití: drain na hranici akce BP (uprostřed instrukce), kde smí proběhnout
+ * jen řídicí příkazy (breakpoints_drain_control_plane_at_bp_boundary()).
+ *
+ * @param queue Fronta.
+ * @param match Predikát nad příkazem (en_DBGAPI_CMD & DBGAPI_CMD_MASK);
+ *              volá se pod queue_mutex, nesmí frontu používat.
+ * @return Slot ke zpracování (dokončit přes dbgapi_emu_complete() před
+ *         dalším vyzvednutím), nebo NULL, když žádný čekající příkaz
+ *         nevyhovuje nebo je @p match NULL.
+ * @note Thread-safe (zamyká queue_mutex). Volat jen z EMU vlákna.
+ */
+st_DBGAPI_CMDRQ *dbgapi_emu_dequeue_matching(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                             bool (*match)(en_DBGAPI_CMD cmd));
 
 /*
  * Zpracování příkazu — dispatch na příslušný handler.
@@ -115,6 +140,30 @@ st_DBGAPI_CMDRQ *dbgapi_emu_dequeue(st_DBGAPI_CMDRQ_QUEUE *queue);
  * - Zapíše odpověď do rq->result_ptr (pokud je relevantní)
  */
 void dbgapi_emu_dispatch(st_DBGAPI_CMDRQ *rq);
+
+/**
+ * @brief Drain fronty v paused smyčce: skončí po příkazu, který vyžádal krok.
+ *
+ * Vyzvedává a vykonává příkazy, dokud je fronta neprázdná a není vyžádaný
+ * krok (TEST_DEBUGGER_STEP_CALL). Jakmile příkaz krok vyžádá (STEP_INTO,
+ * step over bez CALL), další příkazy nechá ve frontě na dobu po kroku.
+ * Bez toho by se příkaz, který klient poslal hned po dokončení kroku a který
+ * dorazil ještě před koncem drainu, zpracoval před provedením kroku: druhý
+ * STEP_INTO by se ztratil (debugger_step_call(1) při nastaveném kroku nic
+ * neudělá) a čtení by vidělo stav před krokem. Okno je jen mezi dokončením
+ * příkazu kroku a další kontrolou fronty (ze zdroje, neměřeno). Stejnou
+ * ztrátu na hranici snímku (změřeno) řeší vynechání drainu konce snímku
+ * během kroku (mzarch.c).
+ *
+ * @param queue Fronta.
+ * @param dispatch_fn Provede jeden vyzvednutý příkaz (dispatch a úklid
+ *        platformy); NULL = dbgapi_emu_dispatch(). Dokončení dělá tato funkce.
+ * @return Počet vykonaných příkazů.
+ * @pre EMU vlákno, paused smyčka (bod mezi instrukcemi).
+ * @post Fronta je prázdná, nebo je vyžádaný krok.
+ */
+unsigned dbgapi_emu_drain_paused(st_DBGAPI_CMDRQ_QUEUE *queue,
+                                 void (*dispatch_fn)(st_DBGAPI_CMDRQ *rq));
 
 /*
  * Signalizace dokončení zpracování příkazu.
@@ -216,6 +265,39 @@ void dbgapi_emu_register_msg_dispatcher(dbgapi_msg_dispatcher_t dispatcher,
  * @note Volat výhradně z EMU vlákna.
  */
 void dbgapi_emu_send_msg(en_DBGAPI_MSG msg, st_DBGAPI_MSG_DATA *data);
+
+
+/* ============================================================================
+ * BREAKPOINTY PŘÍMO Z EMU VLÁKNA
+ *
+ * Pro kód, který už běží v emu vlákně (automatizace z příkazové řádky)
+ * a nepotřebuje frontu příkazů. Sdílí implementaci s MCP / UI příkazem
+ * DBGAPI_CMD_BP_CREATE_WITH_INIT.
+ * ============================================================================ */
+
+/**
+ * @brief Založí breakpoint a aplikuje pole podle masky (jako CMD_BP_CREATE_WITH_INIT).
+ *
+ * Po založení přepočítá gating logovacích callbacků, takže MEM_W / IORQ_W
+ * breakpoint střílí i bez otevřeného okna debuggeru.
+ *
+ * @param p Vstup s @c id == -1 a @c update_mask; po úspěchu @c p->id = nové ID.
+ * @return true = založeno a všechny settery uspěly. Na obsazené adrese
+ *         může vzniknout vypnutý breakpoint (breakpoints_add_auto()),
+ *         volající to pozná podle @c enabled.
+ * @pre Volat jen z emu vlákna.
+ */
+bool dbgapi_emu_bp_create(st_DBGAPI_BP_UPDATE_PARAM *p);
+
+/**
+ * @brief Přepočítá gating logovacích callbacků po změně breakpointů.
+ *
+ * Totéž, co dělají MCP / UI příkazy po změně breakpointů (existence
+ * MEM_R/W, IORQ_R/W breakpointu vynutí logovací callbacky).
+ *
+ * @pre Volat jen z emu vlákna.
+ */
+void dbgapi_emu_bp_recompute_gating(void);
 
 
 #ifdef __cplusplus

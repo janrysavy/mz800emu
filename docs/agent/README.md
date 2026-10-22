@@ -31,6 +31,14 @@ paragraph is the description.
 | `emulator://docs/mz800_keyboard` | `mz800_keyboard.md` |
 | `emulator://docs/cmt_workflow` | `cmt_workflow.md` |
 | `emulator://docs/videorec_workflow` | `videorec_workflow.md` |
+| `emulator://docs/trace_read` | `trace_read.md` |
+| `emulator://docs/audio_capture_read` | `audio_capture_read.md` |
+| `emulator://docs/ramlog` | `ramlog.md` |
+| `emulator://docs/memsearch_workflow` | `memsearch_workflow.md` |
+| `emulator://docs/unattended_runs` | `unattended_runs.md` |
+| `emulator://docs/state_observe` | `state_observe.md` |
+| `emulator://docs/conditional_writes` | `conditional_writes.md` |
+| `emulator://docs/coverage` | `coverage.md` |
 
 This table is informative only - the actual resource list is built by
 scanning this directory, so it always matches the files present.

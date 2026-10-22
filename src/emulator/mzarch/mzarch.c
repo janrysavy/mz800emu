@@ -33,6 +33,11 @@
 #include "videorec/videorec.h"
 #include "screenshot/screenshot_series.h"
 #include "audio_capture.h"
+#include "automation.h"
+
+#if MZARCH == 800
+#include "mzarch/mz800/gdg/mz800_vramwait.h"
+#endif
 
 #if CFG_HWEXT_HAVE_FDC
 #include "hw-generic/fdc/fdc.h"
@@ -52,11 +57,15 @@
 #include "debugger/stack_history.h"
 #include "debugger/dbgapi_emu.h"
 #include "debugger/trace/cputrack.h"
+#include "debugger/trace/ramlog.h"
 #include "debugger/profiler_pc.h"
+#include "debugger/coverage/coverage_hook.h"
 #include "debugger/trace/intlog.h"
 #include "debugger/trace/eventlog.h"
 #include "debugger/callstack.h"
 #include "debugger/freeze/freeze.h"
+#include "debugger/run_control/run_control.h"
+#include "debugger/run_control/run_log.h"
 #include "mzarch/interrupt.h"
 #ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
 #include <json-glib/json-glib.h>
@@ -65,10 +74,31 @@
 #endif
 #endif
 
+#include "replay.h"
+#include "snapshot/snapshot_request.h"
+#include "replay_cli.h"
+
 // TODO: tohle volame v mz800_main_do_emulator_paused()
 #define iface_sdl_update_window_in_beam_interval(a, b)
 
 st_mzarch_main g_mzarch_main;
+
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+uint32_t g_mzarch_post_insn_hooks = 0;
+
+
+void mzarch_post_insn_hooks_recompute(void)
+{
+    uint32_t mask = 0;
+    if (TEST_TRACE_CPUTRACK_ACTIVE)
+        mask |= MZARCH_POST_INSN_CPUTRACK;
+    if (TEST_PROFILER_PC_ACTIVE)
+        mask |= MZARCH_POST_INSN_PROFILER_PC;
+    if (g_coverage_active)
+        mask |= MZARCH_POST_INSN_COVERAGE;
+    g_mzarch_post_insn_hooks = mask;
+}
+#endif
 
 /*******************************************************************************
  *
@@ -169,6 +199,17 @@ static bool s_mzarch_frame_done_hooks_due = false;
 #endif
 
 /**
+ * @brief Konec snímku ohlásil bod B_f záznamu vstupů (replay.h).
+ *
+ * Nastaví callback konce snímku jen při běžícím záznamu / přehrávání nebo
+ * čekajícím požadavku (replay_frame_hook_wanted()); vyřídí ho per-event
+ * blok hlavní smyčky za run bounds, před testem pauzy, ve všech buildech.
+ *
+ * @invariant Čte a píše ho jen EMU vlákno, proto není atomický.
+ */
+static bool s_mzarch_replay_due = false;
+
+/**
  * This event is called every time a video frame is to be completed (regardless of whether it will be rendered or not)
  *
  * Volá se z gdg_process_events() při zpracování události konce posledního
@@ -210,6 +251,22 @@ static inline void mz800_main_event_callback_screen_done(void)
     /* Série screenshotů: per-frame bod (1 atomické čtení, když neběží). */
     screenshot_series_on_screen_done();
 
+    /* Automatizace: čítač snímků a časové podmínky (--exit-after-frames,
+     * --timeout-*). Až po videu a sérii, aby poslední snímek byl v záznamu.
+     * Bez automatizačních voleb jen čtení příznaku. Konec se tu jen vyžádá
+     * (pauza), vyřídí ho paused smyčka (automation_on_paused). */
+    if (g_automation_frame_hook)
+    {
+        automation_on_screen_done();
+    };
+
+    /* Záznam a přehrání vstupů: bod B_f se tu jen ohlásí, provede ho
+     * per-event blok mezi instrukcemi (replay.h). Bez záznamu jedno čtení. */
+    if (replay_frame_hook_wanted())
+    {
+        s_mzarch_replay_due = true;
+    };
+
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
     /* dbgapi CMDRQ drain a Freeze Bytes se tady jen OHLÁSÍ. Samotné
      * provedení je až v mzarch_main_frame_done_debugger_hooks() v hlavní
@@ -224,11 +281,13 @@ static inline void mz800_main_event_callback_screen_done(void)
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 /**
- * @brief Vybere a vykoná všechny čekající dbgapi příkazy (CMDRQ drain).
+ * @brief Vykoná jeden vyzvednutý dbgapi příkaz a uklidí účty insideop.
  *
  * UI i MCP submitují příkazy přes dbgapi_ui_submit_cmd_sync*(); EMU vlákno
- * je vykonává tady. V default stavu (prázdná fronta) je
- * dbgapi_emu_has_pending() jedno atomické čtení.
+ * je vykonává přes tuto funkci z drainu běžící emulace
+ * (mzarch_main_dbgapi_drain()) i paused smyčky
+ * (dbgapi_emu_drain_paused()). Dokončení (dbgapi_emu_complete()) dělá
+ * volající.
  *
  * Příkazy jako IO_WRITE, IO_READ, MEM_WRITE nebo REGION_WRITE volají stejné
  * callbacky sběrnice jako instrukce (port_write_cb, memory_write_byte) a ty
@@ -258,11 +317,33 @@ static inline void mz800_main_event_callback_screen_done(void)
  *      nikdy z callbacku události ani z insideop. V obou bodech jsou účty
  *      insideop nulové (hlavní smyčka je nuluje po každém z80_step(),
  *      cpu->wait_cycles spotřebuje z80_step()).
+ * @param rq Vyzvednutý slot (dbgapi_emu_dequeue()).
+ * @post Účty insideop jsou nulové, cpu->op_tstate má hodnotu z doby před
+ *       příkazem. Slot ještě není dokončený.
+ */
+static void mzarch_main_dbgapi_dispatch_one(st_DBGAPI_CMDRQ *rq)
+{
+    z80_t *cpu = g_mzarch_main.cpu;
+    const int saved_op_tstate = cpu->op_tstate;
+
+    dbgapi_emu_dispatch(rq);
+
+    /* Úklid účtů insideop po operaci mimo instrukci (viz výše). */
+    g_mzarch_main.instruction_insideop_sync_ticks = 0;
+    g_mzarch_main.instruction_wait_tstates = 0;
+    cpu->wait_cycles = 0;
+    cpu->op_tstate = saved_op_tstate;
+}
+
+/**
+ * @brief Drain fronty dbgapi běžící emulace (per-frame bod hlavní smyčky).
+ *
+ * Každý příkaz provede mzarch_main_dbgapi_dispatch_one() (dispatch + úklid
+ * účtů insideop, viz výše) a dokončí ho.
+ *
+ * @pre Viz mzarch_main_dbgapi_dispatch_one().
  * @post Fronta byla v okamžiku kontroly prázdná. Příkaz zařazený během
- *       drainu se vykoná ještě v tomto volání. Každý vyzvednutý požadavek
- *       je dokončen (dbgapi_emu_complete()) a jeho volající odblokován.
- *       Účty insideop jsou nulové, cpu->op_tstate má hodnotu z doby před
- *       příkazem.
+ *       drainu se vykoná ještě v tomto volání.
  */
 static void mzarch_main_dbgapi_drain(void)
 {
@@ -271,17 +352,7 @@ static void mzarch_main_dbgapi_drain(void)
         st_DBGAPI_CMDRQ *rq = dbgapi_emu_dequeue(&g_dbgapi_cmdrq_queue);
         if (rq)
         {
-            z80_t *cpu = g_mzarch_main.cpu;
-            const int saved_op_tstate = cpu->op_tstate;
-
-            dbgapi_emu_dispatch(rq);
-
-            /* Úklid účtů insideop po operaci mimo instrukci (viz výše). */
-            g_mzarch_main.instruction_insideop_sync_ticks = 0;
-            g_mzarch_main.instruction_wait_tstates = 0;
-            cpu->wait_cycles = 0;
-            cpu->op_tstate = saved_op_tstate;
-
+            mzarch_main_dbgapi_dispatch_one(rq);
             dbgapi_emu_complete(rq);
         };
     };
@@ -321,7 +392,24 @@ static void mzarch_main_frame_done_debugger_hooks(void)
     };
 #endif
 
-    mzarch_main_dbgapi_drain();
+    /* Během kroku debuggeru (STEP_INTO, step over bez CALL) frontu
+     * nevybírat: paused smyčka ji vybere hned po kroku (krok emulaci
+     * z pauzy nevyvede, vstup do pauzy následuje v tomto bloku událostí).
+     * Příkaz, který klient poslal po dokončení příkazu kroku, by se tu
+     * jinak zpracoval ještě před koncem kroku: další STEP_INTO by se
+     * ztratil (debugger_step_call(1) při nastaveném kroku nic neudělá).
+     * Změřeno přes MCP step_n: na každé hranici snímku jeden ztracený krok. */
+    if (!TEST_DEBUGGER_STEP_CALL)
+    {
+        mzarch_main_dbgapi_drain();
+    };
+
+    /* Přehrání zásahů debuggeru zaznamenaných v drainu tohoto snímku
+     * (poloha `d`, replay.h). Bez záznamu jedno čtení. */
+    if (replay_frame_hook_wanted())
+    {
+        replay_on_drain_point();
+    };
 
     /* V1 Freeze Bytes - per-frame apply všech zafrozených bajtů (cheat
      * engine semantika). Pokud žádný entry, vrátí okamžitě (1 atomic byte
@@ -507,48 +595,38 @@ static inline void mzarch_sync_ctc0_and_cmt(unsigned instruction_ticks)
 
 #if MZARCH == 800
 /**
- * Lookup tabulka WAIT (W+R) pro MZ-800 graficke rezimy.
+ * @brief Nejdelší smysluplný odstup uvolnění WRITE FF od přístupu (CLK0).
  *
- * Index je pozice prvniho WRITE v ramci radku v CLK0 mod 80
- * (lcm(16 = video fetch column period, 5 = CPU T-state) = 80).
- * Hodnota = pocet TW (1 TW = 5 CLK0 = 1 CPU T-state) penalizace
- * pri READu nasledujicim po WRITE uvnitr horke faze (32 CLK0
- * v 320x200 / 17 CLK0 v 640x200).
- *
- * Pro 640x200 plati TW_640(p) = TW_320((p+16) mod 80) - rotace o jednu
- * column period 320x200.
- *
- * Zdroj: gate-level HDL simulace GDG, viz mz800-knowledge
- * public/reference/agent/hw/10b-vram-timing.md sekce "Pouziti v emulatoru".
- *
- * [neovereno] HW measurement - HDL netlist je gate-accurate, ale realne
- * HW mereni zatim chybi. Hodnoty 6-9 kolisaji v ramci sub-column phase.
+ * Zápis ve viditelné části režimu MZ-700 se do DRAM dostane nejpozději
+ * v prvním CPU slotu po jejím konci, tedy do jednoho řádku. Hodnota
+ * vzdálenější do budoucnosti je pozůstatek jiné časové osy (např. po
+ * přenastavení času) a model ji zahodí, aby nevznikl nesmyslně dlouhý WAIT.
  */
-static const uint8_t mz800_vram_wait_tw_wr[ 80 ] = {
-    9, 6, 9, 9, 9, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 6,
-    6, 9, 9, 9, 8, 9, 8, 8, 8, 7, 8, 7, 7, 7, 6, 7,
-    9, 9, 6, 9, 9, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 9,
-    6, 6, 9, 9, 8, 8, 9, 8, 8, 7, 7, 8, 7, 7, 6, 6,
-    7, 9, 9, 8, 9, 9, 8, 8, 7, 8, 8, 7, 7, 6, 7, 7
-};
+#define VRAMWAIT_WRFF_MAX_AHEAD ( 2u * VRAMWAIT_LINE_CLK0 )
 
-/**
- * Lookup tabulka WAIT (W+W) pro MZ-800 graficke rezimy.
- *
- * Pro WRITE+WRITE je penalizace mensi (3-6 TW), protoze druhy WRITE
- * generuje vlastni VRAM strobe ktery urychluje reset interniho WR_FF.
- *
- * Indexovani a rotace 640 vs 320 viz @ref mz800_vram_wait_tw_wr.
- */
-static const uint8_t mz800_vram_wait_tw_ww[ 80 ] = {
-    3, 3, 5, 6, 5, 5, 5, 4, 5, 4, 4, 4, 3, 4, 3, 3,
-    3, 6, 6, 5, 5, 5, 5, 5, 4, 4, 4, 4, 4, 3, 3, 3,
-    6, 3, 5, 5, 6, 5, 5, 4, 4, 5, 4, 4, 3, 3, 4, 3,
-    3, 5, 6, 6, 5, 5, 4, 5, 5, 4, 4, 3, 4, 4, 3, 3,
-    6, 6, 3, 5, 5, 5, 5, 5, 4, 4, 4, 4, 4, 3, 3, 6
-};
+#if VIDEO_SCREEN_WIDTH != 1136
+#error "Model WAIT (mz800_vramwait.h) předpokládá řádek PAL 1136 CLK0"
+#endif
+#if GDGCLK2CPU_DIVIDER != 5
+#error "Model WAIT (mz800_vramwait.h) předpokládá T-stav 5 CLK0"
+#endif
 #endif /* MZARCH == 800 */
 
+/**
+ * @brief Synchronizace GDG uvnitř instrukce (přístup do I/O, VRAM, PSG).
+ *
+ * Dorovná čas GDG k aktuálnímu T-stavu instrukce (s čekacími stavy podle
+ * druhu přístupu) a zpracuje události, které do té chvíle nastaly (i konec
+ * snímku). Per-event blok hlavní smyčky pak vynutí hned za instrukcí
+ * (událost s takty 0), když čeká přerušení, pauza nebo krok debuggeru,
+ * nebo bod B_f záznamu vstupů (s_mzarch_replay_due). Bez vynucení by B_f
+ * proběhl až s další naplánovanou událostí a pauza vzniklá v callbacku
+ * konce snímku (např. --exit-after-frames) by ho posunula jen při záznamu,
+ * ne při přehrávání: rozdílný stav v posledním hashi (změřeno).
+ *
+ * @param insideop Druh přístupu (určuje čekací stavy).
+ * @pre Emu vlákno uvnitř instrukce (callback přístupu CPU).
+ */
 static inline void mzarch_main_insideop(const en_INSIDEOP insideop)
 {
 
@@ -592,74 +670,39 @@ static inline void mzarch_main_insideop(const en_INSIDEOP insideop)
 #if MZARCH == 800
     case INSIDEOP_MREQ_MZ800_VRAMCTRL_READ:
     case INSIDEOP_MREQ_MZ800_VRAMCTRL_WRITE: {
-        /* HDL-presny WAIT model pro MZ-800 graficke rezimy (DMD bit 3 = 0,
-         * VRAM 0x8000-0xBFFF). Zdroj: 10b-vram-timing.md.
+        /* WAIT u přístupu CPU do VRAM přes GDG (mz800_vramwait.h): grafická
+         * VRAM 8000h-0BFFFh v režimu MZ-800, VRAM a CG-RAM 0C000h-0DFFFh
+         * v režimu MZ-700. Rozvrh CPU slotů podle DMD bit 3, počet
+         * zápisových slotů podle rozlišení.
          *
-         * Predpoklad: pred volanim teto cesty doslo k mzarch_main_insideop_mreq()
-         * (default sync), takze g_gdg.total_elapsed.ticks odpovida konci aktualniho
-         * MREQ M-cyklu (T3f) tohoto VRAM pristupu.
+         * Předpoklad: předtím proběhlo mzarch_main_insideop_mreq(), takže
+         * g_gdg.total_elapsed.ticks je konec M-cyklu bez WAIT, tedy T1r
+         * + 3 T (u instrukčního výběru M1 + 4 T).
          *
-         * Pravidla:
-         *  - READ negeneruje WAIT sam o sobe a nikdy negeneruje VRAM strobe
-         *    (= horka faze pokracuje a po READu netreba update). Pokud ovsem
-         *    aktualni READ pripadl uvnitr predchozi horke faze, dostava
-         *    WAIT podle tw_wr[] (6-9 TW v 320x200 / rotace +16 v 640x200).
-         *  - WRITE se vzdy chova jako start nove horke faze (po pripadnem
-         *    WAITu se hot_phase_end_total_ticks aktualizuje). Pokud aktualni
-         *    WRITE pripadl uvnitr predchozi horke faze, dostane WAIT podle
-         *    tw_ww[] (3-6 TW).
-         *
-         * 1 TW = GDGCLK2CPU_DIVIDER CLK0 = jeden CPU T-state navic.
-         */
+         * 1 TW = GDGCLK2CPU_DIVIDER CLK0 = jeden T-stav navíc. */
+        unsigned cycle_t = ( ( insideop == INSIDEOP_MREQ_MZ800_VRAMCTRL_READ ) && g_mzarch_main.mreq_m1 ) ? 4u : 3u;
+        uint64_t t1r = gdg_get_vramwait_ticks( ) - cycle_t * GDGCLK2CPU_DIVIDER;
+        en_VRAMWAIT_GRID grid = GDG_MZ800_DMD_TEST_MZ700 ? VRAMWAIT_GRID_MZ700 : VRAMWAIT_GRID_MZ800;
+        unsigned wait_tw;
 
-        uint64_t now_total = gdg_get_total_ticks( );
-        unsigned wait_tw = 0;
-        unsigned hot_len = ( g_gdg.regDMD & REGISTER_DMD_FLAG_SCRW640 ) ? 17u : 32u;
+        if ( g_gdg.vram_wrff_release > t1r + VRAMWAIT_WRFF_MAX_AHEAD ) {
+            g_gdg.vram_wrff_release = 0;
+        }
 
-        bool inside_hot = ( g_gdg.vram800_hot_phase_end_total_ticks != 0 )
-                          && ( now_total < g_gdg.vram800_hot_phase_end_total_ticks );
+        if ( insideop == INSIDEOP_MREQ_MZ800_VRAMCTRL_WRITE ) {
+            int two_slots = ( grid == VRAMWAIT_GRID_MZ800 ) && !GDG_MZ800_DMD_TEST_SCRW640;
+            wait_tw = vramwait_write( &g_gdg.vram_wrff_release, t1r, grid, two_slots );
+        } else {
+            wait_tw = vramwait_read( g_gdg.vram_wrff_release, t1r, grid );
+        }
 
-        if ( inside_hot ) {
-            /* Pozice prvniho WRITE v ramci radku v CLK0 mod 80 (= prvni WRITE
-             * teto horke faze, ulozeny pri jejim startu). Pro 640x200 rotace
-             * o 16 CLK0 (= jedna column period 320x200). */
-            unsigned phase = g_gdg.vram800_hot_phase_clk0_phase;
-            if ( g_gdg.regDMD & REGISTER_DMD_FLAG_SCRW640 ) {
-                phase = ( phase + 16u ) % 80u;
-            }
-            if ( insideop == INSIDEOP_MREQ_MZ800_VRAMCTRL_WRITE ) {
-                wait_tw = mz800_vram_wait_tw_ww[ phase ];
-            } else {
-                wait_tw = mz800_vram_wait_tw_wr[ phase ];
-            }
+        if ( wait_tw ) {
             z80_add_wait_states( g_mzarch_main.cpu, (int) wait_tw );
             /* trace-suite: saturujici akumulace WAIT T-states pro cputrack. */
             uint64_t wsum = (uint64_t) g_mzarch_main.instruction_wait_tstates + wait_tw;
             g_mzarch_main.instruction_wait_tstates = ( wsum > 0xFFFFFFFFu ) ? 0xFFFFFFFFu : (uint32_t) wsum;
-            ticks_to_sync = wait_tw * GDGCLK2CPU_DIVIDER;
-            now_total += ticks_to_sync;
         }
-
-        if ( insideop == INSIDEOP_MREQ_MZ800_VRAMCTRL_WRITE ) {
-            /* Start nove horke faze: T3f tohoto WRITE = now_total
-             * (po pripadnem WAITu).
-             *
-             * [neovereno] HDL detail v 10b-vram-timing.md ukazuje WR_FF set
-             * "T3f+30" (32 CLK0 prog. v 320x200), tj. ze T3f okamzik je primy
-             * T3 falling. Po standard mreq() je total_elapsed.ticks na konci
-             * MREQ pulsu - pro ucely tabulkove periodicity (mod 80 CLK0)
-             * sub-CLK0 nepresnosti nehraji roli, hot_len ma sub-T-state
-             * granularity v ramci HDL kolisani 3-6/6-9 TW. */
-            g_gdg.vram800_hot_phase_end_total_ticks = now_total + hot_len;
-            /* Pozice WRITE T3f v ramci scanline v CLK0 mod 80. Pouzivame
-             * "ticks po pripadnem WAITu" (= now_total), protoze tento
-             * WRITE definuje novou horkou fazi a jeho vlastni T3f je az
-             * po WAIT periode. */
-            uint64_t scanline_pos = now_total % VIDEO_SCREEN_WIDTH;
-            g_gdg.vram800_hot_phase_clk0_phase = (unsigned) ( scanline_pos % 80u );
-        }
-        /* READ neaktualizuje hot phase state - WR_FF reset cas se neposouva
-         * (READ negeneruje VRAM strobe). */
+        ticks_to_sync = wait_tw * GDGCLK2CPU_DIVIDER;
 
         instruction_ticks = g_mzarch_main.instruction_insideop_sync_ticks + ticks_to_sync;
         break;
@@ -708,13 +751,16 @@ static inline void mzarch_main_insideop(const en_INSIDEOP insideop)
         MZ800_MAIN_SET_EVENT(MZEVENT_BREAK_MZARCH_INTERRUPT, 0);
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
     }
-    else if ((EMULATOR_TEST_PAUSED) || (TEST_DEBUGGER_STEP_CALL))
+    else if ((EMULATOR_TEST_PAUSED) || (TEST_DEBUGGER_STEP_CALL) || (s_mzarch_replay_due))
     {
 #else
     }
-    else if (EMULATOR_TEST_PAUSED)
+    else if ((EMULATOR_TEST_PAUSED) || (s_mzarch_replay_due))
     {
 #endif
+        /* Bod B_f záznamu vstupů hned za touto instrukcí, nezávisle na
+         * pauze (viz Doxygen výše). Bez záznamu je s_mzarch_replay_due
+         * vždy false. */
         MZ800_MAIN_SET_EVENT(MZEVENT_BREAK_EMULATION_PAUSED, 0);
     };
 }
@@ -788,18 +834,34 @@ void mzarch_main_report_screen_done_underflow(unsigned ticks)
 /**
  * Mezi instrukcnimi takty testujeme, zda na nas neceka nejaky interrupt.
  * Pokud ano, tak jej zkusime poslat do Z80.
+ *
+ * Žádost o přerušení je HW linka INT (`g_mzarch_main.interrupt`, úrovňový
+ * signál čipů) nebo čekající NMI / IRQ nastavené mimo HW (MCP `nmi_inject`,
+ * `irq_inject` = `cpu->nmi_pending` / `cpu->int_pending`). NMI jádro přijme
+ * vždy, INT jen při IFF1 a mimo instrukci po EI. Linka INT se do jádra
+ * předá (z80_int) jen při povolených přerušeních, takže se úrovňový signál
+ * nezapamatuje; čekající IRQ z injectu (vlastní vektor) se nepřepisuje.
+ * Když INT čeká a přerušení jsou zakázaná, kontrola se zopakuje po další
+ * instrukci (MZEVENT_BREAK_MZARCH_INTERRUPT).
+ *
+ * Bez žádosti jedno čtení masky a dvou příznaků jádra (per-event cesta,
+ * ne instrukční smyčka).
  */
 static inline void mzarch_main_process_interrupt(void)
 {
-
-    if (!g_mzarch_main.interrupt)
-        return;
-
     z80_t *cpu = g_mzarch_main.cpu;
 
-    if (cpu->iff1 && !cpu->ei_delay)
+    if (!g_mzarch_main.interrupt && !cpu->nmi_pending && !cpu->int_pending)
+        return;
+
+    bool int_enabled = cpu->iff1 && !cpu->ei_delay;
+    /* NMI má v jádře přednost; přijetí níže je tedy NMI. */
+    bool is_nmi = cpu->nmi_pending;
+
+    if (is_nmi || int_enabled)
     {
-        z80_int(cpu);
+        if (g_mzarch_main.interrupt && int_enabled && !cpu->int_pending)
+            z80_int(cpu);
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
         /* trace-suite intlog: snapshot stavu PIOZ80 PŘED z80_process_interrupt().
@@ -820,14 +882,44 @@ static inline void mzarch_main_process_interrupt(void)
          * Tato adresa odpovídá tomu, co z80_process_interrupt pushne na
          * CPU stack. */
         uint16_t pc_before_int = cpu->pc;
+        /* Záznam zápisů (ramlog): push návratové adresy při přijetí jde mimo
+         * instrukci - zdroj INT_ACK / NMI_ACK, insn_pc = návratová adresa
+         * (z HALT o 1 dál, viz z80.c handle_interrupts_internal). */
+        uint32_t ramlog_saved = 0;
+        if (g_ramlog_active)
+            ramlog_saved = ramlog_source_push(cpu->nmi_pending ? RAMLOG_SRC_NMI_ACK : RAMLOG_SRC_INT_ACK,
+                                              (uint16_t)(cpu->pc + (cpu->halted ? 1 : 0)));
 #endif
 
         int interrupt_tstates = z80_process_interrupt(cpu);
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+        if (g_ramlog_active)
+            ramlog_source_pop(ramlog_saved);
+#endif
 
         if (interrupt_tstates > 0)
         { /* interrupt byl prijat */
 
-            pioz80_interrupt_ack();
+            /* Potvrzení INTACK patří jen přijetí INT, NMI ho nemá. */
+            if (!is_nmi)
+                pioz80_interrupt_ack();
+
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+            /* cputrack v2: záznam přijetí přerušení (adresa obsluhy, T-stavy
+             * přijetí), aby součet T-stavů záznamů odpovídal času CPU.
+             * Cesta přijetí přerušení, ne instrukční smyčka. */
+            if (TEST_TRACE_CPUTRACK_ACTIVE)
+            {
+                cputrack_on_interrupt_accept((uint16_t)cpu->pc, (uint32_t)interrupt_tstates);
+            };
+            /* Pokrytí kódu: první instrukce obsluhy (příští krok) dostane
+             * příznak INT_ENTRY. Cesta přijetí přerušení, ne instrukční
+             * smyčka (stejná výjimka jako ramlog výše). */
+            if (g_coverage_active)
+            {
+                g_coverage_pending_flags |= COVERAGE_F_INT_ENTRY;
+            };
+#endif
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
             /* trace-suite intlog: zaznamenat IM 2 IRQ accept event.
@@ -850,7 +942,7 @@ static inline void mzarch_main_process_interrupt(void)
              *  - CTC2 = INT pin tažený CTC2 (vector = 0, CPU skočil na (I:00))
              *  - FDC = INT pin tažený FDC kontrolérem
              *  - VECTOR_BUS_LATCH = jiný / neresolvable zdroj */
-            if (TEST_TRACE_INTLOG_DISPATCH && cpu->im == 2) {
+            if (TEST_TRACE_INTLOG_DISPATCH && !is_nmi && cpu->im == 2) {
                 uint16_t vector_table_addr = ((uint16_t)cpu->i << 8) | (cpu->int_vector & 0xFE);
                 uint16_t isr_addr = cpu->pc;
                 en_INTLOG_SOURCE_CHIP src;
@@ -894,7 +986,7 @@ static inline void mzarch_main_process_interrupt(void)
              *
              * mzarch_irq_mask_before je local snapshot z ř.486 (= před
              * z80_process_interrupt), tedy stav INT busu před INTACK. */
-            if ( g_bptmap.per_type_active[ BPTMAP_IDX_IRQ ] ) {
+            if ( !is_nmi && g_bptmap.per_type_active[ BPTMAP_IDX_IRQ ] ) {
                 uint16_t bp_vector_addr = 0;
                 uint16_t bp_isr_addr = cpu->pc;
                 if ( cpu->im == 2 ) {
@@ -916,6 +1008,12 @@ static inline void mzarch_main_process_interrupt(void)
              * Pro IM 2 počítáme vector table adresu z I:vector. Pro
              * IM 0/1 je im2_vec irelevantní (= 0). Vnitřní gate test
              * (g_callstack_active) řeší callstack_on_irq_accept sám. */
+            if ( is_nmi )
+            {
+                /* NMI z MCP nmi_inject: rámec CS_KIND_NMI (cíl 0066h). */
+                callstack_on_nmi_accept ( pc_before_int );
+            }
+            else
             {
                 uint16_t cs_isr_addr = cpu->pc;
                 uint16_t cs_im2_vec = 0;
@@ -942,7 +1040,7 @@ static inline void mzarch_main_process_interrupt(void)
         }
     }
     else
-    { /* interrupt nebyl prijat - IFF1 je 0 nebo jsme po EI */
+    { /* INT čeká (linka nebo inject), ale IFF1 je 0 nebo jsme po EI */
         MZ800_MAIN_SET_EVENT(MZEVENT_BREAK_MZARCH_INTERRUPT, 0);
     };
 }
@@ -963,6 +1061,19 @@ static inline void mzzarch_main_do_emulator_paused(void)
     videorec_on_emulation_stopped();
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* Záznam zastavení a jediná událost "paused" na každé zastavení (BP,
+     * dočasný BP, krok, run(frames), deadline, pauza). Před automatizací,
+     * aby záznam existoval i u žádosti o konec, a před
+     * debugger_step_call(0), aby se poznal dokončený krok. */
+    run_control_on_stop();
+#endif
+
+    /* Automatizace: čekající žádost o konec (akce exit, --exit-after-frames,
+     * --timeout-*) se vyřídí tady, mezi instrukcemi a v pauze (snapshot
+     * smí vzniknout). Kde smí proces skončit, se odtud nevrací. */
+    automation_on_paused();
+
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 
     debugger_update_all();
 
@@ -977,8 +1088,13 @@ static inline void mzzarch_main_do_emulator_paused(void)
         JsonObject *payload = json_object_new ( );
         json_object_set_int_member ( payload, "pc",
             (gint64) ( g_mzarch_main.cpu ? g_mzarch_main.cpu->pc : 0 ) );
+        /* cycles = cpu->total_cycles (uint32_t, přeteče asi po 20 min
+         * emulace); ticks = takty GDG od startu emulátoru (64 bit, bez
+         * přetečení; reset stroje je nenuluje). */
         json_object_set_int_member ( payload, "cycles",
             (gint64) ( g_mzarch_main.cpu ? g_mzarch_main.cpu->total_cycles : 0 ) );
+        json_object_set_int_member ( payload, "ticks", (gint64) gdg_get_total_ticks ( ) );
+        json_object_set_int_member ( payload, "run_seq", (gint64) run_log_current ( NULL ) );
         event_bus_emit ( "step_done", payload );
     }
 #endif
@@ -1016,12 +1132,22 @@ static inline void mzzarch_main_do_emulator_paused(void)
          * Reset přes dbgapi_ui_submit_cmd_sync zatuhly (= EMU vlákno by
          * frontu nikdy nedrainovalo). Tady jen non-blocking has_pending
          * check; na nový příkaz smyčka čeká na konci iterace přes
-         * dbgapi_emu_wait_for_cmd() (nejvýš 20 ms). Stejný helper jako drain
-         * běžící emulace (per-frame bod v hlavní smyčce). */
-        mzarch_main_dbgapi_drain();
+         * dbgapi_emu_wait_for_cmd() (nejvýš 20 ms). Na rozdíl od drainu
+         * běžící emulace skončí po příkazu, který vyžádal krok (zbytek fronty
+         * se zpracuje až po kroku). */
+        (void)dbgapi_emu_drain_paused(&g_dbgapi_cmdrq_queue, mzarch_main_dbgapi_dispatch_one);
 
         /* Přemapování MemExt vyžádané z UI i během pauzy (do ~20 ms). */
         memext_map_request_poll();
+
+        /* Záznam a přehrání vstupů: start, stop, reset a autotype v pauze
+         * (replay.h). Bez záznamu a požadavku jen dvě čtení. */
+        replay_on_paused();
+
+        /* Snapshot z GUI (Load / Save / Quick Load / Quick Save) vyřídí
+         * emu vlákno v pauze (snapshot_request.h). Bez požadavku jedno
+         * atomické čtení. */
+        snapshot_request_poll();
 
         if (iface_video_get_redraw_full_screen_request())
         {
@@ -1074,6 +1200,10 @@ static inline void mzzarch_main_do_emulator_paused(void)
      * neuplatní na novou adresu a BP na 0000 se správně aktivuje. */
     g_debugger.skip_bp_at_pc = (int) g_mzarch_main.cpu->pc;
 
+    /* Nové číslo běhu, vynulovaný důvod pauzy, událost "resumed" (jen
+     * u rozběhu, ne u kroku). */
+    run_control_on_resume();
+
     if (TEST_DEBUGGER_STEP_CALL)
     {
         MZ800_MAIN_SET_EVENT(MZEVENT_BREAK_EMULATION_PAUSED, 0);
@@ -1104,6 +1234,15 @@ static inline void mzzarch_main_do_emulator_paused(void)
 
         /* Přemapování MemExt vyžádané z UI i během pauzy (do ~20 ms). */
         memext_map_request_poll();
+
+        /* Záznam a přehrání vstupů: start, stop, reset a autotype v pauze
+         * (replay.h). Bez záznamu a požadavku jen dvě čtení. */
+        replay_on_paused();
+
+        /* Snapshot z GUI (Load / Save / Quick Load / Quick Save) vyřídí
+         * emu vlákno v pauze (snapshot_request.h). Bez požadavku jedno
+         * atomické čtení. */
+        snapshot_request_poll();
 
         mzarch_main_queue_next_event();
 
@@ -1171,11 +1310,11 @@ static void mzarch_main_reset(void)
      * aby se BP na nové adrese (typicky 0000) správně aktivoval. */
     g_debugger.skip_bp_at_pc = -1;
     /* Frame-bounded run (mcp-debug-control request 0021): pokud reset přijde
-     * za běhu frame-bounded runu, zrušíme aktivní flag. Cílová hodnota
-     * run_frames_target byla vázána na předreset screens; po resetu (gdg_reset
-     * vynuluje screens) by porovnání mohlo dát nedeterministický výsledek.
-     * Bezpečné je run-bounded operaci zrušit - klient dostane zastavený stav
-     * přes fallback v dispatch vrstvě. */
+     * za běhu frame-bounded runu, zrušíme aktivní flag - klient dostane
+     * zastavený stav přes fallback v dispatch vrstvě. (gdg_reset() čítač
+     * snímků nenuluje, nuluje ho jen gdg_init() při startu - změřeno; cíl by
+     * tedy platil dál, zrušení zůstává kvůli dosavadnímu chování.) Deadline
+     * běhu (run_control.h) reset neruší, běží v témže čítači. */
     g_debugger.run_frames_active = 0;
 #ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
     /* Sekvence vstupu MCP má cíle vázané na předreset screens - zrušit
@@ -1186,6 +1325,9 @@ static void mzarch_main_reset(void)
     if ( g_bp_event_active[ BP_EVENT_CPU_RESET ] ) {
         bp_event_fire ( BP_EVENT_CPU_RESET, 0 );
     }
+    /* Pokrytí kódu: reset je nespojitost běhu (data se nemažou, jen se
+     * započte; s reset_on_discontinuity se smažou). */
+    coverage_note_discontinuity ( );
 #endif
 
     // TODO: tohle se nedeje
@@ -1220,6 +1362,9 @@ static void mzarch_main_reset(void)
      * divergence detekci. Aktivační flag (g_callstack_active) zachován
      * - subsystém zůstává zapnutý/vypnutý nezávisle na resetu. */
     callstack_reset ( );
+    /* Záznam zápisů: záznamy se týkají stavu před resetem - vyprázdnit
+     * (běžící záznam pokračuje v novém segmentu). */
+    ramlog_clear ( );
 #endif
 #if HAVE_PIOZ80
     pioz80_reset();
@@ -1249,25 +1394,36 @@ static void mzarch_main_reset(void)
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 /**
- * @brief Háčky po dokončení instrukce (cputrack, profiler podle PC).
+ * @brief Rozbočovač háčků po dokončení instrukce (cputrack, profiler podle PC, pokrytí kódu).
  *
- * Hlavní smyčka sem vstupuje jedinou podmínkou
- * `TEST_TRACE_CPUTRACK_ACTIVE | TEST_PROFILER_PC_ACTIVE`; teprve tady se
- * rozhoduje, který háček je aktivní. Atribut noinline drží tělo hlavní
- * smyčky kompaktní (viz cputrack.h @section hot_path_compactness).
+ * Hlavní smyčka sem vstupuje jedinou podmínkou `g_mzarch_post_insn_hooks`
+ * (maska MZARCH_POST_INSN_*); teprve tady se podle bitů rozhoduje, který
+ * háček je aktivní. Informaci o instrukci (st_MZARCH_INSN_INFO) spočítá
+ * jednou pro všechny konzumenty. Atribut noinline drží tělo hlavní smyčky
+ * kompaktní (viz cputrack.h @section hot_path_compactness).
  *
- * @param pc      Adresa začátku instrukce.
- * @param tstates T-stavy instrukce včetně WAIT.
- * @param wait    Čekací stavy instrukce.
+ * @param hooks   Kopie masky g_mzarch_post_insn_hooks z brány (nenulová).
+ *
+ * @pre Volá se z emu vlákna hned po z80_step(), před blokem událostí
+ *      (přijetí přerušení); cpu->pc je PC po kroku.
  */
 __attribute__((noinline))
-static void mzarch_main_post_instruction_hooks(uint16_t pc, uint32_t tstates, uint32_t wait)
+static void mzarch_main_post_instruction_hooks(uint32_t hooks)
 {
-    if ( TEST_TRACE_CPUTRACK_ACTIVE ) {
-        cputrack_hot_path_hook ( pc, tstates, wait );
+    const st_MZARCH_INSN_INFO insn = {
+        .pc = (uint16_t) g_mzarch_main.instruction_addr,
+        .next_pc = (uint16_t) g_mzarch_main.cpu->pc,
+        .tstates = (uint32_t) g_mzarch_main.instruction_tstates,
+        .wait = g_mzarch_main.instruction_wait_tstates,
+    };
+    if ( hooks & MZARCH_POST_INSN_CPUTRACK ) {
+        cputrack_hot_path_hook ( insn.pc, insn.tstates, insn.wait );
     }
-    if ( TEST_PROFILER_PC_ACTIVE ) {
-        profiler_pc_on_instruction ( pc, tstates, wait );
+    if ( hooks & MZARCH_POST_INSN_PROFILER_PC ) {
+        profiler_pc_on_instruction ( insn.pc, insn.tstates, insn.wait );
+    }
+    if ( hooks & MZARCH_POST_INSN_COVERAGE ) {
+        coverage_hook_on_instruction ( &insn );
     }
 }
 #endif
@@ -1307,6 +1463,11 @@ void mzarch_main_reset_and_run_mzf(const char *filename)
     /* Stejná sekvence jako start s CLI --run-mzf v mzarch_main(). */
     mzarch_main_reset();
     mzarch_bootstrap_run_mzf(filename);
+}
+
+void mzarch_main_reset_now(void)
+{
+    mzarch_main_reset();
 }
 
 void mzarch_main(void)
@@ -1373,6 +1534,14 @@ void mzarch_main(void)
             fprintf(stderr, "CLI --audio-capture: %s\n", cap_err);
         };
     }
+
+    /* Automatizace: začátek počítání snímků (po --run-mzf a ostatních
+     * volbách), breakpointy z --bpt / --exit-on-*. */
+    automation_start();
+
+    /* Záznam a přehrání vstupů z příkazové řádky (--replay-record,
+     * --replay): požadavek vyřídí první hranice snímku. */
+    replay_cli_start();
 
     g_print("%s main loop started\n", g_mzarch_full_name);
 
@@ -1455,24 +1624,23 @@ void mzarch_main(void)
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
         /* Háčky po instrukci (trace-suite cputrack, profiler podle PC) -
-         * 1 událost na dokončenou CPU instrukci. Oba příznaky se testují
-         * jedinou podmínkou (bitové OR, jedna větev), branch predictor se
-         * naučí "vždy false" v default OFF stavu. Detail v
+         * 1 událost na dokončenou CPU instrukci. Brána čte jedinou
+         * proměnnou, masku g_mzarch_post_insn_hooks (přepočítávanou při
+         * startu a stopu konzumentů), branch predictor se naučí "vždy
+         * false" v default OFF stavu. Detail v
          * docs/cz/debugger/Trace_Suite.md a profiler_pc.h.
          *
          * wait_extra_tstates = g_mzarch_main.instruction_wait_tstates,
          * akumulovany v INSIDEOP_MREQ_MZ700_VRAMCTRL a INSIDEOP_IORQ_PSG_WRITE
          * paths (jediná místa volající z80_add_wait_states v hot loop).
          * V T-states units (z80 ISA), saturated na 0xFFFFFFFF. */
-        if ( TEST_TRACE_CPUTRACK_ACTIVE | TEST_PROFILER_PC_ACTIVE ) {
+        uint32_t post_insn_hooks = g_mzarch_post_insn_hooks;
+        if ( post_insn_hooks ) {
             /* RPFIX: celá práce háčků je vynesena do NOINLINE helperu,
              * aby tělo této hot smyčky zůstalo kompaktní (stabilnější
              * code-layout / icache - viz cputrack.h @section hot_path_compactness).
              * V OFF stavu se sem řízení vůbec nedostane. */
-            mzarch_main_post_instruction_hooks (
-                (uint16_t) g_mzarch_main.instruction_addr,
-                (uint32_t) g_mzarch_main.instruction_tstates,
-                g_mzarch_main.instruction_wait_tstates );
+            mzarch_main_post_instruction_hooks ( post_insn_hooks );
         }
 
         /* D.4 - SP-change polling (SP_THRESHOLD BP + stack regions).
@@ -1579,17 +1747,28 @@ void mzarch_main(void)
              * hodnotu. Po emulator_pause(true) stávající EMULATOR_TEST_PAUSED
              * blok níže okamžitě vstoupí do pause loopu.
              *
-             * PERF: check je UVNITŘ per-frame bloku (~50 Hz), NE v
-             * per-instruction hot path -> zanedbatelný dopad. V default stavu
-             * (run_frames_active == 0) branch predictor naučí "vždy false". */
-            if ( g_debugger.run_frames_active
-                 && g_gdg.total_elapsed.screens >= g_debugger.run_frames_target )
+             * PERF: check je UVNITŘ per-event bloku, NE v per-instruction hot
+             * path -> zanedbatelný dopad. V default stavu (oba příznaky 0)
+             * jedno bitové OR a jedna větev, branch predictor naučí "vždy
+             * false". */
+            if ( g_debugger.run_frames_active | g_debugger.run_deadline_active )
             {
-                g_debugger.run_frames_active = 0;
-                g_emulator.pause_reason = EMU_PAUSE_REASON_FRAMES;
-                emulator_pause ( true );
+                /* Frame-bounded run i deadline v emulovaném čase (run_control.h):
+                 * jedna podmínka v default stavu, vyhodnocení mimo smyčku. */
+                run_control_check_run_bounds ( );
             };
 #endif
+
+            /* Záznam a přehrání vstupů: bod B_f (replay.h). Až za run
+             * bounds, aby pauza run(frames) / deadline vznikla na téže
+             * hranici; před testem pauzy, aby pauza ze záznamu (konec
+             * přehrávání, start) vstoupila do paused smyčky hned. V per-event
+             * bloku, ne v instrukční smyčce: bez záznamu jedna větev. */
+            if (s_mzarch_replay_due)
+            {
+                s_mzarch_replay_due = false;
+                replay_on_frame_boundary();
+            };
 
             /* jsme v pauze? */
             if (EMULATOR_TEST_PAUSED)

@@ -63,9 +63,32 @@ typedef struct st_JOY_DEV
     uint8_t virtual_state;
 } st_JOY_DEV;
 
+/**
+ * @brief Čtení hostitelského joysticku (typ JOY_TYPE_JOYSTICK).
+ * @param joy_devid Port.
+ * @return Stav portu (bity en_JOY_STATEBIT, 0 = aktivní, 0FFh = nic).
+ */
+typedef uint8_t (*joy_host_read_fn)(en_JOY_DEVID joy_devid);
+
+/**
+ * @brief Stav joysticků (globální g_joy).
+ *
+ * `host_read` určuje, odkud joy_read_byte() bere stav portu typu
+ * JOY_TYPE_JOYSTICK: výchozí je živé čtení hostitele (`host_scan`) při
+ * každém IN, po dobu záznamu a přehrání vstupů (joy_host_latch()) vrací
+ * `dev[].state`, který replay jednou za snímek naplní. Přepnutím ukazatele
+ * se čtení IN nevětví podle režimu. `host_scan` je živý zdroj (SDL); unit
+ * testy ho mohou nahradit vlastní funkcí.
+ *
+ * @invariant `host_read` a `host_scan` nejsou NULL (nastaví je joy_init()).
+ * @note Přístup z emu vlákna (IN, bod hranice snímku replay); UI vlákno
+ *       zapisuje jen `dev[].state` u numerické klávesnice.
+ */
 typedef struct st_JOY
 {
     st_JOY_DEV dev[JOY_DEVID_COUNT];
+    joy_host_read_fn host_read; /**< Zdroj stavu portu typu JOYSTICK pro joy_read_byte(). */
+    joy_host_read_fn host_scan; /**< Živé čtení hostitele (výchozí iface_joy_scan, v testech náhrada). */
 } st_JOY;
 
 extern st_JOY g_joy;
@@ -86,6 +109,26 @@ extern "C"
 #endif
     extern void joy_init(void);
     extern uint8_t joy_read_byte(en_JOY_DEVID joy_devid);
+
+    /**
+     * @brief Živý stav hostitelského joysticku (`g_joy.host_scan`, výchozí
+     *        SDL), bez ohledu na joy_host_latch().
+     *
+     * @param joy_devid Port.
+     * @return Stav (0FFh = nic nebo build bez joysticku).
+     * @note Volá emu vlákno (jako IN), stejně jako dřívější přímé čtení.
+     */
+    extern uint8_t joy_host_scan(en_JOY_DEVID joy_devid);
+
+    /**
+     * @brief Přepne zdroj stavu portů typu JOYSTICK.
+     *
+     * @param latched true = joy_read_byte() vrací `g_joy.dev[].state`
+     *                (záznam a přehrání vstupů: stav plní replay jednou za
+     *                snímek), false = živé čtení SDL při každém IN (výchozí).
+     * @note Typ portu (INI) se nemění. Volá emu vlákno.
+     */
+    extern void joy_host_latch(bool latched);
 #ifdef __cplusplus
 }
 #endif

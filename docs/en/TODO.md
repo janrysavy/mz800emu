@@ -6,17 +6,13 @@
 - MZ-800: CG-RAM editor
 - MZ-1500: PCG viewer - overview of all characters of a PCG bank at once (the single-character editor is already part of the Memory Browser)
 - LUA scripting
-- Smart memory search
 - dynamic IORQ bus, plug-and-play
 - ability to attach external modules/libraries to IORQ
 - Reference search (where exactly is this read/written)
-- Reverse trace (who wrote the value at address X?)
 - Back step
-- Cheat search
 - complete overscreen menu
 - TapeMZ support and online conversion from wav to mzf
 - gdb support
-- code coverage by the instructions actually executed: the fetched instruction bytes (also for self-modifying code) and the decisions of conditional jumps and repeated instructions (taken / not taken, repeat count of LDIR etc.)
 
 
 ## Emulation

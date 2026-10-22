@@ -60,7 +60,8 @@
  *
  * Built-in funkce:
  *   min(a,b), max(a,b), abs(x), if(cond,a,b),
- *   bit(value,n), s8(x), s16(x), s32(x)
+ *   bit(value,n), s8(x), s16(x), s32(x),
+ *   lastwriter(addr) - PC posledního zápisu do buňky podle ramlogu (-1 = neznámý)
  *
  * ----------------------------- License -------------------------------------
  * GPL-3.0-or-later, see breakpoints.h header for full notice.
@@ -111,8 +112,13 @@ extern "C" {
         uint8_t  BankPC;        /**< bank kontext PC */
         uint8_t  BankAddr;      /**< bank kontext target adresy */
         /* Globální emu state (= naplnit z g_mzarch_main / g_gdg). */
-        int64_t  Cycle;         /**< T-states counter [neověřeno - frame/total semantika] */
-        int64_t  Frame;         /**< frame counter */
+        int32_t  InsnPC;        /**< Adresa právě vykonávané instrukce (g_mzarch_main.instruction_addr);
+                                     u MEM_R/MEM_W/IORQ je živé PC už za ní. */
+        int64_t  Cycle;         /**< Takty GDG od startu emulátoru na začátku instrukce (gdg_get_total_ticks; reset stroje čítač nenuluje);
+                                     ve výrazu oříznuté na int32 (přeteče asi po 121 s PAL). */
+        int64_t  Frame;         /**< Počet dokončených snímků od startu emulátoru (reset ho nenuluje). */
+        int32_t  FrameCycle;    /**< Takty GDG od začátku aktuálního snímku (0 .. takty snímku - 1),
+                                     na začátku instrukce; nepřetéká. */
         int32_t  Scanline;      /**< GDG raster line */
         /* CPU stav (NULL = registry resolve na 0). */
         z80_t   *cpu;
@@ -123,6 +129,11 @@ extern "C" {
          * (= test, eval bez self-reference); disable_self pak loguje
          * warning a no-op. */
         int      self_id;
+        /* true = znak `!` se ignoruje: `[addr]!` / `{addr}!` čte jako
+         * `[addr]` (bez MEM_R BP), `port[N]!` jako sonda `port[N]`. Pro
+         * Test Eval editačního panelu BP (DBGAPI_CMD_BP_TEST_EVAL);
+         * bp_expr_ctx_zero() nastaví false (= `!` platí). */
+        bool     no_side_effects;
     } bp_expr_ctx_t;
 
 

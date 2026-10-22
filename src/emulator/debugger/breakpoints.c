@@ -40,6 +40,7 @@
 #include "bp_vars.h"
 #include "bptmap.h"
 #include "cfgmain.h"
+#include "automation.h" /* automatický běh: bez výchozí sady, akce exit */
 #include "main.h"   /* g_sdlapp */
 #include "libs/sdlapp/sdlapp_paths.h"
 
@@ -346,8 +347,10 @@ void breakpoints_init ( void ) {
      * periodické trace_save akce roste neohraničený (V19B disk-flood vektor). */
     bp_action_install_disk_flush_guard ( );
 
-    /* Automatické načtení breakpointů ze souboru */
-    if ( g_breakpoints.auto_load ) {
+    /* Automatické načtení breakpointů ze souboru. Ne v automatickém běhu
+     * (--exit-*, --result-json, ...): zbytek z GUI relace by ovlivnil
+     * výsledek testu; sada je jen z --bpt (automation_start). */
+    if ( g_breakpoints.auto_load && !automation_is_active ( ) ) {
         breakpoints_load_from_file ( );
     };
 
@@ -360,17 +363,32 @@ void breakpoints_init ( void ) {
 }
 
 
+/**
+ * @brief Automatické uložení při konci je pro tento běh vypnuté
+ *        (breakpoints_suppress_auto_save()).
+ */
+static bool s_breakpoints_auto_save_suppressed = false;
+
+
+void breakpoints_suppress_auto_save ( void ) {
+    s_breakpoints_auto_save_suppressed = true;
+}
+
+
 void breakpoints_exit ( void ) {
 
-    /* Automatické uložení breakpointů do souboru */
-    if ( g_breakpoints.auto_save ) {
+    /* Automatické uložení breakpointů do souboru (ne s testovací sadou
+     * automatizace, viz breakpoints_suppress_auto_save). */
+    if ( g_breakpoints.auto_save && !s_breakpoints_auto_save_suppressed ) {
         breakpoints_save_to_file ( );
     };
 
     /* V1.5.B: auto-save standalone .vars souboru (nezávisle na .bpt).
      * Vars jsou v .bpt vždy součástí (= sdílené persist), separate
      * .vars je pro export/share/per-arch izolaci. */
-    bp_vars_cfg_auto_save ( );
+    if ( !s_breakpoints_auto_save_suppressed ) {
+        bp_vars_cfg_auto_save ( );
+    };
 
     /* Uvolnění paměti breakpointů */
     unsigned i;
@@ -3016,12 +3034,38 @@ bool breakpoints_run_action ( const st_BPT *bpt,
 #include "bp_zone.h"        /* D.5 - banking zone filter */
 #include "bp_event.h"       /* Vlna 1 mutant event-viewer: g_bp_fire_reason */
 #include "trace/eventlog.h" /* Vlna 1 mutant event-viewer: BP_FIRE fan-out */
+#include "run_control/run_control.h" /* detaily zastavení pro záznam a událost "paused" */
 
 #ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
 #include <json-glib/json-glib.h>
 #include "../mcp/event_bus.h"
 #include "../mcp/trap_manager.h"
 #endif
+
+
+/**
+ * @brief Příkazy, které smí proběhnout v drainu na hranici akce BP.
+ *
+ * Drain běží uprostřed instrukce (MEM_W BP se vyhodnocuje před zápisem,
+ * MEM_R/IORQ uvnitř přístupu). Smí v něm proběhnout jen příkazy, které
+ * nečtou ani nemění stav stroje a nesahají na sběrnici (insideop účty
+ * instrukce zůstanou nedotčené): pauza, vynucená pauza a dotaz na stav
+ * běhu. Čtení registrů nebo paměti by vidělo PC za instrukcí a paměť před
+ * zápisem; ty počkají na drain na hranici snímku nebo v pauze.
+ *
+ * @param cmd Příkaz bez BLOCKING flagu.
+ * @return true = řídicí příkaz povolený uprostřed instrukce.
+ */
+static bool breakpoints_bp_boundary_cmd_allowed ( en_DBGAPI_CMD cmd ) {
+    switch ( cmd ) {
+        case DBGAPI_CMD_PAUSE:
+        case DBGAPI_CMD_FORCE_PAUSE:
+        case DBGAPI_CMD_IS_RUNNING:
+            return true;
+        default:
+            return false;
+    };
+}
 
 
 void breakpoints_drain_control_plane_at_bp_boundary ( void ) {
@@ -3036,15 +3080,18 @@ void breakpoints_drain_control_plane_at_bp_boundary ( void ) {
      * Prázdná fronta = jeden atomic read + branch, pak okamžitý návrat. */
     if ( !dbgapi_emu_has_pending ( &g_dbgapi_cmdrq_queue ) ) return;
 
-    /* Drain CELÉ fronty stejnými primitivy jako per-frame bod
-     * (mzarch.c screen-done). dequeue/dispatch/complete jsou thread-safe
-     * a určené pro emu vlákno, na kterém běžíme - re-použití je legální.
+    /* Jen řídicí příkazy (breakpoints_bp_boundary_cmd_allowed), i když ve
+     * frontě čekají za jinými; ostatní zůstanou ve frontě v pořadí na drain
+     * na hranici snímku nebo v pauze. Jsme uprostřed instrukce, proto
+     * dispatch bez úklidu insideop účtů (povolené příkazy na sběrnici
+     * nesahají).
      *
-     * Po drainu: pokud některý příkaz nastavil pauzu (PAUSE/STOP přes
-     * emulator_pause(true)), enforce po návratu narazí na EMULATOR_TEST_PAUSED
-     * v mzarch.c a vstoupí do paused-loop. Žádný další kód zde netřeba. */
+     * Po drainu: pokud příkaz nastavil pauzu (emulator_pause(true)), enforce
+     * po návratu narazí na EMULATOR_TEST_PAUSED v mzarch.c a vstoupí do
+     * paused-loop. Žádný další kód zde netřeba. */
     st_DBGAPI_CMDRQ *rq;
-    while ( ( rq = dbgapi_emu_dequeue ( &g_dbgapi_cmdrq_queue ) ) != NULL ) {
+    while ( ( rq = dbgapi_emu_dequeue_matching ( &g_dbgapi_cmdrq_queue,
+                                                 breakpoints_bp_boundary_cmd_allowed ) ) != NULL ) {
         dbgapi_emu_dispatch ( rq );
         dbgapi_emu_complete ( rq );
     };
@@ -3194,7 +3241,8 @@ static void breakpoints_savecfg_fwd_default_interval ( void *e, void *data ) {
  * @param bytes Počet právě zapsaných bajtů.
  *
  * Side effects: inkrement g_bp_action_total_bytes; při překročení prahu
- * emulator_pause(true) + stderr warning + (pod MCP) "paused" event. Auto-pauza
+ * emulator_pause(true) s důvodem EMU_PAUSE_REASON_BP_SATURATION + stderr
+ * warning; událost "paused" vyšle záznam zastavení (run_control.h). Auto-pauza
  * proběhne jen jednou na hranici překročení (akumulátor dál roste, ale
  * emulator_pause(true) je idempotentní).
  * Threading: jen z emu vlákna (mezi instrukcemi, safe-point).
@@ -3213,32 +3261,33 @@ void breakpoints_fwd_account_bytes ( int bp_id, uint64_t bytes ) {
     if ( before < limit && g_bp_action_total_bytes >= limit ) {
         unsigned long long total_mb =
             (unsigned long long) ( g_bp_action_total_bytes / ( 1024 * 1024 ) );
+        /* bp_id < 0 = flush-side guard: zápis trace kanálu, který spustila
+         * nebo ukládá akce BP (bez vazby na jeden konkrétní BP). */
+        char who[48];
+        if ( bp_id >= 0 ) {
+            snprintf ( who, sizeof ( who ), "BP #%d", bp_id );
+        } else {
+            snprintf ( who, sizeof ( who ), "trace driven by a BP action" );
+        };
         fprintf ( stderr,
-                  "[BP-ACTION] forward-action byte backstop tripped: BP #%d - "
+                  "[BP-ACTION] forward-action byte backstop tripped: %s - "
                   "auto-paused after %llu MB written\n",
-                  bp_id, total_mb );
+                  who, total_mb );
 
         /* Čistá auto-pauza přes stejný mechanismus jako DBGAPI PAUSE
          * (= konzistentní side-efekty: audio pause, MZEVENT). Jsme na emu
-         * vlákně mezi instrukcemi (safe-point), takže je to bezpečné. */
-        emulator_pause ( true );
-
-#ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
-        /* Informuj MCP klienty: "paused" event s důvodem saturace, ať uživatel
-         * ví PROČ se emulátor zastavil (vč. BP id a objemu). */
-        JsonObject *p_payload = json_object_new ( );
-        json_object_set_string_member ( p_payload, "reason",
-                                         "bp_action_saturation" );
-        json_object_set_int_member ( p_payload, "bp_id", bp_id );
-        json_object_set_int_member ( p_payload, "bytes",
-                                     (gint64) g_bp_action_total_bytes );
+         * vlákně mezi instrukcemi (safe-point), takže je to bezpečné.
+         * Událost "paused" s důvodem saturace (BP id, objem, detail) vyšle
+         * záznam zastavení na vstupu do pauzy (run_control_on_stop()). */
         char detail[128];
         snprintf ( detail, sizeof ( detail ),
-                   "BP #%d forward-action saturation: auto-paused after %llu MB",
-                   bp_id, total_mb );
-        json_object_set_string_member ( p_payload, "detail", detail );
-        event_bus_emit ( "paused", p_payload );
-#endif /* MZ800EMU_CFG_MCP_SERVER_ENABLED */
+                   "%s forward-action saturation: auto-paused after %llu MB",
+                   who, total_mb );
+        if ( !EMULATOR_TEST_PAUSED ) {
+            g_emulator.pause_reason = EMU_PAUSE_REASON_BP_SATURATION;
+            run_control_note_saturation ( bp_id, g_bp_action_total_bytes, detail );
+        };
+        emulator_pause ( true );
     };
 }
 
@@ -3256,20 +3305,28 @@ void breakpoints_fill_global_ctx ( bp_expr_ctx_t *ctx ) {
     ctx->cpu = g_mzarch_main.cpu;
     /* V1.5 fáze 2.4: zdroje z GDG (mz800 + mz1500 sdílí pattern).
      *
-     * - Frame    = g_gdg.total_elapsed.screens (= kompletní snímky od resetu;
+     * - Frame    = g_gdg.total_elapsed.screens (= kompletní snímky od startu
+     *              emulátoru, reset stroje je nenuluje;
      *              inkrementuje se v gdg_on_screen_done_event).
      * - Scanline = g_gdg.beam_row (= aktuální raster row paprsku).
      * - Cycle    = gdg_get_total_ticks() = kumulativní GDG pixel ticks od
-     *              resetu (16 pixel ticks per Z80 T-state na 3.5 MHz). NENI
-     *              čistý Z80 T-state counter; pro per-frame timing relativní
-     *              jednotky stačí. Plný T-state cycle counter = TODO V1.6+. */
+     *              startu emulátoru na začátku instrukce (GDGCLK2CPU_DIVIDER = 5 taktů
+     *              GDG na T-stav u PAL, 4 u NTSC). NENI čistý Z80 T-state
+     *              counter. Plný T-state cycle counter = TODO V1.6+.
+     * - FrameCycle = g_gdg.total_elapsed.ticks (= takty GDG od začátku
+     *              snímku; Cycle = Frame * VIDEO_SCREEN_TICKS + FrameCycle).
+     * - InsnPC   = g_mzarch_main.instruction_addr (= adresa vykonávané
+     *              instrukce; živé cpu->pc je u MEM/IORQ hooků už za ní). */
+    ctx->InsnPC   = (int32_t) g_mzarch_main.instruction_addr;
 #if ( MZARCH == 800 ) || ( MZARCH == 1500 ) || ( MZARCH == 700 )
     ctx->Cycle    = (int64_t) gdg_get_total_ticks ( );
     ctx->Frame    = (int64_t) g_gdg.total_elapsed.screens;
+    ctx->FrameCycle = (int32_t) g_gdg.total_elapsed.ticks;
     ctx->Scanline = (int32_t) g_gdg.beam_row;
 #else
     ctx->Cycle    = 0;
     ctx->Frame    = 0;
+    ctx->FrameCycle = 0;
     ctx->Scanline = 0;
 #endif
     /* BankPC/BankAddr: D.5 banking awareness.
@@ -3380,10 +3437,18 @@ void breakpoints_enforce ( st_BPT *bpt, struct bp_expr_ctx_s *ctx ) {
         should_continue = breakpoints_run_action ( bpt, ctx );
     };
 
-    /* 7) Stop nebo continue. */
+    /* 7) Stop nebo continue. Akce s příkazem exit = žádost o konec běhu:
+     * pauzu, důvod EXIT a událost "paused" udělá automation_request_exit()
+     * níže (po breakpoint_hit, stejné pořadí událostí jako u stopu). */
+    st_BP_ACTION_HALT halt = { BP_ACTION_HALT_NONE, 0, NULL };
+    bool is_exit = !should_continue && bpt->action && bpt->action[0] != '\0' && bpt->parsed_action
+                   && bp_action_last_halt ( &halt ) && halt.kind == BP_ACTION_HALT_EXIT;
     if ( !should_continue ) {
-        g_emulator.pause_reason = EMU_PAUSE_REASON_BREAKPOINT;
-        emulator_pause ( true );
+        if ( !is_exit ) {
+            g_emulator.pause_reason = EMU_PAUSE_REASON_BREAKPOINT;
+            run_control_note_breakpoint ( bpt->id );
+            emulator_pause ( true );
+        };
         debugger_show_main_window ( );
 
         /* MSG do UI vlákna - heap alloc per dbgapi_msg.h kontraktu
@@ -3410,14 +3475,20 @@ void breakpoints_enforce ( st_BPT *bpt, struct bp_expr_ctx_s *ctx ) {
         json_object_set_int_member ( bp_payload, "trap_id", trap_id );
         event_bus_emit ( "breakpoint_hit", bp_payload );
 
-        /* Současně emit "paused" event pro klienty, kteří poslouchají
-         * obecný pause topic (= union BP/manual/fatal/quit). */
-        JsonObject *p_payload = json_object_new ( );
-        json_object_set_string_member ( p_payload, "reason", "breakpoint" );
-        uint16_t pc_now = ctx->cpu ? (uint16_t) ctx->cpu->pc : bpt->addr;
-        json_object_set_int_member ( p_payload, "pc", pc_now );
-        event_bus_emit ( "paused", p_payload );
+        /* Událost "paused" (reason "breakpoint", u exit "exit") vyšle
+         * záznam zastavení na vstupu do pauzy (run_control_on_stop()),
+         * tedy až po "breakpoint_hit". */
 #endif /* MZ800EMU_CFG_MCP_SERVER_ENABLED */
+
+        if ( is_exit ) {
+            st_AUTOMATION_TRIGGER trig = {
+                .bp_id = bpt->id,
+                .bp_name = bpt->name,
+                .bp_type = bpt_type_to_string ( bpt->type ),
+                .hits = bpt->hits,
+            };
+            automation_request_exit ( halt.code, AUTOMATION_REASON_EXIT_ACTION, halt.message, &trig );
+        };
     } else {
         /* 8) Vrstva 1 (0019) control-plane garance: akce proběhla a vrací
          * continue (= off-hot-path hranice). Obsloužíme pending řídicí
@@ -3491,19 +3562,38 @@ void breakpoints_enforce_pc_exec_nonsingle ( uint16_t pc ) {
 }
 
 
-void breakpoints_enforce_pc_exec ( uint16_t pc ) {
-    int marker = g_bptmap.bpmap[pc];
-    if ( marker == BREAKPOINT_TYPE_NONE ) return;
+/**
+ * @brief Zastaví emulaci na dočasném breakpointu.
+ *
+ * Dočasný BP (Run to cursor, Step over přes CALL/RST/DJNZ/ED, MCP
+ * `run_until_addr` a `step_out`) nemá podmínku ani akci: nastaví důvod pauzy
+ * @c EMU_PAUSE_REASON_RUN_TO, pozastaví emulaci a ukáže okno debuggeru.
+ * Událost `paused` s `reason: "run_to"` a `pc` vyšle záznam zastavení na
+ * vstupu do pauzy (run_control_on_stop()).
+ *
+ * @param pc Adresa instrukce, na které se zastavuje (= adresa dočasného BP).
+ *
+ * @pre Emu vlákno, před vykonáním instrukce na @p pc; emulace neběží v pauze.
+ * @post EMULATOR_TEST_PAUSED; dočasný BP smazaný (emulator_pause() ho maže
+ *       při každé pauze).
+ */
+static void breakpoints_stop_at_temporary ( uint16_t pc ) {
+    printf ( "DEBUGGER - activated temporary breakpoint on addr: 0x%04x\n", pc );
+    g_emulator.pause_reason = EMU_PAUSE_REASON_RUN_TO;
+    emulator_pause ( true );
+    debugger_show_main_window ( );
+}
 
-    /* Temporary BP (run-to-cursor / step-over): legacy chování -
-     * pause + show debugger, žádná condition / action. */
-    if ( marker == BREAKPOINT_TYPE_TEMPORARY ) {
-        printf ( "DEBUGGER - activated temporary breakpoint on addr: 0x%04x\n", pc );
-        emulator_pause ( true );
-        debugger_show_main_window ( );
-        return;
-    };
 
+/**
+ * @brief Vyhodnotí trvalý PC_EXEC breakpoint ze značky v bpmap[].
+ *
+ * @param marker Značka z g_bptmap.bpmap[pc] (> 0 = ID breakpointu).
+ * @param pc Adresa instrukce.
+ *
+ * Side effects: viz breakpoints_enforce (může pozastavit emulaci).
+ */
+static void breakpoints_enforce_pc_exec_user ( int marker, uint16_t pc ) {
     /* marker > 0 = bp_id existujícího BP. */
     st_BPT *bpt = breakpoints_find_by_id ( marker );
     if ( !bpt ) return;
@@ -3525,6 +3615,30 @@ void breakpoints_enforce_pc_exec ( uint16_t pc ) {
     ctx.IsExec = true;
 
     breakpoints_enforce ( bpt, &ctx );
+}
+
+
+void breakpoints_enforce_pc_exec ( uint16_t pc ) {
+    int marker = g_bptmap.bpmap[pc];
+    if ( marker == BREAKPOINT_TYPE_NONE ) return;
+
+    /* Temporary BP (run-to-cursor / step-over): pause + show debugger,
+     * žádná condition / action. */
+    if ( marker == BREAKPOINT_TYPE_TEMPORARY ) {
+        breakpoints_stop_at_temporary ( pc );
+        return;
+    };
+
+    breakpoints_enforce_pc_exec_user ( marker, pc );
+
+    /* Na adrese je i dočasný BP: bptmap_set_temporary_event() značku
+     * TEMPORARY nad uživatelský BP nezapíše, takže rozhoduje tahle kontrola.
+     * Pokud uživatelský BP nezastavil (nesplněná podmínka, skip_count, akce
+     * s pokračováním, vypnutý BP), zastaví dočasný; jinak by run-to cílovou
+     * adresu přejel. Zastavil-li uživatelský BP, druhá událost nevznikne. */
+    if ( !EMULATOR_TEST_PAUSED && g_bptmap.temporary_bpt_addr == (int) pc ) {
+        breakpoints_stop_at_temporary ( pc );
+    };
 }
 
 

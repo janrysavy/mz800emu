@@ -63,7 +63,7 @@ extern void gdg_window_render_mz1500(void);
  *
  * Sekce je `CollapsingHeader` s defaultně otevřeným stavem a stable ID
  * `###GDGRaster`. Obsah: scanline, pixel clock (= ticks v aktuálním screenu),
- * VBLN counter (= snímky od resetu), HBLN/VBLN/HSYNC/VSYNC flagy, tempo
+ * VBLN counter (= snímky od startu emulátoru, reset ho nenuluje), HBLN/VBLN/HSYNC/VSYNC flagy, tempo
  * signál, tempo divider counter a CTC0 divider konstanta.
  *
  * Side-effect free: jen jedno volání `gdg_mirror_raster_snapshot()`.
@@ -106,8 +106,8 @@ static void render_raster_section(const st_GDG_RASTER_SNAPSHOT *snap)
         ImGui::TableNextColumn(); ImGui::TextUnformatted(_("Pixel clock:"));
         ImGui::TableNextColumn(); ImGui::Text("%u", (unsigned)snap->screen_ticks);
 
-        /* VBLN counter = monotonic přes celý běh emulace (od reset/load
-         * snapshotu). Slouží jako frame counter pro UI. */
+        /* VBLN counter = monotonic přes celý běh emulace (od startu nebo
+         * loadnutí snapshotu; reset stroje ho nenuluje). Slouží jako frame counter pro UI. */
         ImGui::TableNextRow();
         ImGui::TableNextColumn(); ImGui::TextUnformatted(_("VBLN count:"));
         ImGui::TableNextColumn();

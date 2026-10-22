@@ -341,6 +341,7 @@ int intlog_start ( void )
         return -1;
     }
     s_writer_open = 1;
+    tlog_writer_set_record_size ( &s_writer, TLOG_RECORD_SIZE_EVENT24 );
     s_prev_interrupt = 0;
 #if HAVE_PIOZ80
     /* Inicializace per-pin PIOZ80 baseline z aktuálního masked_input -
@@ -500,6 +501,11 @@ void intlog_apply_cli_options ( void )
         if ( g_ascii_strcasecmp ( v, "on" ) == 0 ) g_intlog_config.save_on_exit = 1;
         else if ( g_ascii_strcasecmp ( v, "off" ) == 0 ) g_intlog_config.save_on_exit = 0;
     }
+}
+
+const st_TLOG_WRITER *intlog_get_writer ( void )
+{
+    return &s_writer;
 }
 
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */

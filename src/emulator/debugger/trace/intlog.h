@@ -226,6 +226,18 @@ void intlog_record_irq_ack_im2 ( en_INTLOG_SOURCE_CHIP src,
  */
 void intlog_poll_interrupt_state ( uint8_t current_interrupt );
 
+/**
+ * @brief Writer kanálu intlog pro čtení proudu záznamů (trace_read).
+ *
+ * Vrací writer i po stopu (popis posledního uzavřeného segmentu), viz
+ * tlog_writer_read_snapshot() a devdoc/trace/stream-read.md.
+ *
+ * @return Ukazatel na statický writer modulu (nikdy NULL).
+ * @pre Snímek writeru pořizovat jen z emu vlákna; tlog_writer_segment()
+ *      z libovolného vlákna.
+ */
+const st_TLOG_WRITER *intlog_get_writer ( void );
+
 #ifdef __cplusplus
 }
 #endif

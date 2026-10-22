@@ -50,6 +50,12 @@ přesahy se tiše ořežou.
 | `IM` | aktuální interrupt mode (0/1/2) |
 | `IFF1`, `IFF2` | interrupt flip-flopy (0/1) |
 
+`PC` je živý registr. V PC_EXEC breakpointu se rovná adrese instrukce,
+která se právě chystá vykonat. V MEM_R, MEM_W a IORQ breakpointu se
+instrukce, která přístup dělá, už vykonává, takže `PC` ukazuje za ni:
+`LD (4000h),A` na 3003h dá `PC = 3006h`. Adresu samotné instrukce dává
+`InsnPC` (viz [Kontext breakpointu](#kontext-breakpointu)).
+
 ### Shadow registry
 
 | Identifikátor | Význam |
@@ -84,7 +90,8 @@ Eval, ad-hoc), zůstávají nulová.
 | `Address` | Memory adresa accessu (MEM_R/MEM_W/PC_EXEC); pro IORQ port hodnota |
 | `Value` | Bajt čtený / zapisovaný v daném accessu |
 | `IsRead`, `IsWrite`, `IsExec`, `IsPort` | Typ accessu (0/1) |
-| `BankPC` | Aktivní banking zóna pro PC |
+| `InsnPC` | Adresa právě vykonávané instrukce (její první bajt opkódu). V PC_EXEC shodná s `PC`; v MEM_R / MEM_W / IORQ instrukce, která přístup dělá (`PC` už je za ní). Platí i mimo enforcement (Test Eval). |
+| `BankPC` | Aktivní banking zóna pro živé `PC` |
 | `BankAddr` | Aktivní banking zóna pro `Address` (typicky shodná s `BankPC`) |
 | `Reason` | IFF change reason - platí jen v rámci aktivního IFF*_CHANGE fire; mimo aktivní fire vrací `none` (0xFF). Viz [Reason vocabulary](#reason-vocabulary). |
 
@@ -129,8 +136,9 @@ viz [hw-events.md](hw-events.md#cpu-events).
 
 | Identifikátor | Význam |
 |---------------|--------|
-| `Cycle` | GDG pixel ticks (kumulativní, počet pixel ticků od resetu). **Pozor:** GDG pixel ticks (16x rychlejší než Z80 T-state na 3.5 MHz), ne čistý Z80 T-state counter. Pro per-frame relativní timing OK. |
-| `Frame` | Počet kompletních snímků od resetu. Inkrementuje se na konci snímku. |
+| `Cycle` | Takty GDG (pixel ticks) od startu emulátoru na začátku aktuální instrukce (reset stroje čítač nenuluje, nahrání snapshotu ho nastaví na uloženou hodnotu). **Pozor:** není to čítač T-stavů Z80: jeden T-stav je 5 taktů GDG u PAL (MZ-800, MZ-700 PAL) a 4 u NTSC (MZ-700 NTSC, MZ-1500). Jako každá hodnota se ořízne na 32 bitů a po 2^31 taktech přeteče do záporných čísel, u PAL asi po 121 s emulovaného času (17 721 600 taktů za sekundu), u NTSC asi po 150 s. |
+| `FrameCycle` | Takty GDG od začátku aktuálního snímku na začátku aktuální instrukce: 0 .. takty snímku - 1 (354 432 na snímek u PAL, 238 944 u NTSC). Nepřetéká, pro časování v rámci snímku. `Cycle = Frame * takty snímku + FrameCycle`, dokud `Cycle` nepřeteče. |
+| `Frame` | Počet kompletních snímků od startu emulátoru (reset stroje ho nenuluje). Inkrementuje se na konci snímku. |
 | `Scanline` | Aktuální GDG raster row (0..výška snímku-1). |
 
 Per-arch zdroj: mz800 a mz1500 sdílí GDG strukturu, mz700 přebírá totéž.
@@ -191,13 +199,15 @@ Sémantika:
 
 | Tvar | Význam |
 |------|--------|
-| `[addr]` | Read 8-bit z RAM/VRAM |
-| `[addr]!` | Read 8-bit s explicit side-effect flagem (parsováno) |
-| `{addr}` | Read 16-bit (little-endian) - dva 8-bit reads |
+| `[addr]` | Čtení 8 bitů z aktuální mapy paměti CPU (RAM, ROM, VRAM) bez spuštění MEM_R breakpointů |
+| `[addr]!` | Stejné čtení, ale MEM_R breakpointy na `addr` se vyhodnotí (mohou se spustit a zastavit emulaci) |
+| `{addr}` | Čtení 16 bitů (little-endian) - dvě 8bitová čtení jako `[addr]` |
 
-Side-effect flag (`!`) je v AST zachovaný, ale runtime aktuálně vždy
-volá regulární memory read (= chování čtení s defaultní side-effect
-cestou).
+Oba tvary respektují aktuální banking. V režimu MZ-700 se čipy namapované
+na 0E000h-0E008h (8255, 8253, status GDG) v obou tvarech čtou bez
+vedlejšího efektu: autotype se neposune, klávesnice ani joystick
+hostitele se nenačtou a klopný obvod LSB/MSB 8253 se nepřepne. Čtení se
+skutečnými vedlejšími efekty čipu dává `port[N]!`.
 
 `{addr}` (16-bit word) nemá variantu se side-effect flagem.
 
@@ -253,6 +263,7 @@ Identifikátory funkcí jsou case-insensitive. Argumenty jsou výrazy.
 | `s8(x)` | 1 | sign-extend low byte (= `(int8_t)(x & 0xFF)`) |
 | `s16(x)` | 1 | sign-extend low word (= `(int16_t)(x & 0xFFFF)`) |
 | `s32(x)` | 1 | identita pro 32-bit (= `x`) |
+| `lastwriter(addr)` | 1 | adresa instrukce, která naposledy zapsala paměťovou buňku na CPU adrese `addr` (aktuální mapování; grafická VRAM MZ-800 = nejnovější z jejích plánů) podle [záznamu zápisů](../ram-write-log.md); `-1` = od spuštění nebo vyprázdnění záznamu nezapsána, záznam se nespustil, nebo port mapovaný do paměti (po zastavení záznamu hodnota zůstává) |
 
 Špatná arita (= jiný počet argumentů) je parser-time chyba. Funkce
 mimo seznam vrací parse error "unknown function 'name'".
@@ -349,7 +360,9 @@ Evaluator je tolerantní:
 - Žádné loops / iteration ve výrazu.
 - Žádné uživatelsky definované funkce (= jen built-iny).
 - Žádné stringy nebo arrays (jen skalární `int32_t`).
-- `Cycle` vrací GDG pixel ticks, ne čistý Z80 T-state counter.
+- `Cycle` vrací GDG pixel ticks, ne čistý Z80 T-state counter, a asi po
+  121 s emulovaného času (PAL) přeteče; v rámci snímku použijte
+  `FrameCycle`.
 - Žádný explicit `unsigned` typ - posuny a porovnání pracují signed,
   pro unsigned compare buď maskujte (`a & 0xFFFF`) nebo používejte
   `s8` / `s16` k explicit sign-extension.

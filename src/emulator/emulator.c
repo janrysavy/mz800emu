@@ -26,6 +26,7 @@
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
 #include "debugger/debugger.h"
 #include "debugger/bptmap.h"
+#include "debugger/run_control/run_log.h"
 #endif
 
 #include "generic_driver/memory_driver.h"
@@ -36,42 +37,93 @@
 #include "videorec/videorec.h"
 #include "screenshot/screenshot_series.h"
 #include "audio_capture.h"
+#include "automation.h"
+#include "replay.h"
 
 st_EMULATOR g_emulator;
 
 jmp_buf jumpBuffer;
 int g_emulator_exit_value = 0;
 
+/**
+ * @brief Úklid běžného konce: dopsání artefaktů a uložení konfigurace.
+ *
+ * Společný pro emulator_quit(0) i emulator_quit_with_code(). Pořadí je
+ * pevné (viz komentáře), volá se jednou za život procesu.
+ */
+static void emulator_exit_cleanup(void)
+{
+    /* cfgmain musi byt prvni exit funkce !!! */
+    fprintf(stderr, "Application is normaly exiting...\n");
+
+    version_check_exit();
+    /* Záznam vstupů: běžící záznam se uloží (před snapshot_exit, používá
+     * snapshot_io), přehrávání se zahodí. */
+    replay_shutdown();
+    /* Video záznam: synchronní stop (flush, sidecar, finalizace AVI, join writeru). */
+    videorec_exit();
+    /* Série screenshotů: stop a dopsání fronty (join writeru). */
+    screenshot_series_exit();
+    /* Zachycení zvuku: dopsání souborů a capture.json. */
+    audio_capture_exit();
+    snapshot_exit();
+    cfgmain_exit();
+
+    emulator_measuring_exit();
+    mzarch_platform_fn_exit();
+}
+
+
 void emulator_quit(int exit_value)
 {
-    g_emulator_exit_value = exit_value;
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    /* Probudit čekání MCP na zastavení běhu (wait_stop), ať dispatch
+     * vlákno neblokuje ukončení až do svého timeoutu. */
+    run_log_shutdown();
+#endif
     if (exit_value == 0)
     {
-        /* cfgmain musi byt prvni exit funkce !!! */
-        fprintf(stderr, "Application is normaly exiting...\n");
-
-        version_check_exit();
-        /* Video záznam: synchronní stop (flush, sidecar, finalizace AVI, join writeru). */
-        videorec_exit();
-        /* Série screenshotů: stop a dopsání fronty (join writeru). */
-        screenshot_series_exit();
-        /* Zachycení zvuku: dopsání souborů a capture.json. */
-        audio_capture_exit();
-        snapshot_exit();
-        cfgmain_exit();
-
-        emulator_measuring_exit();
-        mzarch_platform_fn_exit();
+        /* Konec zvenku (SIGINT, zavření okna, MCP shutdown) nebo po
+         * --record-frames / --audio-capture-frames: výsledek s důvodem quit,
+         * pokud automatizace běží a výsledek ještě nezapsala. */
+        automation_on_quit();
+        g_emulator_exit_value = exit_value;
+        emulator_exit_cleanup();
     }
     else
     {
         fprintf(stderr, "Oops ... Apppication is abnormaly exiting...\n");
+        /* Automatizace: result.json s důvodem error, kód AUTOMATION_EXIT_ERROR. */
+        exit_value = automation_on_crash(exit_value);
+        g_emulator_exit_value = exit_value;
 #if WINDOWS
-        // Pokud doslo k chybe, tak nechame chvili otevrene okno, aby uzivatel mohl videt, co se stalo
-        fprintf(stderr, "Waiting 5 seconds before exit...\n");
-        g_usleep(5 * 1000 * 1000);
+        // Pokud doslo k chybe, tak nechame chvili otevrene okno, aby uzivatel mohl videt, co se stalo.
+        // V --headless okno neni a cekani jen zdrzuje CI (N5).
+        if (!sdlapp_option_present("--headless"))
+        {
+            fprintf(stderr, "Waiting 5 seconds before exit...\n");
+            g_usleep(5 * 1000 * 1000);
+        };
 #endif
     };
+
+    sdlapp_quit(g_sdlapp);
+
+    longjmp(jumpBuffer, 1); // Skok zpět do mz800_main()
+
+    while (1)
+    {
+    };
+}
+
+
+void emulator_quit_with_code(int exit_value)
+{
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    run_log_shutdown(); /* viz emulator_quit() */
+#endif
+    g_emulator_exit_value = exit_value;
+    emulator_exit_cleanup();
 
     sdlapp_quit(g_sdlapp);
 
@@ -197,6 +249,7 @@ gpointer emulator_thread(gpointer ptr)
         file_driver_init();
         memory_driver_init();
 
+        replay_init();
         mzarch_platform_fn_init();
         snapshot_init();
         videorec_init();

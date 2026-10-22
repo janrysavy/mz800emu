@@ -44,6 +44,7 @@ typedef enum en_SNAPSHOT_RESULT {
     SNAPSHOT_ERR_ALLOC,           /* Chyba alokace paměti */
     SNAPSHOT_ERR_EXTERNAL_REF,    /* Chybí referenční externí soubor */
     SNAPSHOT_ERR_NOT_PAUSED,      /* Emulátor není v pauze */
+    SNAPSHOT_ERR_REPLAY_ACTIVE,   /* Načtení odmítnuto: běží záznam nebo přehrávání vstupů (replay) */
 } en_SNAPSHOT_RESULT;
 
 
@@ -129,9 +130,12 @@ en_SNAPSHOT_RESULT snapshot_load(const char *filepath);
  * @param out_size Výstupní velikost dat v bajtech. Při chybě bude
  *                 *out_size = 0.
  * @return SNAPSHOT_OK při úspěchu; jinak některý z @ref en_SNAPSHOT_RESULT
- *         (mimo jiné SNAPSHOT_ERR_NOT_PAUSED pokud emulátor neběží v pauze).
+ *         (mimo jiné SNAPSHOT_ERR_NOT_PAUSED pokud emulátor nestojí v pauze
+ *         ani v snapshot safe-pointu).
  *
- * @note Vyžaduje, aby byl emulátor v pauze (stejně jako @ref snapshot_save).
+ * @note Vyžaduje pauzu nebo `g_emulator.snapshot_safepoint` (emu vlákno mezi
+ *       instrukcemi, stejně jako @ref snapshot_save) - checkpointy záznamu
+ *       vstupů ho nastaví na dobu volání v bodě hranice snímku.
  * @note Vyprodukovaný buffer je bit-identický s .mzs souborem, který by
  *       vznikl voláním @ref snapshot_save - lze jej následně načíst přes
  *       @ref snapshot_load (po zapsání na disk) i přes
@@ -140,6 +144,31 @@ en_SNAPSHOT_RESULT snapshot_load(const char *filepath);
 en_SNAPSHOT_RESULT snapshot_save_to_buffer(const char *description,
                                            uint8_t **out_data,
                                            size_t *out_size);
+
+/**
+ * @brief SHA-256 stavu vybraných komponent snapshotu (bez zápisu archivu).
+ *
+ * Zavolá save handlery komponent ze seznamu @p names (v pořadí registru
+ * podle priority) nad handlem v hashovacím režimu
+ * (@ref snapshot_io_open_hash) s `for_hash` v kontextu: handlery vynechají
+ * pole, která nejsou stavem stroje (plánovaná událost hlavní smyčky,
+ * průběh vykreslení obrazu). Komponenta, která v registru není (na
+ * platformě chybí), se přeskočí. Stejný stav komponent dá vždy stejný hash,
+ * nezávisle na čase, kompresi a tom, zda emulace právě stojí v pauze.
+ *
+ * @param names    Jména komponent (`"ctc8253"`, `"pio8255"`, ...).
+ * @param count    Počet jmen.
+ * @param out_hex  Výstup: 64 hex znaků a nula.
+ * @param out_size Velikost @p out_hex (aspoň 65).
+ * @return SNAPSHOT_OK; chyba handleru nebo SNAPSHOT_ERR_IO (pak je
+ *         @p out_hex prázdný).
+ *
+ * @pre Volá emu vlákno (nebo emulace stojí): handlery čtou stav bez zámku.
+ * @note Na rozdíl od @ref snapshot_save nekontroluje pauzu; volá ji replay
+ *       v bodě hranice snímku.
+ */
+en_SNAPSHOT_RESULT snapshot_hash_components(const char *const *names, size_t count,
+                                            char *out_hex, size_t out_size);
 
 /**
  * Načtení snapshotu z paměťového bufferu

@@ -200,27 +200,72 @@ extern "C"
     extern void memory_map_pwrite(uint8_t mmap_port, uint8_t value);
     extern void memory_map_pread(uint8_t mmap_port);
 
-    /* Cteni z aktualne mapovane pameti - bez synchronizace */
+    /**
+     * @brief Čtení z aktuálně mapované paměti - bez synchronizace, s MEM_R BP.
+     *
+     * Respektuje banking. Mapované porty 0xE000-0xE008 (režim MZ-700) čte
+     * bez vedlejšího efektu na čipy (pio8255_peek, ctc8253_peek_byte,
+     * gdg_peek_dmd_status_memop). U adres, které padnou do RAM, vyhodnotí
+     * MEM_R breakpointy (breakpoints_enforce_mem_r). Používá ho `[addr]!`
+     * ve výrazech BP; čtení debuggerem jde přes memory_read_byte_no_se().
+     *
+     * @param addr Adresa v prostoru CPU.
+     * @return Bajt z aktuálně namapované paměti.
+     * @pre Emu vlákno (MEM_R breakpoint může pozastavit emulaci).
+     */
     extern uint8_t memory_read_byte(uint16_t addr);
 
     /**
-     * Debugger-safe variant memory_read_byte (V1.6+ TODO 4.2 5a).
+     * @brief Debugger-safe varianta memory_read_byte (V1.6+ TODO 4.2 5a).
      *
-     * Identicke chovani jako memory_read_byte (= banking + RAM read),
-     * ale BEZ MEM_R BP fire side-effectu. Pouziva se v BP expression
-     * evaluatoru pro [addr] deref bez side-effect (vs [addr]! ktery
-     * volá memory_read_byte = with side-effect).
+     * Stejné čtení jako memory_read_byte (banking, RAM, ROM, VRAM přes RF),
+     * ale bez vyhodnocení MEM_R breakpointů. Používá ho `[addr]` ve výrazech
+     * BP, debugger (debugger_memory_read_byte: disassembler, MCP mem_read,
+     * zásobník), Watch a regiony Logical (Memory Browser).
      *
-     * Bezpecnostni invariant: implementace nesmi volat
-     * breakpoints_enforce_mem_r ani jiny side-effect-laden hook.
-     * Side-effecty mimo BP fire (= tape state, IRQ ack) v MZ-800
-     * memory subsystemu **neexistuji** (= memory_read_byte je pure
-     * read mimo BP hook), takze no_se = read - BP fire.
+     * Bezpečnostní invariant: implementace nesmí volat
+     * breakpoints_enforce_mem_r ani jiný hook s vedlejším efektem. Mapované
+     * porty 0xE000-0xE008 v režimu MZ-700 se čtou přes *_peek funkce čipů:
+     * autotype se neposune, nenačte se klávesnice ani joystick hostitele,
+     * páska ani CTC0 se nedosynchronizují, klopný obvod LSB/MSB 8253 se
+     * nepřepne. Hodnota odpovídá čtení CPU až na vstupy, které čtení CPU
+     * nejdřív dosynchronizuje (klávesnice a joystick hostitele, páska, CTC0
+     * v rychlé cestě): u nich je ze stavu poslední synchronizace.
+     *
+     * @param addr Adresa v prostoru CPU.
+     * @return Bajt z aktuálně namapované paměti.
+     * @pre Emu vlákno, nebo pauza (čtení sdíleného stavu bez zámku).
      */
     extern uint8_t memory_read_byte_no_se(uint16_t addr);
 
-    /* Zapis do aktualne mapovane pameti - bez synchronizace */
+    /**
+     * @brief Zápis do aktuálně mapované paměti - bez synchronizace, s MEM_W BP.
+     *
+     * Před zápisem vyhodnotí MEM_W breakpointy. Používá ho akce `poke`
+     * v Action DSL. Zápisy CPU jdou přes memory_write_cb /
+     * memory_write_with_logging_cb, zápisy debuggerem přes
+     * memory_write_byte_no_bp().
+     *
+     * @param addr  Adresa v prostoru CPU.
+     * @param value Zapisovaný bajt.
+     * @pre Emu vlákno (MEM_W breakpoint může pozastavit emulaci).
+     */
     extern void memory_write_byte(uint16_t addr, uint8_t value);
+
+    /**
+     * @brief Zápis do aktuálně mapované paměti bez MEM_W breakpointu (debugger).
+     *
+     * Stejný zápis jako memory_write_byte() včetně vedlejších efektů zápisu
+     * (VRAM přes GDG write format, mapované porty 0xE000-0xE008 v režimu
+     * MZ-700), jen bez vyhodnocení MEM_W breakpointů. Pro
+     * debugger_memory_write_byte (MCP mem_write, úpravy paměti v GUI)
+     * a region Logical (MCP region_write, Memory Browser, freeze).
+     *
+     * @param addr  Adresa v prostoru CPU.
+     * @param value Zapisovaný bajt.
+     * @pre Emu vlákno.
+     */
+    extern void memory_write_byte_no_bp(uint16_t addr, uint8_t value);
 
     typedef enum en_MEMORY_LOAD
     {

@@ -125,18 +125,22 @@ Aktualizuje se periodicky přes SDL timer (~1x/s).
 
 ### INI config
 
-Per-subsystém sekce v `mz800emu.ini` / `mz1500emu.ini`:
+Per-subsystém sekce v `mz800emu.ini` / `mz1500emu.ini`. Čísla
+v konfiguračním souboru jsou **šestnáctková**, tak jak je emulátor zapisuje
+(`chunk_mb = 0x40` znamená 64 MB); i hodnota bez předpony `0x` se čte
+šestnáctkově (`chunk_mb = 64` by znamenalo 100 MB a `pc_range_hi = 65535`
+je mimo rozsah, takže zůstane výchozí hodnota):
 
 ```ini
 [TRACE_CPUTRACK]
 mode=OFF
 dir=trace-suite
 name=cputrack
-chunk_mb=64
-max_total_mb=2048
+chunk_mb=0x40                    # 64 MB
+max_total_mb=0x800               # 2048 MB
 save_on_exit=1
-pc_range_lo=0                    # range-scope filtr: dolní mez PC (default 0)
-pc_range_hi=65535               # horní mez PC (default 0xFFFF = bez filtru)
+pc_range_lo=0x0000               # range-scope filtr: dolní mez PC (default 0)
+pc_range_hi=0xffff               # horní mez PC (default 0xFFFF = bez filtru)
 
 [TRACE_IORQLOG]
 ... (stejná struktura)
@@ -151,8 +155,8 @@ pc_range_hi=65535               # horní mez PC (default 0xFFFF = bez filtru)
 mode=OFF
 dir=trace-suite
 name=marklog
-chunk_mb=64
-max_total_mb=2048
+chunk_mb=0x40
+max_total_mb=0x800
 save_on_exit=1
 stdout_enabled=1                # back-compat printout [BP-MARK] na stdout
 ```
@@ -166,18 +170,20 @@ bez nutnosti ukládat až při ukončení emulátoru.
 
 ### Přes MCP
 
-MCP server vystavuje pro 4 binární kanály (`cputrack`, `iorqlog`,
-`intlog`, `hwlog`) plný lifecycle:
+MCP server vystavuje pro 5 binárních kanálů (`cputrack`, `iorqlog`,
+`intlog`, `hwlog`, `marklog`) plný lifecycle a čtení záznamů:
 
 | Tool | Co dělá |
 |------|---------|
 | `emu_trace_start` | Spustí záznam zvoleného kanálu (= režim ALWAYS) |
 | `emu_trace_stop`  | Zastaví záznam kanálu (segment se uzavře a uloží) |
-| `emu_trace_reset` | Vynuluje aktuální segment kanálu (= čistý baseline) |
+| `emu_trace_reset` | Zapíše rozpracovaný chunk a manifest na disk, záznam pokračuje (nic nezahodí) |
 | `emu_trace_save`  | Uloží/přesměruje segment kanálu na novou cestu |
+| `emu_trace_status` | Stav kanálů pro čtení (segment, počet záznamů, chunky) |
+| `emu_trace_read`  | Stránka záznamů kanálu (dekódované řádky nebo surové záznamy) |
 
-Každý tool má povinný argument `channel` (jeden z
-`cputrack`/`iorqlog`/`intlog`/`hwlog`). `emu_trace_save` má navíc
+Lifecycle tooly mají povinný argument `channel` (jeden z
+`cputrack`/`iorqlog`/`intlog`/`hwlog`/`marklog`). `emu_trace_save` má navíc
 volitelný `path` (cílová cesta následujícího segmentu; bez něj se jen
 uzavře a znovuotevře aktuální segment = "ulož teď"). Rozhraní zrcadlí
 CDL lifecycle tooly (`emu_cdl_start` / `_stop` / `_reset` / `_export`).
@@ -186,6 +192,36 @@ Detaily a návratové hodnoty viz [Přehled MCP tools](../mcp-server/tools-overv
 Typický postup: warp přes nezajímavou část, `emu_trace_start` těsně
 před sledovaným úsekem, doběh, `emu_trace_stop` a `emu_trace_save`
 s názvem segmentu.
+
+### Čtení záznamů přes MCP
+
+`emu_trace_read` vrací záznamy kanálu po stránkách přímo přes MCP, bez
+parsování souborů a i za běhu záznamu: čte jak chunky na disku, tak
+data, která jsou zatím jen v RAM bufferu (krátký běh se tak dá číst
+hned, nemusí se nejdřív zapsat na disk). Po `emu_trace_stop` zůstane
+poslední segment čitelný až do dalšího startu kanálu. Stejně jde číst
+i ring Event Vieweru (kanál `eventlog`) a paměť zachycení zvuku (kanály
+`audio_psg_writes`, `audio_levels`, `audio_frames`, viz [Zachycení
+zvuku](../audio-capture.md)).
+
+- Záznamy mají pořadové číslo `seq` v rámci segmentu (jeden záznam od
+  startu do stopu). Stránkuje se kurzorem `next_cursor`; `end_of_data`
+  znamená, že stránka došla k nejnovějšímu záznamu - po dalším běhu
+  emulace se čte dál stejným kurzorem.
+- Kurzor ze staršího segmentu (kanál se mezitím znovu spustil) vrátí
+  chybu začínající `segment_replaced:`; čte se znovu od začátku.
+- Výchozí výstup jsou dekódované řádky (u cputrack i disassembly
+  z bajtů v záznamu a symbol), velikost stránky hlídá rozpočet znaků
+  (`max_chars`, výchozí 20 000). `format: raw_b64` vrací surové
+  záznamy pro skripty.
+- Filtry: rozsah PC (cputrack), port, směr a typ (iorqlog), čip
+  (hwlog), značka (marklog), časový rozsah (`t`).
+- Čas `t` je v taktech GDG od startu emulace. U cputrack (formát v2) se
+  počítá z kotvy chunku a T-stavů záznamů (včetně záznamů přijetí
+  přerušení); s nahrávacím filtrem PC (`pc_range_lo/hi`) chybí
+  instrukce, a proto ho `emu_trace_status` hlásí jako `has_time: false`.
+
+Parametry a tvar odpovědi viz [Přehled MCP tools](../mcp-server/tools-overview.md).
 
 ### Z akce breakpointu
 
@@ -251,9 +287,9 @@ trace-suite/
     ...
 ```
 
-## meta.json formát
+## Formát manifestu `<name>.json`
 
-Každý subsystém generuje vlastní meta.json:
+Každý subsystém generuje vlastní manifest `<name>.json`:
 
 ```json
 {
@@ -290,13 +326,17 @@ v každém eventu).
 | Offset | Velikost | Pole                      |
 |--------|----------|---------------------------|
 | 0      | 2 B      | regPC (uint16 LE)         |
-| 2      | 1 B      | insn_length (1-4)         |
+| 2      | 1 B      | insn_length (1-4; 0 = přijetí přerušení) |
 | 3      | 4 B      | insn_bytes (jen prvních insn_length valid) |
 | 7      | 4 B      | wait_clk (uint32 LE)      |
-| 11     | 1 B      | reserved                  |
+| 11     | 1 B      | t_std - standardní T-stavy (formát v2) |
 
 `wait_clk == 0` = běžná instrukce, `0xFFFFFFFF` = saturated
-(typ. dlouhá HALT smyčka >20 min při 3.5 MHz).
+(typ. dlouhá HALT smyčka >20 min při 3.5 MHz). Formát v2 (manifest
+`event_record_version: 2`): bajt 11 nese standardní délku instrukce,
+záznam s `insn_length` 0 je přijetí přerušení (`regPC` = adresa
+obsluhy, `t_std` = T-stavy přijetí). Detail viz
+[formát cputrack](formats/CPU-track_format.md).
 
 HALT/self-loop collapse: opakované vykonání stejné instr (HALT, JP $,
 JR $-2) se sbalí do jediného eventu s wait_clk = sumovaný čas.
@@ -381,7 +421,7 @@ Viz samostatný `docs/cz/debugger/formats/MARK-log_format.md`.
 
 Loguje uživatelské markery vyvolávané z BP action `mark "name"`. Marker
 name je předem zaregistrované při BP parse a v binárce ho reprezentuje
-stabilní `uint16 marker_id`. Mapování id -> name se dumpuje do `meta.json`
+stabilní `uint16 marker_id`. Mapování id -> name se dumpuje do manifestu `<name>.json`
 `subsys_header.markers`. Marklog navíc má volitelný stdout printout
 (`[BP-MARK] <name>`) řízený samostatným flagem `stdout_enabled`.
 
@@ -400,13 +440,17 @@ stabilní `uint16 marker_id`. Mapování id -> name se dumpuje do `meta.json`
 - max-total-mb (default 2048 = 2 GB na kanál; 0 = unlimited): hard limit
   na celkovou velikost recordingu - pojistka proti zaplnění disku (cputrack
   jinak roste prakticky neomezeně). Při dosažení se subsystém zastaví, do
-  meta.json se zapíše `"truncated": true, "truncated_reason": "max_total_mb"`,
+  manifest `<name>.json` se zapíše `"truncated": true, "truncated_reason": "max_total_mb"`,
   na konzoli zpráva `[trace-suite] <subsys>: max-total-mb=N reached,
-  recording stopped`.
+  recording stopped`. Emulace běží dál. Limit objemu zápisů akcí
+  breakpointů (`[BREAKPOINTS] fwd_byte_limit_mb`, ten emulaci
+  zapauzuje) platí jen pro kanál, který spustila (`trace_start`) nebo
+  ukládá (`trace_save`) akce breakpointu, ne pro nahrávání spuštěné
+  z tohoto menu nebo přes MCP.
 
 ## Externí parsing
 
-Externí tooling (Python, C, ...) může parsovat meta.json + binární
+Externí tooling (Python, C, ...) může parsovat manifest `<name>.json` + binární
 chunky podle dokumentovaných formátů. Žádné vendor-locked formáty.
 
 Re-simulace: hackeři / aicoders / RE tooling si memory accesses

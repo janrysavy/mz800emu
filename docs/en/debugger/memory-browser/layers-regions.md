@@ -97,7 +97,8 @@ The tree reflects differences between mz800, mz700 and mz1500:
 - **CG-RAM** (4 KB, only in 700 mode)
 - **PCG bank 1 / 2 / 3** (8 KB each, only MZ-1500)
 - **Memext** (Luftner / PEHU, only if connected)
-  - RAM bank 0x00 .. 0xN
+  - RAM bank 0x00 .. 0x7F (4 KB each; a PEHU 8 KB bank N is shown as the two
+    4 KB parts 2*N and 2*N + 1)
   - FLASH bank 0x00 .. 0xN (Luftner, read-only)
 - **Ramdisk STD** (if connected, bank count depends on type)
 - **Ramdisk PEZIK port 0x68** + **port 0xE8** (if connected)

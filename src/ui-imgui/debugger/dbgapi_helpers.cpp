@@ -133,6 +133,7 @@ bool dbg_ui_run_to(uint16_t addr)
 bool dbg_ui_set_reg(uint8_t reg_id, uint16_t value)
 {
     st_DBGAPI_REG_PARAM p;
+    memset(&p, 0, sizeof(p));   /* has_expected = 0: zápis bez podmínky */
     p.reg_id = reg_id;
     p.value = value;
     return dbgapi_ui_submit_cmd_sync(&g_dbgapi_cmdrq_queue,
@@ -148,6 +149,7 @@ bool dbg_ui_mem_write(uint16_t addr, const uint8_t *buf, uint16_t len)
         return false;
 
     st_DBGAPI_MEM_PARAM p;
+    memset(&p, 0, sizeof(p));   /* cond = NULL: zápis bez podmínky */
     p.addr = addr;
     p.len = len;
     /* Cast const-away: dispatch v dbgapi.c jen čte z p.buf, neměnit. */
@@ -359,6 +361,19 @@ bool dbg_ui_bp_reset_hits(int id)
 }
 
 
+bool dbg_ui_bp_test_eval(st_DBGAPI_BP_TEST_EVAL_PARAM *p)
+{
+    /* Param i výraz žijí u volajícího; synchronní submit je po dokončení
+     * příkazu už nepoužívá. */
+    if (!p)
+        return false;
+    return dbgapi_ui_submit_cmd_sync(&g_dbgapi_cmdrq_queue,
+                                     DBGAPI_CMD_BP_TEST_EVAL,
+                                     p, NULL,
+                                     DBG_UI_BP_BULK_CMD_TIMEOUT_MS);
+}
+
+
 bool dbg_ui_mhmap_set_mode(int mode)
 {
     /* Vzor CPU Instruction History: flag zapíše UI (int zápis), swap
@@ -565,6 +580,20 @@ bool dbg_ui_freeze_remove(int region_kind, int sub_id, uint32_t offset)
 }
 
 
+bool dbg_ui_memsearch_sample(const void *spans, uint32_t span_count,
+                             void *sample)
+{
+    if (!spans || span_count == 0 || !sample) return false;
+    st_DBGAPI_MEMSEARCH_SAMPLE_PARAM p;
+    p.spans = spans;
+    p.span_count = span_count;
+    p.sample = sample;
+    return dbgapi_ui_submit_cmd_sync(&g_dbgapi_cmdrq_queue,
+                                     DBGAPI_CMD_MEMSEARCH_SAMPLE, &p, NULL,
+                                     DBG_UI_MEMSEARCH_SAMPLE_TIMEOUT_MS);
+}
+
+
 bool dbg_ui_callstack_set_active(bool active, bool *out_active)
 {
     st_DBGAPI_CALLSTACK_SET_ACTIVE_PARAM p;
@@ -594,6 +623,18 @@ bool dbg_ui_screen_refresh(void)
                                      DBGAPI_CMD_SCREEN_REFRESH,
                                      NULL, NULL,
                                      DBG_UI_SCREEN_REFRESH_TIMEOUT_MS);
+}
+
+
+bool dbg_ui_ramlog(st_DBGAPI_RAMLOG_PARAM *p)
+{
+    if (!p) return false;
+    /* Prázdný out_error po neúspěchu = timeout (handler chybu vždy popíše). */
+    p->out_error[0] = '\0';
+    return dbgapi_ui_submit_cmd_sync(&g_dbgapi_cmdrq_queue,
+                                     DBGAPI_CMD_RAMLOG,
+                                     p, NULL,
+                                     DBG_UI_RAMLOG_CMD_TIMEOUT_MS);
 }
 
 #else /* !MZ800EMU_CFG_DEBUGGER_ENABLED */

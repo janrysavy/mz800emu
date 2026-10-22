@@ -368,11 +368,29 @@ void imgui_menu_debugger(en_DBG_MENU_CALLER caller)
             g_gui->showMemoryBrowserWindow = !g_gui->showMemoryBrowserWindow;
         };
         /*
+         * Memory Search - postupné hledání proměnných (životy, skóre):
+         * kandidáti, filtry, akce nad kandidátem. Toggle přes
+         * g_gui->showMemorySearchWindow + globální zkratka Alt+Shift+E.
+         */
+        if (ImGui::MenuItem(_L("Memory Search"), "Alt+Shift+E",
+                            g_gui->showMemorySearchWindow))
+        {
+            g_gui->showMemorySearchWindow = !g_gui->showMemorySearchWindow;
+        };
+        /*
          * V3 multi-view: submenu "Other memory browsers" - 4 sekundarni
          * Memory Browser okna (#2 - #5). Kazde je nezavisla instance s
          * vlastnim regionem/encodingem/cursorem; sdileji pouze freeze
          * subsystem. Toggle pres g_gui->showMemoryBrowserWindowExtra[N-2].
          */
+        /*
+         * RAM Write Log - záznam zápisů do paměti (kdo zapsal bajt,
+         * nejnovější zápisy). Toggle přes g_gui->showRamlogWindow.
+         */
+        if (ImGui::MenuItem(_L("RAM Write Log"), NULL, g_gui->showRamlogWindow))
+        {
+            g_gui->showRamlogWindow = !g_gui->showRamlogWindow;
+        };
         if (ImGui::BeginMenu(_L("Other memory browsers")))
         {
             if (ImGui::MenuItem(_L("Memory Browser #2"), NULL,
@@ -575,7 +593,7 @@ void imgui_menu_debugger(en_DBG_MENU_CALLER caller)
 
         /*
          * Submenu "Storage" - state okna ulozistovych radicu/zarizeni:
-         * FDC (WD279x), QDisk (MZ-1F11), Memory Disk (ramdisky MR-1R18 +
+         * FDC (WD279x), QDisk (MZ-1F11), Memory Disk (ramdisky MZ-1R18 +
          * Pezik), IDE8 (HDD radic). Tyto MenuItems jsou duplicitni k polozkam
          * v sekci HW (menu_fdcontroller.cpp, menu_qdisk.cpp, menu_ramdisk.cpp,
          * menu_ide8.cpp); zamer je mit je dostupne i z Debugger menu vedle

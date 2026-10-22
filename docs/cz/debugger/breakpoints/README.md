@@ -86,8 +86,8 @@ Každý BP typ má vlastní enforcement hook v emu vrstvě:
 | Typ | Volá se z |
 |-----|-----------|
 | PC_EXEC | hot loop pre-instruction |
-| MEM_R | debugger UI / `[addr]` deref + CPU read v debugger active mode (jen data reads - viz filtrace M1 fetch níže) |
-| MEM_W | debugger UI / STMT_POKE + CPU write v debugger active mode |
+| MEM_R | CPU read v debugger active mode (jen data reads - viz filtrace M1 fetch níže) + `[addr]!` deref ve výrazu; čtení samotným debuggerem nefiruje |
+| MEM_W | CPU write v debugger active mode + STMT_POKE; zápis samotným debuggerem nefiruje |
 | IORQ_R | CPU port read |
 | IORQ_W | CPU port write |
 | IRQ | po Z80 INT dispatch (POST-dispatch) |
@@ -134,9 +134,9 @@ instrukce vyvolala MEM_R fire pro každý opcode/operand byte (= spam,
 typicky 2-4x per instrukce), což znehodnocuje BP type pro use-case
 "chci vědět kdy program čte data z X".
 
-Filtrace platí **jen v CPU read path**. Debugger UI deref (`[addr]`
-expression) nemá M1 koncept a fire vždy (= manuální čtení by nemělo
-být filtrováno).
+Filtrace platí **jen v CPU read path**. Deref `[addr]!` ve výrazu nemá
+M1 koncept a fire vždy (= manuální čtení by nemělo být filtrováno);
+`[addr]` bez `!` nefiruje.
 
 Pozor: instruction fetch z mid-instruction adresy (= např.
 self-modifying code, ROM banking během dekódování) je teoreticky stále

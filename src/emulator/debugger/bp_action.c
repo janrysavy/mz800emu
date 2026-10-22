@@ -51,6 +51,10 @@
 #include "snapshot/snapshot.h"     /* snapshot: snapshot_save */
 #include "emulator.h"              /* snapshot gating: g_emulator.paused (safe-point) */
 #include "dbgapi_cmdrq.h"          /* trace: dbgapi_trace_lifecycle + en_DBGAPI_TRACE_* */
+#include "debugger/trace/ramlog.h"
+#include "debugger/trace/ramlog_hook.h"   /* ramlog_start/stop: ramlog_hook_start/stop */
+#include "debugger/coverage/coverage_hook.h" /* coverage_start/stop/mark */
+#include "replay.h"                 /* záznam vstupů: zápisy akcí mimo záznam */
 
 
 /* ========================================================================= */
@@ -72,7 +76,9 @@ typedef enum {
     STMT_VAR_ASSIGN,     /**< $name op= expr (op je kód níže) */
     STMT_CLEAR_VARS,     /**< clear_vars */
     STMT_IF,             /**< if expr then <stmt> */
-    STMT_FWD             /**< forward na dbgapi: cdl_/trace_/snapshot (0017 FÁZE 3b) */
+    STMT_FWD,            /**< forward na dbgapi: cdl_/trace_/snapshot (0017 FÁZE 3b) */
+    STMT_STOP,           /**< stop ["fmt", args] - zastavit (ukončí akci) */
+    STMT_EXIT            /**< exit <expr> [, "fmt", args] - konec běhu s kódem (ukončí akci) */
 } stmt_kind_t;
 
 
@@ -93,7 +99,13 @@ typedef enum {
     FWD_TRACE_START,  /**< trace_start <chan> - dbgapi_trace_lifecycle(START) */
     FWD_TRACE_STOP,   /**< trace_stop <chan> - dbgapi_trace_lifecycle(STOP) */
     FWD_TRACE_SAVE,   /**< trace_save <chan>, "<file>"[, args] - lifecycle(SAVE) */
-    FWD_SNAPSHOT      /**< snapshot "<file>"[, args] - snapshot_save(rendered) */
+    FWD_SNAPSHOT,     /**< snapshot "<file>"[, args] - snapshot_save(rendered) */
+    FWD_RAMLOG_START, /**< ramlog_start [<from>, <to>] - ramlog_hook_start (bez argumentů celá paměť) */
+    FWD_RAMLOG_STOP,  /**< ramlog_stop - ramlog_hook_stop */
+    FWD_RAMLOG_CLEAR, /**< ramlog_clear - ramlog_clear (nový segment) */
+    FWD_COVERAGE_START, /**< coverage_start [branch|detail] - coverage_hook_start (pokračuje do dat) */
+    FWD_COVERAGE_STOP,  /**< coverage_stop - coverage_hook_stop */
+    FWD_COVERAGE_MARK   /**< coverage_mark - coverage_mark (nová epocha) */
 } fwd_op_t;
 
 
@@ -177,6 +189,7 @@ struct bp_action_stmt_s {
         struct {
             fwd_op_t                op;     /**< která lifecycle operace */
             en_DBGAPI_TRACE_CHANNEL channel; /**< jen pro FWD_TRACE_* */
+            uint8_t                 coverage_level; /**< jen pro FWD_COVERAGE_START: en_COVERAGE_LEVEL */
             /* Jméno souboru jako printf-style šablona (sdílí renderer s `log`):
              * relevantní pro FWD_CDL_EXPORT / FWD_TRACE_SAVE / FWD_SNAPSHOT.
              * NULL = příkaz bez cesty (cdl start/stop/reset, trace start/stop). */
@@ -184,6 +197,14 @@ struct bp_action_stmt_s {
             bp_expr_t  *args[BP_ACTION_LOG_MAX_ARGS]; /**< $var / expr argumenty šablony */
             int         n_args;
         } fwd;
+        /* STMT_STOP / STMT_EXIT: volitelná hláška (šablona jako log),
+         * u EXIT výraz návratového kódu. */
+        struct {
+            bp_expr_t  *code;                         /**< jen EXIT, vždy non-NULL; STOP = NULL */
+            char       *fmt;                          /**< hláška nebo NULL */
+            bp_expr_t  *args[BP_ACTION_LOG_MAX_ARGS]; /**< argumenty hlášky */
+            int         n_args;
+        } halt;
     };
 };
 
@@ -267,6 +288,14 @@ static void bp_action_stmt_free_inner ( bp_action_stmt_t *s ) {
             free ( s->fwd.fmt );
             for ( int i = 0; i < s->fwd.n_args; i++ ) {
                 bp_expr_free ( s->fwd.args[i] );
+            };
+            break;
+        case STMT_STOP:
+        case STMT_EXIT:
+            bp_expr_free ( s->halt.code );
+            free ( s->halt.fmt );
+            for ( int i = 0; i < s->halt.n_args; i++ ) {
+                bp_expr_free ( s->halt.args[i] );
             };
             break;
         case STMT_CONTINUE:
@@ -612,6 +641,85 @@ static bool parse_log_stmt ( const char *args_str,
 
 
 /**
+ * @brief Index první čárky na nejvyšší úrovni (mimo závorky a řetězce).
+ *
+ * @return Index v @p s, nebo -1, když taková čárka není.
+ */
+static int find_top_level_comma ( const char *s ) {
+    int depth = 0;
+    bool in_str = false;
+    char sq = 0;
+    for ( int i = 0; s[i]; i++ ) {
+        char c = s[i];
+        if ( in_str ) {
+            if ( c == '\\' && s[i + 1] ) { i++; continue; };
+            if ( c == sq ) in_str = false;
+            continue;
+        };
+        if ( c == '"' || c == '\'' ) { in_str = true; sq = c; continue; };
+        if ( c == '(' || c == '[' || c == '{' ) depth++;
+        else if ( c == ')' || c == ']' || c == '}' ) depth--;
+        else if ( c == ',' && depth == 0 ) return i;
+    };
+    return -1;
+}
+
+
+/**
+ * @brief Parsuje STOP / EXIT statement.
+ *
+ * - `stop` [ "fmt" [, expr]* ]
+ * - `exit` <expr> [ , "fmt" [, expr]* ]
+ *
+ * Hláška je printf šablona stejně jako u `log`.
+ *
+ * @param args_str Text za klíčovým slovem.
+ * @param is_exit  true = `exit`, false = `stop`.
+ * @return true při úspěchu (výstup naplněn), false při chybě (errbuf).
+ */
+static bool parse_halt_stmt ( const char *args_str, bool is_exit,
+                               bp_action_stmt_t *out,
+                               char *errbuf, size_t errbuf_size ) {
+    const char *what = is_exit ? "exit" : "stop";
+    const char *cur = skip_ws ( args_str );
+    out->kind = is_exit ? STMT_EXIT : STMT_STOP;
+    out->halt.code = NULL;
+    out->halt.fmt = NULL;
+    out->halt.n_args = 0;
+
+    if ( is_exit ) {
+        int split = find_top_level_comma ( cur );
+        size_t n = ( split < 0 ) ? strlen ( cur ) : (size_t) split;
+        char *expr_buf = (char *) malloc ( n + 1 );
+        if ( !expr_buf ) return ac_err ( errbuf, errbuf_size, "out of memory" );
+        memcpy ( expr_buf, cur, n );
+        expr_buf[n] = '\0';
+        rtrim ( expr_buf );
+        if ( !*expr_buf ) {
+            free ( expr_buf );
+            return ac_err ( errbuf, errbuf_size, "exit: expected exit code expression" );
+        };
+        out->halt.code = parse_expr_str ( expr_buf, errbuf, errbuf_size );
+        free ( expr_buf );
+        if ( !out->halt.code ) return false;
+        if ( split < 0 ) return true;
+        cur = skip_ws ( cur + split + 1 );
+        if ( *cur != '"' ) {
+            return ac_err ( errbuf, errbuf_size, "exit: expected message string after ','" );
+        };
+    } else if ( !*cur ) {
+        return true;
+    };
+
+    out->halt.fmt = read_string_literal ( &cur, errbuf, errbuf_size );
+    if ( !out->halt.fmt ) return false;
+    return parse_comma_args ( &cur, out->halt.args, &out->halt.n_args,
+                               BP_ACTION_LOG_MAX_ARGS, what,
+                               errbuf, errbuf_size );
+}
+
+
+/**
  * @brief Parsuje VAR_ASSIGN statement: $name [op]= expr.
  *
  * Formát: $name op_or_eq expr. Operátory: = += -= *= /= <<= >>= &= |= ^=.
@@ -790,7 +898,7 @@ static bool parse_set_reg_stmt ( const char *args_str,
  * @brief Přeloží jméno trace kanálu na en_DBGAPI_TRACE_CHANNEL.
  *
  * Akceptuje stejné kanonické názvy jako MCP dispatch (cputrack/iorqlog/
- * intlog/hwlog), case-sensitive.
+ * intlog/hwlog/marklog), case-sensitive.
  *
  * @return true při platném názvu, false jinak.
  */
@@ -800,6 +908,7 @@ static bool parse_trace_channel ( const char *name, en_DBGAPI_TRACE_CHANNEL *out
     if ( strcmp ( name, "iorqlog" )  == 0 ) { *out = DBGAPI_TRACE_CHANNEL_IORQLOG;  return true; };
     if ( strcmp ( name, "intlog" )   == 0 ) { *out = DBGAPI_TRACE_CHANNEL_INTLOG;   return true; };
     if ( strcmp ( name, "hwlog" )    == 0 ) { *out = DBGAPI_TRACE_CHANNEL_HWLOG;    return true; };
+    if ( strcmp ( name, "marklog" )  == 0 ) { *out = DBGAPI_TRACE_CHANNEL_MARKLOG;  return true; };
     return false;
 }
 
@@ -829,11 +938,86 @@ static bool parse_fwd_path ( const char *args_str,
 
 
 /**
+ * @brief Parsuje `ramlog_start [<from>, <to>]`.
+ *
+ * Bez argumentů = záznam zápisů do celé paměti. S argumenty jeden rozsah CPU
+ * adres; oba výrazy se vyhodnotí až při hitu BP (např. `ramlog_start HL,
+ * HL+15`), hodnota se ořízne na 16 bitů a prohozené meze se seřadí.
+ *
+ * @param args_str Text za klíčovým slovem (po skip_ws).
+ * @param out Cílový statement (STMT_FWD, FWD_RAMLOG_START).
+ * @param errbuf Buffer pro chybovou zprávu.
+ * @param errbuf_size Velikost errbuf.
+ * @return true = OK; false = chyba syntaxe (zpráva v errbuf), out->fwd.args
+ *         vlastní už naparsované výrazy (uvolní je bp_action_stmt_free_inner).
+ */
+static bool parse_fwd_ramlog_start ( const char *args_str, bp_action_stmt_t *out,
+                                     char *errbuf, size_t errbuf_size ) {
+    out->kind       = STMT_FWD;
+    out->fwd.op     = FWD_RAMLOG_START;
+    out->fwd.fmt    = NULL;
+    out->fwd.n_args = 0;
+    if ( *args_str == '\0' || *args_str == '#' ) return true;
+    /* parse_comma_args čeká čárku před každým argumentem. */
+    char *tmp = g_strconcat ( ",", args_str, NULL );
+    const char *cur = tmp;
+    bool ok = parse_comma_args ( &cur, out->fwd.args, &out->fwd.n_args, 2,
+                                 "ramlog_start", errbuf, errbuf_size );
+    g_free ( tmp );
+    if ( ok && out->fwd.n_args != 2 ) {
+        return ac_err ( errbuf, errbuf_size,
+                        "ramlog_start: expected no arguments or <from>, <to>" );
+    };
+    return ok;
+}
+
+
+/**
  * @brief Parsuje trace_* forward příkaz: trace_<op> <channel>[, "<file>"[, args]].
  *
  * Pro start/stop bere jen jméno kanálu. Pro save bere kanál, pak povinný
  * string-literál cesty (+ volitelné expr argumenty šablony jako u `log`).
  */
+/**
+ * @brief Parsuje `coverage_start [branch|detail]`.
+ *
+ * Bez argumentu úroveň branch. Akce pokračuje do stávajících dat se
+ * stejným nastavením (jako MCP coverage_start bez `reset`).
+ *
+ * @param args_str Text za klíčovým slovem.
+ * @param out Cílový statement (STMT_FWD, FWD_COVERAGE_START).
+ * @param errbuf Buffer pro chybovou hlášku.
+ * @param errbuf_size Velikost bufferu.
+ * @return true OK, false syntaktická chyba (hláška v errbuf).
+ */
+static bool parse_fwd_coverage_start ( const char *args_str, bp_action_stmt_t *out,
+                                       char *errbuf, size_t errbuf_size ) {
+    const char *p = skip_ws ( args_str );
+    out->kind = STMT_FWD;
+    out->fwd.op = FWD_COVERAGE_START;
+    out->fwd.fmt = NULL;
+    out->fwd.n_args = 0;
+    out->fwd.coverage_level = COVERAGE_LEVEL_BRANCH;
+    if ( *p ) {
+        char lvl[BP_ACTION_VAR_NAME_MAX + 1] = {0};
+        if ( read_ident ( &p, lvl, sizeof ( lvl ) ) == 0 ) {
+            return ac_err ( errbuf, errbuf_size, "coverage_start: expected branch or detail" );
+        };
+        if ( strcmp ( lvl, "detail" ) == 0 ) {
+            out->fwd.coverage_level = COVERAGE_LEVEL_DETAIL;
+        } else if ( strcmp ( lvl, "branch" ) != 0 ) {
+            return ac_err ( errbuf, errbuf_size,
+                            "coverage_start: unknown level '%s' (expected branch or detail)", lvl );
+        };
+        p = skip_ws ( p );
+        if ( *p ) {
+            return ac_err ( errbuf, errbuf_size, "coverage_start: unexpected trailing text '%s'", p );
+        };
+    };
+    return true;
+}
+
+
 static bool parse_fwd_trace ( const char *args_str, fwd_op_t op,
                                bp_action_stmt_t *out,
                                const char *what,
@@ -1152,6 +1336,32 @@ static bool parse_stmt ( const char *src,
         return parse_fwd_trace ( skip_ws ( p + 10 ), FWD_TRACE_SAVE, out,
                                   "trace_save", errbuf, errbuf_size );
     };
+    if ( match_keyword ( p, "ramlog_start" ) ) {
+        return parse_fwd_ramlog_start ( skip_ws ( p + 12 ), out, errbuf, errbuf_size );
+    };
+    if ( match_keyword ( p, "ramlog_stop" ) ) {
+        out->kind = STMT_FWD; out->fwd.op = FWD_RAMLOG_STOP;
+        out->fwd.fmt = NULL;  out->fwd.n_args = 0;
+        return true;
+    };
+    if ( match_keyword ( p, "ramlog_clear" ) ) {
+        out->kind = STMT_FWD; out->fwd.op = FWD_RAMLOG_CLEAR;
+        out->fwd.fmt = NULL;  out->fwd.n_args = 0;
+        return true;
+    };
+    if ( match_keyword ( p, "coverage_start" ) ) {
+        return parse_fwd_coverage_start ( skip_ws ( p + 14 ), out, errbuf, errbuf_size );
+    };
+    if ( match_keyword ( p, "coverage_stop" ) ) {
+        out->kind = STMT_FWD; out->fwd.op = FWD_COVERAGE_STOP;
+        out->fwd.fmt = NULL;  out->fwd.n_args = 0;
+        return true;
+    };
+    if ( match_keyword ( p, "coverage_mark" ) ) {
+        out->kind = STMT_FWD; out->fwd.op = FWD_COVERAGE_MARK;
+        out->fwd.fmt = NULL;  out->fwd.n_args = 0;
+        return true;
+    };
     if ( match_keyword ( p, "snapshot" ) ) {
         out->kind = STMT_FWD; out->fwd.op = FWD_SNAPSHOT;
         return parse_fwd_path ( skip_ws ( p + 8 ), out, "snapshot",
@@ -1160,6 +1370,13 @@ static bool parse_stmt ( const char *src,
 
     if ( match_keyword ( p, "if" ) ) {
         return parse_if_stmt ( skip_ws ( p + 2 ), out, errbuf, errbuf_size );
+    };
+
+    if ( match_keyword ( p, "stop" ) ) {
+        return parse_halt_stmt ( p + 4, false, out, errbuf, errbuf_size );
+    };
+    if ( match_keyword ( p, "exit" ) ) {
+        return parse_halt_stmt ( p + 4, true, out, errbuf, errbuf_size );
     };
 
     return ac_err ( errbuf, errbuf_size, "unknown action statement: '%s'", p );
@@ -1263,7 +1480,9 @@ void bp_action_free ( bp_action_t *action ) {
  */
 static int classify_priority ( en_BP_ACTION_SUB sub ) {
     switch ( sub ) {
-        case BP_ACTION_SUB_HALT:     return 0;
+        /* HALT z příkazu stop / exit má přednost před vším (BP zastaví).
+         * Prázdná akce vrací HALT dřív, než se priority porovnávají. */
+        case BP_ACTION_SUB_HALT:     return 6;
         case BP_ACTION_SUB_CONTINUE: return 1;
         case BP_ACTION_SUB_IGNORE:   return 2;
         case BP_ACTION_SUB_ENABLE:   return 3;
@@ -1292,6 +1511,9 @@ static en_BP_ACTION_SUB classify_stmt ( const bp_action_stmt_t *s ) {
             return BP_ACTION_SUB_DISABLE;
         case STMT_ENABLE:
             return BP_ACTION_SUB_ENABLE;
+        case STMT_STOP:
+        case STMT_EXIT:
+            return BP_ACTION_SUB_HALT;
         case STMT_IF: {
             /* Rekurzivně zvol nejvyšší prioritu z then/else větví.
              * Pokud žádná větev neexistuje (nemělo by se stát po validním
@@ -1753,6 +1975,11 @@ void bp_action_reset_trace_disk_baseline ( void ) {
  * MB), protože backstop se vyhodnocoval výhradně v breakpoints_fwd_account_bytes
  * volaném z trace_save fire.
  *
+ * Účtuje jen při nahrávání kanálu řízeného akcí BP (fwd_trace_bp_recording(),
+ * bp_action_trace_channel_note()). Trace spuštěný jen z GUI nebo MCP backstop
+ * nezastaví (dřív ho po 256 MB zapauzoval s "BP #-1" a headless běh visel),
+ * hlídá ho vlastní max_total_mb kanálu.
+ *
  * ŽÁDNÉ DOUBLE-ACCOUNT: guard sdílí baseline @c g_fwd_trace_disk_seen s
  * @ref fwd_record_fire_trace. Accountuje DELTU disk čítače od baseline a baseline
  * posune na aktuální total. Tím je flush-side cesta JEDINÝM průběžným konzumentem
@@ -1771,6 +1998,52 @@ void bp_action_reset_trace_disk_baseline ( void ) {
  * Threading: volán z emu vlákna synchronně z tlog_common_disk_bytes_add
  * (safe-point mezi instrukcemi). NEsmí re-entrantně zapisovat trace.
  */
+/**
+ * @brief Kanály trace řízené akcí BP (bit = en_DBGAPI_TRACE_CHANNEL).
+ *
+ * Nastavuje bp_action_trace_channel_note() (akce trace_start, úspěšný
+ * trace_save), nuluje bp_action_trace_channel_forget() (akce trace_stop,
+ * TRACE_START/STOP z GUI nebo MCP) a fwd_trace_bp_recording() u kanálu,
+ * který už nenahrává. Threading: jen emu vlákno (nebo test).
+ */
+static uint32_t g_fwd_trace_bp_channels = 0;
+
+
+void bp_action_trace_channel_note ( int channel ) {
+    if ( channel < 0 || channel > 31 ) return;
+    g_fwd_trace_bp_channels |= ( 1u << channel );
+}
+
+
+void bp_action_trace_channel_forget ( int channel ) {
+    if ( channel < 0 || channel > 31 ) return;
+    g_fwd_trace_bp_channels &= ~( 1u << channel );
+}
+
+
+/**
+ * @brief Nahrává právě kanál trace řízený akcí BP?
+ *
+ * Projde značky a u kanálu, který už nenahrává (zastavený z GUI, reset
+ * konfigurace), značku zruší.
+ *
+ * @return true = aspoň jeden označený kanál nahrává.
+ * Side effects: vynuluje značky nenahrávajících kanálů.
+ */
+static bool fwd_trace_bp_recording ( void ) {
+    bool any = false;
+    for ( int ch = 0; ch < 32; ch++ ) {
+        if ( !( g_fwd_trace_bp_channels & ( 1u << ch ) ) ) continue;
+        if ( dbgapi_trace_channel_recording ( (en_DBGAPI_TRACE_CHANNEL) ch ) ) {
+            any = true;
+        } else {
+            g_fwd_trace_bp_channels &= ~( 1u << ch );
+        };
+    };
+    return any;
+}
+
+
 static void bp_action_disk_flush_guard ( uint64_t added ) {
     (void) added; /* delta počítáme z čítače proti baseline (robustnější) */
 
@@ -1779,6 +2052,12 @@ static void bp_action_disk_flush_guard ( uint64_t added ) {
                      ? ( total - g_fwd_trace_disk_seen ) : 0;
     if ( delta == 0 ) return;
     g_fwd_trace_disk_seen = total;
+
+    /* Trace bez akcí BP (spuštěný z GUI nebo MCP) do byte backstopu nepatří,
+     * hlídá ho vlastní max_total_mb kanálu. Baseline se posunula i tak, aby
+     * tyto bajty nezapočítal ani pozdější trace_save fire. */
+    if ( !fwd_trace_bp_recording ( ) ) return;
+
     breakpoints_fwd_account_bytes ( -1, delta );
 }
 
@@ -1879,10 +2158,15 @@ static void execute_fwd ( const bp_action_stmt_t *s,
             break;
         };
         case FWD_TRACE_START:
-            dbgapi_trace_lifecycle ( s->fwd.channel, DBGAPI_TRACE_OP_START, NULL );
+            /* Kanál spuštěný akcí BP: jeho zápisy na disk patří do byte
+             * backstopu (flush-side guard). */
+            if ( dbgapi_trace_lifecycle ( s->fwd.channel, DBGAPI_TRACE_OP_START, NULL ) == 0 ) {
+                bp_action_trace_channel_note ( (int) s->fwd.channel );
+            };
             break;
         case FWD_TRACE_STOP:
             dbgapi_trace_lifecycle ( s->fwd.channel, DBGAPI_TRACE_OP_STOP, NULL );
+            bp_action_trace_channel_forget ( (int) s->fwd.channel );
             break;
         case FWD_TRACE_SAVE: {
             /* 0019 vrstva 2: rate-limit gate (těžká I/O akce). Skip = tiše
@@ -1899,8 +2183,10 @@ static void execute_fwd ( const bp_action_stmt_t *s,
                 /* 0019 vrstva 2/3: úspěšný fire -> runtime stav + byte backstop.
                  * Trace_save: accountuj CELÝ disk footprint (chunk segmenty +
                  * initial-state dumpy) přes deltu tlog disk čítače, NE g_stat na
-                 * index soubor (ten masivně podpočítává - viz V19). */
+                 * index soubor (ten masivně podpočítává - viz V19). Kanál,
+                 * který akce BP ukládá, dál účtuje i flush-side guard. */
                 fwd_record_fire_trace ( ctx );
+                bp_action_trace_channel_note ( (int) s->fwd.channel );
             };
             g_free ( path );
             break;
@@ -1941,7 +2227,125 @@ static void execute_fwd ( const bp_action_stmt_t *s,
             g_free ( path );
             break;
         };
+        case FWD_RAMLOG_START: {
+            /* Stejný efekt jako MCP ramlog_start (výchozí ring a kapacita).
+             * Běží v emu vlákně jako dbgapi; přepnutí zápisového callbacku
+             * platí od příštího zápisu. */
+            st_RAMLOG_CONFIG cfg;
+            memset ( &cfg, 0, sizeof ( cfg ) );
+            cfg.mode = RAMLOG_MODE_RING;
+            cfg.capacity = RAMLOG_DEFAULT_CAPACITY;
+            if ( s->fwd.n_args == 2 ) {
+                uint32_t a = (uint16_t) bp_expr_eval ( s->fwd.args[0], ctx );
+                uint32_t b = (uint16_t) bp_expr_eval ( s->fwd.args[1], ctx );
+                cfg.n_ranges = 1;
+                cfg.ranges[0].phys = false;
+                cfg.ranges[0].from = ( a < b ) ? a : b;
+                cfg.ranges[0].to = ( a < b ) ? b : a;
+            };
+            if ( !ramlog_hook_start ( &cfg ) ) {
+                fprintf ( stderr, "[BP-ACTION] ramlog_start failed (out of memory)\n" );
+            };
+            break;
+        };
+        case FWD_RAMLOG_STOP:
+            ramlog_hook_stop ( );
+            break;
+        case FWD_RAMLOG_CLEAR:
+            ramlog_clear ( );
+            break;
+        case FWD_COVERAGE_START: {
+            /* Jako MCP coverage_start bez resetu: pokračuje do stávajících
+             * dat se stejným nastavením, jinak založí nová. Běží v emu
+             * vlákně; u úrovně detail platí bajty z fetch až od příští
+             * celé instrukce (rozpracovaná může mít fetch_fallback). */
+            st_COVERAGE_CONFIG cfg;
+            memset ( &cfg, 0, sizeof ( cfg ) );
+            cfg.level = (en_COVERAGE_LEVEL) s->fwd.coverage_level;
+            cfg.key = COVERAGE_KEY_OPCODE;
+            cfg.capacity = COVERAGE_DEFAULT_CAPACITY;
+            if ( !coverage_hook_start ( &cfg, false ) ) {
+                fprintf ( stderr, "[BP-ACTION] coverage_start failed (out of memory)\n" );
+            };
+            break;
+        };
+        case FWD_COVERAGE_STOP:
+            coverage_hook_stop ( );
+            break;
+        case FWD_COVERAGE_MARK:
+            (void) coverage_mark ( );
+            break;
     };
+}
+
+
+/**
+ * @brief Stav `stop` / `exit` jednoho volání bp_action_execute().
+ *
+ * Vlastnictví: @c message je g_malloc (bp_action_render_fmt), uvolňuje se
+ * při přepsání výsledku.
+ */
+typedef struct bp_halt_state_s {
+    en_BP_ACTION_HALT kind; /**< Druh zastavení, NONE = bez stop / exit. */
+    int code;               /**< Návratový kód (EXIT). */
+    char *message;          /**< Vykreslená hláška nebo NULL. */
+} bp_halt_state_t;
+
+/**
+ * @brief Stav právě vykonávané akce (lokální proměnná bp_action_execute()).
+ *
+ * Vnořené volání (poke -> MEM_W BP s akcí) si uloží předchozí ukazatel
+ * a po skončení ho vrátí, takže vnořená akce nepřepíše výsledek vnější.
+ * NULL mimo bp_action_execute().
+ */
+static bp_halt_state_t *s_halt_cur = NULL;
+
+/** @brief Výsledek posledního ukončeného bp_action_execute() (bp_action_last_halt()). */
+static bp_halt_state_t s_halt_last = { BP_ACTION_HALT_NONE, 0, NULL };
+
+
+/**
+ * @brief Vykoná STOP / EXIT: vyhodnotí kód a hlášku a zapíše je do s_halt_cur.
+ *
+ * Akce pak skončí (smyčka v bp_action_execute() další příkazy nevykoná).
+ * Hlášku `stop` vypíše na stdout jako `log`; konec `exit` vypisuje
+ * automatizace (automation_request_exit()).
+ */
+static void execute_halt ( const bp_action_stmt_t *s,
+                           const struct bp_expr_ctx_s *ctx ) {
+    char *msg = s->halt.fmt
+                ? bp_action_render_fmt ( s->halt.fmt, s->halt.args, s->halt.n_args, ctx )
+                : NULL;
+    int code = 0;
+    if ( s->kind == STMT_EXIT ) {
+        int32_t v = eval_arg ( s->halt.code, ctx );
+        code = (int) ( (uint32_t) v & 0xFFu );
+        if ( v < 0 || v > 255 ) {
+            fprintf ( stderr, "[BP-ACTION] exit: code %d out of range 0-255, using %d\n",
+                      (int) v, code );
+        };
+    } else if ( msg ) {
+        fprintf ( stdout, "[BP-STOP] %s\n", msg );
+        fflush ( stdout );
+    };
+    if ( !s_halt_cur ) {
+        g_free ( msg );
+        return;
+    };
+    g_free ( s_halt_cur->message );
+    s_halt_cur->kind = ( s->kind == STMT_EXIT ) ? BP_ACTION_HALT_EXIT : BP_ACTION_HALT_STOP;
+    s_halt_cur->code = code;
+    s_halt_cur->message = msg;
+}
+
+
+bool bp_action_last_halt ( st_BP_ACTION_HALT *out ) {
+    if ( out ) {
+        out->kind = s_halt_last.kind;
+        out->code = s_halt_last.code;
+        out->message = s_halt_last.message;
+    };
+    return s_halt_last.kind != BP_ACTION_HALT_NONE;
 }
 
 
@@ -1994,7 +2398,12 @@ static void execute_stmt ( const bp_action_stmt_t *s,
         case STMT_POKE: {
             int32_t addr = eval_arg ( s->poke.addr, ctx );
             int32_t val  = eval_arg ( s->poke.value, ctx );
+            /* Záznam zápisů: zdroj POKE, insn_pc = instrukce, u které BP padl. */
+            uint32_t rl_saved = ramlog_source_push ( RAMLOG_SRC_POKE, g_mzarch_main.instruction_addr );
             memory_write_byte ( (uint16_t) addr, (uint8_t) val );
+            ramlog_source_pop ( rl_saved );
+            /* Záznam vstupů: zápis akcí BP se do záznamu neukládá. */
+            if ( g_replay_mode != REPLAY_MODE_OFF ) replay_note_external_write ( "breakpoint action poke" );
             break;
         };
         case STMT_SET_REG: {
@@ -2003,6 +2412,7 @@ static void execute_stmt ( const bp_action_stmt_t *s,
                 fprintf ( stderr, "[BP-ACTION] set: no CPU context\n" );
                 break;
             };
+            if ( g_replay_mode != REPLAY_MODE_OFF ) replay_note_external_write ( "breakpoint action set" );
             if ( !write_cpu_reg ( s->setreg.reg, ctx->cpu, v ) ) {
                 fprintf ( stderr, "[BP-ACTION] set: unknown register '%s'\n",
                           s->setreg.reg );
@@ -2046,6 +2456,10 @@ static void execute_stmt ( const bp_action_stmt_t *s,
         case STMT_FWD:
             execute_fwd ( s, ctx );
             break;
+        case STMT_STOP:
+        case STMT_EXIT:
+            execute_halt ( s, ctx );
+            break;
     };
 }
 
@@ -2075,6 +2489,12 @@ static int g_bp_action_depth = 0;
 
 bool bp_action_execute ( const bp_action_t *action,
                           const struct bp_expr_ctx_s *ctx ) {
+    /* Výsledek stop / exit předchozí akce neplatí (i pro předčasné návraty). */
+    g_free ( s_halt_last.message );
+    s_halt_last.kind = BP_ACTION_HALT_NONE;
+    s_halt_last.code = 0;
+    s_halt_last.message = NULL;
+
     /* NULL nebo prázdná action → stop. */
     if ( !action || action->n_stmts == 0 ) return false;
     if ( !ctx ) return false;
@@ -2092,16 +2512,28 @@ bool bp_action_execute ( const bp_action_t *action,
 
     g_bp_action_depth++;
 
+    bp_halt_state_t local = { BP_ACTION_HALT_NONE, 0, NULL };
+    bp_halt_state_t *saved = s_halt_cur;
+    s_halt_cur = &local;
+
     int i;
     for ( i = 0; i < action->n_stmts; i++ ) {
         execute_stmt ( &action->stmts[i], ctx );
+        /* stop / exit ukončí akci, další příkazy se nevykonají. */
+        if ( local.kind != BP_ACTION_HALT_NONE ) break;
     };
 
+    s_halt_cur = saved;
     g_bp_action_depth--;
 
-    /* V1 implicit continue: jakákoliv non-empty action způsobí continue.
-     * Žádný explicit `stop` v V1 neexistuje. */
-    return true;
+    /* Výsledek pro bp_action_last_halt(): vnořené akce během smyčky ho
+     * mohly přepsat, platí ten vnější. */
+    g_free ( s_halt_last.message );
+    s_halt_last = local;
+
+    /* Implicit continue: neprázdná action pokračuje, pokud nevykonala
+     * stop / exit. */
+    return local.kind == BP_ACTION_HALT_NONE;
 }
 
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */

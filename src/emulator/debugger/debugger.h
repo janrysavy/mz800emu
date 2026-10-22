@@ -98,6 +98,11 @@ extern "C"
          * dispatch vlákna (= emu zastavoval na wall-clock-závislém cycle bodě). */
         unsigned run_frames_active;               /**< 1 = probíhá frame-bounded run; emu se sám pausne, jakmile g_gdg.total_elapsed.screens dosáhne run_frames_target. 0 = neaktivní. */
         uint32_t run_frames_target;               /**< Cílová hodnota g_gdg.total_elapsed.screens, při jejímž dosažení (>=) se emu deterministicky pausne. Platné jen pokud run_frames_active != 0. */
+        /* Deadline běhu v emulovaném čase (run_control.h). Kontroluje se ve
+         * stejném per-event bloku jako frame-bounded run, jednou podmínkou
+         * (run_frames_active | run_deadline_active). Platí do nejbližší pauzy. */
+        unsigned run_deadline_active;             /**< 1 = běh má deadline; emu se pausne, jakmile run_control_mono_ticks() dosáhne run_deadline_ticks. 0 = neaktivní. */
+        uint64_t run_deadline_ticks;              /**< Deadline v monotónních taktech GDG (run_control_mono_ticks()). Platné jen pokud run_deadline_active != 0. */
         unsigned memop_call;                      /**< 1 = právě probíhá debugger-iniciovaný memory write (debugger_memory_write_byte). Sledováno vramctrl handlery pro detekci VRAM touch. */
         unsigned memop_vram_touched;              /**< Per-call signal z vramctrl handlerů: 1 = během aktuálního debugger_memory_write_byte() byl proveden zápis do VRAM/CGRAM (banking-aware). Čte se na konci debugger_memory_write_byte pro screen refresh on edit. Nastavuje se jen pokud memop_call != 0. */
         unsigned run_to_temporary_breakpoint;
@@ -217,7 +222,10 @@ extern "C"
      * Vně callbacku pak rozlišení podle individuálních flagů.
      *
      * @note cputrack hookuje až po z80_step v mzarch_main_emulator_run smyčce,
-     *       nepotřebuje swap memory callbacků.
+     *       logovací čtecí callback ale potřebuje kvůli bajtům instrukce
+     *       načteným při fetch (g_debugger_insn_fetch): po z80_step už paměť
+     *       může obsahovat jiné bajty (samomodifikace, přepnutí bankingu).
+     *       Totéž platí pro pokrytí kódu v úrovni detail (g_coverage_need_fetch).
      * @note g_io_window_tracking_active je gating flag pro io_activity +
      *       io_history hooky v port_*_with_logging_cb (V1.5 Sprint 1+2).
      *       Bez něj v tomto makru by se default callbacks nepřepnuly na
@@ -229,16 +237,20 @@ extern "C"
      * nestřílí. per_type_active flagy jsou v g_bptmap (bptmap.h). */
 #define TEST_DEBUGGER_NEED_DEBUG_CALLBACKS (TEST_DEBUGGER_CPUHIST_ACTIVE || TEST_DEBUGGER_MHMAP_ACTIVE \
     || (g_iorqlog_active != 0) \
+    || (g_cputrack_active != 0) \
     || (g_io_window_tracking_active != 0) \
     || (g_eventlog_active != 0) \
+    || (g_coverage_need_fetch != 0) \
     || (g_bptmap.per_type_active[ BPTMAP_IDX_MEM_W ] != 0) \
     || (g_bptmap.per_type_active[ BPTMAP_IDX_MEM_R ] != 0) \
     || (g_bptmap.per_type_active[ BPTMAP_IDX_IORQ_R ] != 0) \
     || (g_bptmap.per_type_active[ BPTMAP_IDX_IORQ_W ] != 0))
 
 extern int g_iorqlog_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS */
+extern int g_cputrack_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS (bajty fetch pro cputrack) */
 extern uint8_t g_io_window_tracking_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS */
 extern int g_eventlog_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS (event-viewer V1) */
+extern int g_coverage_need_fetch; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS (pokrytí kódu detail: bajty fetch) */
 
 #define DEBUGGER_HISTORY_POSMASK 0x1f
 #define DEBUGGER_HISTORY_LENGTH (DEBUGGER_HISTORY_POSMASK + 1)
@@ -258,6 +270,55 @@ extern int g_eventlog_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS
     } st_DEBUGGER_HISTORY;
 
     extern st_DEBUGGER_HISTORY g_debugger_history;
+
+    /**
+     * @brief Bajty instrukce, které CPU skutečně načetlo při fetch (poslední instrukce).
+     *
+     * Plní logovací čtecí callback (memory_read_with_logging_cb, všechny
+     * platformy) nezávisle na cpuhist: při M1 prvního bajtu instrukce
+     * (addr == instruction_addr) nastaví @c addr a @c byte[0], další bajty
+     * téže instrukce (prefix M1, operandy) ukládá podle byte_position.
+     * Cputrack z nich bere bajty právě vykonané instrukce, protože po
+     * z80_step už paměť může obsahovat jiné bajty (samomodifikace,
+     * přepnutí bankingu instrukcí samotnou).
+     *
+     * @invariant count <= DEBUGGER_MAX_INSTR_BYTES; byte[0..count-1] platí
+     *            pro instrukci začínající na @c addr.
+     * @note Platí jen při aktivním logovacím callbacku
+     *       (TEST_DEBUGGER_NEED_DEBUG_CALLBACKS); emu vlákno.
+     */
+    typedef struct st_DEBUGGER_INSN_FETCH
+    {
+        uint16_t addr;                            /**< Adresa prvního bajtu instrukce. */
+        uint8_t count;                            /**< Počet načtených bajtů (0 = nic). */
+        uint8_t byte[DEBUGGER_MAX_INSTR_BYTES];   /**< Načtené bajty v pořadí fetch. */
+    } st_DEBUGGER_INSN_FETCH;
+
+    extern st_DEBUGGER_INSN_FETCH g_debugger_insn_fetch;
+
+    /**
+     * @brief Zapíše bajt fetch instrukce do g_debugger_insn_fetch (logovací callback).
+     *
+     * @param is_m1_start true = první bajt instrukce (M1 na instruction_addr).
+     * @param slot        Index bajtu v instrukci (byte_position - 1); mimo
+     *                    rozsah se ignoruje.
+     * @param addr        Adresa čteného bajtu.
+     * @param value       Načtený bajt.
+     */
+    static inline void debugger_insn_fetch_record(int is_m1_start, unsigned slot, uint16_t addr, uint8_t value)
+    {
+        if (is_m1_start)
+        {
+            g_debugger_insn_fetch.addr = addr;
+            g_debugger_insn_fetch.byte[0] = value;
+            g_debugger_insn_fetch.count = 1;
+        }
+        else if (slot < DEBUGGER_MAX_INSTR_BYTES)
+        {
+            g_debugger_insn_fetch.byte[slot] = value;
+            g_debugger_insn_fetch.count = (uint8_t) (slot + 1);
+        };
+    }
 
 #define debugger_history_position(i) ((i) & DEBUGGER_HISTORY_POSMASK)
 
@@ -303,9 +364,38 @@ extern int g_eventlog_active; /* fwd decl pro TEST_DEBUGGER_NEED_DEBUG_CALLBACKS
     extern void debugger_show_hide_main_window_request(void);
     extern void debugger_update_all(void);
     extern void debugger_animation(void);
+    /**
+     * @brief Čtení bajtu z aktuálně namapované paměti CPU pro debugger.
+     *
+     * Používá ho disassembler (GUI i MCP), MCP `mem_read`, zásobník,
+     * vektory přerušení, dekódování instrukce u step over a cputrack
+     * (makro debugger_memory_read_byte()). Čte přes
+     * memory_read_byte_no_se(): respektuje banking, nespouští MEM_R
+     * breakpointy (na rozdíl od memory_read_byte()).
+     *
+     * @param addr      Adresa v prostoru CPU (0x0000-0xFFFF).
+     * @param user_data Nepoužito (signatura callbacku z80_dasm).
+     * @return Bajt z aktuálně namapované paměti.
+     *
+     * Side effects: po dobu čtení nastaví g_debugger.memop_call = 1.
+     */
     extern uint8_t debugger_dasm_read_cb(uint16_t addr, void *user_data);
     extern uint8_t debugger_dasm_pure_ram_read_cb(uint16_t addr, void *user_data);
     extern uint8_t debugger_dasm_history_read_cb(uint16_t addr, void *user_data);
+    /**
+     * @brief Zápis bajtu do aktuálně mapované paměti CPU debuggerem.
+     *
+     * MCP `mem_write`, úpravy paměti v GUI. Zapisuje přes
+     * memory_write_byte_no_bp(): respektuje banking a vedlejší efekty zápisu
+     * (VRAM, mapované porty), nespouští MEM_W breakpointy.
+     *
+     * @param addr  Adresa v prostoru CPU (0x0000-0xFFFF).
+     * @param value Zapisovaný bajt.
+     *
+     * Side effects: po dobu zápisu g_debugger.memop_call = 1; při zápisu do
+     * VRAM/CGRAM obnoví obraz (debugger_screen_refresh_if_enabled).
+     * @pre Emu vlákno (handlery dbgapi).
+     */
     extern void debugger_memory_write_byte(uint16_t addr, uint8_t value);
     extern void debugger_change_z80_flagbit(unsigned flagbit, unsigned value);
     extern void debugger_change_z80_register(z80_reg_t reg, uint16_t value);

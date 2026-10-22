@@ -111,7 +111,7 @@ pulz je delší.
 | `0` | Nezaznamenáno (současná implementace defauluje na 0). |
 | `>0` | Skutečná délka v pxCLK. Pro převod na T-states: `t_states = pulse / cpu_divider`. |
 
-## meta.json
+## Manifest `<name>.json`
 
 ```json
 {

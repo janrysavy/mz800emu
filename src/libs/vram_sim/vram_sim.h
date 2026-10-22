@@ -371,6 +371,24 @@ extern uint8_t vram_sim_cpu_planes(const st_VRAM_SIM_STATE *state);
 extern uint16_t vram_sim_hwscroll_shift(const st_VRAM_SIM_STATE *state,
                                         uint16_t phy_offset);
 
+/**
+ * @brief Zjistí, zda se na adresu CPU přístupu (čtení i zápis) uplatní HW scroll.
+ *
+ * Replika `vramctrl_mz800_cpu_scroll_applies()`: GDG přičítá SOF k adrese CPU
+ * přístupu jen tehdy, když B/A (`wfrf_vbank`) ukazuje na zobrazenou frame,
+ * tj. `wfrf_vbank == (dmd & 0x01)`. V režimech s HICOLOR (DMD bit 1 = 1,
+ * 320x200@16 a 640x200@4) se posun uplatní vždy. Přístup do nezobrazené frame
+ * jde na neposunutou adresu. Zobrazení (pixel render) posouvá vždy, tato
+ * podmínka se ho netýká.
+ *
+ * Funkce neřeší, zda je scroll vůbec aktivní (`hwscroll_enabled`) - to dělá
+ * `vram_sim_hwscroll_shift()`.
+ *
+ * @param[in] state Stav simulátoru; nesmí být NULL.
+ * @return 1 = adresu přepočítat přes `vram_sim_hwscroll_shift()`, 0 = beze změny.
+ */
+extern int vram_sim_cpu_hwscroll_applies(const st_VRAM_SIM_STATE *state);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

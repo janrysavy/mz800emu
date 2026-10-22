@@ -419,6 +419,24 @@ bool dbg_ui_bp_load_from_file(const char *filepath);
  */
 bool dbg_ui_bp_reset_hits(int id);
 
+/**
+ * @brief Test Eval výrazu BP přes DBGAPI_CMD_BP_TEST_EVAL.
+ *
+ * Výraz čte registry, paměť a porty, které mění emu vlákno; vyhodnocení
+ * proto provede emu vlákno (bez vedlejších efektů, znak `!` se ignoruje,
+ * viz st_DBGAPI_BP_TEST_EVAL_PARAM). Timeout DBG_UI_BP_BULK_CMD_TIMEOUT_MS
+ * (jednorázová akce uživatele, v pauze vyřídí paused smyčka do ~20 ms).
+ *
+ * @param p Parametr: vstup `expr_text`, výstupy vyplní emu vlákno. Musí žít
+ *          do návratu (synchronní submit).
+ * @return true pokud emu vlákno příkaz vyřídilo (výsledek nebo chyba parseru
+ *         v `p`); false při timeoutu, plné frontě nebo ukončování emulátoru
+ *         (výstupy v `p` beze změny).
+ *
+ * @pre Volat z UI vlákna; blokuje až do dokončení příkazu.
+ */
+bool dbg_ui_bp_test_eval(st_DBGAPI_BP_TEST_EVAL_PARAM *p);
+
 /* ============================================================================
  * Memory Heatmap / CDL (okno Memory Heatmap, menu Debugger -> Settings -> CDL)
  *
@@ -737,6 +755,37 @@ bool dbg_ui_freeze_add(int region_kind, int sub_id, uint32_t offset,
 bool dbg_ui_freeze_remove(int region_kind, int sub_id, uint32_t offset);
 
 /* ============================================================================
+ * Memory Search - vzorek prostoru hledání
+ *
+ * Vzorek (kopii všech spanů) pořizuje emu vlákno v drainu fronty, za běhu
+ * na nejbližší hranici snímku, v pauze hned. Filtr pak běží na UI vlákně
+ * nad vzorkem (memsearch/memsearch.h).
+ * ============================================================================ */
+
+/**
+ * @brief Timeout vzorku Memory Search [ms].
+ *
+ * Kopie je nejvýš 32 MiB (MEMSEARCH_HARD_MAX_SPACE); za běhu se čeká na
+ * nejbližší hranici snímku.
+ */
+#define DBG_UI_MEMSEARCH_SAMPLE_TIMEOUT_MS 2000
+
+/**
+ * @brief Pořídí vzorek prostoru hledání přes DBGAPI_CMD_MEMSEARCH_SAMPLE.
+ *
+ * @param spans      Spany prostoru (st_MEMSEARCH_SPAN, platné po dobu volání).
+ * @param span_count Počet spanů.
+ * @param sample     Vzorek z memsearch_sample_new() se stejným rozměrem
+ *                   (st_MEMSEARCH_SAMPLE*); emu vlákno ho naplní.
+ * @return true = vzorek naplněný; false = timeout (příkaz neproveden,
+ *         vzorek nepoužívat) nebo neplatné parametry.
+ *
+ * @pre Volat z UI vlákna; blokuje až do dokončení příkazu.
+ */
+bool dbg_ui_memsearch_sample(const void *spans, uint32_t span_count,
+                             void *sample);
+
+/* ============================================================================
  * Callstack - zapnutí / vypnutí a vyprázdnění (panel Callstack)
  *
  * Shadow stack a statistiky mění emu vlákno v Z80 CALL/RET hoocích.
@@ -805,6 +854,36 @@ bool dbg_ui_callstack_reset(void);
  * @pre Volat z UI vlákna; blokuje až do dokončení příkazu.
  */
 bool dbg_ui_screen_refresh(void);
+
+/* ============================================================================
+ * Záznam zápisů do paměti (okno RAM Write Log, Memory Browser)
+ * ============================================================================ */
+
+/**
+ * @brief Limit vyzvednutí příkazu záznamu zápisů emu vláknem (ms).
+ *
+ * Stejná úvaha jako u DBG_UI_IO_CMD_TIMEOUT_MS: za běhu emu vlákno vyzvedá
+ * frontu na konci snímku, v pauze hned. Hodnota 1000 ms [neověřeno]
+ * měřením.
+ */
+#define DBG_UI_RAMLOG_CMD_TIMEOUT_MS 1000
+
+/**
+ * @brief Provede operaci záznamu zápisů přes DBGAPI_CMD_RAMLOG.
+ *
+ * Stejný příkaz jako MCP ramlog_*: start a stop přepínají callbacky CPU,
+ * dotazy čtou ring a mapu posledních zapisovatelů, vše v emu vlákně.
+ *
+ * @param p Vstup a výstup (st_DBGAPI_RAMLOG_PARAM). Výstupní pole out_recs /
+ *          out_seqs / out_writers alokuje volající podle operace.
+ * @return true = provedeno bez chyby; false = chyba operace (anglický text
+ *         v p->out_error) nebo timeout (p->out_error prázdný, příkaz
+ *         neproveden).
+ *
+ * @pre Volat z UI vlákna; blokuje až do dokončení příkazu. Parametr
+ *      i výstupní pole emu vlákno po návratu nepoužívá.
+ */
+bool dbg_ui_ramlog(st_DBGAPI_RAMLOG_PARAM *p);
 
 #ifdef __cplusplus
 }

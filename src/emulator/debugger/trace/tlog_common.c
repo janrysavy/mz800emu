@@ -1,7 +1,7 @@
 /**
  * @file   tlog_common.c
  * @brief  Implementace společného frameworku trace-suite (chunk writer +
- *         meta.json + clock domain accessory).
+ *         manifest <name>.json + clock domain accessory).
  *
  * @author Michal Hucik <hucik@ordoz.com>
  */
@@ -42,7 +42,7 @@
 /**
  * @brief Process-globální kumulativní součet disk-bajtů zapsaných trace-suite.
  *
- * Inkrementuje se při každém reálném zápisu na disk (chunk soubor, meta.json,
+ * Inkrementuje se při každém reálném zápisu na disk (chunk soubor, manifest <name>.json,
  * per-subsystém initial-state dumpy). Konzument (0019 byte backstop) accountuje
  * deltu. Modifikován z emu vlákna; prostý uint64 bez locku (viz Doxygen API).
  */
@@ -147,7 +147,7 @@ uint32_t tlog_common_get_pxclk_freq ( void )
 {
     /* Reálná frekvence krystalu (mz800_gdgclk.h: GDGCLK_REAL_BASE = 17734475).
      * Emulátor interně počítá s mírně upravenou hodnotou (GDGCLK_BASE)
-     * pro celočíselný počet pxCLK / sec, ale do meta.json hlásíme reálnou. */
+     * pro celočíselný počet pxCLK / sec, ale do manifestu <name>.json hlásíme reálnou. */
     return GDGCLK_REAL_BASE;
 }
 
@@ -251,7 +251,7 @@ static int do_flush_chunk ( st_TLOG_WRITER *w,
  * =========================================================================== */
 
 /**
- * @brief Sestavit a zapsat meta.json pro daný writer.
+ * @brief Sestavit a zapsat manifest <name>.json pro daný writer.
  *
  * Formát (V1):
  * @code
@@ -403,7 +403,7 @@ int tlog_writer_update_meta ( st_TLOG_WRITER *w, const char *header_extra )
         if ( wrote != len ) rc = -1;
         if ( ferror ( fp ) ) rc = -1;
         fclose ( fp );
-        /* 0019 v3: meta.json reálně zapsán -> kumulativní disk čítač. */
+        /* 0019 v3: manifest <name>.json reálně zapsán -> kumulativní disk čítač. */
         if ( rc == 0 ) tlog_common_disk_bytes_add ( (uint64_t) wrote );
     }
     g_free ( out );
@@ -419,6 +419,27 @@ int tlog_writer_update_meta ( st_TLOG_WRITER *w, const char *header_extra )
  *  Public API: open / append / flush / close
  * =========================================================================== */
 
+/**
+ * @brief Globální čítač identit segmentů (poslední přidělená identita).
+ *
+ * Zvyšuje ho jen @ref tlog_writer_open() (emu vlákno; unit testy z vlastního
+ * vlákna), takže identity jsou napříč všemi writery jedinečné a rostou.
+ */
+static unsigned s_tlog_segment_counter = 0;
+
+
+/**
+ * @brief Uvolnit popis uzavřeného segmentu a vynulovat ho.
+ */
+static void tlog_closed_segment_free ( st_TLOG_CLOSED_SEGMENT *c )
+{
+    g_free ( c->dir );
+    g_free ( c->name );
+    if ( c->chunks ) g_array_free ( c->chunks, TRUE );
+    memset ( c, 0, sizeof ( *c ) );
+}
+
+
 int tlog_writer_open ( st_TLOG_WRITER *w,
                        const char *subsys_name,
                        const char *dir, const char *name,
@@ -426,6 +447,9 @@ int tlog_writer_open ( st_TLOG_WRITER *w,
                        uint64_t init_pxclk, uint64_t init_cpuclk,
                        uint32_t init_screens )
 {
+    /* Nový záznam = popis předchozího uzavřeného segmentu už neplatí
+     * (jeho soubory může tento záznam přepsat). */
+    tlog_closed_segment_free ( &w->closed );
     memset ( w, 0, sizeof ( *w ) );
 
     if ( !subsys_name || !subsys_name[0] || !dir || !dir[0] || !name || !name[0] ) {
@@ -466,6 +490,8 @@ int tlog_writer_open ( st_TLOG_WRITER *w,
 
     w->chunks_meta = g_array_new ( FALSE, FALSE, sizeof ( st_TLOG_CHUNK_META ) );
     w->subsys_header_cache = NULL;
+
+    g_atomic_int_set ( &w->segment, (gint) ++s_tlog_segment_counter );
 
     return 0;
 }
@@ -541,12 +567,106 @@ void tlog_writer_close ( st_TLOG_WRITER *w,
     /* Final meta update (s aktuálními chunks). */
     tlog_writer_update_meta ( w, NULL );
 
+    /* Popis segmentu pro čtení po stopu: dir, name a chunky přejdou do
+     * closed (uvolní je až další open). */
+    st_TLOG_CLOSED_SEGMENT closed;
+    closed.segment = (unsigned) g_atomic_int_get ( &w->segment );
+    closed.record_size = w->record_size;
+    closed.next_seq = w->record_size ? ( w->total_bytes_written / w->record_size ) : 0;
+    closed.truncated = w->truncated;
+    closed.dir = w->dir;
+    closed.name = w->name;
+    closed.chunks = w->chunks_meta;
+    gint segment = g_atomic_int_get ( &w->segment );
+
     g_free ( w->buffer );
-    g_free ( w->dir );
-    g_free ( w->name );
     g_free ( w->subsys_header_cache );
-    if ( w->chunks_meta ) {
-        g_array_free ( w->chunks_meta, TRUE );
-    }
     memset ( w, 0, sizeof ( *w ) );
+
+    w->closed = closed;
+    g_atomic_int_set ( &w->segment, segment );
 }
+
+
+void tlog_writer_set_record_size ( st_TLOG_WRITER *w, size_t record_size )
+{
+    w->record_size = record_size;
+}
+
+
+unsigned tlog_writer_segment ( const st_TLOG_WRITER *w )
+{
+    return (unsigned) g_atomic_int_get ( (gint *) &w->segment );
+}
+
+
+/**
+ * @brief Zkopírovat pole st_TLOG_CHUNK_META (NULL zůstane prázdné pole).
+ */
+static GArray *tlog_chunks_copy ( const GArray *src )
+{
+    GArray *dst = g_array_new ( FALSE, FALSE, sizeof ( st_TLOG_CHUNK_META ) );
+    if ( src && src->len ) {
+        g_array_append_vals ( dst, src->data, src->len );
+    }
+    return dst;
+}
+
+
+int tlog_writer_read_snapshot ( const st_TLOG_WRITER *w,
+                                uint64_t from_seq, uint64_t count,
+                                size_t max_copy_bytes,
+                                st_TLOG_READ_SNAPSHOT *out )
+{
+    memset ( out, 0, sizeof ( *out ) );
+    out->segment = tlog_writer_segment ( w );
+    if ( out->segment == 0 ) return 0;
+
+    if ( w->buffer ) {
+        /* Otevřený writer: chunky na disku + RAM buffer. */
+        out->live = 1;
+        out->truncated = w->truncated;
+        out->record_size = w->record_size;
+        out->dir = g_strdup ( w->dir );
+        out->name = g_strdup ( w->name );
+        out->chunks = tlog_chunks_copy ( w->chunks_meta );
+        if ( w->record_size == 0 ) return 0;
+        out->next_seq = w->total_bytes_written / w->record_size;
+        out->ram_first_seq = ( w->total_bytes_written - w->buffer_used ) / w->record_size;
+        out->ram_start_pxclk = w->current_chunk_start_pxclk;
+        out->ram_start_cpuclk = w->current_chunk_start_cpuclk;
+        out->ram_start_screens = w->current_chunk_start_screens;
+
+        /* Požadovaný rozsah [from_seq, hi) oříznutý na next_seq, průnik s RAM. */
+        uint64_t hi = out->next_seq;
+        if ( from_seq < hi && count < hi - from_seq ) hi = from_seq + count;
+        uint64_t lo = ( from_seq > out->ram_first_seq ) ? from_seq : out->ram_first_seq;
+        uint64_t max_records = max_copy_bytes / w->record_size;
+        if ( lo < hi && max_records > 0 ) {
+            if ( hi - lo > max_records ) hi = lo + max_records;
+            size_t bytes = (size_t) ( ( hi - lo ) * w->record_size );
+            out->ram_copy = (uint8_t *) g_try_malloc ( bytes );
+            if ( !out->ram_copy ) {
+                tlog_read_snapshot_clear ( out );
+                return -1;
+            }
+            memcpy ( out->ram_copy,
+                     w->buffer + ( lo - out->ram_first_seq ) * w->record_size, bytes );
+            out->ram_copy_seq = lo;
+            out->ram_copy_count = hi - lo;
+        }
+        return 0;
+    }
+
+    /* Uzavřený segment: vše na disku. */
+    out->live = 0;
+    out->truncated = w->closed.truncated;
+    out->record_size = w->closed.record_size;
+    out->next_seq = w->closed.next_seq;
+    out->ram_first_seq = out->next_seq;
+    out->dir = g_strdup ( w->closed.dir );
+    out->name = g_strdup ( w->closed.name );
+    out->chunks = tlog_chunks_copy ( w->closed.chunks );
+    return 0;
+}
+

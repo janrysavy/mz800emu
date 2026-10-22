@@ -180,6 +180,15 @@ uint16_t vram_sim_hwscroll_shift(const st_VRAM_SIM_STATE *state, uint16_t phy_of
     return (uint16_t)(phy_offset + state->hwscroll_sof);
 }
 
+int vram_sim_cpu_hwscroll_applies(const st_VRAM_SIM_STATE *state)
+{
+    /* Port z mz800_vramctrl.c (vramctrl_mz800_cpu_scroll_applies). */
+    if (VS_DMD_TEST_HICOLOR(state)) {
+        return 1;
+    }
+    return ((state->dmd & 0x01) ? 1 : 0) == (state->wfrf_vbank ? 1 : 0);
+}
+
 /* ---------------------------------------------------------------------------
  * CPU R/W public wrappers
  * ------------------------------------------------------------------------- */
@@ -200,12 +209,14 @@ uint8_t vram_sim_cpu_read(const st_VRAM_SIM_STATE *state, uint16_t addr)
      */
     addr = (uint16_t)(addr & 0x3FFF);
 
-    /* Výpočet phy_vram_addr - port z mz800_vramctrl.c:210-219. */
+    /* Výpočet phy_vram_addr - port z vramctrl_mz800_memop_read_byte_internal(). */
     uint16_t phy = addr;
     if (VS_DMD_TEST_SCRW640(state)) {
         phy = (uint16_t)(phy >> 1);
     }
-    phy = vram_sim_hwscroll_shift(state, phy);
+    if (vram_sim_cpu_hwscroll_applies(state)) {
+        phy = vram_sim_hwscroll_shift(state, phy);
+    }
 
     /* Maska na 13 bitů pro safe plane[] access. Emu kód maskování nedělá -
      * pro běžné adresy s rozumným HW scroll se nikdy nedostane mimo 0x1FFF,
@@ -231,7 +242,9 @@ void vram_sim_cpu_write(st_VRAM_SIM_STATE *state, uint16_t addr, uint8_t value)
     if (VS_DMD_TEST_SCRW640(state)) {
         phy = (uint16_t)(phy >> 1);
     }
-    phy = vram_sim_hwscroll_shift(state, phy);
+    if (vram_sim_cpu_hwscroll_applies(state)) {
+        phy = vram_sim_hwscroll_shift(state, phy);
+    }
     phy = (uint16_t)(phy & 0x1FFF);
 
     vs_write_byte(state, addr, phy, value);

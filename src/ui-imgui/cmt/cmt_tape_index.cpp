@@ -28,6 +28,8 @@
 
 #include "CmtGlyphRenderer.h"
 #include "ImGuiCmt.hpp"
+#include "imgui_cmt.h"
+#include "emulator/replay.h"
 
 extern "C"
 {
@@ -56,65 +58,15 @@ void imgui_cmt_tape_update_filelist(void)
     UiCmt::updateTapeFilelist();
 }
 
+/**
+ * @brief Výběr bloku v seznamu (kliknutí / dvojklik).
+ *
+ * Provede emu vlákno (cmt_tape_select_block() přes replay_host_cmt()), aby
+ * výběr zachytil záznam vstupů. Seznam bloků obnoví jádro kazety.
+ */
 void imgui_cmt_tape_set_block(int block_id, bool forced)
 {
-    gboolean fl_stop = CMT_TEST_STOP;
-    if ((!fl_stop) && (!forced))
-        return;
-
-    int old_block = cmtext_block_get_block_id(g_cmt.ext->block);
-    gboolean fl_play = CMT_TEST_PLAY;
-    gboolean fl_paused = CMT_TEST_PAUSED;
-
-    if (old_block != block_id)
-    {
-        if (fl_play)
-            cmt_stop();
-
-        if (EXIT_SUCCESS != g_cmt.ext->container->cb_open_block(block_id))
-        {
-            return;
-        };
-
-        if (forced)
-        {
-            // dvojklik + zmena bloku
-            if (fl_paused)
-            {
-                // pokud byl paused, tak novy blok bude taky paused taky
-                cmt_play_paused();
-            }
-            else
-            {
-                // pokud nebyl paused, tak vzdy s novym blokem spustime play
-                cmt_play();
-            };
-        };
-    }
-    else
-    {
-        if (!forced)
-            return;
-
-        // dojklik na stejný blok
-        if (fl_paused)
-        {
-            // pokud byl paused, tak bude play
-            cmt_pause(0);
-        }
-        else if (fl_play)
-        {
-            // pokud byl play, tak bude paused
-            cmt_pause(1);
-        }
-        else
-        {
-            // pokud byl stop, tak bude play
-            cmt_play();
-        };
-    };
-
-    imgui_cmt_tape_update_filelist();
+    replay_host_cmt(forced ? REPLAY_CMT_SELECT_FORCED : REPLAY_CMT_SELECT, block_id, NULL);
 }
 
 /**
@@ -173,7 +125,8 @@ void imgui_cmt_tape_create_speed_combo(const TapeFileEntry_t &entry)
         return;
     };
 
-    bool is_disabled = entry.played;
+    /* Rychlost bloku záznam vstupů nezopakuje. */
+    bool is_disabled = entry.played || imgui_cmt_replay_recording();
 
     if (is_disabled)
     {
@@ -249,6 +202,8 @@ void imgui_cmt_tape_index_window(bool *p_open)
         ImGui::End();
         return;
     };
+    /* Přehrání vstupů: kazetu ovládá záznam. */
+    const bool replay_lock = imgui_cmt_replay_lock_begin(false);
 
     static int selected_row = -1;
     if (selected_row >= static_cast<int>(g_tapeFileList.size()))
@@ -383,7 +338,7 @@ void imgui_cmt_tape_index_window(bool *p_open)
                     ImGui::BeginDisabled(!entry.played);
                     if (ImGui::Button("##cmt_btn_stop", CMT_BUTTON_SIZE))
                     {
-                        cmt_stop();
+                        replay_host_cmt(REPLAY_CMT_STOP, 0, NULL);
                     };
                     renderer.drawStop();
                     ImGui::EndDisabled();
@@ -393,7 +348,7 @@ void imgui_cmt_tape_index_window(bool *p_open)
                     ImGui::BeginDisabled(entry.played);
                     if (ImGui::Button("##cmt_btn_play", CMT_BUTTON_SIZE))
                     {
-                        cmt_play();
+                        replay_host_cmt(REPLAY_CMT_PLAY, 0, NULL);
                     };
                     renderer.drawPlay(CMT_TEST_PLAY);
                     ImGui::EndDisabled();
@@ -402,7 +357,7 @@ void imgui_cmt_tape_index_window(bool *p_open)
 
                     if (ImGui::Button("##cmt_btn_pause", CMT_BUTTON_SIZE))
                     {
-                        cmt_pause(!CMT_TEST_PAUSED);
+                        replay_host_cmt(REPLAY_CMT_PAUSE, CMT_TEST_PAUSED ? 0 : 1, NULL);
                     };
                     renderer.drawPause(CMT_TEST_PAUSED);
                 };
@@ -502,5 +457,6 @@ void imgui_cmt_tape_index_window(bool *p_open)
         *p_open = false;
     };
 
+    imgui_cmt_replay_lock_end(replay_lock);
     ImGui::End();
 }

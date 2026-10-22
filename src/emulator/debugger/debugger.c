@@ -65,6 +65,9 @@
 #include "trace/intlog.h"
 #include "trace/hwlog.h"
 #include "trace/marklog.h"
+#include "trace/ramlog.h"
+#include "trace/ramlog_hook.h"
+#include "coverage/coverage_hook.h"
 #include "trace/eventlog.h"
 #include "trace/eventlog_trigger.h"
 #include "io_activity.h"
@@ -85,6 +88,7 @@
 #include "ui-imgui/debugger/heatmap/mhmap_window.h"
 #include "ui-imgui/debugger/ioview/io_window.h"
 #include "ui-imgui/debugger/memmap/memmap_window.h"
+#include "ui-imgui/debugger/memsearch_window/memsearch_window.h"
 #include "ui-imgui/debugger/dasm_window/dasm_window.h"
 /* membrowser mutant V0 - Memory Browser hex MVP. */
 #include "ui-imgui/debugger/membrowser/membrowser_window.h"
@@ -101,6 +105,7 @@
 
 st_DEBUGGER g_debugger;
 st_DEBUGGER_HISTORY g_debugger_history;
+st_DEBUGGER_INSN_FETCH g_debugger_insn_fetch;
 
 /**
  * @brief Příznak "debugger_init() doběhla" pro UI vlákno (GLib atomic).
@@ -235,6 +240,13 @@ void debugger_exit ( void ) {
     iorqlog_finalize ( );
     intlog_finalize ( );
     hwlog_finalize ( );
+    /* Záznam zápisů do paměti - jen paměť, nic se neukládá. */
+    ramlog_free ( );
+    /* Pokrytí kódu - jen paměť, nic se neukládá. */
+    coverage_on_exit ( );
+    coverage_free ( );
+    g_free ( g_coverage_ini.save_on_exit );
+    g_coverage_ini.save_on_exit = NULL;
     /* Triggery okna Events (Pause / Auto-mark on match) - vypnout a uvolnit
      * jejich filtry dřív, než zanikne ring. Běží na emu vlákně (emulator_quit),
      * callback triggeru proto souběžně neběží. */
@@ -606,6 +618,20 @@ void debugger_init ( void ) {
         }
     }
 
+    /* Memory Search okno persistence - samostatná sekce [MEMSEARCH_WINDOW].
+     * Klíče: space, type, width, big_endian, aligned, digit_encoding,
+     * leading_space, allow_large (nastavení hledání; kandidáti se
+     * neukládají). */
+    {
+        CFGMOD *smod = cfgroot_register_new_module ( g_cfgmain,
+                                                      "MEMSEARCH_WINDOW" );
+        if ( smod ) {
+            memsearch_window_register_persistence ( smod );
+            cfgmodule_parse ( smod );
+            cfgmodule_propagate ( smod );
+        }
+    }
+
     /* V3 multi-view: 5 instancí Memory Browser oken (main + #2..#5).
      * Per-instance sekce [MEMBROWSER_WINDOW_MAIN..5] + legacy fallback
      * sekce [MEMBROWSER_WINDOW] pro upgrade z V0/V1/V2 INI (jednorázová
@@ -788,6 +814,14 @@ void debugger_init ( void ) {
     hwlog_apply_cli_options ( );
     marklog_init ( );
     marklog_apply_cli_options ( );
+    /* Záznam zápisů do paměti: [RAMLOG] + --ramlog-*; spuštění podle režimu
+     * v ramlog_recompute_active (state_changed níže). */
+    ramlog_cfg_init ( );
+    ramlog_apply_cli_options ( );
+    /* Pokrytí kódu: [COVERAGE] + --coverage*; spuštění v
+     * coverage_recompute_active (state_changed níže). */
+    coverage_cfg_init ( );
+    coverage_apply_cli_options ( );
 
     /* Event Viewer (mutant event-viewer Vlna 1 Commit 1) - in-memory ring
      * pro Events okno. Volá se po marklog_init() aby cfg propagate proběhl
@@ -970,7 +1004,10 @@ void debugger_animation ( void ) {
 uint8_t debugger_dasm_read_cb ( uint16_t addr, void *user_data ) {
     (void)user_data;
     g_debugger.memop_call = 1;
-    uint8_t retval = memory_read_byte ( addr );
+    /* Čtení debuggerem nesmí spustit MEM_R breakpoint (falešné zásahy,
+     * hits, události breakpoint_hit/paused, z UI vlákna i souběh s emu
+     * vláknem), proto _no_se, ne memory_read_byte. */
+    uint8_t retval = memory_read_byte_no_se ( addr );
     g_debugger.memop_call = 0;
     return retval;
 }
@@ -992,7 +1029,8 @@ uint8_t debugger_dasm_pure_ram_read_cb ( uint16_t addr, void *user_data ) {
 void debugger_memory_write_byte ( uint16_t addr, uint8_t value ) {
     g_debugger.memop_call = 1;
     g_debugger.memop_vram_touched = 0;
-    memory_write_byte ( addr, value );
+    /* Zápis debuggerem nesmí spustit MEM_W breakpoint (ten hlídá zápisy CPU). */
+    memory_write_byte_no_bp ( addr, value );
     g_debugger.memop_call = 0;
 
     /* Pokud zápis v aktuálním banking/mode kontextu dopadl do VRAM/CGRAM

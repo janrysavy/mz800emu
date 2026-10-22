@@ -667,14 +667,15 @@ static uint8_t read_ctc_cw(void)
  * Side-effect free - jen agregace signalu.
  *
  * Pro UI panel zobrazujeme tento mirror v "MZ-700 mem-mapped IO" sekci
- * Overview tabu. Reuse existing gdg_read_dmd_status_memop wrapper, ktery
- * uz dela presne tu agregaci jak ji vidi MZ-700 ROM po LD A,(0E008h).
+ * Overview tabu. Reuse gdg_peek_dmd_status_memop, ktery dela tu agregaci
+ * jak ji vidi MZ-700 ROM po LD A,(0E008h), ale bez nacteni joysticku
+ * z hostitele (gdg_read_dmd_status_memop na MZ-700/1500 nacita).
  *
  * @return 8-bit status (HBLNK | TEMPO | optional JOY mask)
  */
 static uint8_t read_mmio_e008_status(void)
 {
-    return gdg_read_dmd_status_memop();
+    return gdg_peek_dmd_status_memop();
 }
 
 #if CFG_HWEXT_HAVE_FDC

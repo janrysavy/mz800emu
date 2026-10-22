@@ -950,7 +950,7 @@ void videorec_on_debugger_step(void);
  * paused smyčky (videorec_on_emulation_stopped()), jakmile emulace znovu
  * stojí. Ruční pauza během dlouhého běhu k dočasnému breakpointu se proto
  * také počítá jako krokování ("debugger"). Běh
- * a pauza na dočasném breakpointu (`pause_reason` se u ní nenastavuje) se
+ * a pauza na dočasném breakpointu (`pause_reason` EMU_PAUSE_REASON_RUN_TO) se
  * považují za krokování debuggeru; ruční pokračování po dokončeném kroku
  * je normální běh uživatele. Bez nahrávání neškodné.
  *

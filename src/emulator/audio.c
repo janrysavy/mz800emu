@@ -239,6 +239,13 @@ void audio_reset_log(uint64_t new_timestamp)
     APP_MUTEX_UNLOCK(g_audio.old_log_mutex);
 }
 
+uint64_t audio_psg_phase_ticks(uint64_t now_ticks)
+{
+    if (!g_audio.log || now_ticks < g_audio.log->last_psg_timestamp)
+        return 0;
+    return now_ticks - g_audio.log->last_psg_timestamp;
+}
+
 
 void audio_exit(void)
 {

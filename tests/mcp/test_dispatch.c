@@ -37,7 +37,12 @@
 #include "emulator/mcp/jsonl_io.h"
 #include "emulator/mcp/cooperation.h"
 #include "emulator/debugger/dbgapi_cmdrq.h"
+#include "emulator/debugger/dbgapi_regions.h"
+#include "emulator/debugger/trace/trace_reader.h"
+#include "emulator/state_hash.h"
 #include "emulator/snapshot/snapshot.h"
+#include "emulator/hw-generic/gdg/gdgclk.h"
+#include "emulator/audio.h"
 /* Pozn.: NEvkládáme dbgapi_ui.h zde - ten taháno main.h ->
  * mzarch_config.h a v testovacím režimu by způsobil redefinition
  * warning na MZ800EMU_CFG_MCP_SERVER_ENABLED. Stub poskytuje signaturu
@@ -99,9 +104,35 @@
  *
  * profiler-bitmap doplnil profiler_pc_bitmap (vykonané adresy jako
  * bitmapa, na KONEC cmd_map[]) = 180 + 1 = 181.
+ *
+ * mcp-trace-read doplnil trace_status a trace_read (stránkované čtení
+ * Trace Suite, za trace_save) = 181 + 2 = 183.
+ *
+ * mcp-trace-read (část B) doplnil audio_capture_summary a audio_capture_pcm
+ * (paměť zachycení zvuku, za audio_capture_status) = 183 + 2 = 185.
+ *
+ * ramlog doplnil ramlog_start/stop/clear/status/who_wrote/writers (záznam
+ * zápisů do paměti, za trace_read) = 185 + 6 = 191.
+ *
+ * memsearch doplnil freeze_add/remove/list a memsearch_start/filter/sample/
+ * undo/redo/list/eliminate/close (Freeze Bytes a postupné hledání proměnných,
+ * na KONEC cmd_map[]) = 191 + 11 = 202.
+ *
+ * run-control doplnil wait_stop a get_stop_history (čekání na zastavení
+ * běhu a historie zastavení, na KONEC cmd_map[]) = 202 + 2 = 204, a
+ * frame_hash (SHA-256 obrazu a VRAM, na KONEC cmd_map[]) = 204 + 1 = 205.
+ * replay-core doplnil replay_record_start, replay_record_stop, replay_play,
+ * replay_play_stop a replay_status (záznam a přehrání vstupů, na KONEC
+ * cmd_map[]) = 205 + 5 = 210.
+ * replay-rewind doplnil replay_rewind a replay_seek (checkpointy záznamu
+ * vstupů, na KONEC cmd_map[]) = 210 + 2 = 212.
+ * observe-cas doplnil state_observe (registry a okna paměti z jednoho
+ * okamžiku, na KONEC cmd_map[]) = 212 + 1 = 213.
+ * coverage doplnil coverage_start, _stop, _reset, _status, _mark, _read
+ * a _export (pokrytí kódu, na KONEC cmd_map[]) = 213 + 7 = 220.
  */
-/* Fork retains five PC-map and five fetched-version coverage commands. */
-#define MCP_EXPECTED_CMD_COUNT 191
+/* Upstream220 plus ten retained fork observer commands. */
+#define MCP_EXPECTED_CMD_COUNT 230
 
 
 /* ====================================================================== */
@@ -448,6 +479,58 @@ void test_mem_write_overflow_rejected(void) {
 
     free(resp);
     jsonl_msg_free(req);
+}
+
+
+/**
+ * @brief mem_write a mem_write_force s celými 64 KiB (addr 0, 65536 bajtů)
+ *        předají jádru délku 65536 a odpověď ji vrátí.
+ *
+ * Dřív se délka ukládala do uint16_t a 65536 přeteklo na 0: mem_write
+ * hlásil chybu kontroly regionu, mem_write_force ohlásil úspěch
+ * a nezapsal nic. O jeden bajt víc (addr 1) se odmítne.
+ */
+void test_mem_write_full_64k_length(void) {
+    static const char *const cmds[] = { "mem_write", "mem_write_force" };
+    GString *hex = g_string_sized_new(2 * 0x10000 + 2);
+    for (int i = 0; i < 0x10000; i++) g_string_append(hex, "5A");
+
+    for (size_t k = 0; k < G_N_ELEMENTS(cmds); k++) {
+        dispatch_stub_reset();
+        gchar *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":75,\"cmd\":\"%s\","
+                                      "\"data\":{\"addr\":0,\"data_hex\":\"%s\"}}",
+                                      cmds[k], hex->str);
+        st_JSONL_MESSAGE *req = _make_request(line);
+        char *resp = NULL;
+        en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_OK, rc, cmds[k]);
+        uint32_t req_len = (k == 0) ? g_stub_state.mem_write_req_len : g_stub_state.mwf_req_len;
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(0x10000, req_len, cmds[k]);
+
+        JsonParser *parser = NULL;
+        JsonObject *obj = _parse_response_object(resp, &parser);
+        JsonObject *data = json_object_get_object_member(obj, "data");
+        TEST_ASSERT_EQUAL_INT(65536, json_object_get_int_member(data, "length"));
+        g_object_unref(parser);
+        free(resp);
+        jsonl_msg_free(req);
+        g_free(line);
+
+        /* addr 1 + 65536 bajtů přesahuje 0x10000 => odmítnout. */
+        dispatch_stub_reset();
+        line = g_strdup_printf("{\"type\":\"request\",\"req_id\":76,\"cmd\":\"%s\","
+                               "\"data\":{\"addr\":1,\"data_hex\":\"%s\"}}",
+                               cmds[k], hex->str);
+        req = _make_request(line);
+        resp = NULL;
+        rc = mcp_dispatch_request(req, &resp);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, rc, cmds[k]);
+        TEST_ASSERT_EQUAL_INT(0, g_stub_state.call_count);
+        free(resp);
+        jsonl_msg_free(req);
+        g_free(line);
+    }
+    g_string_free(hex, TRUE);
 }
 
 
@@ -1814,7 +1897,9 @@ void test_step_into_increments_counter(void) {
     en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
 
     TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
-    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_STEP_INTO, g_stub_state.last_cmd);
+    /* STEP_INTO a po něm prázdný příkaz (čekání na provedení kroku). */
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_NONE, g_stub_state.last_cmd);
+    TEST_ASSERT_EQUAL_INT(2, g_stub_state.call_count);
     TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_ORIGIN_MCP, g_stub_state.last_origin);
     TEST_ASSERT_EQUAL_INT(1, g_stub_state.step_into_calls);
 
@@ -1822,6 +1907,8 @@ void test_step_into_increments_counter(void) {
     JsonObject *obj = _parse_response_object(resp, &parser);
     JsonObject *data = json_object_get_object_member(obj, "data");
     TEST_ASSERT_TRUE(json_object_get_boolean_member(data, "stepped"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(data, "completed"));
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(data, "running"));
     g_object_unref(parser);
 
     free(resp);
@@ -1837,7 +1924,8 @@ void test_step_over_increments_counter(void) {
     en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
 
     TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
-    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_STEP_OVER, g_stub_state.last_cmd);
+    /* Krok bez CALL: STEP_OVER a čekání na provedení (prázdný příkaz). */
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_NONE, g_stub_state.last_cmd);
     TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_ORIGIN_MCP, g_stub_state.last_origin);
     TEST_ASSERT_EQUAL_INT(1, g_stub_state.step_over_calls);
 
@@ -1855,9 +1943,9 @@ void test_step_n_loops_count_times(void) {
     en_MCP_DISPATCH_RESULT rc = mcp_dispatch_request(req, &resp);
 
     TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
-    /* Stub musel vidět STEP_INTO 5x. */
+    /* Stub musel vidět STEP_INTO 5x a jedno čekání na poslední krok. */
     TEST_ASSERT_EQUAL_INT(5, g_stub_state.step_into_calls);
-    TEST_ASSERT_EQUAL_INT(5, g_stub_state.call_count);
+    TEST_ASSERT_EQUAL_INT(6, g_stub_state.call_count);
 
     JsonParser *parser = NULL;
     JsonObject *obj = _parse_response_object(resp, &parser);
@@ -6934,6 +7022,456 @@ void test_profiler_pc_bitmap(void) {
 }
 
 
+/* ====================================================================== */
+/* mcp-trace-read: trace_status / trace_read                              */
+/* ====================================================================== */
+
+/** @brief Datový objekt úspěšné odpovědi (parser uvolní volající). */
+static JsonObject *_tr_data(const char *resp, JsonParser **parser) {
+    JsonObject *obj = _parse_response_object(resp, parser);
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(obj, "success"));
+    return json_object_get_object_member(obj, "data");
+}
+
+/** @brief trace_status bez kanálu vypíše všech 10 kanálů, nezaznamenaný = segment 0. */
+void test_trace_status_all_channels(void) {
+    dispatch_stub_reset();
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("trace_status", "{}", &resp));
+    JsonParser *parser = NULL;
+    JsonObject *data = _tr_data(resp, &parser);
+    JsonArray *ch = json_object_get_array_member(data, "channels");
+    TEST_ASSERT_EQUAL_UINT(10, json_array_get_length(ch));
+    JsonObject *c0 = json_array_get_object_element(ch, 0);
+    TEST_ASSERT_EQUAL_STRING("cputrack", json_object_get_string_member(c0, "channel"));
+    TEST_ASSERT_EQUAL_INT64(0, json_object_get_int_member(c0, "segment"));
+    TEST_ASSERT_EQUAL_INT64(2, json_object_get_int_member(c0, "format_version"));
+    TEST_ASSERT_EQUAL_STRING("marklog", json_object_get_string_member(json_array_get_object_element(ch, 4), "channel"));
+    TEST_ASSERT_EQUAL_STRING("eventlog", json_object_get_string_member(json_array_get_object_element(ch, 5), "channel"));
+    TEST_ASSERT_EQUAL_STRING("audio_frames", json_object_get_string_member(json_array_get_object_element(ch, 8), "channel"));
+    TEST_ASSERT_EQUAL_INT64(0, json_object_get_int_member(json_array_get_object_element(ch, 8), "segment"));
+    g_object_unref(parser);
+    free(resp);
+
+    /* jeden kanál; neznámý kanál = INVALID_PARAMS */
+    g_stub_state.tr_segment = 7;
+    g_stub_state.tr_records = 3;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("trace_status", "{\"channel\":\"iorqlog\"}", &resp));
+    data = _tr_data(resp, &parser);
+    ch = json_object_get_array_member(data, "channels");
+    TEST_ASSERT_EQUAL_UINT(1, json_array_get_length(ch));
+    c0 = json_array_get_object_element(ch, 0);
+    TEST_ASSERT_EQUAL_INT64(7, json_object_get_int_member(c0, "segment"));
+    TEST_ASSERT_EQUAL_INT64(3, json_object_get_int_member(c0, "next_seq"));
+    TEST_ASSERT_EQUAL_INT64(24, json_object_get_int_member(c0, "record_size"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(c0, "live"));
+    TEST_ASSERT_EQUAL_STRING("t", json_object_get_string_member(c0, "name"));
+    g_object_unref(parser);
+    free(resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("trace_status", "{\"channel\":\"nope\"}", NULL));
+}
+
+/** @brief trace_read: řádky iorqlog, kurzor, konec dat, segment_replaced. */
+void test_trace_read_rows_cursor_and_segment(void) {
+    dispatch_stub_reset();
+    g_stub_state.tr_segment = 3;
+    g_stub_state.tr_records = 5;
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK,
+        _ss_request("trace_read", "{\"channel\":\"iorqlog\",\"limit\":3}", &resp));
+    JsonParser *parser = NULL;
+    JsonObject *data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_INT64(3, json_object_get_int_member(data, "segment"));
+    TEST_ASSERT_EQUAL_INT64(5, json_object_get_int_member(data, "next_seq"));
+    JsonArray *rows = json_object_get_array_member(data, "rows");
+    TEST_ASSERT_EQUAL_UINT(3, json_array_get_length(rows));
+    JsonArray *r1 = json_array_get_array_element(rows, 1);
+    TEST_ASSERT_EQUAL_INT64(1, json_array_get_int_element(r1, 0));
+    TEST_ASSERT_EQUAL_INT64(100, json_array_get_int_element(r1, 1));
+    TEST_ASSERT_EQUAL_STRING("out", json_array_get_string_element(r1, 5));
+    TEST_ASSERT_EQUAL_STRING("0011", json_array_get_string_element(r1, 7));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(data, "page_full"));
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(data, "end_of_data"));
+    char *cursor = g_strdup(json_object_get_string_member(data, "next_cursor"));
+    /* snímek dvakrát: čtení + kontrola segmentu po čtení */
+    TEST_ASSERT_EQUAL_INT(2, g_stub_state.tr_snap_calls);
+    g_object_unref(parser);
+    free(resp);
+
+    /* pokračování kurzorem: zbylé 2 řádky a konec dat */
+    char *req = g_strdup_printf("{\"channel\":\"iorqlog\",\"cursor\":\"%s\"}", cursor);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("trace_read", req, &resp));
+    data = _tr_data(resp, &parser);
+    rows = json_object_get_array_member(data, "rows");
+    TEST_ASSERT_EQUAL_UINT(2, json_array_get_length(rows));
+    TEST_ASSERT_EQUAL_INT64(3, json_array_get_int_element(json_array_get_array_element(rows, 0), 0));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(data, "end_of_data"));
+    g_object_unref(parser);
+    free(resp);
+
+    /* kurzor cizího kanálu */
+    g_free(req);
+    req = g_strdup_printf("{\"channel\":\"hwlog\",\"cursor\":\"%s\"}", cursor);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("trace_read", req, NULL));
+
+    /* segment se změnil (nový záznam): segment_replaced */
+    g_stub_state.tr_segment = 4;
+    g_free(req);
+    req = g_strdup_printf("{\"channel\":\"iorqlog\",\"cursor\":\"%s\"}", cursor);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("trace_read", req, &resp));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "segment_replaced:"));
+    free(resp);
+
+    /* segment se změní mezi čtením a kontrolou */
+    dispatch_stub_reset();
+    g_stub_state.tr_segment = 3;
+    g_stub_state.tr_records = 5;
+    g_stub_state.tr_bump_on_call = 2;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS,
+        _ss_request("trace_read", "{\"channel\":\"iorqlog\"}", &resp));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "segment_replaced:"));
+    free(resp);
+    g_free(req);
+    g_free(cursor);
+}
+
+/** @brief trace_read cputrack: asm, symboly přes TRACE_RESOLVE, sloupce, newest, raw. */
+void test_trace_read_cputrack_symbols_columns_raw(void) {
+    dispatch_stub_reset();
+    g_stub_state.tr_segment = 1;
+    g_stub_state.tr_records = 10;
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK,
+        _ss_request("trace_read", "{\"channel\":\"cputrack\",\"from\":\"newest\",\"limit\":2}", &resp));
+    JsonParser *parser = NULL;
+    JsonObject *data = _tr_data(resp, &parser);
+    JsonArray *rows = json_object_get_array_member(data, "rows");
+    TEST_ASSERT_EQUAL_UINT(2, json_array_get_length(rows));
+    JsonArray *r0 = json_array_get_array_element(rows, 0);
+    TEST_ASSERT_EQUAL_INT64(8, json_array_get_int_element(r0, 0));
+    TEST_ASSERT_EQUAL_STRING("1008", json_array_get_string_element(r0, 1));
+    TEST_ASSERT_EQUAL_STRING("NOP", json_array_get_string_element(r0, 3));
+    TEST_ASSERT_EQUAL_STRING("S1008", json_array_get_string_element(r0, 7));
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.tr_resolve_calls);
+    g_object_unref(parser);
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK,
+        _ss_request("trace_read", "{\"channel\":\"cputrack\",\"columns\":[\"seq\",\"t\"],\"limit\":2}", &resp));
+    data = _tr_data(resp, &parser);
+    JsonArray *cols = json_object_get_array_member(data, "columns");
+    TEST_ASSERT_EQUAL_UINT(2, json_array_get_length(cols));
+    r0 = json_array_get_array_element(json_object_get_array_member(data, "rows"), 1);
+    TEST_ASSERT_EQUAL_INT64(1, json_array_get_int_element(r0, 0));
+    TEST_ASSERT_EQUAL_INT64(4 * 5, json_array_get_int_element(r0, 1));   /* t = (t_std 4) * 5 */
+    g_object_unref(parser);
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK,
+        _ss_request("trace_read", "{\"channel\":\"cputrack\",\"format\":\"raw_b64\",\"limit\":4}", &resp));
+    data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_INT64(12, json_object_get_int_member(data, "record_size"));
+    TEST_ASSERT_EQUAL_INT64(4, json_object_get_int_member(data, "count"));
+    TEST_ASSERT_EQUAL_INT64(2, json_object_get_int_member(data, "format_version"));
+    gsize len = 0;
+    guchar *raw = g_base64_decode(json_object_get_string_member(data, "data_b64"), &len);
+    TEST_ASSERT_EQUAL_UINT(48, len);
+    TEST_ASSERT_EQUAL_HEX8(0x03, raw[36]);
+    g_free(raw);
+    g_object_unref(parser);
+    free(resp);
+}
+
+/** @brief trace_read eventlog: text detailu přes TRACE_RESOLVE; trace_start eventlog odmítne. */
+void test_trace_read_eventlog(void) {
+    dispatch_stub_reset();
+    g_stub_state.tr_segment = 2;
+    g_stub_state.tr_records = 4;
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK,
+        _ss_request("trace_read", "{\"channel\":\"eventlog\",\"columns\":[\"seq\",\"text\"]}", &resp));
+    JsonParser *parser = NULL;
+    JsonObject *data = _tr_data(resp, &parser);
+    JsonArray *rows = json_object_get_array_member(data, "rows");
+    TEST_ASSERT_EQUAL_UINT(4, json_array_get_length(rows));
+    TEST_ASSERT_EQUAL_STRING("EV0", json_array_get_string_element(json_array_get_array_element(rows, 0), 1));
+    g_object_unref(parser);
+    free(resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS,
+        _ss_request("trace_start", "{\"channel\":\"eventlog\"}", NULL));
+}
+
+/** @brief Řádek `i` stránky jako pole. */
+static JsonArray *_tr_row(JsonObject *data, guint i) {
+    return json_array_get_array_element(json_object_get_array_member(data, "rows"), i);
+}
+
+/** @brief trace_read audio_*: řádky z paměti zachycení zvuku, filtry channels a reg, Hz a nota. */
+void test_trace_read_audio_channels(void) {
+    dispatch_stub_reset();
+    g_stub_state.aud_segment = 3;
+    g_stub_state.aud_records = 10;
+    g_stub_state.aud_origin = 1000;
+    char *resp = NULL;
+    JsonParser *parser = NULL;
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("trace_read", "{\"channel\":\"audio_levels\",\"limit\":20}", &resp));
+    JsonObject *data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_INT64(3, json_object_get_int_member(data, "segment"));
+    TEST_ASSERT_EQUAL_UINT(10, json_array_get_length(json_object_get_array_member(data, "rows")));
+    TEST_ASSERT_EQUAL_UINT(6, json_array_get_length(json_object_get_array_member(data, "columns")));
+    JsonArray *r1 = _tr_row(data, 1);
+    TEST_ASSERT_EQUAL_INT64(1010, json_array_get_int_element(r1, 1));             /* t absolutně */
+    TEST_ASSERT_DOUBLE_WITHIN(0.001, 10.0 * 1e6 / GDGCLK_BASE, json_array_get_double_element(r1, 2));
+    TEST_ASSERT_EQUAL_STRING("psg0_0", json_array_get_string_element(r1, 4));
+    TEST_ASSERT_EQUAL_INT64(1, json_array_get_int_element(r1, 5));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(data, "end_of_data"));
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.tr_snap_calls);                         /* bez dbgapi */
+    g_object_unref(parser);
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("trace_read",
+        "{\"channel\":\"audio_levels\",\"filter\":{\"channels\":[\"psg0_0\",\"psg1_3\"]}}", &resp));
+    data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_UINT(2, json_array_get_length(json_object_get_array_member(data, "rows")));   /* src 1 a 8 */
+    TEST_ASSERT_EQUAL_INT64(8, json_array_get_int_element(_tr_row(data, 1), 0));
+    g_object_unref(parser);
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("trace_read",
+        "{\"channel\":\"audio_psg_writes\",\"filter\":{\"reg\":\"tone\"}}", &resp));
+    data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_UINT(5, json_array_get_length(json_object_get_array_member(data, "rows")));
+    JsonArray *w = _tr_row(data, 0);
+    TEST_ASSERT_EQUAL_STRING("tone", json_array_get_string_element(w, 7));
+    TEST_ASSERT_EQUAL_INT64(254, json_array_get_int_element(w, 8));
+    double hz = (double) GDGCLK_BASE / (32.0 * 254.0 * GDGCLK2CPU_DIVIDER);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, hz, json_array_get_double_element(w, 9));
+    TEST_ASSERT_NOT_NULL(json_array_get_string_element(w, 10));
+    g_object_unref(parser);
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("trace_read",
+        "{\"channel\":\"audio_psg_writes\",\"filter\":{\"reg\":\"volume\"},\"limit\":1}", &resp));
+    data = _tr_data(resp, &parser);
+    w = _tr_row(data, 0);
+    TEST_ASSERT_TRUE(JSON_NODE_HOLDS_NULL(json_array_get_element(w, 9)));        /* hlasitost: bez Hz */
+    g_object_unref(parser);
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("trace_read",
+        "{\"channel\":\"audio_frames\",\"from\":\"seq:2\",\"limit\":1}", &resp));
+    data = _tr_data(resp, &parser);
+    JsonArray *f = _tr_row(data, 0);
+    TEST_ASSERT_EQUAL_INT64(2, json_array_get_int_element(f, 0));
+    TEST_ASSERT_EQUAL_INT64(1000, json_array_get_int_element(f, 3));
+    JsonArray *edges = json_array_get_array_element(f, 4);
+    TEST_ASSERT_EQUAL_UINT(AUDIO_SRC_CHANNELS_COUNT, json_array_get_length(edges));
+    TEST_ASSERT_EQUAL_INT64(2, json_array_get_int_element(edges, 0));
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 50.0, json_array_get_double_element(json_array_get_array_element(f, 5), 0));
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 10.61, json_array_get_double_element(json_array_get_array_element(f, 6), 0));
+    TEST_ASSERT_EQUAL_INT64(200, json_array_get_int_element(json_array_get_array_element(f, 8), 1));
+    TEST_ASSERT_TRUE(JSON_NODE_HOLDS_NULL(json_array_get_element(f, 10)));        /* bez SDL cesty */
+    g_object_unref(parser);
+    free(resp);
+
+    /* Bez zachycení: prázdná stránka; filtry jen pro své kanály. */
+    g_stub_state.aud_segment = 0;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("trace_read", "{\"channel\":\"audio_frames\"}", &resp));
+    data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_INT64(0, json_object_get_int_member(data, "segment"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(data, "end_of_data"));
+    g_object_unref(parser);
+    free(resp);
+    const char *bad[] = {
+        "{\"channel\":\"iorqlog\",\"filter\":{\"channels\":[\"ctc0\"]}}",
+        "{\"channel\":\"audio_levels\",\"filter\":{\"channels\":[\"psg9\"]}}",
+        "{\"channel\":\"audio_levels\",\"filter\":{\"reg\":\"tone\"}}",
+        "{\"channel\":\"audio_psg_writes\",\"filter\":{\"reg\":\"pitch\"}}",
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(bad); i++) {
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, _ss_request("trace_read", bad[i], NULL), bad[i]);
+    }
+}
+
+/** @brief ramlog_start: rozsahy, režim, kapacita, validace. */
+void test_ramlog_start_params(void) {
+    dispatch_stub_reset();
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("ramlog_start", "{}", &resp));
+    const st_DBGAPI_RAMLOG_PARAM *p = &g_stub_state.rl_last;
+    TEST_ASSERT_EQUAL_INT(DBGAPI_RAMLOG_OP_START, p->op);
+    TEST_ASSERT_EQUAL_UINT(0, p->cfg.n_ranges);
+    TEST_ASSERT_EQUAL_INT(RAMLOG_MODE_RING, p->cfg.mode);
+    TEST_ASSERT_EQUAL_UINT32(RAMLOG_DEFAULT_CAPACITY, p->cfg.capacity);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"segment\":4"));
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("ramlog_start",
+        "{\"ranges\":[{\"from\":16384,\"to\":16385},{\"space\":\"vram\",\"from\":8192,\"to\":8447},{\"from\":32768}],"
+        "\"mode\":\"fill\",\"capacity\":64}", &resp));
+    TEST_ASSERT_EQUAL_UINT(3, p->cfg.n_ranges);
+    TEST_ASSERT_FALSE(p->cfg.ranges[0].phys);
+    TEST_ASSERT_EQUAL_UINT32(0x4001, p->cfg.ranges[0].to);
+    TEST_ASSERT_TRUE(p->cfg.ranges[1].phys);
+    TEST_ASSERT_EQUAL_UINT8(RAMLOG_SPACE_VRAM, p->cfg.ranges[1].space);
+    TEST_ASSERT_EQUAL_UINT32(0x8000, p->cfg.ranges[2].to);    /* to chybí = from */
+    TEST_ASSERT_EQUAL_INT(RAMLOG_MODE_FILL, p->cfg.mode);
+    TEST_ASSERT_EQUAL_UINT32(64, p->cfg.capacity);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"mode\":\"fill\""));
+    free(resp);
+
+    int calls = g_stub_state.rl_calls;
+    const char *bad[] = {
+        "{\"mode\":\"loop\"}", "{\"capacity\":1}", "{\"ranges\":5}", "{\"ranges\":[{\"to\":5}]}",
+        "{\"ranges\":[{\"from\":70000}]}", "{\"ranges\":[{\"from\":5,\"to\":4}]}",
+        "{\"ranges\":[{\"space\":\"rom\",\"from\":0}]}",
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(bad); i++) {
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, _ss_request("ramlog_start", bad[i], NULL), bad[i]);
+    }
+    TEST_ASSERT_EQUAL_INT(calls, g_stub_state.rl_calls);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("ramlog_stop", "{}", NULL));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_RAMLOG_OP_STOP, p->op);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("ramlog_clear", "{}", NULL));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_RAMLOG_OP_CLEAR, p->op);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("ramlog_status", "{}", NULL));
+    TEST_ASSERT_EQUAL_INT(DBGAPI_RAMLOG_OP_STATUS, p->op);
+}
+
+/** @brief ramlog_who_wrote a ramlog_writers: cíl dotazu, tvar odpovědi. */
+void test_ramlog_queries(void) {
+    dispatch_stub_reset();
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("ramlog_who_wrote", "{\"addr\":16385,\"limit\":5}", &resp));
+    const st_DBGAPI_RAMLOG_PARAM *p = &g_stub_state.rl_last;
+    TEST_ASSERT_EQUAL_INT(DBGAPI_RAMLOG_OP_WHO_WROTE, p->op);
+    TEST_ASSERT_TRUE(p->by_cpu);
+    TEST_ASSERT_EQUAL_UINT16(0x4001, p->cpu_from);
+    TEST_ASSERT_EQUAL_UINT(5, p->limit);
+    TEST_ASSERT_FALSE(p->include_unchanged);
+    JsonParser *parser = NULL;
+    JsonObject *data = _tr_data(resp, &parser);
+    JsonObject *c = json_array_get_object_element(json_object_get_array_member(data, "cells"), 0);
+    TEST_ASSERT_EQUAL_STRING("ram", json_object_get_string_member(c, "space"));
+    TEST_ASSERT_EQUAL_STRING("3009", json_object_get_string_member(json_object_get_object_member(c, "last"), "pc"));
+    JsonObject *h = json_array_get_object_element(json_object_get_array_member(c, "history"), 0);
+    TEST_ASSERT_EQUAL_STRING("66", json_object_get_string_member(h, "new"));
+    TEST_ASSERT_EQUAL_INT64(1, json_object_get_int_member(h, "seq"));
+    g_object_unref(parser);
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("ramlog_who_wrote", "{\"space\":\"vram\",\"offset\":8208,\"all\":true}", NULL));
+    TEST_ASSERT_FALSE(p->by_cpu);
+    TEST_ASSERT_EQUAL_UINT8(RAMLOG_SPACE_VRAM, p->space);
+    TEST_ASSERT_EQUAL_UINT32(0x2010, p->off_from);
+    TEST_ASSERT_TRUE(p->include_unchanged);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("ramlog_writers", "{\"from\":16384,\"to\":16431,\"limit\":1}", &resp));
+    TEST_ASSERT_TRUE(p->by_cpu);
+    TEST_ASSERT_EQUAL_UINT16(0x402F, p->cpu_to);
+    data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_INT64(2, json_object_get_int_member(data, "total"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(data, "truncated"));
+    TEST_ASSERT_EQUAL_UINT(1, json_array_get_length(json_object_get_array_member(data, "writers")));
+    g_object_unref(parser);
+    free(resp);
+
+    const char *bad_w[] = { "{}", "{\"addr\":70000}", "{\"space\":\"nope\",\"offset\":1}", "{\"addr\":1,\"limit\":2000}" };
+    for (size_t i = 0; i < G_N_ELEMENTS(bad_w); i++) {
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, _ss_request("ramlog_who_wrote", bad_w[i], NULL), bad_w[i]);
+    }
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("ramlog_writers", "{}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("ramlog_writers", "{\"from\":1,\"limit\":0}", NULL));
+}
+
+/** @brief trace_read ramlog: nezměněné skryté bez all, filtry pc/addr/src, symbol. */
+void test_trace_read_ramlog(void) {
+    dispatch_stub_reset();
+    g_stub_state.tr_segment = 3;
+    g_stub_state.tr_records = 6;
+    char *resp = NULL;
+    JsonParser *parser = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("trace_read", "{\"channel\":\"ramlog\"}", &resp));
+    JsonObject *data = _tr_data(resp, &parser);
+    JsonArray *rows = json_object_get_array_member(data, "rows");
+    TEST_ASSERT_EQUAL_UINT(3, json_array_get_length(rows));           /* seq 0, 2, 4 */
+    JsonArray *r2 = json_array_get_array_element(rows, 1);
+    TEST_ASSERT_EQUAL_INT64(2, json_array_get_int_element(r2, 0));
+    TEST_ASSERT_EQUAL_STRING("3002", json_array_get_string_element(r2, 3));
+    TEST_ASSERT_EQUAL_STRING("4002", json_array_get_string_element(r2, 5));
+    TEST_ASSERT_EQUAL_STRING("ram", json_array_get_string_element(r2, 6));
+    TEST_ASSERT_EQUAL_STRING("AA", json_array_get_string_element(r2, 9));
+    TEST_ASSERT_EQUAL_STRING("insn", json_array_get_string_element(r2, 11));
+    TEST_ASSERT_EQUAL_INT64(12, json_array_get_int_element(r2, 14));    /* tin */
+    TEST_ASSERT_TRUE(g_stub_state.tr_resolve_calls > 0);                /* sloupec sym */
+    g_object_unref(parser);
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("trace_read",
+        "{\"channel\":\"ramlog\",\"filter\":{\"all\":true,\"addr_from\":16385,\"addr_to\":16387},\"columns\":[\"seq\",\"flags\"]}", &resp));
+    data = _tr_data(resp, &parser);
+    rows = json_object_get_array_member(data, "rows");
+    TEST_ASSERT_EQUAL_UINT(3, json_array_get_length(rows));           /* seq 1, 2, 3 */
+    TEST_ASSERT_EQUAL_STRING("unchanged", json_array_get_string_element(json_array_get_array_element(rows, 0), 1));
+    g_object_unref(parser);
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("trace_read",
+        "{\"channel\":\"ramlog\",\"filter\":{\"pc_from\":12292,\"pc_to\":12292,\"src\":\"insn\",\"space\":\"ram\"}}", &resp));
+    data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_UINT(1, json_array_get_length(json_object_get_array_member(data, "rows")));
+    g_object_unref(parser);
+    free(resp);
+
+    const char *bad[] = {
+        "{\"channel\":\"ramlog\",\"filter\":{\"src\":\"cpu\"}}",
+        "{\"channel\":\"ramlog\",\"filter\":{\"space\":\"x\"}}",
+        "{\"channel\":\"iorqlog\",\"filter\":{\"all\":true}}",
+        "{\"channel\":\"iorqlog\",\"filter\":{\"addr_from\":1}}",
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(bad); i++) {
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, _ss_request("trace_read", bad[i], NULL), bad[i]);
+    }
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("trace_start", "{\"channel\":\"ramlog\"}", NULL));
+}
+
+/** @brief trace_read: validace parametrů. */
+void test_trace_read_invalid_params(void) {
+    dispatch_stub_reset();
+    g_stub_state.tr_segment = 1;
+    g_stub_state.tr_records = 3;
+    const char *bad[] = {
+        "{}",
+        "{\"channel\":\"nope\"}",
+        "{\"channel\":\"iorqlog\",\"format\":\"csv\"}",
+        "{\"channel\":\"iorqlog\",\"limit\":0}",
+        "{\"channel\":\"iorqlog\",\"limit\":5001}",
+        "{\"channel\":\"iorqlog\",\"max_chars\":10}",
+        "{\"channel\":\"iorqlog\",\"columns\":[\"pc\"]}",
+        "{\"channel\":\"iorqlog\",\"filter\":{\"pc_from\":1}}",
+        "{\"channel\":\"iorqlog\",\"filter\":{\"dir\":\"up\"}}",
+        "{\"channel\":\"iorqlog\",\"from\":\"middle\"}",
+        "{\"channel\":\"iorqlog\",\"cursor\":\"t1.###\"}",
+        "{\"channel\":\"iorqlog\",\"from\":\"seq:99\"}",
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(bad); i++) {
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, _ss_request("trace_read", bad[i], NULL), bad[i]);
+    }
+    /* nezaznamenaný kanál: prázdná stránka, ne chyba */
+    g_stub_state.tr_segment = 0;
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("trace_read", "{\"channel\":\"marklog\"}", &resp));
+    JsonParser *parser = NULL;
+    JsonObject *data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_INT64(0, json_object_get_int_member(data, "segment"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(data, "end_of_data"));
+    TEST_ASSERT_EQUAL_UINT(0, json_array_get_length(json_object_get_array_member(data, "rows")));
+    g_object_unref(parser);
+    free(resp);
+}
+
+
 /**
  * @brief V1.D.4 - get_video_text_dump available (default v stubu).
  */
@@ -7158,7 +7696,145 @@ void test_audio_capture_start_params(void) {
     TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("audio_capture_status", "{}", &resp));
     TEST_ASSERT_EQUAL_INT(DBGAPI_AUDIO_CAPTURE_OP_STATUS, p->op);
     TEST_ASSERT_NOT_NULL(strstr(resp, "\"frames\":7"));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"memory\":null"));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "\"segment\":"));
     free(resp);
+}
+
+
+/** @brief audio_capture_start: paměť přes MCP výchozí zapnutá, pcm, délky ringů. */
+void test_audio_capture_start_memory_params(void) {
+    dispatch_stub_reset();
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("audio_capture_start", "{}", NULL));
+    const st_DBGAPI_AUDIO_CAPTURE_PARAM *p = &g_stub_state.ac_last;
+    TEST_ASSERT_TRUE(p->params.memory);
+    TEST_ASSERT_TRUE(p->params.pcm_reference);
+    TEST_ASSERT_FALSE(p->params.pcm_sdl);
+    TEST_ASSERT_EQUAL_UINT32(AUDIO_CAPTURE_MEMORY_MINUTES_DEFAULT * 60u * VIDEO_SCREENS_PER_SEC, p->params.ring_frames);
+    TEST_ASSERT_EQUAL_UINT32(AUDIO_CAPTURE_PCM_SECONDS_DEFAULT * AUDIO_CAPTURE_WAV_RATE, p->params.ring_pcm);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("audio_capture_start",
+        "{\"pcm\":[\"sdl\"],\"memory_minutes\":2,\"pcm_seconds\":5}", NULL));
+    TEST_ASSERT_FALSE(p->params.pcm_reference);
+    TEST_ASSERT_TRUE(p->params.pcm_sdl);
+    TEST_ASSERT_EQUAL_UINT32(2u * 60u * VIDEO_SCREENS_PER_SEC, p->params.ring_frames);
+    TEST_ASSERT_EQUAL_UINT32(5u * AUDIO_CAPTURE_WAV_RATE, p->params.ring_pcm);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("audio_capture_start", "{\"memory\":false}", NULL));
+    TEST_ASSERT_FALSE(p->params.memory);
+
+    int calls = g_stub_state.ac_calls;
+    const char *bad[] = { "{\"memory\":1}", "{\"pcm\":\"sdl\"}", "{\"pcm\":[\"wav\"]}",
+                          "{\"memory_minutes\":0}", "{\"pcm_seconds\":4000}" };
+    for (size_t i = 0; i < G_N_ELEMENTS(bad); i++) {
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, _ss_request("audio_capture_start", bad[i], NULL), bad[i]);
+    }
+    TEST_ASSERT_EQUAL_INT(calls, g_stub_state.ac_calls);
+}
+
+
+/** @brief audio_capture_summary: úseky, kanály, noty PSG, CTC0, reference vs SDL. */
+void test_audio_capture_summary(void) {
+    dispatch_stub_reset();
+    char *resp = NULL;
+    /* bez paměti zachycení */
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, _ss_request("audio_capture_summary", "{}", &resp));
+    TEST_ASSERT_NOT_NULL(strstr(resp, "memory=true"));
+    free(resp);
+
+    g_stub_state.aud_segment = 2;
+    g_stub_state.aud_records = 10;
+    g_stub_state.aud_origin = 1000;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("audio_capture_summary", "{}", &resp));
+    JsonParser *parser = NULL;
+    JsonObject *data = _tr_data(resp, &parser);
+    JsonArray *fr = json_object_get_array_member(data, "frames");
+    TEST_ASSERT_EQUAL_INT64(0, json_array_get_int_element(fr, 0));
+    TEST_ASSERT_EQUAL_INT64(9, json_array_get_int_element(fr, 1));
+    /* ref RMS 100/200 >= 64 => všechny snímky se zvukem */
+    JsonArray *snd = json_object_get_array_member(data, "sound_spans");
+    TEST_ASSERT_EQUAL_UINT(1, json_array_get_length(snd));
+    TEST_ASSERT_EQUAL_UINT(0, json_array_get_length(json_object_get_array_member(data, "silent_spans")));
+    JsonObject *c0 = json_object_get_object_member(json_object_get_object_member(data, "channels"), "ctc0");
+    TEST_ASSERT_EQUAL_INT64(45, json_object_get_int_member(c0, "edges"));          /* 0 + 1 + ... + 9 */
+    TEST_ASSERT_EQUAL_INT64(9, json_object_get_int_member(c0, "active_frames"));
+    /* nota: hlasitost ve snímku 0 (dělič 0 = nehraje), tón 254 od snímku 1 do konce */
+    JsonArray *notes = json_object_get_array_member(data, "psg_notes");
+    TEST_ASSERT_EQUAL_UINT(1, json_array_get_length(notes));
+    JsonObject *n = json_array_get_object_element(notes, 0);
+    TEST_ASSERT_EQUAL_STRING("psg0_0", json_object_get_string_member(n, "ch"));
+    TEST_ASSERT_EQUAL_INT64(254, json_object_get_int_member(n, "divider"));
+    TEST_ASSERT_EQUAL_INT64(1, json_object_get_int_member(n, "from_frame"));
+    TEST_ASSERT_EQUAL_INT64(9, json_object_get_int_member(n, "to_frame"));
+    TEST_ASSERT_EQUAL_INT64(13, json_object_get_int_member(n, "max_level"));
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(data, "psg_state_incomplete"));
+    JsonObject *ctc = json_object_get_object_member(data, "ctc0");
+    TEST_ASSERT_TRUE(json_object_has_member(ctc, "likely"));
+    TEST_ASSERT_EQUAL_INT64(2, json_object_get_int_member(ctc, "edges"));          /* levels src 0: i = 0 a 9 */
+    JsonObject *rv = json_object_get_object_member(data, "ref_vs_sdl");
+    TEST_ASSERT_NOT_NULL(rv);
+    TEST_ASSERT_EQUAL_INT64(0, json_object_get_int_member(rv, "lag_samples"));
+    TEST_ASSERT_EQUAL_DOUBLE(0.0, json_object_get_double_member(rv, "diff_rms"));
+    g_object_unref(parser);
+    free(resp);
+
+    /* rozsah snímků */
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("audio_capture_summary", "{\"frame_from\":3,\"frame_to\":4}", &resp));
+    data = _tr_data(resp, &parser);
+    fr = json_object_get_array_member(data, "frames");
+    TEST_ASSERT_EQUAL_INT64(3, json_array_get_int_element(fr, 0));
+    TEST_ASSERT_EQUAL_INT64(4, json_array_get_int_element(fr, 1));
+    g_object_unref(parser);
+    free(resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("audio_capture_summary", "{\"frame_from\":50}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("audio_capture_summary", "{\"silence_rms\":-1}", NULL));
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.ac_calls);                                /* bez dbgapi */
+}
+
+
+/** @brief audio_capture_pcm: přesná kopie 44100 stereo, převzorkovaný WAV, chyby. */
+void test_audio_capture_pcm(void) {
+    dispatch_stub_reset();
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, _ss_request("audio_capture_pcm", "{}", NULL));
+    g_stub_state.aud_segment = 2;
+    g_stub_state.aud_records = 10;
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("audio_capture_pcm",
+        "{\"sample_from\":2,\"samples\":5,\"rate\":44100,\"stereo\":true,\"encoding\":\"pcm_b64\"}", &resp));
+    JsonParser *parser = NULL;
+    JsonObject *data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_INT64(2, json_object_get_int_member(data, "from_sample"));
+    TEST_ASSERT_EQUAL_INT64(5, json_object_get_int_member(data, "samples"));
+    TEST_ASSERT_EQUAL_INT64(7, json_object_get_int_member(data, "next_sample"));
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(data, "end_of_data"));
+    gsize len = 0;
+    guchar *raw = g_base64_decode(json_object_get_string_member(data, "data_b64"), &len);
+    TEST_ASSERT_EQUAL_UINT(5 * 4, len);
+    const int16_t *pcm = (const int16_t *) raw;
+    TEST_ASSERT_EQUAL_INT16(2, pcm[0]);
+    TEST_ASSERT_EQUAL_INT16(-2, pcm[1]);
+    TEST_ASSERT_EQUAL_INT16(6, pcm[8]);
+    g_free(raw);
+    g_object_unref(parser);
+    free(resp);
+
+    /* výchozí: WAV mono 11025 Hz od snímku 0, zbytek proudu */
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("audio_capture_pcm", "{\"source\":\"sdl\"}", &resp));
+    data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_STRING("sdl", json_object_get_string_member(data, "source"));
+    TEST_ASSERT_EQUAL_INT64(1, json_object_get_int_member(data, "channels"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(data, "end_of_data"));
+    raw = g_base64_decode(json_object_get_string_member(data, "data_b64"), &len);
+    TEST_ASSERT_EQUAL_MEMORY("RIFF", raw, 4);
+    TEST_ASSERT_EQUAL_UINT(44 + 2 * json_object_get_int_member(data, "frames_out"), len);
+    g_free(raw);
+    g_object_unref(parser);
+    free(resp);
+
+    const char *bad[] = { "{\"source\":\"mix\"}", "{\"rate\":500}", "{\"encoding\":\"mp3\"}",
+                          "{\"max_bytes\":10}", "{\"frames\":0}", "{\"stereo\":1}" };
+    for (size_t i = 0; i < G_N_ELEMENTS(bad); i++) {
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, _ss_request("audio_capture_pcm", bad[i], NULL), bad[i]);
+    }
 }
 
 
@@ -7180,6 +7856,1401 @@ void test_audio_capture_errors(void) {
     TEST_ASSERT_NOT_NULL(strstr(resp, "already running"));
     free(resp);
 }
+
+
+/* ------------------------------------------------------------------ */
+/* memsearch (M3 debug-gaps): freeze_* a memsearch_* přes MCP          */
+/* ------------------------------------------------------------------ */
+
+/** @brief Celé číslo z datového objektu odpovědi (uvolní odpověď). */
+static gint64 _ms_int(char *resp, const char *key) {
+    JsonParser *parser = NULL;
+    JsonObject *data = _tr_data(resp, &parser);
+    gint64 v = json_object_get_int_member(data, key);
+    g_object_unref(parser);
+    free(resp);
+    return v;
+}
+
+/** @brief freeze_add (value, bytes), freeze_list, freeze_remove (úsek, all) a validace. */
+void test_freeze_mcp(void) {
+    dispatch_stub_reset();
+    g_stub_state.ms_regions = true;
+    char *resp = NULL;
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("freeze_add",
+        "{\"kind\":\"ram\",\"offset\":4096,\"value\":7}", &resp));
+    TEST_ASSERT_EQUAL_INT64(1, _ms_int(resp, "frozen"));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("freeze_add",
+        "{\"kind\":\"memext_ram\",\"sub_id\":65,\"offset\":16,\"bytes\":[1,2,3]}", &resp));
+    TEST_ASSERT_EQUAL_INT64(3, _ms_int(resp, "added"));
+    TEST_ASSERT_EQUAL_UINT32(4, g_stub_state.frz_count);
+    TEST_ASSERT_EQUAL_UINT8(3, g_stub_state.frz_items[3].value);
+    TEST_ASSERT_EQUAL_INT(0x41, g_stub_state.frz_items[3].sub_id);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("freeze_list", "{}", &resp));
+    JsonParser *parser = NULL;
+    JsonObject *data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_INT64(4, json_object_get_int_member(data, "count"));
+    JsonObject *e0 = json_array_get_object_element(json_object_get_array_member(data, "entries"), 0);
+    TEST_ASSERT_EQUAL_STRING("ram", json_object_get_string_member(e0, "kind"));
+    TEST_ASSERT_EQUAL_INT64(4096, json_object_get_int_member(e0, "offset"));
+    TEST_ASSERT_EQUAL_INT64(7, json_object_get_int_member(e0, "value"));
+    g_object_unref(parser);
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("freeze_remove",
+        "{\"kind\":\"memext_ram\",\"sub_id\":65,\"offset\":16,\"length\":2}", &resp));
+    TEST_ASSERT_EQUAL_INT64(2, _ms_int(resp, "removed"));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("freeze_remove", "{\"all\":true}", &resp));
+    TEST_ASSERT_EQUAL_INT64(2, _ms_int(resp, "removed"));
+    TEST_ASSERT_EQUAL_UINT32(0, g_stub_state.frz_count);
+
+    const char *bad[] = {
+        "{\"offset\":1,\"value\":1}",                                   /* chybí kind */
+        "{\"kind\":\"rom\",\"offset\":1,\"value\":1}",                  /* neznámý kind */
+        "{\"kind\":\"ram\",\"offset\":1}",                              /* chybí value i bytes */
+        "{\"kind\":\"ram\",\"offset\":1,\"value\":256}",
+        "{\"kind\":\"ram\",\"offset\":1,\"value\":1,\"bytes\":[1]}",
+        "{\"kind\":\"ram\",\"offset\":65535,\"bytes\":[1,2]}",          /* za konec regionu */
+        "{\"kind\":\"rom_lower\",\"offset\":1,\"value\":1}",            /* jen pro čtení */
+        "{\"kind\":\"ramdisk_std\",\"offset\":1,\"value\":1}",          /* v sestavě není */
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(bad); i++) {
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, _ss_request("freeze_add", bad[i], NULL), bad[i]);
+    }
+    TEST_ASSERT_EQUAL_UINT32(0, g_stub_state.frz_count);
+}
+
+/** @brief Průběh start eq -> filter dec_by -> list -> undo/redo -> close. */
+void test_memsearch_mcp_flow(void) {
+    dispatch_stub_reset();
+    g_stub_state.ms_regions = true;
+    g_stub_state.ms_ram[0x20] = 5;
+    g_stub_state.ms_ram[0x21] = 5;
+    char *resp = NULL;
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("memsearch_start",
+        "{\"space\":\"ram\",\"type\":\"u8\",\"op\":\"eq\",\"value\":5}", &resp));
+    JsonParser *parser = NULL;
+    JsonObject *data = _tr_data(resp, &parser);
+    gint64 sid = json_object_get_int_member(data, "session_id");
+    TEST_ASSERT_TRUE(sid > 0);
+    TEST_ASSERT_EQUAL_INT64(2, json_object_get_int_member(data, "candidates"));
+    TEST_ASSERT_EQUAL_INT64(65536, json_object_get_int_member(data, "space_size"));
+    TEST_ASSERT_EQUAL_INT64(1, json_object_get_int_member(data, "sample_frame"));
+    JsonObject *sp0 = json_array_get_object_element(json_object_get_array_member(data, "spans"), 0);
+    TEST_ASSERT_EQUAL_STRING("ram", json_object_get_string_member(sp0, "kind"));
+    g_object_unref(parser);
+    free(resp);
+
+    /* Ztráta života: 5 -> 4 na 20h. */
+    g_stub_state.ms_ram[0x20] = 4;
+    char req[256];
+    g_snprintf(req, sizeof(req), "{\"session_id\":%" G_GINT64_FORMAT ",\"op\":\"dec_by\",\"value\":1}", sid);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("memsearch_filter", req, &resp));
+    data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_INT64(1, json_object_get_int_member(data, "candidates"));
+    TEST_ASSERT_EQUAL_INT64(1, json_object_get_int_member(data, "removed"));
+    TEST_ASSERT_EQUAL_INT64(2, json_object_get_int_member(data, "step"));
+    g_object_unref(parser);
+    free(resp);
+    TEST_ASSERT_EQUAL_INT(2, g_stub_state.ms_sample_calls);
+
+    g_snprintf(req, sizeof(req), "{\"session_id\":%" G_GINT64_FORMAT "}", sid);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("memsearch_list", req, &resp));
+    data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_INT64(1, json_object_get_int_member(data, "total"));
+    JsonObject *it = json_array_get_object_element(json_object_get_array_member(data, "items"), 0);
+    TEST_ASSERT_EQUAL_INT64(0x20, json_object_get_int_member(it, "region_offset"));
+    TEST_ASSERT_EQUAL_INT64(0x20, json_object_get_int_member(it, "z80_addr"));
+    TEST_ASSERT_EQUAL_INT64(4, json_object_get_int_member(it, "cur"));
+    TEST_ASSERT_EQUAL_INT64(5, json_object_get_int_member(it, "prev"));
+    TEST_ASSERT_EQUAL_STRING("04", json_object_get_string_member(it, "cur_hex"));
+    JsonObject *hint = json_object_get_object_member(it, "bp_hint");
+    TEST_ASSERT_EQUAL_INT64(0x20, json_object_get_int_member(hint, "addr"));
+    JsonObject *hv = json_object_get_object_member(hint, "values");
+    TEST_ASSERT_EQUAL_STRING("MEM_W", json_object_get_string_member(hv, "type"));
+    TEST_ASSERT_EQUAL_STRING("RAM", json_object_get_string_member(hv, "zone"));
+    g_object_unref(parser);
+    free(resp);
+
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("memsearch_undo", req, &resp));
+    TEST_ASSERT_EQUAL_INT64(2, _ms_int(resp, "candidates"));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("memsearch_redo", req, &resp));
+    TEST_ASSERT_EQUAL_INT64(1, _ms_int(resp, "candidates"));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("memsearch_redo", req, NULL));
+
+    /* Vzorek bez filtrace, pak filtr bez nového vzorku (cur proti prev). */
+    g_stub_state.ms_ram[0x20] = 3;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("memsearch_sample", req, &resp));
+    TEST_ASSERT_EQUAL_INT64(3, _ms_int(resp, "step"));
+    g_snprintf(req, sizeof(req), "{\"session_id\":%" G_GINT64_FORMAT ",\"op\":\"dec\",\"sample\":false}", sid);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("memsearch_filter", req, &resp));
+    TEST_ASSERT_EQUAL_INT64(1, _ms_int(resp, "candidates"));
+    TEST_ASSERT_EQUAL_INT(3, g_stub_state.ms_sample_calls);
+
+    g_snprintf(req, sizeof(req), "{\"session_id\":%" G_GINT64_FORMAT ",\"space_offsets\":[32]}", sid);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("memsearch_eliminate", req, &resp));
+    TEST_ASSERT_EQUAL_INT64(0, _ms_int(resp, "candidates"));
+
+    g_snprintf(req, sizeof(req), "{\"session_id\":%" G_GINT64_FORMAT "}", sid);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("memsearch_close", req, NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("memsearch_list", req, NULL));
+}
+
+/** @brief Kandidát v MemExt PEHU: adresa okna a write BP v zóně MMEXT_BANK. */
+void test_memsearch_mcp_pehu_hint(void) {
+    dispatch_stub_reset();
+    g_stub_state.ms_regions = true;
+    g_stub_state.ms_pehu = true;
+    char *resp = NULL;
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("memsearch_start",
+        "{\"space\":[{\"kind\":\"memext_ram\",\"sub_id\":65,\"offset\":256,\"length\":4}],\"type\":\"u16\"}", &resp));
+    gint64 sid = _ms_int(resp, "session_id");
+    char req[128];
+    g_snprintf(req, sizeof(req), "{\"session_id\":%" G_GINT64_FORMAT ",\"limit\":1}", sid);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("memsearch_list", req, &resp));
+    JsonParser *parser = NULL;
+    JsonObject *data = _tr_data(resp, &parser);
+    TEST_ASSERT_EQUAL_INT64(3, json_object_get_int_member(data, "total"));   /* u16 ve 4 B */
+    JsonObject *it = json_array_get_object_element(json_object_get_array_member(data, "items"), 0);
+    TEST_ASSERT_EQUAL_STRING("memext_ram", json_object_get_string_member(it, "kind"));
+    TEST_ASSERT_EQUAL_INT64(0x100, json_object_get_int_member(it, "region_offset"));
+    TEST_ASSERT_EQUAL_INT64(0x4100, json_object_get_int_member(it, "z80_addr"));   /* slot 4 = kus 41h */
+    JsonObject *hint = json_object_get_object_member(it, "bp_hint");
+    TEST_ASSERT_EQUAL_INT64(0x1100, json_object_get_int_member(hint, "addr"));     /* horní půlka banky */
+    JsonObject *hv = json_object_get_object_member(hint, "values");
+    TEST_ASSERT_EQUAL_STRING("MMEXT_BANK", json_object_get_string_member(hv, "zone"));
+    TEST_ASSERT_EQUAL_INT64(0x20, json_object_get_int_member(hv, "bank_id"));
+    TEST_ASSERT_EQUAL_STRING("bank_offset", json_object_get_string_member(hv, "bp_addr_space"));
+    TEST_ASSERT_EQUAL_INT64(0x1101, json_object_get_int_member(hv, "addr_end"));
+    TEST_ASSERT_EQUAL_STRING("RANGE", json_object_get_string_member(hv, "addr_match_mode"));
+    g_object_unref(parser);
+    free(resp);
+    g_snprintf(req, sizeof(req), "{\"session_id\":%" G_GINT64_FORMAT "}", sid);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("memsearch_close", req, NULL));
+}
+
+/** @brief Neplatné parametry, neznámé sezení a strop počtu sezení. */
+void test_memsearch_mcp_errors(void) {
+    dispatch_stub_reset();
+    g_stub_state.ms_regions = true;
+    const char *bad_start[] = {
+        "{\"type\":\"u64\"}",
+        "{\"type\":\"u16\",\"width\":2}",
+        "{\"type\":\"bcd\",\"width\":5}",
+        "{\"type\":\"digits\",\"digit_encoding\":\"ebcdic\"}",
+        "{\"endian\":\"middle\"}",
+        "{\"space\":\"rom\"}",
+        "{\"space\":\"ramdisk\"}",                                  /* v sestavě není */
+        "{\"space\":[{\"kind\":\"ram\",\"offset\":65536}]}",
+        "{\"op\":\"dec\"}",                                          /* první filtr jen s hodnotou */
+        "{\"op\":\"eq\"}",                                           /* chybí value */
+        "{\"op\":\"between\",\"value\":5}",
+        "{\"op\":\"teleport\",\"value\":1}",
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(bad_start); i++) {
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS,
+                                      _ss_request("memsearch_start", bad_start[i], NULL), bad_start[i]);
+    }
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.ms_sample_calls);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("memsearch_filter",
+        "{\"session_id\":999,\"op\":\"eq\",\"value\":1}", NULL));
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("memsearch_undo", "{}", NULL));
+
+    /* 8 sezení projde, deváté ne; filtr bez op selže. */
+    gint64 ids[8];
+    char *resp = NULL;
+    for (int i = 0; i < 8; i++) {
+        TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("memsearch_start", "{}", &resp));
+        ids[i] = _ms_int(resp, "session_id");
+    }
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, _ss_request("memsearch_start", "{}", NULL));
+    char req[96];
+    g_snprintf(req, sizeof(req), "{\"session_id\":%" G_GINT64_FORMAT "}", ids[0]);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("memsearch_filter", req, NULL));
+    g_snprintf(req, sizeof(req), "{\"session_id\":%" G_GINT64_FORMAT ",\"op\":\"inc\",\"compare_to\":\"value\",\"value\":1}", ids[0]);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, _ss_request("memsearch_filter", req, NULL));
+    for (int i = 0; i < 8; i++) {
+        g_snprintf(req, sizeof(req), "{\"session_id\":%" G_GINT64_FORMAT "}", ids[i]);
+        TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, _ss_request("memsearch_close", req, NULL));
+    }
+}
+
+
+
+/* ====================================================================== */
+/* run-control (M5): wait_stop, historie, deadline, pause(if_run_seq), kroky */
+/* ====================================================================== */
+
+#include "../../src/emulator/debugger/run_control/run_log.h"
+
+/**
+ * @brief Pošle požadavek a vrátí objekt `data` odpovědi (parser uvolní volající).
+ */
+static JsonObject *_rc_call(const char *json, en_MCP_DISPATCH_RESULT *rc_out,
+                            JsonParser **parser, char **resp_out) {
+    st_JSONL_MESSAGE *req = _make_request(json);
+    char *resp = NULL;
+    *rc_out = mcp_dispatch_request(req, &resp);
+    jsonl_msg_free(req);
+    *resp_out = resp;
+    if (*rc_out != MCP_DISPATCH_OK) return NULL;
+    JsonObject *obj = _parse_response_object(resp, parser);
+    return json_object_get_object_member(obj, "data");
+}
+
+
+/** @brief Ukončí aktuální běh v run_log záznamem s důvodem a PC. */
+static void _rc_end_run(const char *reason, uint16_t pc) {
+    st_RUN_LOG_RECORD r;
+    run_log_record_clear(&r);
+    r.reason = reason;
+    r.started_by = "mcp";
+    r.start_cmd = "run_to";
+    r.stopped_by = "emulator";
+    r.pc = pc;
+    r.bp_id = 7;
+    run_log_end(&r);
+}
+
+
+/**
+ * @brief wait_stop: skončený běh vrátí hned se záznamem, běžící po timeoutu.
+ */
+void test_wait_stop_done_and_timeout(void) {
+    dispatch_stub_reset();
+    run_log_reset_for_tests();
+    run_log_begin();                       /* běh 1 */
+    _rc_end_run("breakpoint", 0x1234);
+
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9001,\"cmd\":\"wait_stop\","
+                             "\"data\":{\"run_seq\":1,\"timeout_ms\":0}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(d, "done"));
+    JsonObject *rec = json_object_get_object_member(d, "record");
+    TEST_ASSERT_NOT_NULL(rec);
+    TEST_ASSERT_EQUAL_STRING("breakpoint", json_object_get_string_member(rec, "reason"));
+    TEST_ASSERT_EQUAL_INT(0x1234, json_object_get_int_member(rec, "pc"));
+    TEST_ASSERT_EQUAL_INT(7, json_object_get_int_member(rec, "bp_id"));
+    TEST_ASSERT_EQUAL_INT(1, json_object_get_int_member(rec, "run_seq"));
+    /* wait_stop je lokální, frontu dbgapi nevolá. */
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.call_count);
+    g_object_unref(parser);
+    free(resp);
+
+    run_log_begin();                       /* běh 2 běží */
+    parser = NULL;
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9002,\"cmd\":\"wait_stop\","
+                 "\"data\":{\"timeout_ms\":20}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(d, "done"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(d, "running"));
+    TEST_ASSERT_EQUAL_INT(2, json_object_get_int_member(d, "run_seq"));
+    TEST_ASSERT_FALSE(json_object_has_member(d, "record"));
+    g_object_unref(parser);
+    free(resp);
+
+    /* Neplatný timeout. */
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9003,\"cmd\":\"wait_stop\","
+                 "\"data\":{\"timeout_ms\":30000}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    free(resp);
+    run_log_reset_for_tests();
+}
+
+
+/**
+ * @brief get_stop_history: limit a pořadí od nejstaršího.
+ */
+void test_get_stop_history_limit(void) {
+    dispatch_stub_reset();
+    run_log_reset_for_tests();
+    _rc_end_run("manual", 0x0100);         /* běh 0 */
+    run_log_begin();
+    _rc_end_run("step", 0x0101);           /* běh 1 */
+    run_log_begin();
+    _rc_end_run("deadline", 0x0102);       /* běh 2 */
+
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9010,\"cmd\":\"get_stop_history\","
+                             "\"data\":{\"limit\":2}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(2, json_object_get_int_member(d, "count"));
+    JsonArray *arr = json_object_get_array_member(d, "records");
+    TEST_ASSERT_EQUAL_UINT(2, json_array_get_length(arr));
+    TEST_ASSERT_EQUAL_STRING("step", json_object_get_string_member(
+        json_array_get_object_element(arr, 0), "reason"));
+    TEST_ASSERT_EQUAL_STRING("deadline", json_object_get_string_member(
+        json_array_get_object_element(arr, 1), "reason"));
+    g_object_unref(parser);
+    free(resp);
+
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9011,\"cmd\":\"get_stop_history\","
+                 "\"data\":{\"limit\":0}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    free(resp);
+    run_log_reset_for_tests();
+}
+
+
+/**
+ * @brief pause(if_run_seq): jiný běh se nezastaví, stejný ano.
+ */
+void test_pause_if_run_seq(void) {
+    dispatch_stub_reset();
+    g_stub_state.is_running = true;
+    g_stub_state.run_seq = 5;
+
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9020,\"cmd\":\"pause\","
+                             "\"data\":{\"if_run_seq\":4}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_TRUE(g_stub_state.pause_last.has_if_run_seq);
+    TEST_ASSERT_EQUAL_UINT64(4, g_stub_state.pause_last.if_run_seq);
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(d, "paused"));
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(d, "paused_now"));
+    TEST_ASSERT_EQUAL_STRING("run_seq_mismatch", json_object_get_string_member(d, "skipped"));
+    g_object_unref(parser);
+    free(resp);
+
+    parser = NULL;
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9021,\"cmd\":\"pause\","
+                 "\"data\":{\"if_run_seq\":5}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(d, "paused"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(d, "paused_now"));
+    TEST_ASSERT_FALSE(json_object_has_member(d, "skipped"));
+    g_object_unref(parser);
+    free(resp);
+
+    /* Bez if_run_seq: pauza platí vždy, odpověď paused true. */
+    parser = NULL;
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9022,\"cmd\":\"pause\"}",
+                 &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_FALSE(g_stub_state.pause_last.has_if_run_seq);
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(d, "paused"));
+    g_object_unref(parser);
+    free(resp);
+}
+
+
+/**
+ * @brief deadline u run_until_addr: nastaví se před RUN_TO, při
+ *        PAUSED_ONLY se zruší; neplatný tvar je chyba bez volání.
+ */
+void test_run_until_addr_deadline(void) {
+    dispatch_stub_reset();
+    g_stub_state.run_seq = 3;
+
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9030,\"cmd\":\"run_until_addr\","
+                             "\"data\":{\"addr\":512,\"deadline\":{\"frames\":5}}}",
+                             &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.deadline_arms);
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.deadline_last.kind);   /* RUN_DEADLINE_FRAMES */
+    TEST_ASSERT_EQUAL_UINT64(5, g_stub_state.deadline_last.value);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_RUN_TO, g_stub_state.last_cmd);
+    TEST_ASSERT_EQUAL_INT(50, json_object_get_int_member(d, "deadline_ticks"));
+    TEST_ASSERT_EQUAL_INT(3, json_object_get_int_member(d, "run_seq"));
+    g_object_unref(parser);
+    free(resp);
+
+    /* Emulace běžela: RUN_TO jen pauzne, deadline se zruší. */
+    dispatch_stub_reset();
+    g_stub_state.run_to_result = DBGAPI_RUN_TO_PAUSED_ONLY;
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9031,\"cmd\":\"run_until_addr\","
+                 "\"data\":{\"addr\":512,\"deadline\":{\"emulated_ms\":100}}}",
+                 &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, rc);
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.deadline_arms);
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.deadline_clears);
+    free(resp);
+
+    /* Dva klíče = chyba parametrů, nic se nevolá. */
+    dispatch_stub_reset();
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9032,\"cmd\":\"run_until_addr\","
+                 "\"data\":{\"addr\":512,\"deadline\":{\"frames\":5,\"ticks\":9}}}",
+                 &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.call_count);
+    free(resp);
+
+    /* run s frames i deadline = chyba parametrů. */
+    dispatch_stub_reset();
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9033,\"cmd\":\"run\","
+                 "\"data\":{\"frames\":10,\"deadline\":{\"frames\":5}}}",
+                 &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.call_count);
+    free(resp);
+    (void)d;
+}
+
+
+/**
+ * @brief Kroky (N4): step_over přes CALL a step_into za běhu nejsou dokončené.
+ */
+void test_step_completed_flags(void) {
+    dispatch_stub_reset();
+    g_stub_state.step_over_runs = true;
+    g_stub_state.run_seq = 9;
+
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9040,\"cmd\":\"step_over\"}",
+                             &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    /* Běh k dočasnému BP: bez čekání na krok. */
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_STEP_OVER, g_stub_state.last_cmd);
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(d, "stepped"));
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(d, "completed"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(d, "running"));
+    TEST_ASSERT_EQUAL_INT(9, json_object_get_int_member(d, "run_seq"));
+    g_object_unref(parser);
+    free(resp);
+
+    dispatch_stub_reset();
+    g_stub_state.is_running = true;
+    parser = NULL;
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9041,\"cmd\":\"step_into\"}",
+                 &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_STEP_INTO, g_stub_state.last_cmd);
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(d, "completed"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(d, "running"));
+    g_object_unref(parser);
+    free(resp);
+
+    /* step_over za běhu: emulaci jen pauzne. */
+    dispatch_stub_reset();
+    g_stub_state.is_running = true;
+    parser = NULL;
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9042,\"cmd\":\"step_over\"}",
+                 &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(d, "completed"));
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(d, "running"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(d, "paused_only"));
+    g_object_unref(parser);
+    free(resp);
+}
+
+
+
+/**
+ * @brief mem_read: sha256 přečtených bajtů (proti GLib), want_data false bez dat.
+ */
+void test_mem_read_sha256_and_want_data(void) {
+    dispatch_stub_reset();
+    /* Stub plní bajty 0xA0 + (i & 0x0F). */
+    uint8_t expect[20];
+    for (int i = 0; i < 20; i++) expect[i] = (uint8_t)(0xA0 + (i & 0x0F));
+    gchar *want = g_compute_checksum_for_data(G_CHECKSUM_SHA256, expect, sizeof(expect));
+
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9050,\"cmd\":\"mem_read\","
+                             "\"data\":{\"addr\":4096,\"len\":20}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_STRING(want, json_object_get_string_member(d, "sha256"));
+    TEST_ASSERT_TRUE(json_object_has_member(d, "data_b64"));
+    g_object_unref(parser);
+    free(resp);
+
+    parser = NULL;
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9051,\"cmd\":\"mem_read\","
+                 "\"data\":{\"addr\":4096,\"len\":20,\"want_data\":false}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_STRING(want, json_object_get_string_member(d, "sha256"));
+    TEST_ASSERT_FALSE(json_object_has_member(d, "data_b64"));
+    g_object_unref(parser);
+    free(resp);
+
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9052,\"cmd\":\"mem_read\","
+                 "\"data\":{\"addr\":4096,\"len\":20,\"want_data\":1}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    free(resp);
+    g_free(want);
+}
+
+
+/**
+ * @brief mem_read s celými 64 KiB (addr 0, len 65536) přečte celý blok.
+ *
+ * Dřív handler odmítal len > 65535. SHA-256 a dekódovaný `data_b64`
+ * dokazují, že jádro (stub) vyplnilo všech 65536 bajtů. Blok přesahující
+ * 0x10000 (addr 1 + 65536, addr 0 + 65537) se odmítne bez volání jádra.
+ */
+void test_mem_read_full_64k(void) {
+    dispatch_stub_reset();
+    /* Stub plní bajty 0xA0 + (i & 0x0F). */
+    uint8_t *expect = g_malloc(0x10000);
+    for (int i = 0; i < 0x10000; i++) expect[i] = (uint8_t)(0xA0 + (i & 0x0F));
+    gchar *want = g_compute_checksum_for_data(G_CHECKSUM_SHA256, expect, 0x10000);
+
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9053,\"cmd\":\"mem_read\","
+                             "\"data\":{\"addr\":0,\"len\":65536}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(65536, json_object_get_int_member(d, "len"));
+    TEST_ASSERT_EQUAL_STRING(want, json_object_get_string_member(d, "sha256"));
+    gsize got_len = 0;
+    guchar *got = g_base64_decode(json_object_get_string_member(d, "data_b64"), &got_len);
+    TEST_ASSERT_EQUAL_UINT32(0x10000, (uint32_t)got_len);
+    TEST_ASSERT_EQUAL_MEMORY(expect, got, 0x10000);
+    g_free(got);
+    g_object_unref(parser);
+    free(resp);
+
+    static const char *const bad[] = {
+        "{\"type\":\"request\",\"req_id\":9054,\"cmd\":\"mem_read\","
+        "\"data\":{\"addr\":1,\"len\":65536}}",
+        "{\"type\":\"request\",\"req_id\":9055,\"cmd\":\"mem_read\","
+        "\"data\":{\"addr\":0,\"len\":65537}}",
+    };
+    for (size_t k = 0; k < G_N_ELEMENTS(bad); k++) {
+        dispatch_stub_reset();
+        _rc_call(bad[k], &rc, &parser, &resp);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, rc, bad[k]);
+        TEST_ASSERT_EQUAL_INT(0, g_stub_state.call_count);
+        free(resp);
+    }
+    g_free(want);
+    g_free(expect);
+}
+
+
+/**
+ * @brief frame_hash: příkaz se předá emu vláknu (DBGAPI_CMD_FRAME_HASH).
+ */
+void test_frame_hash_submits(void) {
+    dispatch_stub_reset();
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9060,\"cmd\":\"frame_hash\"}",
+                             &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_FRAME_HASH, g_stub_state.last_cmd);
+    TEST_ASSERT_TRUE(json_object_has_member(d, "vram_sha256"));
+    TEST_ASSERT_TRUE(json_object_has_member(d, "beam"));
+    g_object_unref(parser);
+    free(resp);
+}
+
+
+
+/**
+ * @brief replay_record_start: povinná cesta, rozsah hash_interval, předání požadavku.
+ */
+void test_replay_record_start_params(void) {
+    dispatch_stub_reset();
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9100,\"cmd\":\"replay_record_start\",\"data\":{}}",
+                   &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    free(resp);
+
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9101,\"cmd\":\"replay_record_start\","
+                   "\"data\":{\"path\":\"a.mzr\",\"hash_interval\":0}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    TEST_ASSERT_EQUAL_INT(0, g_stub_replay.calls);
+    free(resp);
+
+    g_stub_replay.status.mode = REPLAY_MODE_RECORDING;
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9102,\"cmd\":\"replay_record_start\","
+                             "\"data\":{\"path\":\"a.mzr\",\"hash_interval\":7}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(1, g_stub_replay.last_kind);
+    TEST_ASSERT_EQUAL_STRING("a.mzr", g_stub_replay.last_path);
+    TEST_ASSERT_EQUAL_UINT32(7, g_stub_replay.last_interval);
+    TEST_ASSERT_EQUAL_STRING("recording", json_object_get_string_member(d, "mode"));
+    g_object_unref(parser);
+    free(resp);
+
+    /* Chyba vyřízení z emu vlákna se vrátí jako chyba s textem. */
+    g_stub_replay.fail = true;
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9103,\"cmd\":\"replay_record_start\","
+                   "\"data\":{\"path\":\"b.mzr\"}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, rc);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "stub failure"));
+    free(resp);
+}
+
+
+/**
+ * @brief replay_play: bool pause_after_load; stop jen ve správném režimu.
+ */
+void test_replay_play_and_stop_modes(void) {
+    dispatch_stub_reset();
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9110,\"cmd\":\"replay_play\","
+                   "\"data\":{\"path\":\"a.mzr\",\"pause_after_load\":1}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    free(resp);
+
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9111,\"cmd\":\"replay_play\","
+                             "\"data\":{\"path\":\"a.mzr\",\"pause_after_load\":true}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_NOT_NULL(d);
+    TEST_ASSERT_EQUAL_INT(2, g_stub_replay.last_kind);
+    TEST_ASSERT_TRUE(g_stub_replay.last_pause_after_load);
+    g_object_unref(parser);
+    free(resp);
+
+    /* Nic neběží: oba stopy chyba bez požadavku. */
+    int calls = g_stub_replay.calls;
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9112,\"cmd\":\"replay_play_stop\"}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, rc);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "no playback is running"));
+    free(resp);
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9113,\"cmd\":\"replay_record_stop\"}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, rc);
+    TEST_ASSERT_EQUAL_INT(calls, g_stub_replay.calls);
+    free(resp);
+
+    g_stub_replay.status.mode = REPLAY_MODE_PLAYING;
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9114,\"cmd\":\"replay_play_stop\"}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(3, g_stub_replay.last_kind);
+    g_object_unref(parser);
+    free(resp);
+}
+
+
+/**
+ * @brief replay_status: pole stavu včetně rozjetých částí jako pole.
+ */
+void test_replay_status_fields(void) {
+    dispatch_stub_reset();
+    g_stub_replay.status.mode = REPLAY_MODE_OFF;
+    g_stub_replay.status.outcome = REPLAY_OUTCOME_DESYNC;
+    g_stub_replay.status.outcome_frame = 120;
+    g_strlcpy(g_stub_replay.status.desync_parts, "cpu,ram", sizeof(g_stub_replay.status.desync_parts));
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9120,\"cmd\":\"replay_status\"}",
+                             &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_STRING("off", json_object_get_string_member(d, "mode"));
+    TEST_ASSERT_EQUAL_STRING("desync", json_object_get_string_member(d, "outcome"));
+    TEST_ASSERT_EQUAL_INT(120, json_object_get_int_member(d, "outcome_frame"));
+    JsonArray *parts = json_object_get_array_member(d, "desync_parts");
+    TEST_ASSERT_EQUAL_UINT(2, json_array_get_length(parts));
+    TEST_ASSERT_EQUAL_STRING("ram", json_array_get_string_element(parts, 1));
+    TEST_ASSERT_EQUAL_INT(0, g_stub_replay.calls);
+    JsonObject *ck = json_object_get_object_member(d, "checkpoints");
+    TEST_ASSERT_NOT_NULL(ck);
+    TEST_ASSERT_FALSE(json_object_has_member(ck, "first_frame"));
+    TEST_ASSERT_TRUE(json_object_has_member(d, "rerecord_count"));
+    TEST_ASSERT_TRUE(json_object_has_member(d, "seeking"));
+    g_object_unref(parser);
+    free(resp);
+}
+
+
+/**
+ * @brief replay_rewind / replay_seek a parametry checkpointů u startu.
+ */
+void test_replay_rewind_seek_params(void) {
+    dispatch_stub_reset();
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+
+    /* Checkpointy u záznamu: předají se, mimo rozsah = chyba bez požadavku. */
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9130,\"cmd\":\"replay_record_start\","
+                   "\"data\":{\"path\":\"a.mzr\",\"checkpoint_interval\":0,\"checkpoint_count\":5}}",
+                   &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(0, g_stub_replay.last_ckpt.interval);
+    TEST_ASSERT_EQUAL_INT(5, g_stub_replay.last_ckpt.count);
+    g_object_unref(parser);
+    free(resp);
+    int calls = g_stub_replay.calls;
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9131,\"cmd\":\"replay_play\","
+                   "\"data\":{\"path\":\"a.mzr\",\"checkpoint_count\":0}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    TEST_ASSERT_EQUAL_INT(calls, g_stub_replay.calls);
+    free(resp);
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9132,\"cmd\":\"replay_play\","
+                   "\"data\":{\"path\":\"a.mzr\"}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(-1, g_stub_replay.last_ckpt.interval);
+    g_object_unref(parser);
+    free(resp);
+
+    /* Rewind: výchozí 0, záporné = chyba. */
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9133,\"cmd\":\"replay_rewind\"}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(4, g_stub_replay.last_kind);
+    TEST_ASSERT_EQUAL_UINT32(0, g_stub_replay.last_frames);
+    g_object_unref(parser);
+    free(resp);
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9134,\"cmd\":\"replay_rewind\","
+                   "\"data\":{\"frames\":-1}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    free(resp);
+
+    /* Seek: frame povinný; chyba z emu vlákna s textem. */
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9135,\"cmd\":\"replay_seek\"}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    free(resp);
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9136,\"cmd\":\"replay_seek\","
+                   "\"data\":{\"frame\":1200}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(5, g_stub_replay.last_kind);
+    TEST_ASSERT_EQUAL_UINT32(1200, g_stub_replay.last_frames);
+    g_object_unref(parser);
+    free(resp);
+    g_stub_replay.fail = true;
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9137,\"cmd\":\"replay_seek\","
+                   "\"data\":{\"frame\":5}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, rc);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "stub failure"));
+    free(resp);
+}
+
+
+/* ====================================================================== */
+/* state_observe (observe-cas, M10)                                        */
+/* ====================================================================== */
+
+/**
+ * @brief state_observe: okna obou forem, echo, hash = SHA-256 dat, registry, čas.
+ */
+void test_state_observe_windows_and_core(void) {
+    dispatch_stub_reset();
+    g_stub_state.is_running = false;
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    JsonObject *d = _rc_call(
+        "{\"type\":\"request\",\"req_id\":9200,\"cmd\":\"state_observe\",\"data\":{"
+        "\"windows\":[{\"name\":\"ptr\",\"addr\":4096,\"len\":8},"
+        "{\"region\":{\"kind\":\"ram\",\"sub_id\":0},\"offset\":16,\"length\":4,"
+        "\"want_data\":false}]}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_STATE_OBSERVE, g_stub_state.last_cmd);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_CMD_ORIGIN_MCP, g_stub_state.last_origin);
+    TEST_ASSERT_EQUAL_UINT32(2, g_stub_state.obs_last.window_count);
+    TEST_ASSERT_EQUAL_UINT8(0, g_stub_state.obs_last_win[0].by_region);
+    TEST_ASSERT_EQUAL_UINT32(4096, g_stub_state.obs_last_win[0].start);
+    TEST_ASSERT_EQUAL_UINT8(1, g_stub_state.obs_last_win[1].by_region);
+    TEST_ASSERT_EQUAL_INT(REGION_KIND_RAM, g_stub_state.obs_last_win[1].region_kind);
+    TEST_ASSERT_EQUAL_UINT32(0, g_stub_state.obs_last.which);
+    TEST_ASSERT_EQUAL_UINT32(0, g_stub_state.obs_last.hash_mask);
+
+    TEST_ASSERT_EQUAL_INT(7, json_object_get_int_member(d, "run_seq"));
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(d, "running"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(d, "stable"));
+    TEST_ASSERT_EQUAL_STRING("paused", json_object_get_string_member(d, "drain"));
+    JsonObject *tm = json_object_get_object_member(d, "time");
+    TEST_ASSERT_EQUAL_INT(42, json_object_get_int_member(tm, "frame"));
+    TEST_ASSERT_EQUAL_INT(26, json_object_get_int_member(tm, "frame_ticks"));
+    TEST_ASSERT_EQUAL_INT(123456, json_object_get_int_member(tm, "total_cycles"));
+    JsonObject *regs = json_object_get_object_member(d, "regs");
+    TEST_ASSERT_EQUAL_INT(0x1B00, json_object_get_int_member(regs, "PC"));
+    TEST_ASSERT_TRUE(json_object_has_member(d, "flags"));
+    TEST_ASSERT_FALSE(json_object_has_member(d, "raster"));
+    TEST_ASSERT_FALSE(json_object_has_member(d, "hashes"));
+    TEST_ASSERT_FALSE(json_object_has_member(d, "memory_map"));
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(d, "complete"));
+
+    JsonArray *wa = json_object_get_array_member(d, "windows");
+    TEST_ASSERT_EQUAL_UINT(2, json_array_get_length(wa));
+    JsonObject *w0 = json_array_get_object_element(wa, 0);
+    uint8_t cpu_bytes[8];
+    for (int i = 0; i < 8; i++) cpu_bytes[i] = (uint8_t)(4096 + i);
+    gchar *h0 = g_compute_checksum_for_data(G_CHECKSUM_SHA256, cpu_bytes, sizeof(cpu_bytes));
+    TEST_ASSERT_EQUAL_STRING("ptr", json_object_get_string_member(w0, "name"));
+    TEST_ASSERT_EQUAL_INT(4096, json_object_get_int_member(w0, "addr"));
+    TEST_ASSERT_EQUAL_INT(8, json_object_get_int_member(w0, "len"));
+    TEST_ASSERT_EQUAL_STRING(h0, json_object_get_string_member(w0, "sha256"));
+    TEST_ASSERT_TRUE(json_object_has_member(w0, "data_b64"));
+    JsonObject *w1 = json_array_get_object_element(wa, 1);
+    uint8_t reg_bytes[4];
+    for (int i = 0; i < 4; i++) reg_bytes[i] = (uint8_t)(0x5A ^ (16 + i));
+    gchar *h1 = g_compute_checksum_for_data(G_CHECKSUM_SHA256, reg_bytes, sizeof(reg_bytes));
+    JsonObject *r1 = json_object_get_object_member(w1, "region");
+    TEST_ASSERT_EQUAL_STRING("ram", json_object_get_string_member(r1, "kind"));
+    TEST_ASSERT_EQUAL_INT(0, json_object_get_int_member(r1, "sub_id"));
+    TEST_ASSERT_EQUAL_INT(16, json_object_get_int_member(w1, "offset"));
+    TEST_ASSERT_EQUAL_INT(4, json_object_get_int_member(w1, "length"));
+    TEST_ASSERT_EQUAL_STRING(h1, json_object_get_string_member(w1, "sha256"));
+    TEST_ASSERT_FALSE(json_object_has_member(w1, "data_b64"));
+    TEST_ASSERT_FALSE(json_object_has_member(w1, "name"));
+    g_free(h0);
+    g_free(h1);
+    g_object_unref(parser);
+    free(resp);
+
+    /* Za běhu: running, stable false, drain frame; prázdná okna. */
+    g_stub_state.is_running = true;
+    parser = NULL;
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9201,\"cmd\":\"state_observe\","
+                 "\"data\":{\"windows\":[]}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_TRUE(json_object_get_boolean_member(d, "running"));
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(d, "stable"));
+    TEST_ASSERT_EQUAL_STRING("frame", json_object_get_string_member(d, "drain"));
+    TEST_ASSERT_EQUAL_UINT(0, json_array_get_length(json_object_get_array_member(d, "windows")));
+    g_object_unref(parser);
+    free(resp);
+}
+
+
+/**
+ * @brief state_observe: sekce include, hashe částí, nedostupné okno.
+ */
+void test_state_observe_sections_hashes_unavailable(void) {
+    dispatch_stub_reset();
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    JsonObject *d = _rc_call(
+        "{\"type\":\"request\",\"req_id\":9210,\"cmd\":\"state_observe\",\"data\":{"
+        "\"windows\":[{\"name\":\"gone\",\"region\":{\"kind\":\"ramdisk_pezik\",\"sub_id\":3},"
+        "\"offset\":0,\"length\":16}],"
+        "\"include\":[\"raster\",\"memory_map\"],\"hashes\":[\"cpu\",\"ram\",\"memext\"]}}",
+        &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_UINT32(DBGAPI_CPU_PANEL_WANT_RASTER, g_stub_state.obs_last.which);
+    TEST_ASSERT_EQUAL_UINT8(1, g_stub_state.obs_last.want_memory_map);
+    TEST_ASSERT_EQUAL_UINT32((1u << STATE_HASH_CPU) | (1u << STATE_HASH_RAM)
+                             | (1u << STATE_HASH_MEMEXT), g_stub_state.obs_last.hash_mask);
+
+    TEST_ASSERT_FALSE(json_object_get_boolean_member(d, "complete"));
+    JsonObject *w = json_array_get_object_element(json_object_get_array_member(d, "windows"), 0);
+    TEST_ASSERT_EQUAL_STRING("region_unavailable", json_object_get_string_member(w, "error"));
+    TEST_ASSERT_EQUAL_STRING("gone", json_object_get_string_member(w, "name"));
+    TEST_ASSERT_EQUAL_INT(0, json_object_get_int_member(w, "length"));
+    TEST_ASSERT_FALSE(json_object_has_member(w, "sha256"));
+
+    JsonObject *h = json_object_get_object_member(d, "hashes");
+    TEST_ASSERT_EQUAL_INT(64, (int)strlen(json_object_get_string_member(h, "cpu")));
+    TEST_ASSERT_EQUAL_INT(64, (int)strlen(json_object_get_string_member(h, "ram")));
+    TEST_ASSERT_TRUE(json_object_has_member(h, "memext"));
+    TEST_ASSERT_TRUE(JSON_NODE_HOLDS_NULL(json_object_get_member(h, "memext")));
+    TEST_ASSERT_FALSE(json_object_has_member(h, "vram"));
+
+    JsonObject *ra = json_object_get_object_member(d, "raster");
+    TEST_ASSERT_EQUAL_INT(12, json_object_get_int_member(ra, "scanline"));
+    JsonObject *mm = json_object_get_object_member(d, "memory_map");
+    TEST_ASSERT_EQUAL_STRING("mz800", json_object_get_string_member(mm, "platform"));
+    JsonArray *slots = json_object_get_array_member(mm, "slots");
+    TEST_ASSERT_EQUAL_UINT(16, json_array_get_length(slots));
+    TEST_ASSERT_EQUAL_STRING("rom_low",
+        json_object_get_string_member(json_array_get_object_element(slots, 0), "kind"));
+    TEST_ASSERT_EQUAL_STRING("ram",
+        json_object_get_string_member(json_array_get_object_element(slots, 1), "kind"));
+    g_object_unref(parser);
+    free(resp);
+}
+
+
+/**
+ * @brief state_observe: neplatné parametry se odmítnou bez volání emu vlákna,
+ *        okno přes konec regionu (zjistí emu vlákno) je také chyba parametrů.
+ */
+void test_state_observe_invalid_params(void) {
+    static const char *const bad[] = {
+        "{\"windows\":5}",
+        "{}",
+        "{\"windows\":[{\"addr\":0}]}",
+        "{\"windows\":[{\"addr\":0,\"len\":0}]}",
+        "{\"windows\":[{\"addr\":65535,\"len\":2}]}",
+        "{\"windows\":[{\"addr\":\"1\",\"len\":2}]}",
+        "{\"windows\":[{\"addr\":0,\"len\":1,\"region\":{\"kind\":\"ram\"},\"length\":1}]}",
+        "{\"windows\":[{\"region\":{\"kind\":\"nope\"},\"length\":1}]}",
+        "{\"windows\":[{\"region\":{\"kind\":\"ram\",\"sub_id\":-1},\"length\":1}]}",
+        "{\"windows\":[{\"region\":\"ram\",\"length\":1}]}",
+        "{\"windows\":[{\"addr\":0,\"len\":1,\"want_data\":1}]}",
+        "{\"windows\":[{\"addr\":0,\"len\":1,\"name\":5}]}",
+        "{\"windows\":[{\"addr\":0,\"len\":32768},{\"addr\":32768,\"len\":32768},"
+            "{\"addr\":0,\"len\":1}]}",
+        "{\"windows\":[],\"include\":[\"regs\"]}",
+        "{\"windows\":[],\"hashes\":[\"screen\"]}",
+        "{\"windows\":[],\"want_data\":\"yes\"}",
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(bad); i++) {
+        dispatch_stub_reset();
+        gchar *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":%d,"
+                                      "\"cmd\":\"state_observe\",\"data\":%s}",
+                                      9220 + (int)i, bad[i]);
+        en_MCP_DISPATCH_RESULT rc;
+        JsonParser *parser = NULL;
+        char *resp = NULL;
+        (void)_rc_call(line, &rc, &parser, &resp);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, rc, bad[i]);
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(resp, "Invalid parameters"), bad[i]);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(0, g_stub_state.obs_calls, bad[i]);
+        free(resp);
+        g_free(line);
+    }
+
+    /* 17 oken. */
+    GString *many = g_string_new("{\"type\":\"request\",\"req_id\":9240,"
+                                 "\"cmd\":\"state_observe\",\"data\":{\"windows\":[");
+    for (int i = 0; i < 17; i++) {
+        g_string_append_printf(many, "%s{\"addr\":%d,\"len\":1}", i ? "," : "", i);
+    }
+    g_string_append(many, "]}}");
+    dispatch_stub_reset();
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    (void)_rc_call(many->str, &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.obs_calls);
+    free(resp);
+    g_string_free(many, TRUE);
+
+    /* Přesně 64 KiB ve dvou oknech projde. */
+    dispatch_stub_reset();
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9241,\"cmd\":\"state_observe\","
+                             "\"data\":{\"windows\":[{\"addr\":0,\"len\":32768},"
+                             "{\"addr\":32768,\"len\":32768}],\"want_data\":false}}",
+                             &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_UINT(2, json_array_get_length(json_object_get_array_member(d, "windows")));
+    g_object_unref(parser);
+    free(resp);
+
+    /* Okno přes konec regionu: emu vlákno vrátí OUT_OF_RANGE. */
+    dispatch_stub_reset();
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9242,\"cmd\":\"state_observe\","
+                   "\"data\":{\"windows\":[{\"region\":{\"kind\":\"ram\",\"sub_id\":99},"
+                   "\"offset\":4000,\"length\":200}]}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    TEST_ASSERT_NOT_NULL(strstr(resp, "region size 4096"));
+    TEST_ASSERT_EQUAL_INT(1, g_stub_state.obs_calls);
+    free(resp);
+}
+
+
+/* ====================================================================== */
+/* Podmíněné zápisy (observe-cas M10, V1)                                  */
+/* ====================================================================== */
+
+/** @brief 64 hex znaků ze dvojice `hh` opakované 32krát (statický buffer). */
+static const char *_hex32(const char *pair) {
+    static char buf[65];
+    for (int i = 0; i < 32; i++) {
+        buf[2 * i] = pair[0];
+        buf[2 * i + 1] = pair[1];
+    }
+    buf[64] = '\0';
+    return buf;
+}
+
+
+/**
+ * @brief mem_write / mem_write_force / region_write: expected_sha256
+ *        a want_hashes, nesplněná podmínka, neplatný hash, bez podmínky.
+ */
+void test_cond_memory_writes(void) {
+    static const char *const cmds[] = { "mem_write", "mem_write_force", "region_write" };
+    for (size_t k = 0; k < G_N_ELEMENTS(cmds); k++) {
+        const char *base = (k == 2)
+            ? "\"region_id\":0,\"offset\":16,\"data_b64\":\"AQI=\""
+            : "\"addr\":49152,\"data_hex\":\"0102\"";
+        en_MCP_DISPATCH_RESULT rc;
+        JsonParser *parser = NULL;
+        char *resp = NULL;
+
+        /* Splněná podmínka: before/after. */
+        dispatch_stub_reset();
+        gchar *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":9300,\"cmd\":\"%s\","
+                                      "\"data\":{%s,\"expected_sha256\":\"%s\"}}",
+                                      cmds[k], base, _hex32("AB"));
+        JsonObject *d = _rc_call(line, &rc, &parser, &resp);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_OK, rc, cmds[k]);
+        TEST_ASSERT_EQUAL_STRING(_hex32("22"), json_object_get_string_member(d, "before_sha256"));
+        TEST_ASSERT_EQUAL_STRING(_hex32("33"), json_object_get_string_member(d, "after_sha256"));
+        g_object_unref(parser);
+        free(resp);
+        g_free(line);
+
+        /* Nesplněná podmínka: Precondition failed s oběma hashi. */
+        dispatch_stub_reset();
+        line = g_strdup_printf("{\"type\":\"request\",\"req_id\":9301,\"cmd\":\"%s\","
+                               "\"data\":{%s,\"expected_sha256\":\"%s\"}}",
+                               cmds[k], base, _hex32("ee"));
+        (void)_rc_call(line, &rc, &parser, &resp);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_EMU_ERROR, rc, cmds[k]);
+        gchar *want = g_strdup_printf("Precondition failed: memory changed (expected_sha256=%s, ",
+                                      _hex32("ee"));
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(resp, want), resp);
+        TEST_ASSERT_NOT_NULL(strstr(resp, _hex32("11")));
+        g_free(want);
+        free(resp);
+        g_free(line);
+
+        /* Neplatný hash: chyba parametrů, nic se neodešle. */
+        static const char *const bad[] = { "\"abc\"", "5", "\"zz00000000000000000000000000000000000000000000000000000000000000\"" };
+        for (size_t b = 0; b < G_N_ELEMENTS(bad); b++) {
+            dispatch_stub_reset();
+            line = g_strdup_printf("{\"type\":\"request\",\"req_id\":9302,\"cmd\":\"%s\","
+                                   "\"data\":{%s,\"expected_sha256\":%s}}", cmds[k], base, bad[b]);
+            (void)_rc_call(line, &rc, &parser, &resp);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, rc, bad[b]);
+            TEST_ASSERT_EQUAL_INT(0, g_stub_state.call_count);
+            free(resp);
+            g_free(line);
+        }
+
+        /* Jen want_hashes a bez podmínky. */
+        dispatch_stub_reset();
+        line = g_strdup_printf("{\"type\":\"request\",\"req_id\":9303,\"cmd\":\"%s\","
+                               "\"data\":{%s,\"want_hashes\":true}}", cmds[k], base);
+        d = _rc_call(line, &rc, &parser, &resp);
+        TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+        TEST_ASSERT_TRUE(json_object_has_member(d, "before_sha256"));
+        g_object_unref(parser);
+        free(resp);
+        g_free(line);
+
+        dispatch_stub_reset();
+        line = g_strdup_printf("{\"type\":\"request\",\"req_id\":9304,\"cmd\":\"%s\","
+                               "\"data\":{%s}}", cmds[k], base);
+        d = _rc_call(line, &rc, &parser, &resp);
+        TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+        TEST_ASSERT_FALSE(json_object_has_member(d, "before_sha256"));
+        TEST_ASSERT_FALSE(json_object_has_member(d, "after_sha256"));
+        g_object_unref(parser);
+        free(resp);
+        g_free(line);
+    }
+}
+
+
+/**
+ * @brief set_register: expected (CAS), previous, chybný rozsah expected.
+ */
+void test_cond_set_register(void) {
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    dispatch_stub_reset();
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9310,\"cmd\":\"set_register\","
+                             "\"data\":{\"reg\":\"HL\",\"value\":1,\"expected\":17185}}",
+                             &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(0x4321, json_object_get_int_member(d, "previous"));
+    g_object_unref(parser);
+    free(resp);
+
+    dispatch_stub_reset();
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9311,\"cmd\":\"set_register\","
+                   "\"data\":{\"reg\":\"HL\",\"value\":1,\"expected\":61166}}",
+                   &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, rc);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(resp, "Precondition failed: register HL changed "
+                                              "(expected=0xEEEE, current=0x4321)"), resp);
+    free(resp);
+
+    dispatch_stub_reset();
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9312,\"cmd\":\"set_register\","
+                   "\"data\":{\"reg\":\"HL\",\"value\":1,\"expected\":65536}}",
+                   &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    TEST_ASSERT_EQUAL_INT(0, g_stub_state.call_count);
+    free(resp);
+}
+
+
+/**
+ * @brief set_cpu_flags: expected jen pro zapisovaná pole, previous,
+ *        nesplněná podmínka s hodnotami v textu.
+ */
+void test_cond_set_cpu_flags(void) {
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    dispatch_stub_reset();
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9320,\"cmd\":\"set_cpu_flags\","
+                             "\"data\":{\"iff1\":false,\"r\":5,\"expected\":{\"iff1\":true,\"r\":66}}}",
+                             &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    JsonObject *prev = json_object_get_object_member(d, "previous");
+    TEST_ASSERT_EQUAL_INT(1, json_object_get_int_member(prev, "iff1"));
+    TEST_ASSERT_EQUAL_INT(0x42, json_object_get_int_member(prev, "r"));
+    TEST_ASSERT_FALSE(json_object_has_member(prev, "im"));
+    g_object_unref(parser);
+    free(resp);
+
+    dispatch_stub_reset();
+    (void)_rc_call("{\"type\":\"request\",\"req_id\":9321,\"cmd\":\"set_cpu_flags\","
+                   "\"data\":{\"r\":5,\"expected\":{\"r\":238}}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_EMU_ERROR, rc);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(resp, "Precondition failed: cpu flags changed "
+                                              "(r: expected=0xEE, current=0x42)"), resp);
+    free(resp);
+
+    static const char *const bad[] = {
+        "{\"r\":5,\"expected\":{\"im\":1}}",
+        "{\"r\":5,\"expected\":{\"bogus\":1}}",
+        "{\"r\":5,\"expected\":{\"r\":256}}",
+        "{\"im\":1,\"expected\":{\"im\":3}}",
+        "{\"r\":5,\"expected\":[1]}",
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(bad); i++) {
+        dispatch_stub_reset();
+        gchar *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":9322,"
+                                      "\"cmd\":\"set_cpu_flags\",\"data\":%s}", bad[i]);
+        (void)_rc_call(line, &rc, &parser, &resp);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, rc, bad[i]);
+        TEST_ASSERT_EQUAL_INT(0, g_stub_state.call_count);
+        free(resp);
+        g_free(line);
+    }
+}
+
+
+/* ---------------- Pokrytí kódu (coverage_*) ---------------- */
+
+/** @brief Chybová zpráva z odpovědi (nová kopie, g_free). */
+static gchar *_cov_error_text(const char *resp) {
+    JsonParser *parser = NULL;
+    JsonObject *obj = _parse_response_object(resp, &parser);
+    gchar *e = g_strdup(json_object_get_string_member(obj, "error"));
+    g_object_unref(parser);
+    return e;
+}
+
+
+/**
+ * @brief coverage_start: parametry dojdou do jádra, odpověď je stav.
+ */
+void test_coverage_start_params(void) {
+    dispatch_stub_reset();
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    JsonObject *d = _rc_call("{\"type\":\"request\",\"req_id\":9400,\"cmd\":\"coverage_start\","
+                             "\"data\":{\"level\":\"detail\",\"key\":\"full_bytes\",\"capacity\":100,"
+                             "\"reset\":true,\"reset_on_discontinuity\":true}}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_COVERAGE_OP_START, g_stub_state.cov_last.op);
+    TEST_ASSERT_EQUAL_INT(COVERAGE_LEVEL_DETAIL, g_stub_state.cov_last.cfg.level);
+    TEST_ASSERT_EQUAL_INT(COVERAGE_KEY_FULL_BYTES, g_stub_state.cov_last.cfg.key);
+    TEST_ASSERT_EQUAL_UINT32(100, g_stub_state.cov_last.cfg.capacity);
+    TEST_ASSERT_TRUE(g_stub_state.cov_last.reset);
+    TEST_ASSERT_TRUE(g_stub_state.cov_last.cfg.reset_on_discontinuity);
+    TEST_ASSERT_EQUAL_STRING("detail", json_object_get_string_member(d, "level"));
+    TEST_ASSERT_EQUAL_INT(5, json_object_get_int_member(d, "generation"));
+    TEST_ASSERT_TRUE(json_object_has_member(d, "branches"));
+    g_object_unref(parser);
+    free(resp);
+
+    /* Výchozí hodnoty: branch, opcode, 65536, bez resetu. */
+    parser = NULL;
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9401,\"cmd\":\"coverage_start\"}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(COVERAGE_LEVEL_BRANCH, g_stub_state.cov_last.cfg.level);
+    TEST_ASSERT_EQUAL_UINT32(COVERAGE_DEFAULT_CAPACITY, g_stub_state.cov_last.cfg.capacity);
+    TEST_ASSERT_FALSE(g_stub_state.cov_last.reset);
+    g_object_unref(parser);
+    free(resp);
+
+    parser = NULL;
+    d = _rc_call("{\"type\":\"request\",\"req_id\":9402,\"cmd\":\"coverage_mark\"}", &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_OK, rc);
+    TEST_ASSERT_EQUAL_INT(DBGAPI_COVERAGE_OP_MARK, g_stub_state.cov_last.op);
+    TEST_ASSERT_EQUAL_INT(3, json_object_get_int_member(d, "epoch"));
+    g_object_unref(parser);
+    free(resp);
+}
+
+
+/** @brief coverage_start s neplatnými parametry neodešle nic do jádra. */
+void test_coverage_start_invalid(void) {
+    static const char *const bad[] = {
+        "{\"level\":\"full\"}",
+        "{\"key\":\"bytes\"}",
+        "{\"capacity\":0}",
+        "{\"capacity\":1048577}",
+        "{\"reset\":1}",
+        "{\"level\":7}",
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(bad); i++) {
+        dispatch_stub_reset();
+        en_MCP_DISPATCH_RESULT rc;
+        JsonParser *parser = NULL;
+        char *resp = NULL;
+        gchar *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":9410,"
+                                      "\"cmd\":\"coverage_start\",\"data\":%s}", bad[i]);
+        (void)_rc_call(line, &rc, &parser, &resp);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, rc, bad[i]);
+        TEST_ASSERT_EQUAL_INT(0, g_stub_state.cov_calls);
+        free(resp);
+        g_free(line);
+    }
+}
+
+
+/** @brief Všechny řádky coverage_read jako JSON pole (stránkami po @p limit). */
+static JsonArray *_cov_read_all(const char *columns, const char *filter, int limit) {
+    JsonArray *all = json_array_new();
+    gchar *cursor = NULL;
+    for (int guard = 0; guard < 100; guard++) {
+        en_MCP_DISPATCH_RESULT rc;
+        JsonParser *parser = NULL;
+        char *resp = NULL;
+        gchar *cur = cursor ? g_strdup_printf(",\"cursor\":\"%s\"", cursor) : g_strdup("");
+        gchar *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":9420,\"cmd\":\"coverage_read\","
+                                      "\"data\":{\"limit\":%d%s%s%s%s%s}}", limit,
+                                      columns ? ",\"columns\":" : "", columns ? columns : "",
+                                      filter ? ",\"filter\":" : "", filter ? filter : "", cur);
+        JsonObject *d = _rc_call(line, &rc, &parser, &resp);
+        g_free(line);
+        g_free(cur);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_OK, rc, resp);
+        JsonArray *rows = json_object_get_array_member(d, "rows");
+        for (guint i = 0; i < json_array_get_length(rows); i++) {
+            json_array_add_element(all, json_node_copy(json_array_get_element(rows, i)));
+        }
+        g_free(cursor);
+        cursor = g_strdup(json_object_get_string_member(d, "next_cursor"));
+        gboolean end = json_object_get_boolean_member(d, "end_of_data");
+        g_object_unref(parser);
+        free(resp);
+        if (end) break;
+    }
+    g_free(cursor);
+    return all;
+}
+
+
+/** @brief Hodnota sloupce @p col řádku @p row (pole). */
+static JsonNode *_cov_cell(JsonArray *rows, guint row, guint col) {
+    return json_array_get_element(json_array_get_array_element(rows, row), col);
+}
+
+
+/**
+ * @brief coverage_read úrovně branch: stavy, epocha, filtry, stránkování po 1.
+ */
+void test_coverage_read_branch(void) {
+    dispatch_stub_reset();
+    g_stub_state.cov_level = COVERAGE_LEVEL_BRANCH;
+    JsonArray *rows = _cov_read_all(NULL, NULL, 1);
+    TEST_ASSERT_EQUAL_UINT(4, json_array_get_length(rows));
+    /* výchozí sloupce: pc, state, int_entry, first_epoch */
+    TEST_ASSERT_EQUAL_INT(0x1000, json_node_get_int(_cov_cell(rows, 0, 0)));
+    TEST_ASSERT_EQUAL_STRING("none", json_node_get_string(_cov_cell(rows, 0, 1)));
+    TEST_ASSERT_EQUAL_STRING("taken_only", json_node_get_string(_cov_cell(rows, 1, 1)));
+    TEST_ASSERT_EQUAL_INT(2, json_node_get_int(_cov_cell(rows, 2, 3)));
+    TEST_ASSERT_EQUAL_STRING("both", json_node_get_string(_cov_cell(rows, 3, 1)));
+    json_array_unref(rows);
+
+    rows = _cov_read_all("[\"pc\"]", "{\"state\":\"partial\"}", 100);
+    TEST_ASSERT_EQUAL_UINT(1, json_array_get_length(rows));
+    TEST_ASSERT_EQUAL_INT(0x1001, json_node_get_int(_cov_cell(rows, 0, 0)));
+    json_array_unref(rows);
+
+    rows = _cov_read_all("[\"pc\"]", "{\"new_since_epoch\":2}", 100);
+    TEST_ASSERT_EQUAL_UINT(1, json_array_get_length(rows));
+    TEST_ASSERT_EQUAL_INT(0x1002, json_node_get_int(_cov_cell(rows, 0, 0)));
+    json_array_unref(rows);
+}
+
+
+/**
+ * @brief coverage_read úrovně detail: řazení (PC, buňka), filtr prostoru,
+ *        operand, příznaky; stránkování po 1 uvnitř téže adresy.
+ */
+void test_coverage_read_detail(void) {
+    dispatch_stub_reset();
+    g_stub_state.cov_level = COVERAGE_LEVEL_DETAIL;
+    JsonArray *rows = _cov_read_all("[\"pc\",\"space\",\"key\",\"exec\",\"state\",\"operand\",\"flags\"]", NULL, 1);
+    TEST_ASSERT_EQUAL_UINT(4, json_array_get_length(rows));
+    TEST_ASSERT_EQUAL_INT(0x1000, json_node_get_int(_cov_cell(rows, 0, 0)));
+    TEST_ASSERT_EQUAL_STRING("3E", json_node_get_string(_cov_cell(rows, 0, 2)));
+    TEST_ASSERT_EQUAL_INT(5, json_node_get_int(_cov_cell(rows, 0, 5)));
+    TEST_ASSERT_EQUAL_STRING("operand_varied",
+        json_array_get_string_element(json_node_get_array(_cov_cell(rows, 0, 6)), 0));
+    TEST_ASSERT_EQUAL_INT(0x1003, json_node_get_int(_cov_cell(rows, 2, 0)));
+    TEST_ASSERT_EQUAL_STRING("ram", json_node_get_string(_cov_cell(rows, 2, 1)));
+    TEST_ASSERT_EQUAL_INT(4, json_node_get_int(_cov_cell(rows, 2, 3)));
+    TEST_ASSERT_EQUAL_STRING("rom", json_node_get_string(_cov_cell(rows, 3, 1)));
+    TEST_ASSERT_EQUAL_STRING("both", json_node_get_string(_cov_cell(rows, 3, 4)));
+    json_array_unref(rows);
+
+    rows = _cov_read_all("[\"pc\",\"exec\"]", "{\"space\":\"rom\"}", 100);
+    TEST_ASSERT_EQUAL_UINT(1, json_array_get_length(rows));
+    TEST_ASSERT_EQUAL_INT(2, json_node_get_int(_cov_cell(rows, 0, 1)));
+    json_array_unref(rows);
+}
+
+
+/** @brief coverage_read: neznámý sloupec, filtr space u branch, kurzor jiné generace. */
+void test_coverage_read_errors(void) {
+    struct { en_COVERAGE_LEVEL level; const char *data; const char *want; } cases[] = {
+        { COVERAGE_LEVEL_BRANCH, "{\"columns\":[\"key\"]}", "unknown column 'key'" },
+        { COVERAGE_LEVEL_BRANCH, "{\"filter\":{\"space\":\"ram\"}}", "filter space needs level detail" },
+        { COVERAGE_LEVEL_DETAIL, "{\"filter\":{\"state\":\"half\"}}", "unknown state" },
+        { COVERAGE_LEVEL_DETAIL, "{\"limit\":0}", "limit must be 1..5000" },
+        { COVERAGE_LEVEL_DETAIL, "{\"cursor\":\"x\"}", "invalid cursor" },
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(cases); i++) {
+        dispatch_stub_reset();
+        g_stub_state.cov_level = cases[i].level;
+        en_MCP_DISPATCH_RESULT rc;
+        JsonParser *parser = NULL;
+        char *resp = NULL;
+        gchar *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":9430,"
+                                      "\"cmd\":\"coverage_read\",\"data\":%s}", cases[i].data);
+        (void)_rc_call(line, &rc, &parser, &resp);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(MCP_DISPATCH_INVALID_PARAMS, rc, cases[i].data);
+        gchar *e = _cov_error_text(resp);
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(e, cases[i].want), e);
+        g_free(e);
+        free(resp);
+        g_free(line);
+    }
+
+    /* Kurzor jiné generace dat (stub hlásí 5). */
+    dispatch_stub_reset();
+    char *cur = trace_cursor_encode("coverage", 4, 0);
+    gchar *line = g_strdup_printf("{\"type\":\"request\",\"req_id\":9431,"
+                                  "\"cmd\":\"coverage_read\",\"data\":{\"cursor\":\"%s\"}}", cur);
+    en_MCP_DISPATCH_RESULT rc;
+    JsonParser *parser = NULL;
+    char *resp = NULL;
+    (void)_rc_call(line, &rc, &parser, &resp);
+    TEST_ASSERT_EQUAL_INT(MCP_DISPATCH_INVALID_PARAMS, rc);
+    gchar *e = _cov_error_text(resp);
+    TEST_ASSERT_TRUE_MESSAGE(g_str_has_prefix(e, "segment_replaced:"), e);
+    g_free(e);
+    free(resp);
+    g_free(line);
+    g_free(cur);
+}
+
 
 int main(void) {
     UNITY_BEGIN();
@@ -7220,6 +9291,7 @@ int main(void) {
     RUN_TEST(test_mem_write_region_check_fail);
     RUN_TEST(test_mem_write_invalid_hex_rejected);
     RUN_TEST(test_mem_write_overflow_rejected);
+    RUN_TEST(test_mem_write_full_64k_length);
     RUN_TEST(test_bp_add_invalid_addr_rejected);
     RUN_TEST(test_pause_emu_failure_reports_error);
     RUN_TEST(test_non_request_message_rejected);
@@ -7266,6 +9338,23 @@ int main(void) {
     RUN_TEST(test_snapshot_load_buffer_roundtrip);
     RUN_TEST(test_snapshot_load_buffer_invalid_b64);
     RUN_TEST(test_run_until_addr_running_is_error);
+    RUN_TEST(test_wait_stop_done_and_timeout);
+    RUN_TEST(test_get_stop_history_limit);
+    RUN_TEST(test_pause_if_run_seq);
+    RUN_TEST(test_run_until_addr_deadline);
+    RUN_TEST(test_step_completed_flags);
+    RUN_TEST(test_mem_read_sha256_and_want_data);
+    RUN_TEST(test_mem_read_full_64k);
+    RUN_TEST(test_coverage_start_params);
+    RUN_TEST(test_coverage_start_invalid);
+    RUN_TEST(test_coverage_read_branch);
+    RUN_TEST(test_coverage_read_detail);
+    RUN_TEST(test_coverage_read_errors);
+    RUN_TEST(test_frame_hash_submits);
+    RUN_TEST(test_replay_record_start_params);
+    RUN_TEST(test_replay_play_and_stop_modes);
+    RUN_TEST(test_replay_status_fields);
+    RUN_TEST(test_replay_rewind_seek_params);
     RUN_TEST(test_snapshot_load_not_paused_reason);
     RUN_TEST(test_cooperation_hint_set_modes);
 
@@ -7480,8 +9569,24 @@ int main(void) {
     RUN_TEST(test_profiler_pc_get_params);
     RUN_TEST(test_profiler_pc_errors_export);
     RUN_TEST(test_profiler_pc_bitmap);
+    RUN_TEST(test_trace_status_all_channels);
+    RUN_TEST(test_trace_read_rows_cursor_and_segment);
+    RUN_TEST(test_trace_read_cputrack_symbols_columns_raw);
+    RUN_TEST(test_trace_read_invalid_params);
+    RUN_TEST(test_trace_read_audio_channels);
+    RUN_TEST(test_ramlog_start_params);
+    RUN_TEST(test_ramlog_queries);
+    RUN_TEST(test_freeze_mcp);
+    RUN_TEST(test_memsearch_mcp_flow);
+    RUN_TEST(test_memsearch_mcp_pehu_hint);
+    RUN_TEST(test_memsearch_mcp_errors);
+    RUN_TEST(test_trace_read_ramlog);
+    RUN_TEST(test_trace_read_eventlog);
     RUN_TEST(test_audio_capture_start_params);
     RUN_TEST(test_audio_capture_errors);
+    RUN_TEST(test_audio_capture_start_memory_params);
+    RUN_TEST(test_audio_capture_summary);
+    RUN_TEST(test_audio_capture_pcm);
     RUN_TEST(test_get_video_text_dump_available);
     RUN_TEST(test_get_video_text_dump_unavailable);
 
@@ -7489,6 +9594,16 @@ int main(void) {
     RUN_TEST(test_get_watch_snapshot_found_payload);
     RUN_TEST(test_get_watch_snapshot_not_found_payload);
     RUN_TEST(test_get_watch_snapshot_missing_name_rejected);
+
+    /* observe-cas (M10) - state_observe (3 testy) */
+    RUN_TEST(test_state_observe_windows_and_core);
+    RUN_TEST(test_state_observe_sections_hashes_unavailable);
+    RUN_TEST(test_state_observe_invalid_params);
+
+    /* observe-cas (M10) - podmíněné zápisy (3 testy) */
+    RUN_TEST(test_cond_memory_writes);
+    RUN_TEST(test_cond_set_register);
+    RUN_TEST(test_cond_set_cpu_flags);
 
     return UNITY_END();
 }

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mz800emu 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-13 21:57+0200\n"
+"POT-Creation-Date: 2026-10-21 07:25+0200\n"
 "PO-Revision-Date: 2026-03-11 22:00+0100\n"
 "Last-Translator: Claude Code\n"
 "Language-Team: Українська\n"
@@ -62,62 +62,62 @@ msgstr ""
 "Адреса = 0x%04x\n"
 "Інструкція = '%s'\n"
 
-#: src/emulator/emulator.c:398
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:421
+#: src/emulator/emulator.c:451
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:425
 #: src/ui-imgui/videorec/videorec_menu.cpp:140
 msgid "PAUSED"
 msgstr "ПРИЗУПИНЕНО"
 
-#: src/emulator/emulator.c:401
+#: src/emulator/emulator.c:454
 msgid "Max speed"
 msgstr "Максимальна швидкість"
 
-#: src/emulator/emulator.c:404
+#: src/emulator/emulator.c:457
 msgid "Custom speed"
 msgstr "Власна швидкість"
 
-#: src/emulator/emulator.c:406
+#: src/emulator/emulator.c:459
 msgid "Normal speed"
 msgstr "Нормальна швидкість"
 
-#: src/emulator/hw-generic/cmt/cmt.c:582
+#: src/emulator/hw-generic/cmt/cmt.c:592
 msgid "Create a new WAV file"
 msgstr "Створити новий WAV файл"
 
-#: src/emulator/hw-generic/cmt/cmt.c:582
+#: src/emulator/hw-generic/cmt/cmt.c:592
 msgid "newfile.wav"
 msgstr "newfile.wav"
 
-#: src/emulator/hw-generic/cmt/cmt.c:1043
+#: src/emulator/hw-generic/cmt/cmt.c:1139
 msgid "All Supported CMT Files"
 msgstr "Усі підтримувані CMT файли"
 
-#: src/emulator/hw-generic/cmt/cmt.c:1044
+#: src/emulator/hw-generic/cmt/cmt.c:1140
 msgid "Tape Files"
 msgstr "Файли стрічок"
 
-#: src/emulator/hw-generic/cmt/cmt.c:1121
+#: src/emulator/hw-generic/cmt/cmt.c:1217
 msgid "Select CMT file to open"
 msgstr "Виберіть CMT файл для відкриття"
 
-#: src/emulator/hw-generic/cmt/cmthack.c:206
+#: src/emulator/hw-generic/cmt/cmthack.c:240
 msgid "Select a MZF File"
 msgstr "Виберіть MZF файл"
 
-#: src/emulator/hw-generic/fdc/fdc.c:1140
+#: src/emulator/hw-generic/fdc/fdc.c:1220
 #, c-format
 msgid "Select DSK image file for FDC%u drive FD%d"
 msgstr "Виберіть файл образу DSK для FDC%u дисковод FD%d"
 
-#: src/emulator/hw-generic/qdisk/qdisk.c:816
+#: src/emulator/hw-generic/qdisk/qdisk.c:817
 msgid "Select existing .MZQ file or create new QD image"
 msgstr "Виберіть існуючий .MZQ файл або створіть новий QD образ"
 
-#: src/emulator/hw-generic/qdisk/qdisk.c:818
+#: src/emulator/hw-generic/qdisk/qdisk.c:819
 msgid "Select directory to mount as virtual Quick Disk"
 msgstr "Виберіть каталог для монтування як віртуальний Quick Disk"
 
-#: src/emulator/hw-generic/unicard/unicard.c:2299
+#: src/emulator/hw-generic/unicard/unicard.c:2312
 msgid "Select SD root directory for Unicard"
 msgstr "Виберіть кореневий каталог SD для Unicard"
 
@@ -130,16 +130,16 @@ msgid "JSS ROMs"
 msgstr "JSS ROMs"
 
 #: src/emulator/mzarch/mz800/memory/mz800_rom.c:44
-msgid "JSS v1.05C - for MR-1R18 (devel)"
-msgstr "JSS v1.05C - for MR-1R18 (devel)"
+msgid "JSS v1.05C - for MZ-1R18 (devel)"
+msgstr "JSS v1.05C - for MZ-1R18 (devel)"
 
 #: src/emulator/mzarch/mz800/memory/mz800_rom.c:45
 msgid "JSS v1.03 - for Pezik (devel)"
 msgstr "JSS v1.03 - for Pezik (devel)"
 
 #: src/emulator/mzarch/mz800/memory/mz800_rom.c:47
-msgid "JSS v1.08C - for MR-1R18"
-msgstr "JSS v1.08C - for MR-1R18"
+msgid "JSS v1.08C - for MZ-1R18"
+msgstr "JSS v1.08C - for MZ-1R18"
 
 #: src/emulator/mzarch/mz800/memory/mz800_rom.c:48
 msgid "JSS v1.06A - for Pezik"
@@ -385,33 +385,33 @@ msgstr "%.1f dB"
 msgid "%.0f dB"
 msgstr "%.0f dB"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:52
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:144
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:66
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:172
 #: src/ui-imgui/videorec/videorec_menu.cpp:422
 #, c-format
 msgid "Cannot open folder: %s"
 msgstr "Не вдалося відкрити теку: %s"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:53
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:72
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:119
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:67
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:86
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:141
 msgid "Audio Capture Error"
 msgstr "Помилка захоплення звуку"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:71
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:85
 #, c-format
 msgid "Cannot start the audio capture: %s"
 msgstr "Не вдається запустити захоплення звуку: %s"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:80
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:94
 msgid "Audio Capture"
 msgstr "Захоплення звуку"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:83
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:97
 msgid "Record Audio Capture"
 msgstr "Захопити звук"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:87
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:101
 msgid ""
 "Records what the sound hardware does into a new folder until you stop it:\n"
 "changes of the channel levels, PSG writes, the exact sound (reference.wav)\n"
@@ -422,108 +422,119 @@ msgstr ""
 "зміни рівнів каналів, записи в PSG, точний звук (reference.wav)\n"
 "і звук, який ви чуєте (sdl.wav). Для пошуку помилок звуку."
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:92
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:178
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:106
+msgid "Audio Capture Control..."
+msgstr "Керування записом звуку..."
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:110
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:431
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:209
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:658
 #: src/ui-imgui/videorec/videorec_menu.cpp:462
 #: src/ui-imgui/videorec/videorec_remote_window.cpp:317
 msgid "Settings..."
 msgstr "Налаштування..."
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:95
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:181
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:113
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:429
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:212
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:656
 #: src/ui-imgui/videorec/videorec_menu.cpp:466
 #: src/ui-imgui/videorec/videorec_remote_window.cpp:315
 msgid "Open Output Folder"
 msgstr "Відкрити теку виводу"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:118
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:140
 #, c-format
 msgid "Audio capture stopped after %.1f s: %s"
 msgstr "Захоплення звуку зупинено через %.1f с: %s"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:123
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:145
 #, c-format
 msgid "Audio capture ended (%s): %.1f s saved to %s"
 msgstr "Захоплення звуку завершено (%s): %.1f с збережено в %s"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:128
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:150
 #, c-format
 msgid "Audio capture saved: %.1f s to %s"
 msgstr "Захоплення звуку збережено: %.1f с у %s"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:143
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:165
 #, c-format
 msgid "AUDIO %.1f s"
 msgstr "ЗВУК %.1f с"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:145
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:167
 msgid "AUDIO starting"
 msgstr "ЗВУК запуск"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:190
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:212
 msgid "Audio Capture Settings"
 msgstr "Налаштування захоплення звуку"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:193
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:215
 msgid "Files to write"
 msgstr "Файли для запису"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:194
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:216
 msgid "events.csv - changes of the channel levels"
 msgstr "events.csv - зміни рівнів каналів"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:195
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:217
 msgid "psg_writes.csv - PSG writes, decoded"
 msgstr "psg_writes.csv - записи в PSG, декодовані"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:196
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:218
 msgid "reference.wav - exact sound in emulated time"
 msgstr "reference.wav - точний звук в емульованому часі"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:197
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:219
 msgid "sdl.wav - sound of the audio output (what you hear)"
 msgstr "sdl.wav - звук звукового виходу (що ви чуєте)"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:201
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:371
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:223
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:410
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:407
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:594
 #: src/ui-imgui/videorec/videorec_setup_dialog.cpp:260
 msgid "Output folder"
 msgstr "Тека виводу"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:204
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:226
 msgid "(default: audio_captures folder next to the emulator)"
 msgstr "(типово: тека audio_captures поруч з емулятором)"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:214
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:384
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:236
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:420
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:80
 #: src/ui-imgui/videorec/videorec_setup_dialog.cpp:273
 msgid "Select Directory"
 msgstr "Вибрати каталог"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:217
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:239
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:426
 msgid "Each capture creates a new folder in the output folder."
 msgstr "Кожне захоплення створює нову теку у вихідній теці."
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:218
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:240
 #, c-format
 msgid "Record Audio Capture (%s) starts and stops the capture."
 msgstr "Захопити звук (%s) запускає і зупиняє захоплення."
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:227
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:249
 #: src/ui-imgui/cmt/ImGuiCmt.cpp:175
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2419
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2421
 #: src/ui-imgui/dsk/dsk_create_window.cpp:104
 #: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:109
 #: src/ui-imgui/joy/joy_setup_window.cpp:564
 #: src/ui-imgui/message/message_window.cpp:90
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:406
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:442
 #: src/ui-imgui/snapshot/snapshot_notification.cpp:95
 #: src/ui-imgui/videorec/videorec_setup_dialog.cpp:338
 msgid "OK"
 msgstr "OK"
 
-#: src/ui-imgui/audiocap/audio_capture_ui.cpp:233
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:255
 #: src/ui-imgui/cmt/ImGuiCmt.cpp:187
 #: src/ui-imgui/debugger/membrowser/membrowser_annot_dialog.cpp:148
 #: src/ui-imgui/debugger/membrowser/membrowser_fill_dialog.cpp:264
@@ -536,49 +547,135 @@ msgstr "OK"
 #: src/ui-imgui/memext/memext_save_dialog.cpp:207
 #: src/ui-imgui/ramdisk/pezik_settings_window.cpp:289
 #: src/ui-imgui/rom/rom_settings_window.cpp:323
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:411
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:139
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:447
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:127
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:176
 #: src/ui-imgui/topmenu/devices/menu_fdcontroller.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:93
+#: src/ui-imgui/topmenu/menu_replay.cpp:217
 #: src/ui-imgui/videorec/videorec_setup_dialog.cpp:343
 msgid "Cancel"
 msgstr "Скасувати"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:51
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:360
+msgid "Audio Capture Control"
+msgstr "Керування записом звуку"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:376
+#: src/ui-imgui/topmenu/replay_window.cpp:201
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:171
+msgid "State"
+msgstr "Стан"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:379
+msgid "Capturing"
+msgstr "Запис"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:381
+msgid "Starting"
+msgstr "Запуск"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:383
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:306
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:348
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:391
+#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:488
+#: src/ui-imgui/topmenu/replay_window.cpp:217
+#: src/ui-imgui/videorec/videorec_menu.cpp:96
+msgid "Off"
+msgstr "Vypnuto"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:388
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:177
+msgid "Time"
+msgstr "Час"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:388
+msgid "Last length"
+msgstr "Остання тривалість"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:389
+msgid "Folder"
+msgstr "Тека"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:390
+#, c-format
+msgid "%llu level changes, %llu PSG writes"
+msgstr "%llu змін рівня, %llu записів PSG"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:392
+msgid "Recorded"
+msgstr "Записано"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:395
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:397
+#: src/ui-imgui/topmenu/replay_window.cpp:290
+msgid "Last result"
+msgstr "Останній результат"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:405
+msgid "Files"
+msgstr "Файли"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:414
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:633
+#: src/ui-imgui/topmenu/replay_window.cpp:307
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:227
+msgid "Controls"
+msgstr "Керування"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:416
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:421
+msgid "Start Audio Capture"
+msgstr "Почати запис звуку"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:417
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:421
+msgid "Stop Audio Capture"
+msgstr "Зупинити запис звуку"
+
+#: src/ui-imgui/audiocap/audio_capture_ui.cpp:434
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:661
+#: src/ui-imgui/topmenu/replay_window.cpp:361
+#: src/ui-imgui/videorec/videorec_remote_window.cpp:320
+#, c-format
+msgid "Show or hide this window: %s"
+msgstr "Показати/сховати це вікно: %s"
+
+#: src/ui-imgui/autotype/autotype_window.cpp:53
 msgid "Invalid character at position"
 msgstr "Недійсний символ на позиції"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:163
+#: src/ui-imgui/autotype/autotype_window.cpp:166
 #: src/ui-imgui/topmenu/interface/menu_keyjoy.cpp:29
 msgid "Autotype Buffer"
 msgstr "Autotype buffer"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:185
+#: src/ui-imgui/autotype/autotype_window.cpp:188
 msgid "Autotype!"
 msgstr "Autotype!"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:186
+#: src/ui-imgui/autotype/autotype_window.cpp:189
 msgid "Stop!"
 msgstr "Stop!"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:201
+#: src/ui-imgui/autotype/autotype_window.cpp:204
 msgid "Text buffer is empty"
 msgstr "Текстовий buffer je порожній"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:215
+#: src/ui-imgui/autotype/autotype_window.cpp:218
 msgid "Key down"
 msgstr "Натиск клавіші"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:234
+#: src/ui-imgui/autotype/autotype_window.cpp:237
 msgid "Key up"
 msgstr "Звільнення клавіші"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:285
+#: src/ui-imgui/autotype/autotype_window.cpp:288
 msgid "Characters"
 msgstr "Символи"
 
-#: src/ui-imgui/autotype/autotype_window.cpp:295
+#: src/ui-imgui/autotype/autotype_window.cpp:298
 msgid "Typed"
 msgstr "Написано"
 
@@ -634,20 +731,21 @@ msgstr "Зберегти як"
 msgid "Save MZF file as"
 msgstr "Зберегти файл MZF як"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:245
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:198
 msgid "Tape Filelist"
 msgstr "Список файлів стрічки"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:281
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:305 src/ui-imgui/cmt/cmt_window.cpp:212
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:236
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:260 src/ui-imgui/cmt/cmt_window.cpp:213
 #: src/ui-imgui/debugger/sections/dbg_stack_panel.cpp:2677
 #: src/ui-imgui/debugger/vars/vars_window.cpp:1502
 #: src/ui-imgui/debugger/watch/watch_window.cpp:1696
 msgid "Name"
 msgstr "Ім'я"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:282
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:308 src/ui-imgui/cmt/cmt_window.cpp:211
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:237
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:263 src/ui-imgui/cmt/cmt_window.cpp:212
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:576
 #: src/ui-imgui/debugger/watch/watch_window.cpp:1700
 #: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:132
 #: src/ui-imgui/joy/joy_setup_window.cpp:239
@@ -656,8 +754,8 @@ msgstr "Ім'я"
 msgid "Type"
 msgstr "Тип"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:283
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:311
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:238
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:266
 #: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:133
 #: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:209
 #: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:211
@@ -666,129 +764,145 @@ msgstr "Тип"
 msgid "Size"
 msgstr "Розмір"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:284
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:314
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:239
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:269
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:416
 msgid "Start"
 msgstr "Початок"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:285
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:317
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:240
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:272
 msgid "Exec"
 msgstr "Exec"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:286
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:320 src/ui-imgui/cmt/cmt_window.cpp:213
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:241
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:275 src/ui-imgui/cmt/cmt_window.cpp:214
 #: src/ui-imgui/topmenu/menu_speed.cpp:27
 msgid "Speed"
 msgstr "Швидкість"
 
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:287
-#: src/ui-imgui/cmt/cmt_tape_index.cpp:323
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:242
+#: src/ui-imgui/cmt/cmt_tape_index.cpp:278
 msgid "Length"
 msgstr "Довжина"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:64
+#: src/ui-imgui/cmt/cmt_window.cpp:65
 msgid "Playing time:"
 msgstr "Час відтворення:"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:68
+#: src/ui-imgui/cmt/cmt_window.cpp:69
 msgid "Remaining time:"
 msgstr "Час, що залишився:"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:80 src/ui-imgui/cmt/cmt_window.cpp:826
+#: src/ui-imgui/cmt/cmt_window.cpp:81 src/ui-imgui/cmt/cmt_window.cpp:789
 msgid "CMT Hack"
 msgstr "CMT Hack"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:89
+#: src/ui-imgui/cmt/cmt_window.cpp:90
 msgid "CPU Boost"
 msgstr "Прискорення CPU"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:126
+#: src/ui-imgui/cmt/cmt_window.cpp:127
 msgid "Click here to change the time info mode."
 msgstr "Натисніть тут, щоб змінити режим інформації про час."
 
-#: src/ui-imgui/cmt/cmt_window.cpp:210
+#: src/ui-imgui/cmt/cmt_window.cpp:211
 msgid "Block"
 msgstr "Блок"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:210
+#: src/ui-imgui/cmt/cmt_window.cpp:211
 msgid "of"
 msgstr "з"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:211
+#: src/ui-imgui/cmt/cmt_window.cpp:212
 msgid "FSize"
 msgstr "FSize"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:212
+#: src/ui-imgui/cmt/cmt_window.cpp:213
 msgid "FExec"
 msgstr "FExec"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:213
+#: src/ui-imgui/cmt/cmt_window.cpp:214
 msgid "FStart"
 msgstr "FStart"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:214
+#: src/ui-imgui/cmt/cmt_window.cpp:215
 msgid "Stream"
 msgstr "Stream"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:215
+#: src/ui-imgui/cmt/cmt_window.cpp:216
 msgid "Rate"
 msgstr "Rate"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:215
+#: src/ui-imgui/cmt/cmt_window.cpp:216
 msgid "SSize"
 msgstr "SSize"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:437
+#: src/ui-imgui/cmt/cmt_window.cpp:439
 msgid "Default MZ Speed:"
 msgstr "Стандартна швидкість MZ:"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:800 src/ui-imgui/cmt/cmt_window.cpp:914
+#: src/ui-imgui/cmt/cmt_window.cpp:720
+msgid ""
+"Recording a replay: tape control is recorded; another tape and speed "
+"settings are not available."
+msgstr ""
+"Запис відтворення: керування касетою записується; інша стрічка та "
+"налаштування швидкості недоступні."
+
+#: src/ui-imgui/cmt/cmt_window.cpp:724
+msgid "Tape control is not available while a replay is recorded or played."
+msgstr "Керування касетою недоступне під час запису або відтворення введення."
+
+#: src/ui-imgui/cmt/cmt_window.cpp:761 src/ui-imgui/cmt/cmt_window.cpp:878
 msgid "Virtual CMT"
 msgstr "Віртуальний CMT"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:835
+#: src/ui-imgui/cmt/cmt_window.cpp:798
 msgid "CMT Hack is activated!"
 msgstr "CMT Hack активовано!"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:836
+#: src/ui-imgui/cmt/cmt_window.cpp:799
 msgid "Virtual CMT is not available!"
 msgstr "Віртуальний CMT недоступний!"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:842
+#: src/ui-imgui/cmt/cmt_window.cpp:805
 #: src/ui-imgui/version_check/imgui_version_check.cpp:390
 msgid "Close"
 msgstr "Закрити"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:863
+#: src/ui-imgui/cmt/cmt_window.cpp:827
 msgid "No tape loaded"
 msgstr "Стрічку не завантажено"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:872
+#: src/ui-imgui/cmt/cmt_window.cpp:836
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:363
+#: src/ui-imgui/topmenu/replay_window.cpp:205
 msgid "Recording"
 msgstr "Запис"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:882
+#: src/ui-imgui/cmt/cmt_window.cpp:846
+#: src/ui-imgui/topmenu/replay_window.cpp:213
 msgid "Playing"
 msgstr "Відтворення"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:897
+#: src/ui-imgui/cmt/cmt_window.cpp:861
 msgid "Stopped - Ready to Play"
 msgstr "Зупинено - Готовий до відтворення"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:904
+#: src/ui-imgui/cmt/cmt_window.cpp:868
 msgid "(paused)"
 msgstr "(призупинено)"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:925
+#: src/ui-imgui/cmt/cmt_window.cpp:890
 msgid "*** Empty ***"
 msgstr "*** Порожньо ***"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:931
+#: src/ui-imgui/cmt/cmt_window.cpp:896
 msgid "Recording (paused)"
 msgstr "Запис (призупинено)"
 
-#: src/ui-imgui/cmt/cmt_window.cpp:935
+#: src/ui-imgui/cmt/cmt_window.cpp:900
 msgid "Recording.."
 msgstr "Запис.."
 
@@ -1043,7 +1157,7 @@ msgstr "Закладки###bm_window"
 
 #: src/ui-imgui/debugger/bookmarks/bm_window.cpp:962
 #: src/ui-imgui/topmenu/menu_debugger.cpp:156
-#: src/ui-imgui/topmenu/menu_debugger.cpp:495
+#: src/ui-imgui/topmenu/menu_debugger.cpp:513
 msgid "Bookmarks"
 msgstr "Закладки"
 
@@ -1057,7 +1171,8 @@ msgid "Label"
 msgstr "Назва"
 
 #: src/ui-imgui/debugger/bookmarks/bm_window.cpp:981
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1150
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1154
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:314
 msgid "Address"
 msgstr "Адреса"
 
@@ -1505,7 +1620,7 @@ msgstr ""
 
 #: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:1854
 #: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2425
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:667
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:686
 #: src/ui-imgui/debugger/watch/watch_window.cpp:444
 msgid "Mode:"
 msgstr "Режим:"
@@ -1788,7 +1903,7 @@ msgid "Auto-generated name##bpt_panel"
 msgstr "Автоматично згенерований назва##bpt_panel"
 
 #: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2295
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2646
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2647
 #: src/ui-imgui/debugger/vars/vars_window.cpp:812
 #: src/ui-imgui/debugger/watch/watch_window.cpp:488
 msgid "Name:"
@@ -1852,111 +1967,117 @@ msgstr ""
 msgid "(action empty - BP halts the emulator)"
 msgstr "(дія порожня - BP зупинить емулятор)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2517
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2519
 msgid "Test Eval##bpt_panel"
 msgstr "Test обчислення##bpt_panel"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2576
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2535
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:172
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:190
+msgid "The emulator did not respond in time."
+msgstr "Емулятор не відповів вчасно."
+
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2577
 msgid "Enabled##bpt_panel_top"
 msgstr "Увімкнено##bpt_panel_top"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2587
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2588
 #, c-format
 msgid "Hits: %llu events"
 msgstr "Звернень: %llu подій"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2597
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2598
 msgid "Reset###bpt_hits"
 msgstr "Скинути###bpt_hits"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2609
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2610
 msgid "BP Options"
 msgstr "Налаштування BP"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2614
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2615
 msgid "Name / Parent"
 msgstr "Назва / Батько"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2619
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2620
 msgid "Trigger logic"
 msgstr "Logika запуску"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2624
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2625
 msgid "Action on trigger"
 msgstr "Дія при запуску"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2629
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2630
 msgid "Live Eval Test (optional)"
 msgstr "Test живого обчислення (необов'язково)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2642
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2643
 msgid "Enabled (cascade)##bpt_grp_panel"
 msgstr "Увімкнено (каскадно)##bpt_grp_panel"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2671
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2672
 #, c-format
 msgid "Children: %d BP (%d enabled)"
 msgstr "Нащадки: %d BP (%d дозволених)"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2687
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2691
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2688
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2692
 msgid "Discard changes?##bpt_discard"
 msgstr "Відкинути зміни?##bpt_discard"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2694
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2695
 msgid "Editor has unsaved changes. Discard them?"
 msgstr "Editor має незбережені зміни. Відкинути je?"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2696
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2697
 msgid "Discard##bpt_disc"
 msgstr "Відкинути##bpt_disc"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2706
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2707
 msgid "Cancel##bpt_disc"
 msgstr "Скасувати##bpt_disc"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2714
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2718
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2715
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2719
 msgid "Discard and close?##bpt_close"
 msgstr "Відкинути a закрити?##bpt_close"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2721
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2722
 msgid "Editor has unsaved changes. Close anyway?"
 msgstr "Editor має незбережені зміни. Все одно закрити?"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2723
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2724
 msgid "Close##bpt_clo"
 msgstr "Закрити##bpt_clo"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2730
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2731
 msgid "Cancel##bpt_clo"
 msgstr "Скасувати##bpt_clo"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2775
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2776
 msgid "Edit Group"
 msgstr "Редагувати групу"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2780
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2781
 msgid "New Group"
 msgstr "Нова група"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2834
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2835
 msgid "Edit BP"
 msgstr "Редагувати BP"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2839
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2840
 msgid "New BP"
 msgstr "Новий BP"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2891
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:2892
 msgid "Cancel##bpt_panel_btn"
 msgstr "Скасувати##bpt_panel_btn"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3048
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3049
 msgid "OK##bpt_panel_btn"
 msgstr "OK##bpt_panel_btn"
 
-#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3062
+#: src/ui-imgui/debugger/breakpoints/bpt_edit_panel.cpp:3063
 msgid "(check ranges: end >= start)"
 msgstr "(перевірте діапазони: end >= старт)"
 
@@ -2171,7 +2292,7 @@ msgstr "Додати##bpt"
 #: src/ui-imgui/debugger/breakpoints/bpt_window.cpp:1456
 #: src/ui-imgui/debugger/membrowser/membrowser_annot_dialog.cpp:144
 #: src/ui-imgui/memext/memext_save_dialog.cpp:189
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:119
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:117
 msgid "Save"
 msgstr "Зберегти"
 
@@ -2338,10 +2459,10 @@ msgstr "Останнє керуюче слово"
 #: src/ui-imgui/debugger/pioz80_window.cpp:268
 #: src/ui-imgui/debugger/pioz80_window.cpp:293
 #: src/ui-imgui/debugger/pioz80_window.cpp:405
-#: src/ui-imgui/debugger/psg_window.cpp:360
-#: src/ui-imgui/debugger/psg_window.cpp:410
-#: src/ui-imgui/debugger/psg_window.cpp:456
-#: src/ui-imgui/debugger/psg_window.cpp:534
+#: src/ui-imgui/debugger/psg_window.cpp:362
+#: src/ui-imgui/debugger/psg_window.cpp:412
+#: src/ui-imgui/debugger/psg_window.cpp:458
+#: src/ui-imgui/debugger/psg_window.cpp:536
 msgid "Field"
 msgstr "Pole"
 
@@ -2349,12 +2470,13 @@ msgstr "Pole"
 #: src/ui-imgui/debugger/ctc_window.cpp:258
 #: src/ui-imgui/debugger/fdc_window.cpp:75
 #: src/ui-imgui/debugger/fdc_window.cpp:126
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:701
 #: src/ui-imgui/debugger/pioz80_window.cpp:294
 #: src/ui-imgui/debugger/pioz80_window.cpp:406
-#: src/ui-imgui/debugger/psg_window.cpp:361
-#: src/ui-imgui/debugger/psg_window.cpp:411
-#: src/ui-imgui/debugger/psg_window.cpp:457
-#: src/ui-imgui/debugger/psg_window.cpp:535
+#: src/ui-imgui/debugger/psg_window.cpp:363
+#: src/ui-imgui/debugger/psg_window.cpp:413
+#: src/ui-imgui/debugger/psg_window.cpp:459
+#: src/ui-imgui/debugger/psg_window.cpp:537
 #: src/ui-imgui/debugger/vars/vars_window.cpp:1504
 #: src/ui-imgui/debugger/watch/watch_window.cpp:1702
 msgid "Value"
@@ -2556,6 +2678,8 @@ msgid "syms in range"
 msgstr "символів у діапазоні"
 
 #: src/ui-imgui/debugger/dasm_window/dasm_window.cpp:556
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:625
+#: src/ui-imgui/topmenu/replay_window.cpp:252
 msgid "off"
 msgstr "вимк"
 
@@ -2595,6 +2719,8 @@ msgid "Addr"
 msgstr "Adr"
 
 #: src/ui-imgui/debugger/dasm_window/dasm_window.cpp:671
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:486
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:589
 msgid "Bytes"
 msgstr "Байти"
 
@@ -3132,7 +3258,10 @@ msgstr "Жодне"
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2156
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2682
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2845
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3200
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3160
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:312
+#: src/ui-imgui/topmenu/menu_replay.cpp:208
+#: src/ui-imgui/topmenu/replay_window.cpp:245
 msgid "Frame"
 msgstr "Кадр"
 
@@ -3142,6 +3271,7 @@ msgstr "Категорія"
 
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2158
 #: src/ui-imgui/debugger/eventview/event_viewer_window.cpp:2693
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:313
 msgid "PC"
 msgstr "PC"
 
@@ -3629,7 +3759,7 @@ msgid "Drives"
 msgstr "Пристрої"
 
 #: src/ui-imgui/debugger/fdc_window.cpp:187
-#: src/ui-imgui/topmenu/menu_debugger.cpp:588
+#: src/ui-imgui/topmenu/menu_debugger.cpp:606
 msgid "FDC State"
 msgstr "Стан FDC"
 
@@ -3739,6 +3869,7 @@ msgstr "DMD"
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:185
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:189
 #: src/ui-imgui/debugger/membrowser/membrowser_fill_dialog.cpp:223
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:408
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:99
 msgid "Mode"
 msgstr "Режим"
@@ -3930,19 +4061,19 @@ msgid "VBANK (WF/RF)"
 msgstr "VBANK (WF/RF)"
 
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:253
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:794
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:793
 #: src/ui-imgui/filechooser/headers/CustomImGuiFileDialogConfig.h:122
 msgid "B"
 msgstr "B"
 
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:253
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:793
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:792
 msgid "A"
 msgstr "A"
 
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:256
-msgid "MZ700 WR latch"
-msgstr "Засувка MZ700 WR"
+msgid "WRITE FF"
+msgstr "WRITE FF"
 
 #: src/ui-imgui/debugger/gdg_window_mz800.cpp:259
 msgid "set"
@@ -4005,24 +4136,24 @@ msgstr "Палітра###GDGMZ800Palette"
 msgid "Border###GDGMZ800Border"
 msgstr "Рамка###GDGMZ800Border"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:624
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:643
 msgid "Select CDL meta.json file"
 msgstr "Виберіть CDL meta.json файл"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:669
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:688
 msgid "Off##mhmap_mode"
 msgstr "Vypnuto##mhmap_mode"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:676
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:695
 msgid "Do not record. Hot path stays bit-identical with vanilla emulator."
 msgstr ""
 "Не записувати. Hot path залишається біт-ідентичний s vanilla емулятором."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:679
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:698
 msgid "With Window##mhmap_mode"
 msgstr "S вікном##mhmap_mode"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:686
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:705
 msgid ""
 "Record only when the main debugger window is open\n"
 "(NOT this Memory Heatmap window)."
@@ -4030,11 +4161,11 @@ msgstr ""
 "Записувати тільки коли je відкрито головний вікно debuggeru\n"
 "(Ні це Memory Heatmap вікно)."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:690
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:709
 msgid "Always##mhmap_mode"
 msgstr "Завжди##mhmap_mode"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:697
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:716
 msgid ""
 "Always record while the emulator is running\n"
 "(independent of any debugger window)."
@@ -4042,167 +4173,167 @@ msgstr ""
 "Записувати завжди, коли емулятор працює\n"
 "(незалежно на вікні debuggeru)."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:747
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:766
 msgid "Save CDL meta.json file"
 msgstr "Зберегти CDL meta.json файл"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:817
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:836
 msgid "Export on Exit##mhmap_top"
 msgstr "Exportovat при завершення##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:823
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:842
 msgid "Reset##mhmap_top"
 msgstr "Скинути##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:830
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:849
 msgid "Export...##mhmap_top"
 msgstr "Export...##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:836
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:855
 msgid "Import...##mhmap_top"
 msgstr "Import...##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:848
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:867
 msgid "Hide panel##mhmap_top"
 msgstr "Сховати панель##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:849
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:868
 msgid "Show panel##mhmap_top"
 msgstr "Показати панель##mhmap_top"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:877
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:896
 #, c-format
 msgid "Status: Recording active (mhmap_mode=%s)"
 msgstr "Стан: запис активний (mhmap_mode=%s)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:881
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:900
 #, c-format
 msgid "Status: Recording inactive (mhmap_mode=%s)"
 msgstr "Стан: запис неактивний (mhmap_mode=%s)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:953
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:972
 msgid "Show"
 msgstr "Показати"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:955
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:974
 msgid "Live##mhmap_show"
 msgstr "Live##mhmap_show"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:961
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:980
 msgid "Imported##mhmap_show"
 msgstr "Імпортовано##mhmap_show"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:968
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:987
 msgid "(no import loaded)"
 msgstr "(імпорт не завантажено)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:975
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:994
 msgid "Drop##mhmap_imp"
 msgstr "Відкинути##mhmap_imp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:985
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1004
 msgid "Drop imported data (free buffer, switch back to Live)"
 msgstr ""
 "Відкинути імпортована дані (звільнити buffer, перемикнути назад на Live)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:989
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1008
 msgid "Add##mhmap_imp"
 msgstr "Додати##mhmap_imp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:997
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1016
 msgid "Add imported counters to Live (saturates at UINT32_MAX)"
 msgstr "Додати імпортовані лічильники k Live (saturuje на UINT32_MAX)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1001
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1020
 msgid "Sub##mhmap_imp"
 msgstr "Відняти##mhmap_imp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1009
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1028
 msgid "Subtract imported counters from Live (clamps at 0)"
 msgstr "Відняти імпортовані лічильники від Live (обмежено на 0)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1013
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1032
 msgid "Selected cell"
 msgstr "Вибрана комірка"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1017
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1036
 msgid "(none - click a cell)"
 msgstr "(жодної - клікніть на комірку)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1024
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1043
 msgid "(out of range)"
 msgstr "(поза діапазоном)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1050
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1069
 msgid "Region statistics"
 msgstr "Statistiky регіону"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1078
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1097
 msgid "Reset region only##mhmap_side"
 msgstr "Скинути тільки регіон##mhmap_side"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1113
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1132
 msgid "RGB mode color mapping"
 msgstr "Відображення кольорів у RGB режимu"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1119
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1138
 msgid "R counter##mhmap_col"
 msgstr "Лічильник R##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1128
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1147
 msgid "W counter##mhmap_col"
 msgstr "Лічильник W##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1137
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1156
 msgid "X counter##mhmap_col"
 msgstr "Лічильник X##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1146
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1165
 msgid "S counter##mhmap_col"
 msgstr "Лічильник S##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1154
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1173
 msgid "Reset to defaults##mhmap_col"
 msgstr "Скинути за замовчуванням##mhmap_col"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1169
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1188
 msgid "Color:##mhmap_color_btn"
 msgstr "Колір:##mhmap_color_btn"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1175
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1194
 msgid "Click to customize R/W/X/S colors used in RGB mode"
 msgstr ""
 "Клікніть для редагування кольорів R/W/X/S використовуваних у RGB режимu"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1182
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1201
 msgid "RGB##mhmap_color"
 msgstr "RGB##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1187
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1206
 msgid "R##mhmap_color"
 msgstr "R##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1192
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1211
 msgid "W##mhmap_color"
 msgstr "W##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1197
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1216
 msgid "X##mhmap_color"
 msgstr "X##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1205
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1224
 msgid "S##mhmap_color"
 msgstr "S##mhmap_color"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1212
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1231
 msgid "Stack write counter (V5). Disabled when 'Show S' is off."
 msgstr "Лічильник записів на Stack (V5). Вимкнено, коли je 'Show S' vypnuto."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1220
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1239
 msgid "Show S##mhmap_show_s"
 msgstr "Показати S##mhmap_show_s"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1232
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1251
 msgid ""
 "Toggle visibility of stack write (S) category in RGB blending and as a "
 "standalone color mode."
@@ -4210,89 +4341,89 @@ msgstr ""
 "Перемикнути видимість категорія записів на Stack (S) у RGB змішування i як "
 "окремий кольоровий режим."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1239
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1258
 msgid "Scale:"
 msgstr "Масштаб:"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1242
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1261
 msgid "Linear##mhmap_scale"
 msgstr "Лінійний##mhmap_scale"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1247
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1266
 msgid "Log##mhmap_scale"
 msgstr "Log##mhmap_scale"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1256
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1275
 msgid "Threshold:"
 msgstr "Поріг:"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1270
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1289
 msgid "Zoom:"
 msgstr "Наближення:"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1287
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1306
 msgid "Cell pixel size. Hint: Ctrl + mouse wheel over the grid to zoom in/out."
 msgstr ""
 "Розмір комірки у pixelech. Порада: Ctrl + колесо миші над сіткою для "
 "наближення/віддалення."
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1361
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1380
 msgid "Show all##mhmap_menu"
 msgstr "Показати все##mhmap_menu"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1365
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1384
 msgid "Hide all##mhmap_menu"
 msgstr "Сховати все##mhmap_menu"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1372
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1391
 msgid "Groups##mhmap_menu"
 msgstr "Групи##mhmap_menu"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1374
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1393
 msgid "Only bus + ram##mhmap_grp"
 msgstr "Тільки bus + ram##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1380
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1399
 msgid "Only ROM##mhmap_grp"
 msgstr "Тільки ROM##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1386
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1405
 msgid "Only VRAM (all)##mhmap_grp"
 msgstr "Тільки VRAM (все)##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1391
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1410
 msgid "Only VRAM 320 modes##mhmap_grp"
 msgstr "Тільки VRAM 320 режими##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1396
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1415
 msgid "Only VRAM 640 modes##mhmap_grp"
 msgstr "Тільки VRAM 640 режими##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1401
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1420
 msgid "Only PCG (MZ-1500)##mhmap_grp"
 msgstr "Тільки PCG (MZ-1500)##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1406
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1425
 msgid "Only IORQ##mhmap_grp"
 msgstr "Тільки IORQ##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1411
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1430
 msgid "Only Memext##mhmap_grp"
 msgstr "Тільки Memext##mhmap_grp"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1453
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1472
 msgid "(no regions available for this architecture)"
 msgstr "(для цієї архітектури немає доступних регіонів)"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1458
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1477
 msgid "...##mhmap_menu_btn"
 msgstr "...##mhmap_menu_btn"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1464
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1483
 msgid "Show / hide regions, predefined groups"
 msgstr "Показати / сховати регіони, предвизначені групи"
 
-#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1607
+#: src/ui-imgui/debugger/heatmap/mhmap_window.cpp:1626
 msgid "Memory Heatmap##mhmap_main"
 msgstr "Heatmap пам'яті##mhmap_main"
 
@@ -4334,7 +4465,7 @@ msgid "Disassembler window"
 msgstr "Вікно Disassembleru"
 
 #: src/ui-imgui/debugger/ide8_window.cpp:123
-#: src/ui-imgui/topmenu/menu_debugger.cpp:606
+#: src/ui-imgui/topmenu/menu_debugger.cpp:624
 msgid "IDE8 State"
 msgstr "Стан IDE8"
 
@@ -4694,101 +4825,101 @@ msgstr "Видалити"
 msgid "Annotation @ 0x%08X"
 msgstr "Анотація @ 0x%08X"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:405
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:404
 msgid "Live"
 msgstr "Наживо"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:406
-#: src/ui-imgui/topmenu/menu_snapshot.cpp:60
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:405
+#: src/ui-imgui/topmenu/menu_snapshot.cpp:69
 msgid "Snapshot"
 msgstr "Знімок"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:407
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:406
 msgid "Auto @ pause"
 msgstr "Авто @ пауза"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:512
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:511
 msgid "Export diff as text"
 msgstr "Експортувати diff як текст"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:531
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:530
 #: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:281
 #: src/ui-imgui/memext/memext_save_dialog.cpp:254
 msgid "Cannot open file for writing"
 msgstr "Не вдається відкрити файл для запису"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:569
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:568
 msgid "Export error###mb_diff_export_err"
 msgstr "Помилка експорту###mb_diff_export_err"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:574
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:573
 msgid "OK###mb_diff_export_err_ok"
 msgstr "OK###mb_diff_export_err_ok"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:610
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:609
 msgid "No data - pick region and take snapshot"
 msgstr "Немає даних - оберіть регіон і зробіть знімок"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:720
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:719
 #, c-format
 msgid "Changed: %llu of %llu (%.2f %%)  [size mismatch A=%llu B=%llu]"
 msgstr ""
 "Змінено: %llu з %llu (%.2f %%)  [невідповідність розміру A=%llu B=%llu]"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:727
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:726
 #, c-format
 msgid "Changed: %llu of %llu (%.2f %%)"
 msgstr "Змінено: %llu з %llu (%.2f %%)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:738
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:737
 #, c-format
 msgid "auto-snapshots taken: %d"
 msgstr "авто-знімків зроблено: %d"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:765
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:764
 #: src/ui-imgui/debugger/membrowser/membrowser_layers.cpp:496
 msgid "Snapshot Now"
 msgstr "Зробити знімок зараз"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:773
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:772
 msgid "Capture current region content as snapshot"
 msgstr "Зберегти поточний вміст регіону як знімок"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:779
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:778
 msgid "(live)"
 msgstr "(наживо)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:781
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:780
 #, c-format
 msgid "(%u B)"
 msgstr "(%u Б)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:785
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:784
 msgid "(no snapshot)"
 msgstr "(немає знімка)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:797
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:796
 msgid "Auto-snapshot at pause###mb_diff_auto_pause"
 msgstr "Авто-знімок при паузі###mb_diff_auto_pause"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:801
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:800
 msgid "Take fresh snapshot in AUTO sources on emulator pause"
 msgstr "Зробити свіжий знімок у AUTO джерелах при паузі емулятора"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:808
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:807
 msgid "Refresh A+B###mb_diff_refresh"
 msgstr "Оновити A+B###mb_diff_refresh"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:822
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:821
 msgid "Export...###mb_diff_export"
 msgstr "Експорт...###mb_diff_export"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:827
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:826
 msgid "Export diff as text file (addr: AA -> BB per line)"
 msgstr "Експортувати diff як текстовий файл (addr: AA -> BB на рядок)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:849
-#: src/ui-imgui/topmenu/menu_debugger.cpp:405
+#: src/ui-imgui/debugger/membrowser/membrowser_diff_window.cpp:848
+#: src/ui-imgui/topmenu/menu_debugger.cpp:423
 msgid "Memory Diff"
 msgstr "Diff пам'яті"
 
@@ -4853,7 +4984,7 @@ msgid "Save failed (I/O error)"
 msgstr "Помилка збереження (помилка вводу/виводу)"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:331
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:277
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:281
 msgid "Region is read-only"
 msgstr "Регіон лише для читання"
 
@@ -4904,7 +5035,7 @@ msgid "Size (hex)###mb_save_size"
 msgstr "Розмір (hex)###mb_save_size"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_fileio.cpp:473
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1873
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1833
 #: src/ui-imgui/debugger/sections/dbg_profiler_pc.cpp:307
 msgid "Range:"
 msgstr "Діапазон:"
@@ -5112,69 +5243,75 @@ msgstr "Помилка повтору: бекенд повернув помил�
 msgid "Redo: applied"
 msgstr "Повтор: застосовано"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:985
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:987
 msgid "Memext bank"
 msgstr "Банк Memext"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:987
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:989
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:117
 msgid "RAM"
 msgstr "RAM"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1409
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1411
 msgid "Backend not ready"
 msgstr "Бекенд не готовий"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1415
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1417
 msgid "Region empty or disconnected"
 msgstr "Регіон порожній або відключений"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1568
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1570
 msgid "Add bookmark for current cursor"
 msgstr "Додати закладку для поточного курсора"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1579
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1581
 msgid "Show in Memory Map"
 msgstr "Показати у карті пам'яті"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1601
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1603
 msgid "Unfreeze byte at cursor"
 msgstr "Розморозити байт під курсором"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1608
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1610
 #, c-format
 msgid "Freeze byte at cursor (= 0x%02X)"
 msgstr "Заморозити байт під курсором (= 0x%02X)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1626
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1628
 msgid "Insert character..."
 msgstr "Вставити символ..."
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1636
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1638
 msgid "Open in PCG editor..."
 msgstr "Відкрити у редакторі PCG..."
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1650
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1652
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:444
+msgid "Who wrote this byte?"
+msgstr "Хто записав цей байт?"
+
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1663
 msgid "Edit annotation at cursor..."
 msgstr "Редагувати анотацію під курсором..."
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1651
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1664
 msgid "Add annotation at cursor..."
 msgstr "Додати анотацію під курсором..."
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1658
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1671
 msgid "Delete annotation at cursor"
 msgstr "Видалити анотацію під курсором"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1674
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1687
 msgid "Fill at cursor..."
 msgstr "Заповнити під курсором..."
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1685
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1698
 #, c-format
 msgid "Undo  (%d levels)\tCtrl+Z"
 msgstr "Скасувати  (%d рівнів)\tCtrl+Z"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1687
+#: src/ui-imgui/debugger/membrowser/membrowser_hexview.cpp:1700
 #, c-format
 msgid "Redo  (%d levels)\tCtrl+Y"
 msgstr "Повторити  (%d рівнів)\tCtrl+Y"
@@ -5197,7 +5334,7 @@ msgstr ""
 "ASCII"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_char_inserter.cpp:284
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:333
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:337
 msgid "Region:"
 msgstr "Регіон:"
 
@@ -5367,7 +5504,7 @@ msgstr "Δ знімка"
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:148
 #: src/ui-imgui/maxspeed_bench_window.cpp:156
 #: src/ui-imgui/plotter/plotter_window.cpp:414
-#: src/ui-imgui/topmenu/topmenu.cpp:41
+#: src/ui-imgui/topmenu/topmenu.cpp:53
 msgid "Reset"
 msgstr "Скинути"
 
@@ -5377,7 +5514,7 @@ msgstr "Заморожені байти"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_layers.cpp:499
 #: src/ui-imgui/topmenu/menu_debugger.cpp:161
-#: src/ui-imgui/topmenu/menu_debugger.cpp:485
+#: src/ui-imgui/topmenu/menu_debugger.cpp:503
 msgid "Symbols"
 msgstr "Символи"
 
@@ -5430,6 +5567,7 @@ msgid "Rotate 90 CW"
 msgstr "Поворот 90 за год.стрілкою"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_pcg.cpp:250
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:428
 #: src/ui-imgui/debugger/sections/dbg_stack_panel.cpp:2538
 msgid "Clear"
 msgstr "Очистити"
@@ -5577,6 +5715,8 @@ msgid "Monitor ROM"
 msgstr "Monitor ROM"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_regions.cpp:549
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:563
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:118
 msgid "VRAM"
 msgstr "VRAM"
 
@@ -5593,6 +5733,7 @@ msgid "Plane IV (8 KB) [exVRAM]"
 msgstr "Площина IV (8 КБ) [exVRAM]"
 
 #: src/ui-imgui/debugger/membrowser/membrowser_regions.cpp:556
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:119
 msgid "PCG"
 msgstr "PCG"
 
@@ -5620,450 +5761,451 @@ msgstr "Банк 0xFF (64 КБ)"
 msgid "Ramdisk STD"
 msgstr "Ramdisk STD"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:212
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:216
 msgid "Load BIN###mb_load_bin"
 msgstr "Завантажити BIN###mb_load_bin"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:216
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:220
 msgid "Load .bin file into current region"
 msgstr "Завантажити файл .bin у поточний регіон"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:224
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:228
 msgid "Save BIN###mb_save_bin"
 msgstr "Зберегти BIN###mb_save_bin"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:229
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:233
 msgid "Save current region content into .bin file"
 msgstr "Зберегти вміст поточного регіону у файл .bin"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:249
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:253
 msgid "Edit: ON###mb_edit_toggle"
 msgstr "Редаг.: УВІМК###mb_edit_toggle"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:250
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:254
 msgid "Edit: OFF###mb_edit_toggle"
 msgstr "Редаг.: ВИМК###mb_edit_toggle"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:278
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:282
 msgid "Toggle edit mode (off by default for safety, F2 shortcut)"
 msgstr "Перемкнути режим редагування (вимкнено за замовч. для безпеки, F2)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:289
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:293
 msgid "Clear edited###mb_edit_clear"
 msgstr "Очистити редаговані###mb_edit_clear"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:294
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:298
 #, c-format
 msgid "Clear recently-edited byte highlights (%d)"
 msgstr "Очистити підсвітку нещодавно редагованих байтів (%d)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:417
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:421
 msgid "Select memory region category"
 msgstr "Обрати категорію регіону пам'яті"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:464
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:468
 msgid "Memext memory type"
 msgstr "Тип пам'яті Memext"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:469
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:505
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:550
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:473
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:509
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:554
 msgid "Bank:"
 msgstr "Банк:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:498
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:502
 msgid "Memext bank index"
 msgstr "Індекс банку Memext"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:534
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:538
 msgid "Ramdisk STD bank index"
 msgstr "Індекс банку Ramdisk STD"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:582
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:586
 msgid "Ramdisk PEZIK port 0xE8 bank index"
 msgstr "Індекс банку Ramdisk PEZIK порт 0xE8"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:583
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:587
 msgid "Ramdisk PEZIK port 0x68 bank index"
 msgstr "Індекс банку Ramdisk PEZIK порт 0x68"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:605
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:609
 msgid "Encoding:"
 msgstr "Кодування:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:628
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:632
 msgid "ASCII column encoding"
 msgstr "Кодування колонки ASCII"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:636
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:640
 msgid "Bytes/row:"
 msgstr "Байтів/рядок:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:660
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:664
 msgid "Bytes per row (8/16/32)"
 msgstr "Байтів на рядок (8/16/32)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:668
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:672
 msgid "ASCII###mb_ascii_toggle"
 msgstr "ASCII###mb_ascii_toggle"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:673
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:677
 msgid "Show or hide ASCII decoded column"
 msgstr "Показати або сховати декодовану ASCII колонку"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:683
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:687
 msgid "PC###mb_pc_marker"
 msgstr "PC###mb_pc_marker"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:687
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:691
 msgid "Highlight row containing Z80 PC"
 msgstr "Підсвітити рядок, що містить Z80 PC"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:690
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:694
 msgid "SP###mb_sp_marker"
 msgstr "SP###mb_sp_marker"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:694
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:698
 msgid "Highlight row containing Z80 SP"
 msgstr "Підсвітити рядок, що містить Z80 SP"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:699
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:703
 msgid "Origin###mb_origin_labels"
 msgstr "Джерело###mb_origin_labels"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:705
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:709
 msgid "Show per-row physical origin label (banking-aware)"
 msgstr "Показати мітку фізичного джерела на рядок (з урахуванням банкінгу)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:724
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:728
 msgid "HEX:"
 msgstr "HEX:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:739
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:743
 msgid "Hex address (Enter or Goto)"
 msgstr "Hex адреса (Enter або Перейти)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:745
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:749
 msgid "DEC:"
 msgstr "DEC:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:764
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:768
 msgid "Decimal address (Enter or Goto)"
 msgstr "Десяткова адреса (Enter або Перейти)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:770
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:774
 msgid "Goto###mb_goto_btn"
 msgstr "Перейти###mb_goto_btn"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:789
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:793
 msgid "Search###mb_search_btn"
 msgstr "Пошук###mb_search_btn"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:793
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:797
 msgid "Toggle search panel"
 msgstr "Перемкнути панель пошуку"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:825
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:829
 msgid "R/W"
 msgstr "R/W"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:825
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:829
 msgid "R/O"
 msgstr "R/O"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:826
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:830
 msgid "mapped"
 msgstr "відображено"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:826
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:830
 msgid "not mapped"
 msgstr "не відображено"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:828
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:832
 #, c-format
 msgid "Size: %u B | %s | %s | Z80 base 0x%04X"
 msgstr "Розмір: %u Б | %s | %s | Z80 база 0x%04X"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:832
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:836
 #, c-format
 msgid "Size: %u B | %s | %s"
 msgstr "Розмір: %u Б | %s | %s"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:837
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:841
 msgid "Region disconnected - falling back to Logical"
 msgstr "Регіон відключено - повернення до логічного"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:875
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:929
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:879
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:933
 msgid "[PROHIBITED]"
 msgstr "[ЗАБОРОНЕНО]"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:878
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:882
 msgid ""
 "Prohibited mode active (OUT E5) - 0xE000-0xFFFF reads return shadow 0x1A"
 msgstr ""
 "Активний заборонений режим (OUT E5) - читання 0xE000-0xFFFF повертає тінь "
 "0x1A"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:885
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:889
 msgid "[SCRW640]"
 msgstr "[SCRW640]"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:888
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:892
 msgid ""
 "640px wide screen mode active (DMD bit 2) - VRAM II mapped to 0xA000-0xBFFF"
 msgstr ""
 "Активний 640px широкоекранний режим (DMD біт 2) - VRAM II відображено на "
 "0xA000-0xBFFF"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:895
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:899
 msgid "[HICOLOR]"
 msgstr "[HICOLOR]"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:898
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:902
 msgid "16-color mode active (DMD bit 1) - 4-plane VRAM addressing"
 msgstr "Активний 16-кольоровий режим (DMD біт 1) - 4-площинна адресація VRAM"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:905
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:909
 msgid "[VBANK]"
 msgstr "[VBANK]"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:908
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:912
 msgid "Display bank toggled (DMD bit 5)"
 msgstr "Банк дисплея перемкнено (DMD біт 5)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:915
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:919
 msgid "MZ-700 mode"
 msgstr "Режим MZ-700"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:915
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:919
 msgid "MZ-800 mode"
 msgstr "Режим MZ-800"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:917
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:921
 #, c-format
 msgid "DMD: %s (0x%02X)"
 msgstr "DMD: %s (0x%02X)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:921
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:925
 msgid "Display Mode Descriptor - GDG register, bit 3 = MZ-700 compat mode"
 msgstr "Display Mode Descriptor - регістр GDG, біт 3 = режим сумісності MZ-700"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:932
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:936
 msgid ""
 "Prohibited mode active (OUT E5) - 0xE000-0xFFFF reads return shadow 0xFF"
 msgstr ""
 "Активний заборонений режим (OUT E5) - читання 0xE000-0xFFFF повертає тінь "
 "0xFF"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:964
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:968
 msgid " (current encoding affected)"
 msgstr " (вплинуло на поточне кодування)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:967
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:971
 #, c-format
 msgid "KOI8-CS table not loaded - showing identity mapping%s"
 msgstr "Таблиця KOI8-CS не завантажена - показано тотожне відображення%s"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1011
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1015
 msgid "<##mb_page_prev"
 msgstr "<##mb_page_prev"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1021
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1025
 msgid "Previous page (PgUp)"
 msgstr "Попередня сторінка (PgUp)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1028
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1032
 msgid ">##mb_page_next"
 msgstr ">##mb_page_next"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1038
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1042
 msgid "Next page (PgDn)"
 msgstr "Наступна сторінка (PgDn)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1043
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1047
 #, c-format
 msgid "Page: %llu of: %llu"
 msgstr "Сторінка: %llu з: %llu"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1066
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1070
 msgid "Bytes (HEX + ASCII)"
 msgstr "Байти (HEX + ASCII)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1067
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1071
 msgid "Byte sequence (hex, legacy)"
 msgstr "Послідовність байтів (hex, застаріле)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1068
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1072
 msgid "ASCII (current encoding, legacy)"
 msgstr "ASCII (поточне кодування, застаріле)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1069
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1073
 msgid "Word LE (16-bit)"
 msgstr "Слово LE (16-біт)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1070
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1074
 msgid "Word BE (16-bit)"
 msgstr "Слово BE (16-біт)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1071
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1075
 msgid "Masked (AA ?? BB)"
 msgstr "Маскований (AA ?? BB)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1072
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1076
 msgid "Regex (POSIX ERE)"
 msgstr "Regex (POSIX ERE)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1073
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1077
 msgid "Expression (per byte)"
 msgstr "Вираз (на байт)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1085
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1089
 msgid "Current region"
 msgstr "Поточний регіон"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1086
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1090
 msgid "All regions (current arch)"
 msgstr "Усі регіони (поточна арх.)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1127
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1131
 msgid "Results###mb_search_results_hdr"
 msgstr "Результати###mb_search_results_hdr"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1132
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1136
 #, c-format
 msgid "Hits: %d"
 msgstr "Збігів: %d"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1134
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1138
 msgid "Clear###mb_search_results_clear"
 msgstr "Очистити###mb_search_results_clear"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1151
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1155
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:483
 msgid "Region"
 msgstr "Регіон"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1152
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1156
 msgid "Preview (hex)"
 msgstr "Перегляд (hex)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1321
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1325
 #: src/ui-imgui/debugger/symbols/sym_window.cpp:608
 msgid "Search:"
 msgstr "Шукати:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1366
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1370
 msgid "HEX bytes: AA BB CC (spaces optional)"
 msgstr "HEX байти: AA BB CC (пробіли необов'язкові)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1392
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1396
 msgid ""
 "ASCII view (current encoding). Type to update HEX. Use [+] for special chars."
 msgstr ""
 "Перегляд ASCII (поточне кодування). Введіть для оновлення HEX. "
 "Використовуйте [+] для спецсимволів."
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1405
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1409
 msgid "[+]###mb_search_insert_char"
 msgstr "[+]###mb_search_insert_char"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1408
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1412
 msgid "Search pattern"
 msgstr "Шаблон пошуку"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1412
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1416
 msgid "Insert special character via Char Inserter (palette of MZ/KOI8 glyphs)"
 msgstr "Вставити спецсимвол через Char Inserter (палітра гліфів MZ/KOI8)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1430
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1434
 msgid "H###mb_search_hist_btn"
 msgstr "H###mb_search_hist_btn"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1434
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1438
 msgid "Recent patterns"
 msgstr "Останні шаблони"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1456
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1460
 msgid "Find Next###mb_search_next"
 msgstr "Знайти далі###mb_search_next"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1458
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1462
 msgid "Prev###mb_search_prev"
 msgstr "Попередній###mb_search_prev"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1460
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1464
 msgid "All###mb_search_all"
 msgstr "Усі###mb_search_all"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1466
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1470
 msgid "Cancel###mb_search_cancel"
 msgstr "Скасувати###mb_search_cancel"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1471
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1475
 msgid "Close###mb_search_close"
 msgstr "Закрити###mb_search_close"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1476
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1480
 msgid "Scope:"
 msgstr "Область:"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1491
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1495
 msgid "Case sens.###mb_search_case"
 msgstr "Регістр###mb_search_case"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1511
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1515
 #, c-format
 msgid "Error: %s"
 msgstr "Помилка: %s"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1513
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1517
 msgid "Canceled"
 msgstr "Скасовано"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1515
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1519
 #, c-format
 msgid "Match @ 0x%08X"
 msgstr "Збіг @ 0x%08X"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1565
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1569
 #, c-format
 msgid "Cursor: 0x%08X = 0x%02X '%s' (%s)"
 msgstr "Курсор: 0x%08X = 0x%02X '%s' (%s)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1571
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1575
 #, c-format
 msgid "Cursor: 0x%08X (no data)"
 msgstr "Курсор: 0x%08X (немає даних)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1582
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1586
 msgid "ASCII"
 msgstr "ASCII"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1582
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1586
 msgid "HEX"
 msgstr "HEX"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1584
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1588
 #, c-format
 msgid "Mode: %s (Tab to switch)"
 msgstr "Режим: %s (Tab для перемикання)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1618
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1622
 msgid "Edit error"
 msgstr "Помилка редагування"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1664
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1668
 #, c-format
 msgid "PEZIK port %s bank %d | byte order: native (TODO BE/LE toggle V3+)"
 msgstr ""
 "PEZIK порт %s банк %d | порядок байтів: native (TODO BE/LE перемикання V3+)"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1682
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:1686
 #, c-format
 msgid "Annotation: %s"
 msgstr "Анотація: %s"
 
-#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:2245
+#: src/ui-imgui/debugger/membrowser/membrowser_window.cpp:2249
 msgid "No region available"
 msgstr "Немає доступного регіону"
 
@@ -6196,10 +6338,449 @@ msgstr "Клік: розгорнути до нормального режимu"
 msgid "Click: collapse to compact mode"
 msgstr "Клік: згорнути до компактного режимu"
 
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:167
+msgid "Not enough memory for the sample."
+msgstr "Недостатньо пам'яті для зразка."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:190
+msgid "This memory space is not present in the current configuration."
+msgstr "Цього простору пам'яті немає в поточній конфігурації."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:205
+#, c-format
+msgid ""
+"The space has %.1f MiB, more than 4 MiB. Enable \"Allow large space\" to "
+"search it."
+msgstr ""
+"Простір має %.1f MiB, більше ніж 4 MiB. Щоб шукати в ньому, увімкніть "
+"\"Дозволити великий простір\"."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:209
+msgid "Cannot start the search:"
+msgstr "Не вдається почати пошук:"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:277
+#, c-format
+msgid "Removed %llu candidates."
+msgstr "Вилучено кандидатів: %llu."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:321
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:563
+msgid "User RAM"
+msgstr "Користувацька RAM"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:322
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:563
+msgid "Logical Z80"
+msgstr "Логічний Z80"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:323
+msgid "VRAM 700 char"
+msgstr "VRAM 700 символи"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:324
+msgid "VRAM 700 attr"
+msgstr "VRAM 700 атрибути"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:325
+#, c-format
+msgid "VRAM plane %d"
+msgstr "Площина VRAM %d"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:326
+msgid "CG-RAM"
+msgstr "CG-RAM"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:327
+#, c-format
+msgid "PCG %d"
+msgstr "PCG %d"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:328
+#, c-format
+msgid "MemExt %02X"
+msgstr "MemExt %02X"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:329
+#, c-format
+msgid "RAM disk %02X"
+msgstr "RAM-диск %02X"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:330
+#, c-format
+msgid "PEZIK %d/%d"
+msgstr "PEZIK %d/%d"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:396
+#, c-format
+msgid "Write breakpoint %d created."
+msgstr "Точку зупинки на запис %d створено."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:399
+msgid "The breakpoint could not be created."
+msgstr "Не вдалося створити точку зупинки."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:411
+msgid "Show in Memory Browser"
+msgstr "Показати в оглядачі пам'яті"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:414
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1418
+msgid "Add to Watch"
+msgstr "Додати до Watch"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:426
+msgid "Watch needs a CPU address; this cell is not mapped to the CPU now."
+msgstr "Watch потребує адресу CPU; ця комірка зараз не відображена в CPU."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:428
+msgid "Add write breakpoint"
+msgstr "Додати точку зупинки на запис"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:432
+msgid ""
+"A write breakpoint cannot match this cell (VRAM plane, CG-RAM, PCG, RAM disk "
+"or an unmapped MemExt bank)."
+msgstr ""
+"Точка зупинки на запис не перехопить цю комірку (площина VRAM, CG-RAM, PCG, "
+"RAM-диск або невідображений банк MemExt)."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:434
+msgid "Freeze at current value"
+msgstr "Заморозити на поточному значенні"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:439
+msgid "Freeze failed (the table holds at most 256 bytes)."
+msgstr "Заморожування не вдалося (таблиця вміщує щонайбільше 256 байтів)."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:442
+msgid ""
+"The value is written back once per frame: the program sees its own change "
+"until the end of the frame."
+msgstr ""
+"Значення записується назад раз за кадр: програма бачить власну зміну до "
+"кінця кадру."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:447
+msgid "Copy address"
+msgstr "Копіювати адресу"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:454
+msgid "Eliminate"
+msgstr "Вилучити"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:465
+msgid "No candidates left. Undo the last step or start a new search."
+msgstr ""
+"Кандидатів не залишилося. Скасуйте останній крок або почніть новий пошук."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:469
+#, c-format
+msgid ""
+"%llu candidates - the list is shown below %d. Change the value in the "
+"program and filter again."
+msgstr ""
+"Кандидатів: %llu - список показується, коли їх менше ніж %d. Змініть "
+"значення в програмі та відфільтруйте знову."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:484
+msgid "Offset"
+msgstr "Зміщення"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:485
+msgid "Z80"
+msgstr "Z80"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:487
+#: src/ui-imgui/topmenu/replay_window.cpp:344
+msgid "Current"
+msgstr "Поточне"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:488
+msgid "Previous"
+msgstr "Попереднє"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:489
+msgid "First"
+msgstr "Перше"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:527
+msgid ""
+"The region was disconnected at the last sample; its candidates are kept "
+"unchanged."
+msgstr ""
+"Регіон був відключений під час останнього зразка; його кандидати залишаються "
+"без змін."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:538
+msgid "disconnected"
+msgstr "відключено"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:563
+msgid "MemExt banks"
+msgstr "Банки MemExt"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:563
+msgid "RAM disks"
+msgstr "RAM-диски"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:563
+msgid "All writable"
+msgstr "Усе записуване"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:567
+msgid "Space"
+msgstr "Простір"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:569
+msgid ""
+"User RAM: 64 KB as the CPU reads RAM (with a MemExt the banks mapped at "
+"sample time - search the MemExt banks if the program switches them). Logical "
+"Z80: what the CPU sees now, including ROM, VRAM and the 0E000h ports (values "
+"from the last update)."
+msgstr ""
+"Користувацька RAM: 64 KB так, як CPU читає RAM (з MemExt - банки, "
+"відображені в момент зразка; якщо програма їх перемикає, шукайте в банках "
+"MemExt). Логічний Z80: те, що CPU бачить зараз, включно з ROM, VRAM і "
+"портами 0E000h (значення з останнього оновлення)."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:597
+msgid "LE (Z80)"
+msgstr "LE (Z80)"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:597
+msgid "BE"
+msgstr "BE"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:600
+msgid "Byte order"
+msgstr "Порядок байтів"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:602
+msgid "Digits: BE = the highest digit first (print order)."
+msgstr "Цифри: BE = старша цифра перша (порядок друку)."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:606
+msgid "Aligned"
+msgstr "Вирівняні"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:609
+msgid "Raw 00h-09h"
+msgstr "Сирі 00h-09h"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:609
+msgid "ASCII 30h-39h"
+msgstr "ASCII 30h-39h"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:609
+msgid "Display code 20h-29h"
+msgstr "Код дисплея 20h-29h"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:612
+msgid "Digits"
+msgstr "Цифри"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:615
+msgid "Leading spaces as zeros"
+msgstr "Пробіли зліва як нулі"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:617
+msgid "Space is 20h in ASCII and 00h in the display code."
+msgstr "Пробіл - це 20h в ASCII і 00h у коді дисплея."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:622
+msgid "Allow large space"
+msgstr "Дозволити великий простір"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:624
+msgid ""
+"Allow a space over 4 MiB (up to 32 MiB, e.g. a 16 MB RAM disk). The search "
+"keeps three samples plus the undo history in memory."
+msgstr ""
+"Дозволяє простір понад 4 MiB (до 32 MiB, наприклад RAM-диск 16 MB). Пошук "
+"тримає в пам'яті три зразки та історію скасування."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:632
+msgid "New search"
+msgstr "Новий пошук"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:634
+msgid ""
+"Take a sample of the space; every position is a candidate. While the "
+"emulation runs, the sample is taken at the next frame."
+msgstr ""
+"Бере зразок простору; кожна позиція - кандидат. Під час емуляції зразок "
+"береться на наступному кадрі."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:640
+msgid "Sample"
+msgstr "Зразок"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:642
+msgid "New sample without filtering; filter then with \"Take new sample\" off."
+msgstr ""
+"Новий зразок без фільтрації; потім фільтруйте з вимкненим \"Взяти новий "
+"зразок\"."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:648
+msgid "Undo"
+msgstr "Скасувати"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:653
+msgid "Redo"
+msgstr "Повторити"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:657
+#, c-format
+msgid "Candidates: %llu  (step %u, sample at frame %llu)"
+msgstr "Кандидати: %llu  (крок %u, зразок з кадру %llu)"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:661
+msgid "No search - choose the space and press New search."
+msgstr "Пошуку немає - виберіть простір і натисніть Новий пошук."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:669
+msgid "equal to"
+msgstr "дорівнює"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:669
+msgid "not equal to"
+msgstr "не дорівнює"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:669
+msgid "less than"
+msgstr "менше ніж"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:669
+msgid "less or equal"
+msgstr "менше або дорівнює"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:669
+msgid "greater than"
+msgstr "більше ніж"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:670
+msgid "greater or equal"
+msgstr "більше або дорівнює"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:670
+msgid "between"
+msgstr "між"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:670
+msgid "increased"
+msgstr "збільшилось"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:670
+msgid "decreased"
+msgstr "зменшилось"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:670
+msgid "increased by"
+msgstr "збільшилось на"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:671
+msgid "decreased by"
+msgstr "зменшилось на"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:671
+#: src/ui-imgui/debugger/watch/watch_window.cpp:830
+msgid "changed"
+msgstr "змінено"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:671
+msgid "unchanged"
+msgstr "не змінилось"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:671
+msgid "changed by"
+msgstr "змінилось на"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:671
+msgid "bits under mask equal"
+msgstr "біти під маскою рівні"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:673
+msgid "value"
+msgstr "значенням"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:673
+msgid "previous"
+msgstr "попереднім"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:673
+msgid "first"
+msgstr "першим"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:677
+msgid "Filter"
+msgstr "Фільтр"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:697
+msgid "compared with"
+msgstr "порівняно з"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:701
+msgid "Difference"
+msgstr "Різниця"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:706
+msgid "and"
+msgstr "і"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:711
+msgid "Mask"
+msgstr "Маска"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:715
+msgid "Not"
+msgstr "Не"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:717
+msgid "Take new sample"
+msgstr "Взяти новий зразок"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:719
+msgid ""
+"On: sample first and compare it with the previous sample. Off: compare the "
+"last sample with the one before it."
+msgstr ""
+"Увімкнено: спершу зразок, порівняний з попереднім зразком. Вимкнено: "
+"порівняти останній зразок з тим, що перед ним."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:723
+msgid "Apply filter"
+msgstr "Застосувати фільтр"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:725
+msgid "Preview"
+msgstr "Попередній перегляд"
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:727
+msgid ""
+"Mark the candidates the filter would remove, using the last sample (no new "
+"sample)."
+msgstr ""
+"Позначає кандидатів, яких фільтр вилучив би, за останнім зразком (без нового "
+"зразка)."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:731
+msgid ""
+"Arithmetic without wrap-around: an u8 going 00h -> FFh is not \"decreased by "
+"1\"."
+msgstr ""
+"Арифметика без переповнення: u8 з 00h на FFh - це не \"зменшилось на 1\"."
+
+#: src/ui-imgui/debugger/memsearch_window/memsearch_window.cpp:739
+msgid "Memory Search###memsearch_window"
+msgstr "Пошук у пам'яті###memsearch_window"
+
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:110
 #: src/ui-imgui/memext/memext_load_dialog.cpp:107
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:101
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:99
 #: src/ui-imgui/topmenu/devices/menu_qdisk.cpp:259
+#: src/ui-imgui/topmenu/replay_window.cpp:223
+#: src/ui-imgui/topmenu/replay_window.cpp:229
 msgid "File"
 msgstr "Файл"
 
@@ -6220,7 +6801,7 @@ msgid "Max Speed"
 msgstr "Максимальна швидкість"
 
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:160
-#: src/ui-imgui/topmenu/topmenu.cpp:36
+#: src/ui-imgui/topmenu/topmenu.cpp:48
 msgid "Pause Emulation"
 msgstr "Призупинити емуляцію"
 
@@ -6255,14 +6836,6 @@ msgstr ""
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:286
 msgid "Select trace output directory"
 msgstr "Виберіть вихідний каталог trace"
-
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:306
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:348
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:391
-#: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:488
-#: src/ui-imgui/videorec/videorec_menu.cpp:96
-msgid "Off"
-msgstr "Vypnuto"
 
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:308
 #: src/ui-imgui/debugger/menu/dbg_topmenu.cpp:354
@@ -6825,247 +7398,247 @@ msgstr "Функції###profiler_tab_func"
 msgid "Per PC###profiler_tab_pc"
 msgstr "За PC###profiler_tab_pc"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1173
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1328
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1159
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1314
 msgid "no data"
 msgstr "немає даних"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1182
-#: src/ui-imgui/debugger/psg_window.cpp:261
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1168
+#: src/ui-imgui/debugger/psg_window.cpp:263
 msgid "silent"
 msgstr "тиша"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1200
-#: src/ui-imgui/debugger/psg_window.cpp:280
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1186
+#: src/ui-imgui/debugger/psg_window.cpp:282
 msgid "DC"
 msgstr "DC"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1449
-#: src/ui-imgui/debugger/psg_window.cpp:72
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1435
+#: src/ui-imgui/debugger/psg_window.cpp:73
 msgid "TONE"
 msgstr "ТОН"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1451
-#: src/ui-imgui/debugger/psg_window.cpp:73
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1437
+#: src/ui-imgui/debugger/psg_window.cpp:74
 msgid "NOISE"
 msgstr "ШУМ"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1455
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1812
-#: src/ui-imgui/debugger/psg_window.cpp:592
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1441
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1772
+#: src/ui-imgui/debugger/psg_window.cpp:594
 msgid "Channel"
 msgstr "Канал"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1813
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1773
 msgid "chip"
 msgstr "чіп"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1816
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1776
 msgid "Pitch: Noise"
 msgstr "Висота: шум"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1821
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1781
 msgid "Pitch"
 msgstr "Висота"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1822
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1782
 msgid "cents"
 msgstr "центів"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1824
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1784
 msgid "Duration"
 msgstr "Тривалість"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1825
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1785
 msgid "Velocity"
 msgstr "Швидкість"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1838
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1798
 msgid "Volume changes"
 msgstr "Зміни гучності"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1842
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1802
 msgid "overflowed"
 msgstr "переповнено"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1846
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3218
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1806
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3178
 msgid "active"
 msgstr "активно"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1875
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1835
 msgid "Last 10s###PSGScopeRoll10s"
 msgstr "Останні 10с###PSGScopeRoll10s"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1878
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1838
 msgid "Last 30s###PSGScopeRoll30s"
 msgstr "Останні 30с###PSGScopeRoll30s"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1881
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1841
 msgid "All###PSGScopeRollAll"
 msgstr "Все###PSGScopeRollAll"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1885
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1845
 msgid "Channels:"
 msgstr "Канали:"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1897
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1857
 msgid "CH3 (Noise)"
 msgstr "CH3 (шум)"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1963
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:1923
 msgid "No notes recorded yet. Play some audio to populate the piano roll."
 msgstr "Ще не записано жодних нот. Відтворіть аудіо для заповнення піанорола."
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:2040
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:2000
 msgid "NS"
 msgstr "NS"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:2980
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:2940
 msgid "Export PSG notes as CSV"
 msgstr "Експортувати ноти PSG як CSV"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3008
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:2968
 msgid "Export PSG notes as MIDI"
 msgstr "Експортувати ноти PSG як MIDI"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3090
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3050
 msgid "Export error###PSGScopeExportError"
 msgstr "Помилка експорту###PSGScopeExportError"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3093
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3053
 msgid "Failed to open file for writing"
 msgstr "Не вдалося відкрити файл для запису"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3097
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3057
 msgid "OK###PSGScopeExportErrorOK"
 msgstr "OK###PSGScopeExportErrorOK"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3127
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3087
 msgid "Export MIDI...###PSGScopeExportMidiBtn"
 msgstr "Експорт MIDI...###PSGScopeExportMidiBtn"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3134
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3146
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3094
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3106
 msgid "No notes recorded yet"
 msgstr "Ще не записано жодних нот"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3139
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3099
 msgid "Export CSV...###PSGScopeExportCsvBtn"
 msgstr "Експорт CSV...###PSGScopeExportCsvBtn"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3157
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3117
 msgid "Tempo BPM###PSGScopeTempoBpm"
 msgstr "Темп BPM###PSGScopeTempoBpm"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3168
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3128
 msgid "Clear###PSGScopeClearBtn"
 msgstr "Очистити###PSGScopeClearBtn"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3175
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3135
 msgid "Reset scope sample buffer and recorded notes"
 msgstr "Скинути буфер семплів осцилоскопа та записані ноти"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3206
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3166
 msgid "Notes"
 msgstr "Ноти"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3228
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3188
 msgid "Log samples###PSGScopeLogSamples"
 msgstr "Журнал семплів###PSGScopeLogSamples"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3237
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3197
 msgid "Write per-frame sample log to TSV file"
 msgstr "Записати журнал семплів на кадр у TSV файл"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3242
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3202
 msgid "Log events###PSGScopeLogEvents"
 msgstr "Журнал подій###PSGScopeLogEvents"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3251
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3211
 msgid "Write state machine event log to TSV file"
 msgstr "Записати журнал подій кінцевого автомата у TSV файл"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3262
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3222
 msgid "Log writes###PSGScopeLogWrites"
 msgstr "Журнал записів###PSGScopeLogWrites"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3297
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3257
 msgid "Log every PSG register write to file (1:1 reconstruction)"
 msgstr "Записувати кожен запис у регістр PSG у файл (реконструкція 1:1)"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3326
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3286
 msgid "PSG Audio Scope###PSGAudioScope"
 msgstr "Аудіо осцилоскоп PSG###PSGAudioScope"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3397
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3357
 msgid "PSG Left (chip 0)###PSGScopeLeftHdr"
 msgstr "PSG Лівий (чіп 0)###PSGScopeLeftHdr"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3403
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3363
 msgid "PSG Right (chip 1)###PSGScopeRightHdr"
 msgstr "PSG Правий (чіп 1)###PSGScopeRightHdr"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3412
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3372
 msgid "PSG (chip 0)###PSGScopeMonoHdr"
 msgstr "PSG (чіп 0)###PSGScopeMonoHdr"
 
-#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3420
+#: src/ui-imgui/debugger/psg_audio_scope_window.cpp:3380
 msgid "Piano roll###PSGScopePianoRollHdr"
 msgstr "Піанорол###PSGScopePianoRollHdr"
 
-#: src/ui-imgui/debugger/psg_window.cpp:82
+#: src/ui-imgui/debugger/psg_window.cpp:83
 msgid "DIV /16 (fast)"
 msgstr "DIV /16 (швидко)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:83
+#: src/ui-imgui/debugger/psg_window.cpp:84
 msgid "DIV /32 (mid)"
 msgstr "DIV /32 (середньо)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:84
+#: src/ui-imgui/debugger/psg_window.cpp:85
 msgid "DIV /64 (slow)"
 msgstr "DIV /64 (повільно)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:85
+#: src/ui-imgui/debugger/psg_window.cpp:86
 msgid "DIV from CH2 tone"
 msgstr "DIV з тону CH2"
 
-#: src/ui-imgui/debugger/psg_window.cpp:92
+#: src/ui-imgui/debugger/psg_window.cpp:93
 msgid "PERIODIC"
 msgstr "ПЕРІОДИЧНИЙ"
 
-#: src/ui-imgui/debugger/psg_window.cpp:93
+#: src/ui-imgui/debugger/psg_window.cpp:94
 msgid "WHITE"
 msgstr "БІЛИЙ"
 
-#: src/ui-imgui/debugger/psg_window.cpp:116
+#: src/ui-imgui/debugger/psg_window.cpp:117
 msgid "0 dB (max)"
 msgstr "0 дБ (макс)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:118
+#: src/ui-imgui/debugger/psg_window.cpp:119
 msgid "silent (off)"
 msgstr "тиша (вимк)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:362
-#: src/ui-imgui/debugger/psg_window.cpp:412
-#: src/ui-imgui/debugger/psg_window.cpp:458
-#: src/ui-imgui/debugger/psg_window.cpp:536
+#: src/ui-imgui/debugger/psg_window.cpp:364
+#: src/ui-imgui/debugger/psg_window.cpp:414
+#: src/ui-imgui/debugger/psg_window.cpp:460
+#: src/ui-imgui/debugger/psg_window.cpp:538
 msgid "Bin/Note"
 msgstr "Bin/нота"
 
-#: src/ui-imgui/debugger/psg_window.cpp:368
+#: src/ui-imgui/debugger/psg_window.cpp:370
 msgid "Latched channel (CS)"
 msgstr "Зафiксований канал (CS)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:369
+#: src/ui-imgui/debugger/psg_window.cpp:371
 msgid "Index kanalu (0..3) ktery prijme dalsi DATA byte."
 msgstr "Iндекс каналу (0..3) який отримає наступний DATA байт."
 
-#: src/ui-imgui/debugger/psg_window.cpp:374
+#: src/ui-imgui/debugger/psg_window.cpp:376
 msgid "Next DATA byte targets"
 msgstr "Цiль наступного DATA байту"
 
-#: src/ui-imgui/debugger/psg_window.cpp:377
+#: src/ui-imgui/debugger/psg_window.cpp:379
 msgid ""
 "Bit [4] posledniho LATCH bytu. 1 = attn, 0 = tone (TONE kanal) / noise cfg "
 "(CH3)."
@@ -7073,49 +7646,49 @@ msgstr ""
 "Bit [4] останнього LATCH байту. 1 = attn, 0 = tone (TONE канал) / noise cfg "
 "(CH3)."
 
-#: src/ui-imgui/debugger/psg_window.cpp:380
+#: src/ui-imgui/debugger/psg_window.cpp:382
 msgid "attenuation"
 msgstr "послаблення"
 
-#: src/ui-imgui/debugger/psg_window.cpp:382
+#: src/ui-imgui/debugger/psg_window.cpp:384
 msgid "tone / noise cfg"
 msgstr "tone / noise cfg"
 
-#: src/ui-imgui/debugger/psg_window.cpp:416
+#: src/ui-imgui/debugger/psg_window.cpp:418
 msgid "Channel type"
 msgstr "Тип каналу"
 
-#: src/ui-imgui/debugger/psg_window.cpp:418
+#: src/ui-imgui/debugger/psg_window.cpp:420
 msgid "CH0-2 vzdy TONE, CH3 vzdy NOISE (initializace v psg_instance_init)."
 msgstr ""
 "CH0-2 завжди TONE, CH3 завжди NOISE (ініціалізація в "
 "psg_instance_init).CH0-2 завжди TONE, CH3 завжди NOISE (iнiцiалiзацiя у "
 "psg_instance_init)."
 
-#: src/ui-imgui/debugger/psg_window.cpp:423
+#: src/ui-imgui/debugger/psg_window.cpp:425
 msgid "Attenuation"
 msgstr "Послаблення"
 
-#: src/ui-imgui/debugger/psg_window.cpp:426
+#: src/ui-imgui/debugger/psg_window.cpp:428
 msgid "4-bit volume: 0 = max (0 dB), krok -2 dB, 15 = silent (channel off)."
 msgstr ""
 "4-бітна гучність: 0 = макс (0 dB), крок -2 dB, 15 = тиша (канал off).4-bit "
 "гучнiсть: 0 = max (0 dB), крок -2 dB, 15 = silent (канал вимкнено)."
 
-#: src/ui-imgui/debugger/psg_window.cpp:464
+#: src/ui-imgui/debugger/psg_window.cpp:466
 msgid "Tone divider (10-bit)"
 msgstr "Дiльник тону (10-bit)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:467
+#: src/ui-imgui/debugger/psg_window.cpp:469
 msgid "10-bit value 0..1023. f_out = CPU_CLOCK / (32 * divider). <2 = DC."
 msgstr ""
 "10-бітне значення 0..1023. f_out = CPU_CLOCK / (32 * дільник). <2 = DC."
 
-#: src/ui-imgui/debugger/psg_window.cpp:476
+#: src/ui-imgui/debugger/psg_window.cpp:478
 msgid "Frequency"
 msgstr "Частота"
 
-#: src/ui-imgui/debugger/psg_window.cpp:479
+#: src/ui-imgui/debugger/psg_window.cpp:481
 msgid ""
 "CPU_CLOCK / (32 * divider). MZ-800: 3.5469 MHz, MZ-700/MZ-1500: 3.5796 MHz "
 "CPU clock."
@@ -7123,15 +7696,15 @@ msgstr ""
 "CPU_CLOCK / (32 * дільник). MZ-800: 3.5469 МГц, MZ-700/MZ-1500: 3.5796 МГц "
 "тактова частота CPU."
 
-#: src/ui-imgui/debugger/psg_window.cpp:482
+#: src/ui-imgui/debugger/psg_window.cpp:484
 msgid "DC (no oscillation)"
 msgstr "DC (без осциляції)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:496
+#: src/ui-imgui/debugger/psg_window.cpp:498
 msgid "MIDI note"
 msgstr "MIDI нота"
 
-#: src/ui-imgui/debugger/psg_window.cpp:499
+#: src/ui-imgui/debugger/psg_window.cpp:501
 msgid ""
 "12 * log2(f / 440) + 69. A4 = 440 Hz = 69. Cents = odchylka od rovnomerne "
 "temperace."
@@ -7139,37 +7712,37 @@ msgstr ""
 "12 * log2(f / 440) + 69. A4 = 440 Hz = 69. Cents = вiдхилення вiд "
 "рiвномiрної темперацiї."
 
-#: src/ui-imgui/debugger/psg_window.cpp:539
+#: src/ui-imgui/debugger/psg_window.cpp:541
 msgid "Noise divider type"
 msgstr "Тип дiльника шуму"
 
-#: src/ui-imgui/debugger/psg_window.cpp:542
+#: src/ui-imgui/debugger/psg_window.cpp:544
 msgid "0..2 = fixed PSG dividery 16/32/64, 3 = CH2 tone divider rizeny shift."
 msgstr ""
 "0..2 = фіксовані подільники PSG 16/32/64, 3 = зсув з керуванням від CH2 tone "
 "divider.0..2 = фiксованi PSG дiльники 16/32/64, 3 = CH2 tone divider "
 "керований shift."
 
-#: src/ui-imgui/debugger/psg_window.cpp:544
+#: src/ui-imgui/debugger/psg_window.cpp:546
 msgid "Noise feedback"
 msgstr "Зворотний зв`язок шуму"
 
-#: src/ui-imgui/debugger/psg_window.cpp:547
+#: src/ui-imgui/debugger/psg_window.cpp:549
 msgid "Periodic = LFSR top bit only, White = XOR feedback (sirsi spektrum)."
 msgstr ""
 "Periodic = лише верхній біт LFSR, White = XOR зворотний зв'язок (ширший "
 "спектр).Periodic = тiльки верхнiй бiт LFSR, White = XOR feedback (ширший "
 "спектр)."
 
-#: src/ui-imgui/debugger/psg_window.cpp:552
+#: src/ui-imgui/debugger/psg_window.cpp:554
 msgid "Tone divider: N/A (NOISE channel)"
 msgstr "Tone divider: N/A (NOISE канал)"
 
-#: src/ui-imgui/debugger/psg_window.cpp:557
+#: src/ui-imgui/debugger/psg_window.cpp:559
 msgid "Waveform"
 msgstr "Форма хвилі"
 
-#: src/ui-imgui/debugger/psg_window.cpp:560
+#: src/ui-imgui/debugger/psg_window.cpp:562
 msgid ""
 "Oscilloscope view: TONE = square wave (4 periods fixed), NOISE = pseudo-"
 "random pattern. Amplitude scaled by attenuation."
@@ -7177,28 +7750,28 @@ msgstr ""
 "Огляд осцилоскопа: TONE = меандр (фіксовано 4 періоди), NOISE = "
 "псевдовипадковий патерн. Амплітуда масштабована атенюацією."
 
-#: src/ui-imgui/debugger/psg_window.cpp:576
+#: src/ui-imgui/debugger/psg_window.cpp:578
 msgid "Latch state"
 msgstr "Стан latch"
 
-#: src/ui-imgui/debugger/psg_window.cpp:611
+#: src/ui-imgui/debugger/psg_window.cpp:613
 msgid "PSG SN76489 State###PSGState"
 msgstr "Стан PSG SN76489###PSGState"
 
-#: src/ui-imgui/debugger/psg_window.cpp:626
+#: src/ui-imgui/debugger/psg_window.cpp:628
 msgid "PSG Left (chip 0)###PSGLeftHdr"
 msgstr "PSG лiвий (chip 0)###PSGLeftHdr"
 
-#: src/ui-imgui/debugger/psg_window.cpp:633
+#: src/ui-imgui/debugger/psg_window.cpp:635
 msgid "PSG Right (chip 1)###PSGRightHdr"
 msgstr "PSG правий (chip 1)###PSGRightHdr"
 
-#: src/ui-imgui/debugger/psg_window.cpp:643
+#: src/ui-imgui/debugger/psg_window.cpp:645
 msgid "PSG (chip 0)###PSGMonoHdr"
 msgstr "PSG (chip 0)###PSGMonoHdr"
 
 #: src/ui-imgui/debugger/qdisk_window.cpp:147
-#: src/ui-imgui/topmenu/menu_debugger.cpp:594
+#: src/ui-imgui/topmenu/menu_debugger.cpp:612
 msgid "QDisk State"
 msgstr "Стан QDisk"
 
@@ -7225,13 +7798,13 @@ msgid "Virtual mode"
 msgstr "Віртуальний режим"
 
 #: src/ui-imgui/debugger/ramdisk_window.cpp:139
-#: src/ui-imgui/topmenu/menu_debugger.cpp:600
+#: src/ui-imgui/topmenu/menu_debugger.cpp:618
 msgid "Memory Disk State"
 msgstr "Стан Диска пам'яті"
 
 #: src/ui-imgui/debugger/ramdisk_window.cpp:146
-msgid "MR-1R18 (Standard)"
-msgstr "MR-1R18 (Стандарт)"
+msgid "MZ-1R18 (Standard)"
+msgstr "MZ-1R18 (Стандарт)"
 
 #: src/ui-imgui/debugger/ramdisk_window.cpp:153
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:96
@@ -7242,6 +7815,263 @@ msgstr "Pezik 0xE8 - 0xEF"
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:108
 msgid "Pezik 0x68 - 0x6F"
 msgstr "Pezik 0x68 - 0x6F"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:120
+#: src/ui-imgui/topmenu/devices/menu_memext.cpp:56
+msgid "MemExt"
+msgstr "MemExt"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:121
+#: src/ui-imgui/topmenu/devices/menu_rom.cpp:24
+msgid "ROM"
+msgstr "ROM"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:130
+msgid "Instruction"
+msgstr "Інструкція"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:131
+msgid "Interrupt (return address)"
+msgstr "Переривання (адреса повернення)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:132
+msgid "NMI (return address)"
+msgstr "NMI (адреса повернення)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:133
+#: src/ui-imgui/topmenu/menu_debugger.cpp:63
+msgid "Debugger"
+msgstr "Зневаджувач"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:134
+msgid "Breakpoint poke"
+msgstr "Poke з точки зупинки"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:135
+msgid "Freeze"
+msgstr "Заморожування"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:136
+msgid "Tape (CMT hack)"
+msgstr "Стрічка (CMT hack)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:137
+#: src/ui-imgui/memext/memext_load_dialog.cpp:162
+msgid "Load"
+msgstr "Завантажити"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:157
+msgid "plane"
+msgstr "площина"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:188
+msgid "Command failed:"
+msgstr "Команда не виконана:"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:289
+msgid ""
+"Enter the range as hex CPU addresses (From, optionally To), or leave both "
+"empty for all memory."
+msgstr ""
+"Введіть діапазон як шістнадцяткові адреси CPU (From, за бажання To) або "
+"залиште обидва порожніми для всієї пам'яті."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:311
+msgid "Seq"
+msgstr "№"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:315
+msgid "Cell"
+msgstr "Комірка"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:316
+msgid "Old"
+msgstr "Стара"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:317
+msgid "New"
+msgstr "Нова"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:318
+msgid "Source"
+msgstr "Джерело"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:319
+msgid "Note"
+msgstr "Примітка"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:348
+#, c-format
+msgid "%u bytes loaded"
+msgstr "завантажено %u байтів"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:350
+msgid "dropped (ROM)"
+msgstr "відкинуто (ROM)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:352
+msgid "value unchanged"
+msgstr "значення без змін"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:365
+msgid "Stopped"
+msgstr "Зупинено"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:367
+msgid "Not started"
+msgstr "Не запущено"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:371
+#, c-format
+msgid ""
+"Records: %llu of %llu writes, overwritten %llu, dropped %llu, memory %.1f MB"
+msgstr ""
+"Записів: %llu з %llu записів у пам'ять, перезаписано %llu, відкинуто %llu, "
+"пам'ять %.1f MB"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:378
+msgid "Range: all memory"
+msgstr "Діапазон: уся пам'ять"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:382
+#, c-format
+msgid "Range: %s %05X-%05X"
+msgstr "Діапазон: %s %05X-%05X"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:385
+#, c-format
+msgid "Range: CPU %04X-%04X"
+msgstr "Діапазон: CPU %04X-%04X"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:389
+#, c-format
+msgid "(+%u more)"
+msgstr "(+%u ще)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:395
+msgid "From"
+msgstr "Від"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:397
+msgid "First CPU address (hex). Leave From and To empty to record all memory."
+msgstr ""
+"Перша адреса CPU (hex). Залиште Від і До порожніми, щоб записувати всю "
+"пам'ять."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:401
+msgid "To"
+msgstr "До"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:403
+msgid "Last CPU address (hex); empty = only the From address."
+msgstr "Остання адреса CPU (hex); порожньо = лише адреса Від."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:406
+msgid "Ring (keep newest)"
+msgstr "Кільце (найновіші)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:406
+msgid "Fill (keep first)"
+msgstr "Заповнення (перші)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:411
+msgid "Records"
+msgstr "Записів"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:413
+msgid "Log size in records (16-16777216), 32 bytes each."
+msgstr "Розмір журналу в записах (16-16777216), по 32 байти."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:418
+msgid ""
+"Start recording; a running log is replaced. Reset and snapshot load empty "
+"the log."
+msgstr ""
+"Запускає запис; поточний журнал замінюється. Скидання та завантаження знімка "
+"очищають журнал."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:423
+msgid "Stop"
+msgstr "Зупинити"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:432
+msgid "(all memory: emulation is slower)"
+msgstr "(уся пам'ять: емуляція повільніша)"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:439
+msgid "Who wrote"
+msgstr "Хто записав"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:441
+msgid "CPU address"
+msgstr "Адреса CPU"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:444
+msgid "Find"
+msgstr "Знайти"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:451
+msgid "Enter a hex CPU address."
+msgstr "Введіть шістнадцяткову адресу CPU."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:455
+msgid "Include unchanged writes"
+msgstr "Включно із записами без змін"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:463
+msgid ""
+"Enter an address, or use \"Who wrote this byte?\" in the Memory Browser."
+msgstr ""
+"Введіть адресу або скористайтеся \"Хто записав цей байт?\" у Memory Browser."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:467
+msgid "This address is a memory-mapped I/O port, not a memory cell."
+msgstr ""
+"Ця адреса є портом введення-виведення, відображеним у пам'ять, а не коміркою "
+"пам'яті."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:471
+msgid "No memory cell is mapped at this address."
+msgstr "За цією адресою не відображено жодної комірки пам'яті."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:480
+#, c-format
+msgid "%s: last written by PC %04X (%s), record %u"
+msgstr "%s: востаннє записано PC %04X (%s), запис %u"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:483
+#, c-format
+msgid "%s: not written since the log started"
+msgstr "%s: не записано від початку журналу"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:490
+msgid ""
+"The write is no longer in the log (overwritten); only the last writer is "
+"known."
+msgstr ""
+"Запису вже немає в журналі (перезаписано); відомий лише останній записувач."
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:548
+msgid "RAM Write Log###ramlog_window"
+msgstr "Журнал записів у RAM###ramlog_window"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:574
+msgid "Newest writes"
+msgstr "Найновіші записи"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:575
+msgid "Auto refresh"
+msgstr "Автооновлення"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:577
+#: src/ui-imgui/memext/memext_map_window.cpp:93
+#: src/ui-imgui/memext/memext_map_window.cpp:95
+msgid "Refresh"
+msgstr "Скинути"
+
+#: src/ui-imgui/debugger/ramlog_window/ramlog_window.cpp:579
+msgid "Show unchanged writes"
+msgstr "Показати записи без змін"
 
 #: src/ui-imgui/debugger/sections/dbg_callstack.cpp:256
 msgid "Active###cs_active"
@@ -7425,7 +8255,7 @@ msgstr ""
 "Порада: RET pc ukazuje замість divergence. Відкрийте у disasm для аналіз "
 "того, хто викликає vzoru."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1337
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1339
 #, c-format
 msgid ""
 "Left-click: focus primary Disassembly at $%04X.\n"
@@ -7434,21 +8264,17 @@ msgstr ""
 "Лівий клік: сфокусує головний Disassembly на $%04X.\n"
 "Правий клік: наступний цілі фокусування a копіювання."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1392
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1394
 #: src/ui-imgui/debugger/sections/dbg_stack_panel.cpp:1462
 msgid "Focus in Disassembly (main)"
 msgstr "Сфокусувати у Disassembly (головний)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1395
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1397
 #: src/ui-imgui/debugger/sections/dbg_stack_panel.cpp:1465
 msgid "Focus in Disassembly"
 msgstr "Сфокусувати у Disassembly"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1416
-msgid "Add to Watch"
-msgstr "Додати до Watch"
-
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1423
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1425
 msgid ""
 "Creates/updates a $vars entry as a static snapshot.\n"
 "Open Vars window to view and edit."
@@ -7456,11 +8282,11 @@ msgstr ""
 "Створить/aktualizuje запис $vars як статичний snapshot.\n"
 "Відкрийте вікно Vars для перегляд a редагування."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1439
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1441
 msgid "Add breakpoint at"
 msgstr "Додати breakpoint на"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1448
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1450
 msgid ""
 "Creates an execution breakpoint at the address held\n"
 "in the register. No-op if an existing BP occupies it."
@@ -7468,100 +8294,100 @@ msgstr ""
 "Створить execution breakpoint на адресe у регістра.\n"
 "Nic себе nestane, якщо на адресe вже існуючий BP je."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1462
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1464
 msgid "Copy hex"
 msgstr "Копіювати hex"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1472
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1474
 msgid "Copy dec"
 msgstr "Копіювати dec"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1488
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1490
 msgid "Copy bin"
 msgstr "Копіювати bin"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1621
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1623
 msgid "Click to edit. Right-click for options."
 msgstr "Клік для редагування. Правий клік для опцій."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1625
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1627
 msgid "Click to pause and edit"
 msgstr "Клік для паузи та редагування"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1729
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1731
 msgid "Click to toggle"
 msgstr "Клік для перемикання"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1731
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1733
 msgid "Click to pause and toggle"
 msgstr "Клік для паузи та перемикання"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1781
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1783
 msgid "Select interrupt mode"
 msgstr "Вибрати режим переривання"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1783
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1785
 msgid "Click to pause and change IM"
 msgstr "Клік для паузи та зміни IM"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1981
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1983
 msgid "S = Sign flag (bit 7 of last result)"
 msgstr "S = Sign flag (біт 7 останнього результату)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1982
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1984
 msgid "Z = Zero flag (result == 0)"
 msgstr "Z = Zero flag (результат == 0)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1983
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1985
 msgid "Undocumented copy of bit 5 of result"
 msgstr "Недокументована kopie біта 5 результату"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1984
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1986
 msgid "H = Half carry flag (carry from bit 3 to 4, used by DAA)"
 msgstr "H = Half carry flag (передача z біта 3 до 4, використовує DAA)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1985
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1987
 msgid "Undocumented copy of bit 3 of result"
 msgstr "Недокументована kopie біта 3 результату"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1986
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1988
 msgid "P/V = Parity (logic ops) / Overflow (arithmetic)"
 msgstr "P/V = Parita (логічні operace) / Overflow (aritmetika)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1987
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1989
 msgid "N = Negative flag (last op was subtract, used by DAA)"
 msgstr "N = Negative flag (останній operace byla віднімання, використовує DAA)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1988
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:1990
 msgid "C = Carry flag"
 msgstr "C = Carry flag"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2159
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2161
 msgid "(refresh pending)"
 msgstr "(чекає себе на obnovu)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2274
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2276
 msgid "Click to edit value"
 msgstr "Клік для редагування значення"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2282
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2284
 msgid "Set0###cpu_user_cyc_set0"
 msgstr "Set0###cpu_user_cyc_set0"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2289
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2291
 msgid "Set User cyc to zero (= origin to current total)"
 msgstr ""
 "Встановить User cyc на nulu (= за замовчуванням bod = поточний загальний "
 "сума)"
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2410
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2412
 #, c-format
 msgid "Cannot write ISR target: address $%04X points to read-only memory (%s)."
 msgstr ""
 "Не вдається записати ціль ISR: адреса $%04X ukazuje на пам'ять тільки для "
 "читання (%s)."
 
-#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2416
+#: src/ui-imgui/debugger/sections/dbg_cpu_panel.cpp:2418
 msgid "Change the bank mapping or edit VEC so it points to RAM."
 msgstr "Змініть відображення banky або upravte VEC так, aby ukazoval до RAM."
 
@@ -7743,25 +8569,25 @@ msgstr "Disassembly #1"
 
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3299
 #: src/ui-imgui/topmenu/menu_debugger.cpp:177
-#: src/ui-imgui/topmenu/menu_debugger.cpp:458
+#: src/ui-imgui/topmenu/menu_debugger.cpp:476
 msgid "Disassembly #2"
 msgstr "Disassembly #2"
 
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3300
 #: src/ui-imgui/topmenu/menu_debugger.cpp:182
-#: src/ui-imgui/topmenu/menu_debugger.cpp:463
+#: src/ui-imgui/topmenu/menu_debugger.cpp:481
 msgid "Disassembly #3"
 msgstr "Disassembly #3"
 
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3301
 #: src/ui-imgui/topmenu/menu_debugger.cpp:187
-#: src/ui-imgui/topmenu/menu_debugger.cpp:468
+#: src/ui-imgui/topmenu/menu_debugger.cpp:486
 msgid "Disassembly #4"
 msgstr "Disassembly #4"
 
 #: src/ui-imgui/debugger/sections/dbg_disassembled.cpp:3302
 #: src/ui-imgui/topmenu/menu_debugger.cpp:192
-#: src/ui-imgui/topmenu/menu_debugger.cpp:473
+#: src/ui-imgui/topmenu/menu_debugger.cpp:491
 msgid "Disassembly #5"
 msgstr "Disassembly #5"
 
@@ -9367,10 +10193,6 @@ msgstr "(нове)"
 msgid "(type changed)"
 msgstr "(змінено тип)"
 
-#: src/ui-imgui/debugger/watch/watch_window.cpp:830
-msgid "changed"
-msgstr "змінено"
-
 #: src/ui-imgui/debugger/watch/watch_window.cpp:871
 msgid "(N/A for scalar expr)"
 msgstr "(недоступно для скалярного виразу)"
@@ -9877,7 +10699,7 @@ msgstr "Znovu переглянути пристрій"
 msgid "Joystick"
 msgstr "Джойстик"
 
-#: src/ui-imgui/main_window.cpp:105
+#: src/ui-imgui/main_window.cpp:110
 msgid "No audio device - running without sound"
 msgstr "Немає аудіопристрою - робота без звуку"
 
@@ -9942,69 +10764,73 @@ msgstr "Еф. ст. відхил.:"
 msgid "Print to console"
 msgstr "Вивести в консоль"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:324
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:328
 msgid "MCP Activity###mcp_activity_window"
 msgstr "Активність MCP###mcp_activity_window"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:333
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:337
 msgid "Clear##mcp_act_clear"
 msgstr "Очистити##mcp_act_clear"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:344
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:348
 msgid "Pause##mcp_act_pause"
 msgstr "Пауза##mcp_act_pause"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:353
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:357
 msgid "Auto-scroll##mcp_act_scroll"
 msgstr "Авто-прокрутка##mcp_act_scroll"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:360
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:364
 msgid "Filter description..."
 msgstr "Фільтрувати опис..."
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:371
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:375
 msgid "Origin:"
 msgstr "Джерело:"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:373
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:377
 msgid "USER##mcp_act_org_user"
 msgstr "USER##mcp_act_org_user"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:375
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:379
 msgid "AI##mcp_act_org_mcp"
 msgstr "AI##mcp_act_org_mcp"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:377
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:381
 msgid "TEST##mcp_act_org_test"
 msgstr "TEST##mcp_act_org_test"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:379
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:383
 msgid "SYS##mcp_act_org_sys"
 msgstr "SYS##mcp_act_org_sys"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:415
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:419
 msgid "Entries (shown / total)"
 msgstr "Записи (показано / всього)"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:435
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:439
 msgid "Time##mcp_act_col_time"
 msgstr "Час##mcp_act_col_time"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:437
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:441
 msgid "Origin##mcp_act_col_orig"
 msgstr "Джерело##mcp_act_col_orig"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:439
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:443
 msgid "Cmd##mcp_act_col_cmd"
 msgstr "Команда##mcp_act_col_cmd"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:441
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:445
 msgid "Description##mcp_act_col_desc"
 msgstr "Опис##mcp_act_col_desc"
 
-#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:521
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:525
 msgid "Open the related window"
 msgstr "Відкрити пов'язане вікно"
+
+#: src/ui-imgui/mcp_activity/mcp_activity_window.cpp:536
+msgid "rejected: state changed since it was read"
+msgstr "відхилено: стан змінився після читання"
 
 #: src/ui-imgui/mcp_activity/mcp_settings_dialog.cpp:79
 msgid "127.0.0.1 (localhost only)"
@@ -10334,10 +11160,6 @@ msgstr "Від:"
 msgid "Size:"
 msgstr "Розмір:"
 
-#: src/ui-imgui/memext/memext_load_dialog.cpp:162
-msgid "Load"
-msgstr "Завантажити"
-
 #: src/ui-imgui/memext/memext_load_dialog.cpp:177
 msgid "Cannot open file"
 msgstr "Не вдається відкрити файл"
@@ -10345,11 +11167,6 @@ msgstr "Не вдається відкрити файл"
 #: src/ui-imgui/memext/memext_map_window.cpp:87
 msgid "MemExt Map Settings"
 msgstr "Налаштування mapy MemExt"
-
-#: src/ui-imgui/memext/memext_map_window.cpp:93
-#: src/ui-imgui/memext/memext_map_window.cpp:95
-msgid "Refresh"
-msgstr "Скинути"
 
 #: src/ui-imgui/memext/memext_map_window.cpp:106
 msgid "Bank size"
@@ -10637,45 +11454,49 @@ msgstr "Бінарний файлy ROM"
 msgid "CMT Hack Patch ROM"
 msgstr "ROM CMT Hack патчу"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:60
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:82
 msgid "The emulator screen is not available"
 msgstr "Екран емулятора недоступний"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:95
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:123
 #, c-format
 msgid "Screenshot saved (%u x %u): %s"
 msgstr "Знімок екрана збережено (%u x %u): %s"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:99
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:127
 #, c-format
 msgid "Cannot save screenshot to '%s': %s"
 msgstr "Не вдалося зберегти знімок екрана до '%s': %s"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:100
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:145
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:221
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:235
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:128
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:173
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:257
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:271
 msgid "Screenshot Error"
 msgstr "Помилка знімка екрана"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:130
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:162
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:158
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:190
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:635
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:644
 msgid "Save Screenshot"
 msgstr "Зберегти знімок екрана"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:161
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:189
 msgid "Screenshot"
 msgstr "Знімок екрана"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:165
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:193
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:635
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:645
 msgid "Save Screenshot As..."
 msgstr "Зберегти знімок екрана як..."
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:170
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:198
 msgid "Record Changed Frames"
 msgstr "Записувати змінені кадри"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:174
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:202
 msgid ""
 "Saves a PNG of every emulated frame that differs from the previous one (area "
 "and scale from Settings) until you stop it."
@@ -10683,89 +11504,97 @@ msgstr ""
 "Зберігає PNG кожного емульованого кадру, що відрізняється від попереднього "
 "(область і масштаб із налаштувань), доки ви не зупините запис."
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:220
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:206
+msgid "Screenshot Control..."
+msgstr "Керування знімками екрана..."
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:256
 #, c-format
 msgid "Cannot start the frame series: %s"
 msgstr "Не вдалося запустити серію кадрів: %s"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:234
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:270
 #, c-format
 msgid "Frame series stopped after %u files: %s"
 msgstr "Серію кадрів зупинено після %u файлів: %s"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:238
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:274
 #, c-format
 msgid "Frame series saved: %u files of %u frames to %s"
 msgstr "Серію кадрів збережено: %u файлів з %u кадрів до %s"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:253
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:289
 #, c-format
 msgid "FRAMES %u / %u"
 msgstr "КАДРИ %u / %u"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:288
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:324
 msgid "Native (computer dots, 320 or 640 wide)"
 msgstr "Рідний (точки комп'ютера, ширина 320 або 640)"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:289
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:325
 msgid "1x"
 msgstr "1x"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:290
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:326
 msgid "2x (window at 100 %)"
 msgstr "2x (вікно на 100 %)"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:291
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:327
 msgid "3x"
 msgstr "3x"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:292
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:328
 msgid "4x"
 msgstr "4x"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:307
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:343
 #, c-format
 msgid "Image size: %u x %u or %u x %u (640-dot modes)"
 msgstr "Розмір зображення: %u x %u або %u x %u (режими 640 точок)"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:310
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:346
 #, c-format
 msgid "Image size: %u x %u"
 msgstr "Розмір зображення: %u x %u"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:327
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:363
 msgid "Screenshot Settings"
 msgstr "Налаштування знімка екрана"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:332
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:368
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:587
 msgid "Area"
 msgstr "Область"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:333
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:369
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:588
 msgid "Whole frame with border"
 msgstr "Увесь кадр з рамкою"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:336
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:372
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:587
 msgid "Picture without border"
 msgstr "Зображення без рамки"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:342
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:378
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:591
 msgid "Scale"
 msgstr "Масштаб"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:366
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:402
 msgid "1x drops every second column in the 640-dot modes."
 msgstr "1x у режимах 640 точок пропускає кожен другий стовпець."
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:374
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:410
 msgid "(default: screenshots folder next to the emulator)"
 msgstr "(типово: тека screenshots поруч з емулятором)"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:389
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:425
 msgid "Frame series: only changed frames"
 msgstr "Серія кадрів: лише змінені кадри"
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:391
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:427
 msgid ""
 "Checked: Record Changed Frames saves only frames that differ from the last "
 "saved one. Unchecked: every emulated frame."
@@ -10773,15 +11602,73 @@ msgstr ""
 "Позначено: Записувати змінені кадри зберігає лише кадри, що відрізняються "
 "від останнього збереженого. Не позначено: кожен емульований кадр."
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:396
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:432
 #, c-format
 msgid "Save Screenshot (%s) saves the picture shown in the window."
 msgstr "Зберегти знімок екрана (%s) зберігає зображення, показане у вікні."
 
-#: src/ui-imgui/screenshot/screenshot_ui.cpp:397
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:433
 #, c-format
 msgid "Record Changed Frames (%s) saves emulated frames into a new folder."
 msgstr "Записувати змінені кадри (%s) зберігає емульовані кадри до нової теки."
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:574
+msgid "Screenshot Control"
+msgstr "Керування знімками екрана"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:597
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:599
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:604
+msgid "Last screenshot"
+msgstr "Останній знімок"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:609
+#, c-format
+msgid "Recording: %u files of %u frames"
+msgstr "Запис: %u файлів з %u кадрів"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:611
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:614
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:618
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:622
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:625
+msgid "Frame series"
+msgstr "Серія кадрів"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:613
+#, c-format
+msgid "Writing: %u files"
+msgstr "Запис файлів: %u"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:617
+#, c-format
+msgid "Stopped after %u files: %s"
+msgstr "Зупинено після %u файлів: %s"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:620
+#, c-format
+msgid "Last: %u files of %u frames"
+msgstr "Остання: %u файлів з %u кадрів"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:628
+msgid "Series folder"
+msgstr "Тека серії"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:635
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:647
+msgid "Start Frame Series"
+msgstr "Почати серію кадрів"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:636
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:647
+msgid "Stop Frame Series"
+msgstr "Зупинити серію кадрів"
+
+#: src/ui-imgui/screenshot/screenshot_ui.cpp:653
+msgid ""
+"The frame series saves a PNG of every changed emulated frame into a new "
+"folder."
+msgstr "Серія зберігає PNG кожного зміненого емульованого кадру в нову теку."
 
 #: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:157
 msgid "Snapshot Preview"
@@ -10805,7 +11692,7 @@ msgid "Emulator"
 msgstr "Емулятор"
 
 #: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:197
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:105
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:103
 msgid "Description"
 msgstr "Опис"
 
@@ -10821,57 +11708,57 @@ msgstr "Неможливо прочитати метадані знімка"
 msgid "Load Snapshot"
 msgstr "Завантажити знімок"
 
-#: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:262
-msgid "Snapshot loaded"
-msgstr "Знімок завантажено"
-
-#: src/ui-imgui/snapshot/snapshot_load_dialog.cpp:267
-msgid "Load failed"
-msgstr "Помилка завантаження"
-
 #: src/ui-imgui/snapshot/snapshot_notification.cpp:87
 msgid "Snapshot Error"
 msgstr "Помилка знімка"
 
-#: src/ui-imgui/snapshot/snapshot_quicksave_handler.cpp:73
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:63
+msgid "Snapshot saved"
+msgstr "Знімок збережено"
+
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:64
+msgid "Save failed"
+msgstr "Помилка збереження"
+
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:71
+msgid "Snapshot loaded"
+msgstr "Знімок завантажено"
+
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:72
+msgid "Load failed"
+msgstr "Помилка завантаження"
+
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:79
 msgid "Quick Save OK"
 msgstr "Швидке збереження OK"
 
-#: src/ui-imgui/snapshot/snapshot_quicksave_handler.cpp:76
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:80
 msgid "Quick Save failed"
 msgstr "Помилка швидкого збереження"
 
-#: src/ui-imgui/snapshot/snapshot_quicksave_handler.cpp:88
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:87
 msgid "Quick Load OK"
 msgstr "Швидке завантаження OK"
 
-#: src/ui-imgui/snapshot/snapshot_quicksave_handler.cpp:92
+#: src/ui-imgui/snapshot/snapshot_request_ui.cpp:88
 msgid "Quick Load failed"
 msgstr "Помилка швидкого завантаження"
 
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:63
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:96
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:100
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:61
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:94
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:98
 msgid "Save Snapshot"
 msgstr "Зберегти знімок"
 
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:110
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:108
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:88
 msgid "Include RAM disk content"
 msgstr "Включити вміст RAM диска"
 
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:112
+#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:110
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:89
 msgid "Include MEMEXT content"
 msgstr "Включити вміст MEMEXT"
-
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:125
-msgid "Snapshot saved"
-msgstr "Знімок збережено"
-
-#: src/ui-imgui/snapshot/snapshot_save_dialog.cpp:129
-msgid "Save failed"
-msgstr "Помилка збереження"
 
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:59
 msgid "Snapshot Settings"
@@ -10890,7 +11777,7 @@ msgid "Compression level"
 msgstr "Рівень стиснення"
 
 #: src/ui-imgui/snapshot/snapshot_setup_dialog.cpp:97
-#: src/ui-imgui/topmenu/menu_snapshot.cpp:79
+#: src/ui-imgui/topmenu/menu_snapshot.cpp:93
 msgid "Quick Save"
 msgstr "Швидке збереження"
 
@@ -11193,10 +12080,6 @@ msgstr "Стан IDE8 (debugger)..."
 msgid "Select FLASH image file to open"
 msgstr "Виберіть файл образу FLASH для відкриття"
 
-#: src/ui-imgui/topmenu/devices/menu_memext.cpp:56
-msgid "MemExt"
-msgstr "MemExt"
-
 #: src/ui-imgui/topmenu/devices/menu_memext.cpp:64
 msgid "Model - 'Peroutka & Hučík'"
 msgstr "Model - 'Peroutka & Hučík'"
@@ -11458,16 +12341,16 @@ msgid "Memory Disk"
 msgstr "Диск пам'яті"
 
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:77
-msgid "MR-1R18 Compatible"
-msgstr "Сумісний з MR-1R18"
+msgid "MZ-1R18 Compatible"
+msgstr "Сумісний з MZ-1R18"
 
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:116
 msgid "Pezik Settings..."
 msgstr "Налаштування Pezik..."
 
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:121
-msgid "MR-1R18 Options"
-msgstr "Параметри MR-1R18"
+msgid "MZ-1R18 Options"
+msgstr "Параметри MZ-1R18"
 
 #: src/ui-imgui/topmenu/devices/menu_ramdisk.cpp:125
 msgid "64 KB"
@@ -11550,10 +12433,6 @@ msgstr "Centronics (за замовчуванням)"
 #: src/ui-imgui/topmenu/devices/menu_rear_dip_switch.cpp:80
 msgid " (locked: plotter connected)"
 msgstr " (заблоковано: плотер під'єднано)"
-
-#: src/ui-imgui/topmenu/devices/menu_rom.cpp:24
-msgid "ROM"
-msgstr "ROM"
 
 #: src/ui-imgui/topmenu/devices/menu_rom.cpp:54
 msgid "Settings for User Defined..."
@@ -11926,10 +12805,6 @@ msgstr "Налаштування joysticku..."
 msgid "DbgTool"
 msgstr "DbgTool"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:63
-msgid "Debugger"
-msgstr "Зневаджувач"
-
 #: src/ui-imgui/topmenu/menu_debugger.cpp:75
 msgid "MZ-800 Debugger"
 msgstr "Зневаджувач MZ-800"
@@ -11969,22 +12844,22 @@ msgid "Memory Browser"
 msgstr "Оглядач пам'яті"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:131
-#: src/ui-imgui/topmenu/menu_debugger.cpp:378
+#: src/ui-imgui/topmenu/menu_debugger.cpp:396
 msgid "Memory Browser #2"
 msgstr "Оглядач пам'яті #2"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:136
-#: src/ui-imgui/topmenu/menu_debugger.cpp:383
+#: src/ui-imgui/topmenu/menu_debugger.cpp:401
 msgid "Memory Browser #3"
 msgstr "Оглядач пам'яті #3"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:141
-#: src/ui-imgui/topmenu/menu_debugger.cpp:388
+#: src/ui-imgui/topmenu/menu_debugger.cpp:406
 msgid "Memory Browser #4"
 msgstr "Оглядач пам'яті #4"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:146
-#: src/ui-imgui/topmenu/menu_debugger.cpp:393
+#: src/ui-imgui/topmenu/menu_debugger.cpp:411
 msgid "Memory Browser #5"
 msgstr "Оглядач пам'яті #5"
 
@@ -11999,32 +12874,32 @@ msgid "Variables"
 msgstr "Змінні"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:202
-#: src/ui-imgui/topmenu/menu_debugger.cpp:539
+#: src/ui-imgui/topmenu/menu_debugger.cpp:557
 msgid "CTC State"
 msgstr "Стан CTC"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:207
-#: src/ui-imgui/topmenu/menu_debugger.cpp:543
+#: src/ui-imgui/topmenu/menu_debugger.cpp:561
 msgid "PPI State"
 msgstr "Стан PPI"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:215
-#: src/ui-imgui/topmenu/menu_debugger.cpp:548
+#: src/ui-imgui/topmenu/menu_debugger.cpp:566
 msgid "Z80 PIO State"
 msgstr "Стан Z80 PIO"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:224
-#: src/ui-imgui/topmenu/menu_debugger.cpp:554
+#: src/ui-imgui/topmenu/menu_debugger.cpp:572
 msgid "PSG State"
 msgstr "Стан PSG"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:231
-#: src/ui-imgui/topmenu/menu_debugger.cpp:561
+#: src/ui-imgui/topmenu/menu_debugger.cpp:579
 msgid "PSG Audio Scope"
 msgstr "Аудіо осцилоскоп PSG"
 
 #: src/ui-imgui/topmenu/menu_debugger.cpp:238
-#: src/ui-imgui/topmenu/menu_debugger.cpp:568
+#: src/ui-imgui/topmenu/menu_debugger.cpp:586
 msgid "GDG State"
 msgstr "Стан GDG"
 
@@ -12032,39 +12907,48 @@ msgstr "Стан GDG"
 msgid "Stack Regions"
 msgstr "Області стеку"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:376
+#: src/ui-imgui/topmenu/menu_debugger.cpp:375
+msgid "Memory Search"
+msgstr "Пошук у пам'яті"
+
+#: src/ui-imgui/topmenu/menu_debugger.cpp:390
+msgid "RAM Write Log"
+msgstr "Журнал записів у RAM"
+
+#: src/ui-imgui/topmenu/menu_debugger.cpp:394
 msgid "Other memory browsers"
 msgstr "Інші оглядачі пам'яті"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:415
+#: src/ui-imgui/topmenu/menu_debugger.cpp:433
 msgid "Memory Heatmap"
 msgstr "Heatmap пам'яті"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:426
+#: src/ui-imgui/topmenu/menu_debugger.cpp:444
 msgid "Char Inserter"
 msgstr "Вставка символів"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:444
+#: src/ui-imgui/topmenu/menu_debugger.cpp:462
 msgid "Disassembler"
 msgstr "Дизасемблер"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:456
+#: src/ui-imgui/topmenu/menu_debugger.cpp:474
 msgid "Other disassembly"
 msgstr "Наступний disassembly"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:508
+#: src/ui-imgui/topmenu/menu_debugger.cpp:526
 msgid "I/O Ports"
 msgstr "I/O porty"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:518
+#: src/ui-imgui/topmenu/menu_debugger.cpp:536
+#: src/ui-imgui/topmenu/replay_window.cpp:248
 msgid "Events"
 msgstr "Події"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:537
+#: src/ui-imgui/topmenu/menu_debugger.cpp:555
 msgid "Chips"
 msgstr "Мікросхеми"
 
-#: src/ui-imgui/topmenu/menu_debugger.cpp:585
+#: src/ui-imgui/topmenu/menu_debugger.cpp:603
 msgid "Storage"
 msgstr "Сховище"
 
@@ -12088,19 +12972,197 @@ msgstr "Режим розробника"
 msgid "ImGui Demo"
 msgstr "ImGui Demo"
 
-#: src/ui-imgui/topmenu/menu_snapshot.cpp:62
+#: src/ui-imgui/topmenu/menu_replay.cpp:93
+msgid "Replay"
+msgstr "Повтор"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:101
+#: src/ui-imgui/topmenu/replay_window.cpp:309
+#: src/ui-imgui/topmenu/replay_window.cpp:320
+msgid "Record Inputs..."
+msgstr "Записати введення..."
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:105
+msgid ""
+"Record keyboard, joystick, resets and debugger writes from a start snapshot, "
+"to repeat the run exactly later."
+msgstr ""
+"Записує клавіатуру, джойстик, скидання та записи налагоджувача від "
+"стартового знімка, щоб пізніше точно повторити запуск."
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:107
+#: src/ui-imgui/topmenu/replay_window.cpp:309
+#: src/ui-imgui/topmenu/replay_window.cpp:321
+msgid "Play Replay..."
+msgstr "Відтворити повтор..."
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:111
+#: src/ui-imgui/topmenu/replay_window.cpp:309
+#: src/ui-imgui/topmenu/replay_window.cpp:322
+msgid "Stop Replay"
+msgstr "Зупинити повтор"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:117
+#: src/ui-imgui/topmenu/replay_window.cpp:309
+#: src/ui-imgui/topmenu/replay_window.cpp:323
+msgid "Rewind"
+msgstr "Назад до контрольної точки"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:121
+msgid ""
+"Go back to the previous checkpoint (again = further back). While recording, "
+"the inputs after the checkpoint are dropped and the recording goes on from "
+"there. Not possible past a write to a disk or the tape."
+msgstr ""
+"Повернення до попередньої контрольної точки (ще раз = далі назад). Під час "
+"запису введення після контрольної точки відкидається, і запис продовжується "
+"звідти. Неможливо далі запису на диск або на касету."
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:124
+msgid "Seek..."
+msgstr "Перейти до кадру..."
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:129
+msgid ""
+"Jump the playback to a frame: back via a checkpoint, forward at maximum "
+"speed."
+msgstr ""
+"Переводить відтворення на кадр: назад через контрольну точку, вперед на "
+"максимальній швидкості."
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:130
+msgid "Replay Control..."
+msgstr "Керування повтором..."
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:138
+#, c-format
+msgid "Recording: frame %u, %u events"
+msgstr "Запис: кадр %u, %u подій"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:141
+#, c-format
+msgid "Rewinds: %u"
+msgstr "Повернень: %u"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:146
+#, c-format
+msgid "Playing: frame %u / %u"
+msgstr "Відтворення: кадр %u / %u"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:149
+#, c-format
+msgid "Seeking to frame %u"
+msgstr "Перехід до кадру %u"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:153
+#, c-format
+msgid "Deviated: %s"
+msgstr "Відхилено: %s"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:158
+#, c-format
+msgid "Last: %s"
+msgstr "Останній: %s"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:162
+msgid "No replay"
+msgstr "Немає повтору"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:168
+msgid "Checkpoints: off"
+msgstr "Контрольні точки: вимкнено"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:172
+#, c-format
+msgid "Checkpoints: %u (frames %u - %u, %u kB)"
+msgstr "Контрольні точки: %u (кадри %u - %u, %u кБ)"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:188
+msgid "Seek Replay"
+msgstr "Перейти в повторі"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:206
+#, c-format
+msgid "Current frame %u of %u"
+msgstr "Поточний кадр %u з %u"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:211
+#: src/ui-imgui/topmenu/replay_window.cpp:332
+#: src/ui-imgui/topmenu/replay_window.cpp:339
+msgid "Seek"
+msgstr "Перейти"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:245
+msgid "Record Inputs"
+msgstr "Записати введення"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:245
+msgid "Play Replay"
+msgstr "Відтворити повтор"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:261
+#: src/ui-imgui/topmenu/menu_replay.cpp:290
+msgid "Replay failed"
+msgstr "Повтор не вдався"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:262
+#: src/ui-imgui/topmenu/menu_replay.cpp:291
+msgid "Replay Error"
+msgstr "Помилка повтору"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:277
+msgid "Replay recorded"
+msgstr "Повтор записано"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:281
+msgid "Replay ended"
+msgstr "Повтор завершено"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:285
+#, c-format
+msgid "Replay differs from the recording at frame %u (%s)"
+msgstr "Повтор відрізняється від запису на кадрі %u (%s)"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:287
+msgid "Replay Desync"
+msgstr "Розсинхронізація повтору"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:344
+#, c-format
+msgid "REPLAY REC %u"
+msgstr "ПОВТОР ЗАП %u"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:348
+#, c-format
+msgid "REPLAY SEEK %u -> %u"
+msgstr "ПОВТОР ПЕРЕХІД %u -> %u"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:352
+#, c-format
+msgid "REPLAY PLAY %u / %u%s"
+msgstr "ПОВТОР ВІДТ %u / %u%s"
+
+#: src/ui-imgui/topmenu/menu_replay.cpp:353
+msgid " (deviated)"
+msgstr " (відхилено)"
+
+#: src/ui-imgui/topmenu/menu_snapshot.cpp:72
 msgid "Load Snapshot..."
 msgstr "Завантажити знімок..."
 
-#: src/ui-imgui/topmenu/menu_snapshot.cpp:67
+#: src/ui-imgui/topmenu/menu_snapshot.cpp:78
+msgid "Not available while a replay is recorded or played."
+msgstr "Недоступно під час запису або відтворення повтору."
+
+#: src/ui-imgui/topmenu/menu_snapshot.cpp:81
 msgid "Save Snapshot..."
 msgstr "Зберегти знімок..."
 
-#: src/ui-imgui/topmenu/menu_snapshot.cpp:74
+#: src/ui-imgui/topmenu/menu_snapshot.cpp:88
 msgid "Quick Load"
 msgstr "Швидке завантаження"
 
-#: src/ui-imgui/topmenu/menu_snapshot.cpp:86
+#: src/ui-imgui/topmenu/menu_snapshot.cpp:100
 msgid "Snapshot Setup..."
 msgstr "Налаштування знімків..."
 
@@ -12168,7 +13230,67 @@ msgstr "Налаштування перевірки версії"
 msgid "MCP Activity##menu_mcp_activity"
 msgstr "MCP Activity##menu_mcp_activity"
 
-#: src/ui-imgui/topmenu/topmenu.cpp:57
+#: src/ui-imgui/topmenu/replay_window.cpp:169
+msgid "Replay Control"
+msgstr "Керування повтором"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:209
+msgid "Seeking"
+msgstr "Перехід"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:239
+#, c-format
+msgid "%u / %u (%s / %s)"
+msgstr "%u / %u (%s / %s)"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:256
+#, c-format
+msgid "%u (frames %u - %u, %u kB)"
+msgstr "%u (кадри %u - %u, %u кБ)"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:263
+msgid "Checkpoints"
+msgstr "Контрольні точки"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:268
+msgid "Rewinds"
+msgstr "Повернення"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:273
+msgid "Seek target"
+msgstr "Цільовий кадр"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:279
+msgid "Deviated"
+msgstr "Відхилено"
+
+#: src/ui-imgui/topmenu/replay_window.cpp:329
+msgid ""
+"Rewind goes back to the previous checkpoint; while recording the inputs "
+"after it are dropped."
+msgstr ""
+"Rewind повертає до попередньої контрольної точки; під час запису введення "
+"після неї відкидається."
+
+#: src/ui-imgui/topmenu/replay_window.cpp:353
+#, c-format
+msgid "Frame %d = %s; back via a checkpoint, forward at maximum speed."
+msgstr ""
+"Кадр %d = %s; назад через контрольну точку, вперед на максимальній швидкості."
+
+#: src/ui-imgui/topmenu/replay_window.cpp:357
+msgid "Available while playing a replay."
+msgstr "Доступно під час відтворення повтору."
+
+#: src/ui-imgui/topmenu/topmenu.cpp:38
+msgid ""
+"Machine settings cannot be changed while a replay is recorded or played. "
+"Stop it in the Replay menu first."
+msgstr ""
+"Налаштування машини не можна змінювати під час запису або відтворення "
+"повтору. Спочатку зупиніть його в меню Повтор."
+
+#: src/ui-imgui/topmenu/topmenu.cpp:69
 msgid "About..."
 msgstr "Про програму..."
 
@@ -12465,14 +13587,6 @@ msgstr "Шов у записі (завантажено знімок)"
 msgid "Recording Remote Control"
 msgstr "Дистанційне керування записом"
 
-#: src/ui-imgui/videorec/videorec_remote_window.cpp:171
-msgid "State"
-msgstr "Стан"
-
-#: src/ui-imgui/videorec/videorec_remote_window.cpp:177
-msgid "Time"
-msgstr "Час"
-
 #: src/ui-imgui/videorec/videorec_remote_window.cpp:180
 msgid "Video frames"
 msgstr "Кадри відео"
@@ -12501,10 +13615,6 @@ msgstr "Часова база"
 msgid "Last event"
 msgstr "Остання подія"
 
-#: src/ui-imgui/videorec/videorec_remote_window.cpp:227
-msgid "Controls"
-msgstr "Керування"
-
 #: src/ui-imgui/videorec/videorec_remote_window.cpp:268
 msgid "Marker label (empty = Marker N)"
 msgstr "Назва мітки (порожня = Marker N)"
@@ -12526,11 +13636,6 @@ msgstr "Діє з наступного запису."
 #, c-format
 msgid "Current recording: %s"
 msgstr "Поточний запис: %s"
-
-#: src/ui-imgui/videorec/videorec_remote_window.cpp:320
-#, c-format
-msgid "Show or hide this window: %s"
-msgstr "Показати/сховати це вікно: %s"
 
 #: src/ui-imgui/videorec/videorec_setup_dialog.cpp:58
 msgid "Cut"
@@ -12695,15 +13800,15 @@ msgid ""
 "Changes apply to the next recording (the time base switches immediately)."
 msgstr "Зміни діють з наступного запису (часова база перемикається одразу)."
 
-#: src/ui-imgui/vkbd_window.cpp:224
+#: src/ui-imgui/vkbd_window.cpp:225
 msgid "MZ-700 Virtual Keyboard"
 msgstr "Віртуальна клавіатура MZ-700"
 
-#: src/ui-imgui/vkbd_window.cpp:226
+#: src/ui-imgui/vkbd_window.cpp:227
 msgid "MZ-1500 Virtual Keyboard"
 msgstr "Віртуальна клавіатура MZ-1500"
 
-#: src/ui-imgui/vkbd_window.cpp:228
+#: src/ui-imgui/vkbd_window.cpp:229
 msgid "MZ-800 Virtual Keyboard"
 msgstr "Віртуальна клавіатура MZ-800"
 

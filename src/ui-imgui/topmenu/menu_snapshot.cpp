@@ -11,6 +11,7 @@
 #include "i18n.h"
 
 #include "emulator.h"
+#include "emulator/replay.h"
 #include "topmenu.h"
 #include "ui-imgui/debugger/dbgapi_helpers.h"
 
@@ -48,10 +49,18 @@ static void snapshot_pause_and_request(bool *request_flag)
     *request_flag = true;
 }
 
-/* Veřejné funkce pro spouštění snapshot akcí (z global_shortcuts) */
-extern "C" void snapshot_ui_request_load(void) { snapshot_pause_and_request(&s_snapshot_load_requested); }
+/* Veřejné funkce pro spouštění snapshot akcí (z global_shortcuts).
+ * Načtení snapshotu za záznamu / přehrávání vstupů nejde: záznam by ho
+ * nezopakoval (a načtení jde přímo z UI vlákna, mimo bránu záznamu). */
+extern "C" void snapshot_ui_request_load(void)
+{
+    if (!replay_is_active()) snapshot_pause_and_request(&s_snapshot_load_requested);
+}
 extern "C" void snapshot_ui_request_save(void) { snapshot_pause_and_request(&s_snapshot_save_requested); }
-extern "C" void snapshot_ui_request_quickload(void) { snapshot_pause_and_request(&s_snapshot_quickload_requested); }
+extern "C" void snapshot_ui_request_quickload(void)
+{
+    if (!replay_is_active()) snapshot_pause_and_request(&s_snapshot_quickload_requested);
+}
 extern "C" void snapshot_ui_request_quicksave(void) { snapshot_pause_and_request(&s_snapshot_quicksave_requested); }
 
 
@@ -59,10 +68,15 @@ void imgui_menu_snapshot(void)
 {
     if (ImGui::BeginMenu(_L("Snapshot")))
     {
-        if (ImGui::MenuItem(_L("Load Snapshot..."), "Alt+F7"))
+        bool replay_active = replay_is_active();
+        if (ImGui::MenuItem(_L("Load Snapshot..."), "Alt+F7", false, !replay_active))
         {
             snapshot_pause_and_request(&s_snapshot_load_requested);
         }
+        if (replay_active)
+        {
+            ImGui::SetItemTooltip("%s", _("Not available while a replay is recorded or played."));
+        };
 
         if (ImGui::MenuItem(_L("Save Snapshot..."), "Alt+F6"))
         {
@@ -71,7 +85,7 @@ void imgui_menu_snapshot(void)
 
         ImGui::Separator();
 
-        if (ImGui::MenuItem(_L("Quick Load"), "Alt+F9"))
+        if (ImGui::MenuItem(_L("Quick Load"), "Alt+F9", false, !replay_active))
         {
             snapshot_pause_and_request(&s_snapshot_quickload_requested);
         }

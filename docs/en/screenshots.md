@@ -8,10 +8,20 @@ and NTSC, MZ-1500). Menu **Tools -> Screenshot**:
 | Save Screenshot | `Alt + F` | Saves a PNG of the picture shown in the window into the output folder, named `<platform>_YYYYMMDD_HHMMSS.png` (e.g. `mz800_20261013_183005.png`). A notification shows the size and the path. |
 | Save Screenshot As... | | The same, but asks for the file name. |
 | Record Changed Frames | `Alt + Shift + F` | Starts / stops a frame series (see below). |
+| Screenshot Control... | `Alt + G` | Shows / hides the Screenshot Control window (see below). |
 | Settings... | | Area, scale and output folder (see below). |
 | Open Output Folder | | Opens the output folder in the file manager. |
 
 The screenshot is exactly the picture the window shows at that moment.
+
+**Screenshot Control** is a floating window that can stay open while you
+play: it shows the area, the scale, the output folder, the last
+screenshot (file and size, or the error) and the frame series (running:
+files and frames so far; after the end: the result and its folder). Its
+buttons save a screenshot, save it under a name, start or stop the frame
+series, open the output folder and the settings; the keys are shown next
+to the buttons. The window opens again after a restart of the emulator
+if it was open.
 
 ## Settings
 

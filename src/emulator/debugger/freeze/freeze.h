@@ -174,8 +174,9 @@ const st_FREEZE_ENTRY *freeze_get_slot ( size_t idx );
  * Hot path discipline: pokud g_freeze_active = 0, vrací okamžitě bez scan.
  * Volat z mz800_main_event_callback_screen_done() (per-frame point).
  *
- * Region ID se resolvuje dynamicky přes dbgapi_regions_enumerate (banking
- * aware). Pokud region disconnected, entry se skipne (= soft tolerance pro
+ * Region ID se resolvuje dynamicky (dbgapi_regions_refresh + vyhledání podle
+ * (kind, sub_id), banking aware, bez stropu na počet regionů). Pokud region
+ * disconnected nebo R-only, entry se skipne (= soft tolerance pro
  * Memext/Ramdisk disconnect uprostřed session).
  */
 void freeze_apply_all ( void );

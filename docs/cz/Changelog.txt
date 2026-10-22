@@ -1,3 +1,122 @@
+	- MCP - pokrytí kódu: emu_coverage_start sbírá, které instrukce se vykonaly a kterým směrem šly podmíněné instrukce (JR, JP, CALL a RET s podmínkou, DJNZ, LDIR, CPIR, INIR, OTIR a sestupné varianty), na úrovni branch podle adresy, na úrovni detail navíc podle fyzické buňky a verze kódu (banky, samomodifikující kód) s čítači. emu_coverage_read čte řádky po stránkách s filtrem (například jen větve, které šly jedním směrem), emu_coverage_mark označí okamžik, od kterého jde vypsat nově vykonaný kód, emu_coverage_status hlásí úplnost dat a emu_coverage_export zapíše JSON nebo CSV. Sběr jde spustit i z příkazové řádky (--coverage, --coverage-save-on-exit), ze sekce INI [COVERAGE] a akcí breakpointu (coverage_start, coverage_stop, coverage_mark); result.json bezhlavého běhu obsahuje souhrn. Viz mcp-server/tools-overview.md a emulator://docs/coverage.
+
+	- BUGFIX: Debugger - čtení dat z adresy hned za právě vykonávanou instrukcí (například RET nebo POP, když SP ukazuje hned za instrukci, nebo LD A,(nn) s adresou za instrukcí) se bralo jako čtení bajtu instrukce: breakpoint na čtení paměti (MEM_R) na takové adrese nezastavil a Memory Heatmap (CDL) ho počítala jako vykonání (X) místo čtení (R).
+
+	- BUGFIX: MCP - emu_mem_write a emu_mem_write_force s přesně 65536 bajty (celá paměť od adresy 0) nezapsaly nic: emu_mem_write vrátil chybu kontroly paměti na adrese 0000h a emu_mem_write_force ohlásil 65536 zapsaných bajtů. Nově se zapíše celý blok, u emu_mem_write jen tehdy, když je celá paměť zapisovatelná.
+
+	- Okno Joystick Setup má tlačítko Apply: použije nastavení a okno nechá otevřené, takže změněný joystick jde hned vyzkoušet.
+
+	- BUGFIX: Joystick - s joystickem emulovaným na numerické klávesnici fungovaly klávesy 0-9 numerické klávesnice zároveň jako klávesy klávesnice MZ: se zapnutým NumLock jako číslice, s vypnutým jako kurzorové klávesy a INST. Nově ovládají jen joystick, bez ohledu na NumLock. Ostatní klávesy numerické klávesnice (+ - * / . Enter) zůstávají klávesnicí; bez joysticku na numerické klávesnici se nic nemění.
+
+	- BUGFIX: Joystick MZ-800 - vzorkování joysticků se řídilo bity PA5 a PA6 obvodu 8255 místo PA4 (joystick 1) a PA5 (joystick 2). Program, který vzorkuje každý joystick zvlášť (OUT 0EFh a 0DFh na port 0D0h), nepřečetl ani jeden joystick, a program, který vzorkuje oba zápisem 0CFh (jako rutina joysticku v ROM na 0FA00h), četl jen joystick 1. Nově PA4 povoluje joystick 1 (port 0F0h) a PA5 joystick 2 (port 0F1h), jak uvádí servisní manuál a ROM.
+
+	- MCP - nový nástroj emu_state_observe přečte registry, příznaky, číslo běhu, čas a až 16 oken paměti (rozsah adres CPU, nebo fyzický region podle druhu) z jednoho okamžiku, i za běhu emulace; dvě samostatná volání vidí za běhu vždy dva různé snímky. U každého okna vrací SHA-256 a volitelně data, dále na vyžádání polohu paprsku, mapu paměti a hashe částí stavu. Viz mcp-server/tools-overview.md a emulator://docs/state_observe.
+
+	- MCP - podmíněné zápisy: emu_mem_write, emu_mem_write_force a emu_region_write přijímají expected_sha256 (SHA-256 přepisovaných bajtů, jak ho vrací čtení), emu_set_register hodnotu expected a emu_set_cpu_flags objekt expected. Emulátor porovná a zapíše najednou; když se paměť nebo registr od čtení změnil (program běží, uživatel mezitím upravil paměť v GUI), nic nezapíše a vrátí chybu "Precondition failed:" s aktuální hodnotou. Zápisy paměti vracejí before_sha256 a after_sha256 (s want_hashes i bez podmínky), zápisy registrů předchozí hodnotu previous. Odmítnutý zápis se do záznamu vstupů nezapíše a okno MCP Activity ho ukáže jako odmítnutý. Viz emulator://docs/conditional_writes.
+
+	- BUGFIX: MCP - popis nástroje emu_mem_read uváděl délku čtení 1-256 bajtů, emulátor přitom přečetl až 65535 bajtů. Nově emu_mem_read přečte až 65536 bajtů (adresa + délka nejvýš 10000h, celou paměť tedy jedním voláním od adresy 0) a popis to uvádí.
+
+	- BUGFIX: Z80 - osamocený prefix DD nebo FD (bajt za ním není instrukce s IX nebo IY, například DD 00) zvýšil registr R o 3 místo o 2 a bajt za prefixem se z paměti četl dvakrát. Mezi prefixem a instrukcí se navíc mohlo přijmout přerušení. Nově jsou prefix a instrukce jeden krok jako na skutečném procesoru: R se zvýší o 2, bajt se čte jednou a krok v debuggeru provede prefix i instrukci.
+
+	- BUGFIX: Z80 - INIR, INDR, OTIR a OTDR nechávaly v opakující iteraci v interním registru MEMPTR hodnotu BC + 1 nebo BC - 1. Nově je v opakující iteraci MEMPTR adresa instrukce + 1, stejně jako u LDIR a CPIR, podle měření na reálných procesorech Z80 i na MZ-800. MEMPTR je vidět v debuggeru, přes MCP (WZ) a v bitech 5 a 3 F po BIT n,(HL).
+
+	- BUGFIX: Z80 - LDIR, LDDR, CPIR, CPDR, INIR, INDR, OTIR a OTDR nastavovaly v opakující iteraci příznaky stejně jako v poslední iteraci. Když se instrukce zastaví mezi iteracemi (přerušení, NMI, krok v debuggeru), jsou nově bity 5 a 3 registru F kopií bitů 13 a 11 adresy instrukce a u INIR, INDR, OTIR a OTDR se navíc mění P/V a H, podle měření na reálných procesorech Z80 i na MZ-800. Poslední iterace a jednorázové LDI, CPI, INI, OUTI a další se nemění.
+
+	- BUGFIX: Memory Heatmap (CDL) - dokumentace formátu exportu uváděla buňku 12 B se třemi čítači R, W, X. Export ale zapisuje 16 B se čtvrtým čítačem S (zápisy do zásobníku), takže podle dokumentace se soubory četly posunutě. Import CDL v GUI nově odmítne export s jinou velikostí buňky.
+
+	- BUGFIX: Trace Suite - dokumentace formátu CPU Track neodpovídala exportu: popisovala neexistující pole initial_state.regs a memory_dumps místo initial_regs a initial_*_file, uváděla VRAM a EXVRAM MZ-800 po 32 KB místo 16 KB, soubory RAMdisků a CG-RAM MZ-1500, které se neukládají, a jen WAIT u VRAM v režimu MZ-700. Příklad manifestu je teď skutečný export.
+
+	- BUGFIX: Debugger - limit objemu zápisů akcí breakpointů (fwd_byte_limit_mb, výchozí 256 MB) počítal i nahrávání Trace Suite spuštěné z menu nebo přes MCP bez jakéhokoli breakpointu. Po jeho překročení se emulace sama zastavila s hlášením "BP #-1" a headless běh s --exit-after-frames zůstal viset. Nově limit počítá jen snapshoty a trace, které ukládají akce breakpointů, a kanály, které akce breakpointu spustila. Ostatní nahrávání hlídá jen jeho vlastní max_total_mb, které zastaví nahrávání a emulace běží dál. MCP run při takovém zastavení hlásí stopped_by "bp_action_saturation" místo "unknown".
+
+	- BUGFIX: Debugger - s breakpointem, jehož akce pokračuje v běhu (continue), se příkazy z GUI a MCP (čtení registrů a paměti, zápisy) mohly vykonat uprostřed instrukce. U MEM_W breakpointu tak čtení vidělo PC už za instrukcí a paměť ještě před zápisem a zápis do paměti instrukce hned přepsala. Nově se po akci breakpointu vyřídí jen pauza a dotaz na stav, ostatní příkazy počkají na konec snímku nebo na pauzu.
+
+	- BUGFIX: CMT hack - zápis na porty 01h a 02h (OUT) spouštěl načítání souboru CMT hacku i tehdy, když byl CMT hack vypnutý. Program, který na tyto porty zapisoval, pak dostal jiné registry než na skutečném stroji. Nově porty reagují jen se zapnutým CMT hackem, a to na MZ-700, MZ-800 i MZ-1500.
+
+	- BUGFIX: MCP - mem_write zamítnutý kontrolou paměti (zápis do ROM nebo jiné nezapisovatelné oblasti) se v přehledu akcí MCP v GUI zobrazil jako provedený zápis. Nově se zamítnutý zápis hlásí jen jako chyba.
+
+	- BUGFIX: MCP - region_read a region_write s ID regionu z výčtu pořízeného před změnou sestavy (načtení snapshotu s menším RAMdiskem, změna MemExt nebo PEZIK) četly a zapisovaly podle starého výčtu. U zmenšeného RAMdisku to znamenalo čtení za koncem jeho paměti a pád emulátoru. Nově takové ID skončí chybou "stale region id" a klient musí znovu zavolat regions_list, který vrací i novou položku layout_gen. Čtení regionů v Memory Browseru kontroluje skutečnou velikost RAMdisku.
+
+	- BUGFIX: GDG MZ-800 - čekací stavy (WAIT) při přístupu CPU do VRAM. V režimu MZ-800 čtení z VRAM čekalo jen těsně po zápisu a v režimu MZ-700 byl první přístup ve viditelné části řádku bez WAIT i u čtení. Nově podle simulace zapojení GDG: každé čtení čeká na volný cyklus paměti (v režimu MZ-800 2-5 T-stavů, v režimu MZ-700 ve viditelné části řádku až do jejího konce), zápis jde přes jednobajtový buffer a čeká jen, dokud GDG nezapíše předchozí zápis. Programy, které VRAM čtou (kopírování z VRAM, INC (HL), sprity s maskou, SEARCH), běží pomaleji než dosud. Počty čekacích stavů jsou ze simulace, na skutečném stroji změřené nejsou. Ladicí okno GDG ukazuje místo MZ700 WR latch stav WRITE FF.
+
+	- BUGFIX: GDG - při zapnutém hardwarovém scrollu se adresa každého čtení a zápisu CPU do VRAM posouvala o offset scrollu. Na skutečném MZ-800 se posun uplatní jen tehdy, když bit B/A (bit 4 WF a RF) vybírá právě zobrazenou frame (bit 0 DMD); přístup do druhé frame jde na neposunutou adresu. V režimech 320x200 se 16 barvami a 640x200 se 4 barvami se posun uplatní vždy, beze změny. Programy, které při scrollu přepínají frame A/B nebo bit B/A, nově kreslí jako na skutečném stroji.
+
+	- BUGFIX: MCP - emu_irq_inject a emu_nmi_inject se přijaly jen tehdy, když některý obvod právě držel linku INT, a NMI navíc jen při povolených přerušeních. Bez HW žádosti o přerušení se jen nastavil příznak a přerušení nepřišlo. Nově se NMI z injectu přijme vždy a IRQ při povolených přerušeních (při DI počká na EI), jak popisuje dokumentace.
+
+	- BUGFIX: Snapshoty - Load Snapshot, Save Snapshot, Quick Load a Quick Save z menu provede emulátor v pauze, ne okno. Dřív se snapshot mohl uložit nebo načíst, zatímco emulace ještě běžela (hlavně v sestavení bez debuggeru), a uložený stav pak nemusel být konzistentní. Při záznamu nebo přehrávání vstupů se načtení odmítne.
+
+	- BUGFIX: Debugger - Test Eval v editačním panelu breakpointu vyhodnocuje emulátor, takže všechny registry a paměť jednoho výrazu jsou ze stejného okamžiku (za běhu na konci snímku). Jak píše dokumentace, znak ! v [addr]! a port[N]! se tam ignoruje: MEM_R breakpoint se už nespustí a port se jen čte sondou bez vedlejšího efektu.
+
+	- BUGFIX: standardní RAMdisk se v menu HW & Devices -> Memory Disk, v okně Memory Disk State a v názvech ROM JSS jmenuje MZ-1R18 (dřív MR-1R18).
+
+	- Nová funkce: okno Screenshot Control (Tools -> Screenshot -> Screenshot Control..., Alt+G) a okno Audio Capture Control (Tools -> Audio Capture -> Audio Capture Control..., Alt+Shift+Q), obdoba dálkového ovládání nahrávání videa: stav, poslední výsledek a celé ovládání s klávesami v okně, které může zůstat otevřené. Viz screenshots.md a audio-capture.md.
+
+	- BUGFIX: Z80 - PUSH, CALL, RST a přijetí přerušení nebo NMI zapisovaly nižší bajt ukládané hodnoty dřív. Nově se zapíše nejdřív vyšší bajt (na SP-1), pak nižší, jak uvádí manuál Zilog Z80. Obsah paměti po instrukci se nemění; pořadí je vidět u breakpointů na zápis do zásobníku a u zápisů do paměťově mapovaných I/O.
+
+	- Nová funkce: záznam a přehrání vstupů (Replay). Replay -> Record Inputs... nahraje od startovního snapshotu klávesnici, joysticky (i joystick hostitele), resety, autotype, ovládání kazety, soubory vybrané pro CMT hack a zápisy debuggeru, vše na hranici snímku, spolu s hashi stavu CPU, paměti a periferií; obsah vložených disket, Quick Disku, disků IDE8 a pásky se uloží do záznamu. Replay -> Play Replay... běh přesně zopakuje, i v novém procesu bez souborů médií a při libovolné rychlosti, nad kopiemi médií, s jinými breakpointy, trace nebo záznamem zápisů do paměti, a zastaví se na prvním snímku, kde se stav liší. Hodiny Unicardu běží při záznamu a přehrávání z emulovaného času. Během záznamu nejde měnit nastavení stroje, načíst snapshot, vkládat média ani měnit nastavení kazety. Checkpointy každých 5 sekund (posledních 5 minut, sekce [REPLAY] konfigurace): Replay -> Rewind (Alt+Shift+J) se při záznamu vrátí a nahrává dál odtud, Replay -> Seek... přesune přehrávání na libovolný snímek. Replay -> Replay Control... (Alt+J) otevře okno se stavem a celým ovládáním. Viz replay.md.
+
+	- MCP - záznam a přehrání vstupů: emu_replay_record_start, emu_replay_record_stop, emu_replay_play, emu_replay_play_stop, emu_replay_rewind, emu_replay_seek (důvod pauzy replay_seek), emu_replay_status; konec přehrávání je pauza s důvodem replay_end nebo replay_desync. Ovládání kazety přes MCP se zaznamená; zápis debuggeru v pauze mimo hranici snímku a nástroje, které záznam nezopakuje (načtení snapshotu, média, vložení pásky, nastavení kazety, nastavení), se během záznamu odmítnou s vysvětlením. Viz mcp-server/tools-overview.md a emulator://docs/replay.
+
+	- Automatické běhy: --replay-record, --replay-hash-interval, --replay, --exit-at-replay-end a --replay-verify (ověření záznamu v MAX SPEED); rozjetí přehrávání vrací návratový kód 4, result.json má objekt replay a v hashes nově cpu (registry a skrytý stav Z80). Viz replay.md a mcp-server/headless-mode.md.
+
+	- MCP - řízení běhu: každý běh (rozběh, běh k adrese, krok) má číslo run_seq a každé zastavení záznam (důvod, PC, breakpoint, kdo a čím běh spustil, čas v taktech GDG). Nové nástroje emu_resume (volný běh bez blokování), emu_wait_stop (počká na konec běhu, nejvýš 25 s na volání) a emu_get_stop_history (resource emulator://run/history). emu_resume, emu_run_until_addr a emu_step_out mají deadline v emulovaném čase (deadline_frames, deadline_ms, deadline_ticks), deterministický i přes reset. emu_pause(if_run_seq) nezastaví běh, který mezitím spustil uživatel v GUI. Viz mcp-server/tools-overview.md a emulator://docs/run_control.
+
+	- MCP - událost paused přijde právě jednou na každé zastavení včetně kroku, deadlinu a saturace akcí breakpointů a nese run_seq, takty GDG a kdo běh spustil; pauza už pozastavené emulace žádnou událost nepošle. Nová událost resumed ohlásí rozběh, i z GUI. emu_step_into a emu_step_over vracejí completed (krok opravdu proběhl) a running; krok jedné instrukce se vrací až po provedení. emu_run_until_raster, emu_run_until_tstate a emu_run_until_event skončí nejpozději po 20 s (time_limited).
+
+	- MCP - SHA-256 místo přenosu dat: emu_mem_read a emu_region_read vracejí sha256 přečtených bajtů (s want_data=false jen hash), nový emu_frame_hash vrátí hash obrazu a hash VRAM s pozicí paprsku; screenshoty nesou stejný image_sha256.
+
+	- BUGFIX: MCP emu_run(frames) přerušený breakpointem nebo pauzou nechal svůj limit aktivní: další běh (i Continue / F5 v GUI) se po zbytku snímků sám zastavil.
+
+	- BUGFIX: Debugger - krok (Step Into, MCP emu_step_into a emu_step_n), který dokončil snímek, mohl ztratit následující krok: emu_step_n pak hlásil všechny kroky, ale provedl o jeden méně, a příkaz poslaný hned po kroku mohl vidět stav před krokem.
+
+	- Nová funkce: Memory Search (Debugger -> Memory Search, Alt+Shift+E) najde, kde program drží hodnotu (životy, skóre, časovač), zužováním kandidátů: User RAM, Logical Z80, VRAM, banky MemExt, RAM disky nebo všechna zapisovatelná paměť; u8-s32 (LE/BE), packed BCD a řetězce číslic (holé, ASCII, display kód); filtry rovno, menší, větší, mezi, zvýšilo / snížilo se (o N), změnilo se (o N), nezměnilo se a bity pod maskou proti hodnotě, předchozímu nebo prvnímu vzorku; Undo / Redo, náhled filtru. Kandidáta jde otevřít v Memory Browseru, přidat do Watch, hlídat breakpointem na zápis ve správné zóně nebo zmrazit. Viz debugger/memory-search.md.
+
+	- MCP - hledání proměnných: emu_memsearch_start, emu_memsearch_filter, emu_memsearch_sample, emu_memsearch_undo, emu_memsearch_redo, emu_memsearch_list (hodnoty, CPU adresa a hotový breakpoint na zápis pro emu_bp_create_with_init), emu_memsearch_eliminate, emu_memsearch_close; Freeze Bytes přes MCP: emu_freeze_add, emu_freeze_remove, emu_freeze_list. Viz mcp-server/tools-overview.md a emulator://docs/memsearch_workflow.
+
+	- BUGFIX: MemExt PEHU - Memory Browser, Freeze Bytes a MCP nástroje emu_regions_list / emu_region_read ukazovaly jen první polovinu z 512 kB (chyběly banky PEHU 20h-3Fh).
+
+	- Nová funkce: automatické běhy pro CI (--headless): emulátor sám skončí, když nastane podmínka, a vrátí návratový kód - --exit-after-frames, --timeout-frames / --timeout-seconds (emulovaný čas), --exit-on-pc, --fail-on-pc, --exit-on-write, --exit-on-out, nebo breakpoint s akcí exit ze sady načtené přes --bpt. --result-json nebo --automation-dir zapíše výsledek (důvod, návratový kód, čas, registry, hashe SHA-256 paměti a obrazovky, artefakty), --exit-screenshot a --exit-snapshot uloží konečnou obrazovku a stav. Návratové kódy: 0 úspěch, 1 test selhal, 2 timeout, 3 chyba emulátoru nebo voleb. Nahrávání videa a zachycení zvuku se dokončí při jakémkoliv návratovém kódu. Viz mcp-server/headless-mode.md.
+
+	- Debugger - akce breakpointu stop ["hláška"] (zastavení, volitelně s hláškou - zalogovat a zastavit jedním breakpointem) a exit <kód> ["hláška"] (konec běhu s návratovým kódem; v GUI a s MCP se emulátor jen pozastaví, emu_run hlásí stopped_by exit a událost paused má důvod exit). Viz debugger/breakpoints/action-dsl.md.
+
+	- BUGFIX: --headless - konec po chybě už na Windows nečeká 5 sekund.
+
+	- Nová funkce: RAM Write Log (Debugger -> RAM Write Log) zaznamenává zápisy do paměti: u každého zápisu adresu instrukce, která zapsala, CPU adresu, paměťovou buňku (RAM, MemExt, VRAM s plánem MZ-800, PCG, ROM), původní a novou hodnotu a zdroj (instrukce, návratová adresa přijatého přerušení, debugger, poke z breakpointu, zmrazení, páska, nahrání programu). Okno ukáže posledního zapisovatele a historii zápisů bajtu - posledního zapisovatele i poté, co se jeho záznam přepsal - a nejnovější zápisy. Memory Browser: pravé tlačítko na bajtu -> Who wrote this byte?. Volby --ramlog-mode, --ramlog-ring, --ramlog-capacity, --ramlog-lo, --ramlog-hi a sekce [RAMLOG] konfigurace spustí záznam od startu nebo po dobu otevřeného okna debuggeru. Viz debugger/ram-write-log.md.
+
+	- MCP - záznam zápisů do paměti: emu_ramlog_start (rozsahy CPU adres nebo paměťových buněk, ring nebo fill, velikost), emu_ramlog_stop, emu_ramlog_clear, emu_ramlog_status, emu_ramlog_who_wrote (poslední zapisovatel a historie zápisů buňky podle aktuálního mapování paměti) a emu_ramlog_writers (instrukce, které zapisovaly do rozsahu); samotné záznamy čte emu_trace_read, kanál ramlog. Viz mcp-server/tools-overview.md a emulator://docs/ramlog.
+
+	- Debugger - akce breakpointů ramlog_start, ramlog_stop a ramlog_clear a funkce výrazu lastwriter(addr): adresa instrukce, která naposledy zapsala paměťovou buňku na adrese. Viz debugger/breakpoints/action-dsl.md a debugger/breakpoints/expression-syntax.md.
+
+	- MCP - zachycení zvuku drží data i v paměti (přes MCP výchozí zapnuto, parametry memory, pcm, memory_minutes, pcm_seconds) a čte se bez souborů, za běhu i po konci: emu_trace_read kanály audio_psg_writes, audio_levels a audio_frames (souhrn každého snímku), nový emu_audio_capture_summary (úseky ticha a zvuku, noty hrané PSG, odhad tón nebo PCM u reproduktoru, zpoždění a rozdíl zvukového výstupu proti referenci) a emu_audio_capture_pcm (krátké okno PCM jako WAV, převzorkovaný náhled nebo přesná kopie 44100 Hz). Zachycení jen do paměti nezakládá složku. Viz audio-capture.md a emulator://docs/audio_capture_read.
+
+	- MCP - nové nástroje emu_trace_status a emu_trace_read: záznamy Trace Suite (cputrack, iorqlog, intlog, hwlog, marklog) i ring Event Vieweru jdou číst po stránkách přímo přes MCP, i za běhu záznamu a bez parsování souborů. Čitelná jsou i data, která jsou zatím jen v paměti (krátký běh se nemusí nejdřív zapsat na disk), po zastavení zůstane poslední záznam čitelný. Kurzor, filtry (PC, port, čip, značka, čas), výběr sloupců a rozpočet znaků stránky; řádky cputrack nesou disassembly z bajtů záznamu, symbol a čas. Viz Trace_Suite.md a emulator://docs/trace_read.
+
+	- Trace Suite - formát záznamu cputrack v2: dosud rezervovaný 12. bajt nese standardní délku instrukce v T-stavech (bez WAIT, u podmíněných skoků podle toho, jestli se skočilo; u sbaleného záznamu HALT a smyčky na sebe 0). Přijetí přerušení se zapisuje jako záznam s délkou instrukce 0 (adresa obsluhy, T-stavy přijetí). Manifest nese event_record_version: 2. Čas každé instrukce tak jde spočítat bez re-simulace, přesně i s přerušeními. Viz CPU-track_format.md.
+
+	- BUGFIX: Snapshot - uloží a obnoví i další stav periferií, který ovlivňuje běh programu: naplánovaný krok čítače CTC0 (8253), registry hardwarového scrollu MZ-800, příznak čekacích stavů přístupu do VRAM v režimu MZ-700 na MZ-700 a přechodný stav řadiče disket na konci stopy a seznam sektorů pro čtení stopy. Dřív tyto hodnoty po načtení zůstaly ze stroje, který se načtením přepisoval. Snapshot ze starší verze je nastaví jako po resetu (CTC0 pokračuje od nejbližší hrany svých hodin).
+
+	- BUGFIX: Snapshot - snapshot uložený s jinou konfigurací RAMdisku nebo IDE8 se načte bezpečně. RAMdisk větší, než je nastavený v emulátoru, se dřív kopíroval za konec paměti (načtení se zaseklo nebo poškodilo paměť), nově se paměť RAMdisku přizpůsobí velikosti ze snapshotu. Disk IDE8 připojený ve snapshotu zůstane odpojený, pokud v emulátoru není otevřený obraz disku; dřív se tvářil jako připojený a každé čtení skončilo chybou.
+
+	- BUGFIX: Snapshot - uloží a obnoví i skrytý stav procesoru Z80: registr MEMPTR (WZ), čekající přerušení INT a NMI s vektorem, odložení přerušení po EI a čítač T-stavů. Dřív po načtení snapshotu zůstaly tyto hodnoty ze stroje, který se načtením přepisoval, takže stav po načtení neodpovídal uloženému. Snapshot ze starší verze nastaví skrytý stav na hodnoty po resetu.
+
+	- BUGFIX: Trace Suite - cputrack zapisuje bajty instrukce tak, jak je procesor načetl. Instrukce, která přepsala vlastní bajty nebo pod sebou přepnula banking paměti, se dřív zapsala s bajty z paměti po vykonání (např. LD (nn),A jako NOP). Nahrávání cputrack je tím asi o 12 % pomalejší (měřeno v MAX SPEED).
+
+	- BUGFIX: MCP - emu_event_poll s timeout_ms nad 30 000 už neskončí chybou wrapperu (timeout odpovědi); wrapper čeká tak dlouho, jak dlouho smí čekat emulátor (až 60 s).
+
+	- MCP - nástroje emu_trace_start, emu_trace_stop, emu_trace_reset a emu_trace_save nově ovládají i kanál marklog (značky z akce breakpointu mark), stejně jako akce trace_start a trace_stop v breakpointech.
+
+	- BUGFIX: MCP - emu_history_get za běhu emulace vrací pozici v historii instrukcí ze stejného okamžiku jako samotné řádky; dřív se pozice četla později a nemusela k řádkům sedět.
+
+	- BUGFIX: Debugger a MCP - zápis paměti debuggerem (úpravy v Memory Browseru, zmrazení bajtů, MCP emu_mem_write a emu_region_write) už nespouští MEM_W breakpointy. Dřív každý takový zápis na hlídanou adresu zvýšil počet zásahů a vyslal události breakpoint_hit a paused; zmrazený bajt na hlídané adrese spouštěl breakpoint v každém snímku.
+
+	- Debugger - výrazy breakpointů mají nové identifikátory InsnPC a FrameCycle. InsnPC je adresa vykonávané instrukce: u MEM_R, MEM_W a IORQ breakpointů ukazuje PC už za instrukci, která přístup dělá, InsnPC na ni. FrameCycle jsou takty GDG od začátku snímku a na rozdíl od Cycle (asi po 121 s emulace přeteče) nepřetéká.
+
+	- BUGFIX: Debugger - v režimu MZ-700 zobrazení adres 0E000h-0E008h (Memory Browser, Watch, disassembler, MCP emu_mem_read, výrazy breakpointů) už neovlivní emulaci. Dřív čtení 0E001h posunulo automatické psaní textu (autotype), zpracovalo klávesnici hostitele a narušilo ověření dosednutí kláves MCP, na MZ-700 a MZ-1500 čtení 0E008h načetlo joystick. Na 0E004h-0E006h debugger nově ukazuje stav čítače 8253 místo konstanty.
+
+	- BUGFIX: Debugger a MCP - čtení paměti debuggerem (disassembler, zásobník, MCP emu_mem_read a emu_dasm) už nespouští MEM_R breakpointy. Dřív každé zobrazení adresy s MEM_R breakpointem zvýšilo počet zásahů a vyslalo události breakpoint_hit a paused, i když procesor nic nečetl.
+
+	- BUGFIX: MCP a Memory Browser - s MemExtem Luftner, RAMdiskem STD 16 MB a PEZIKem (přes 500 paměťových regionů) jsou dostupné všechny regiony. MCP emu_regions_list dřív výčet usekl na 128 položek a emu_region_read / emu_region_write odmítly vyšší ID, takže banky RAMdisku nešly číst; Memory Browser, jeho porovnání a zmrazení bajtů (freeze) viděly nejvýš 512 regionů.
+
+	- BUGFIX: Debugger a MCP - zastavení na dočasném breakpointu (Run to cursor, Step over přes CALL, MCP emu_run_until_addr a emu_step_out) nově vyšle událost paused s důvodem run_to, takže MCP klient nemusí stav pollovat (emu_run hlásí stopped_by run_to). Dočasný breakpoint na adrese, kde je i breakpoint s nesplněnou podmínkou, emulaci už spolehlivě zastaví; dřív ji nechal běžet dál.
 
 	- Režim --headless už zbytečně nezatěžuje celé jedno jádro procesoru. Hlavní vlákno bez okna dřív dokola kontrolovalo události, teď na ně čeká; rychlost emulace se nemění.
 

@@ -389,7 +389,7 @@ PIOZ80 is available both in hwlog (decoded state changes, bus events)
 and in intlog (pin-edge and IRQ-flow events). Different abstraction
 levels; dual logging is intentional and recommended.
 
-## Recording header (meta.json)
+## Recording header (manifest `<name>.json`)
 
 ```json
 {

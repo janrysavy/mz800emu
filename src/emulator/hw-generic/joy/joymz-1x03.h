@@ -203,6 +203,19 @@ extern void joymz_reset(void);
 extern uint8_t joymz_get_status_bits14(uint64_t total_ticks);
 
 /**
+ * @brief Bity 1-4 statusu 0xE008 bez načtení vstupu z hostitele.
+ *
+ * Stejný výpočet jako joymz_get_status_bits14() (tlačítka mimo vblank,
+ * PWM pulzy os ve vblank), ale bez joymz_refresh_from_iface_joy(): použije
+ * stav páček z posledního čtení CPU (nebo z joymz_set_*). Pro debugger
+ * a mapované čtení bez vedlejšího efektu (gdg_peek_dmd_status_memop()).
+ *
+ * @return Maska bitu 1-4 (rozsah 0x00-0x1E); bez HAVE_JOY nebo na MZ-800 0x1E.
+ * @pre Emu vlákno, nebo pauza.
+ */
+extern uint8_t joymz_peek_status_bits14(void);
+
+/**
  * Nastaveni analogove pozice osy.
  *
  * @param stick_idx  0 nebo 1 (0 = stick A, 1 = stick B).

@@ -3,7 +3,7 @@
  *
  * Testuje:
  *  - cputrack_init / cputrack_start / cputrack_stop lifecycle
- *  - emit eventu - 12-byte layout (PC + len + bytes + wait_clk + reserved)
+ *  - emit eventu - 12-byte layout v2 (PC + len + bytes + wait_clk + t_std)
  *  - HALT/self-loop collapse (1 event + akumulované wait_clk)
  *  - chunk + meta.json soubory vytvořené
  *  - initial RAM dump v hlavičce
@@ -137,7 +137,7 @@ typedef struct {
     uint8_t  insn_len;
     uint8_t  insn_bytes[ 4 ];
     uint32_t wait_clk;
-    uint8_t  reserved;
+    uint8_t  t_std;
 } parsed_event_t;
 
 
@@ -153,7 +153,7 @@ static void parse_event ( const uint8_t *buf, parsed_event_t *e )
                 | ( (uint32_t) buf[ 8 ] << 8 )
                 | ( (uint32_t) buf[ 9 ] << 16 )
                 | ( (uint32_t) buf[ 10 ] << 24 );
-    e->reserved = buf[ 11 ];
+    e->t_std = buf[ 11 ];
 }
 
 
@@ -187,6 +187,24 @@ void test_cputrack_start_stop_basic ( void )
     TEST_ASSERT_TRUE_MESSAGE ( g_file_test ( ram_path, G_FILE_TEST_IS_REGULAR ),
                                "cput_initial_ram.bin musí být zapsán" );
     g_free ( ram_path );
+}
+
+
+/**
+ * @brief Přepočet aktivity podle režimu přepne bit cputrack v masce háčků
+ *        po instrukci (brána hlavní smyčky čte jen masku).
+ */
+void test_cputrack_recompute_sets_post_insn_mask ( void )
+{
+    g_cputrack_config.mode = TLOG_MODE_ALWAYS;
+    cputrack_recompute_active ( 0 );
+    TEST_ASSERT_EQUAL_INT ( 1, g_cputrack_active );
+    TEST_ASSERT_TRUE ( g_mzarch_post_insn_hooks & MZARCH_POST_INSN_CPUTRACK );
+
+    g_cputrack_config.mode = TLOG_MODE_OFF;
+    cputrack_recompute_active ( 0 );
+    TEST_ASSERT_EQUAL_INT ( 0, g_cputrack_active );
+    TEST_ASSERT_FALSE ( g_mzarch_post_insn_hooks & MZARCH_POST_INSN_CPUTRACK );
 }
 
 
@@ -281,6 +299,8 @@ void test_cputrack_meta_contains_initial_regs ( void )
 
     TEST_ASSERT_TRUE_MESSAGE ( json_kv_present ( s, "event_record_size", "12" ),
                                    "event_record_size musí být 12" );
+    TEST_ASSERT_TRUE_MESSAGE ( json_kv_present ( s, "event_record_version", "2" ),
+                                   "event_record_version musí být 2 (bajt 11 = t_std)" );
 
     g_free ( buf );
 }
@@ -319,7 +339,7 @@ void test_cputrack_event_layout_basic ( void )
 
     TEST_ASSERT_EQUAL_HEX16_MESSAGE ( 0x1234, e0.pc, "PC eventu 0" );
     TEST_ASSERT_EQUAL_UINT32_MESSAGE ( 0, e0.wait_clk, "wait_clk = 0 pro běžnou instr" );
-    TEST_ASSERT_EQUAL_UINT8_MESSAGE ( 0, e0.reserved, "reserved byte musí být 0" );
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE ( 4, e0.t_std, "bajt 11 (v2) = standardní T-stavy instrukce" );
     TEST_ASSERT_TRUE_MESSAGE ( e0.insn_len >= 1 && e0.insn_len <= 4,
                                "insn_len v rozsahu 1-4" );
 
@@ -434,6 +454,48 @@ void test_cputrack_collapse_wait_extra_accumulates ( void )
  * HALT / self-loop collapse
  * ================================================================ */
 
+/* v2: přijetí přerušení = záznam s insn_length 0 (pc obsluhy, t_std =
+ * T-stavy přijetí); sbalená smyčka HALT, kterou přerušení ukončilo, se
+ * zapíše před něj. */
+void test_cputrack_interrupt_accept_record ( void )
+{
+    activate_cputrack ( );
+
+    g_mzarch_main.cpu->pc = 0x2001;
+    cputrack_on_instruction_complete ( 0x2000, 4, 0 );
+    /* HALT na 2001h se opakuje (sbalí se) */
+    for ( int i = 0; i < 10; i++ ) {
+        g_mzarch_main.cpu->pc = 0x2001;
+        cputrack_on_instruction_complete ( 0x2001, 4, 0 );
+    }
+    /* přijetí IM 2, obsluha na 3434h */
+    cputrack_on_interrupt_accept ( 0x3434, 19 );
+    g_mzarch_main.cpu->pc = 0x3435;
+    cputrack_on_instruction_complete ( 0x3434, 4, 0 );
+
+    cputrack_stop ( );
+    g_cputrack_active = 0;
+
+    size_t fsize = 0;
+    uint8_t *buf = read_whole_file ( s_test_dir, "cput.000.bin", &fsize );
+    TEST_ASSERT_NOT_NULL ( buf );
+    TEST_ASSERT_EQUAL_size_t_MESSAGE ( 48, fsize, "instr + sbalený HALT + přijetí + instr = 4 záznamy" );
+    parsed_event_t e1, e2, e3;
+    parse_event ( buf + 12, &e1 );
+    parse_event ( buf + 24, &e2 );
+    parse_event ( buf + 36, &e3 );
+    TEST_ASSERT_EQUAL_HEX16 ( 0x2001, e1.pc );
+    TEST_ASSERT_EQUAL_UINT32 ( 10 * 4, e1.wait_clk );
+    TEST_ASSERT_EQUAL_HEX16_MESSAGE ( 0x3434, e2.pc, "přijetí: pc = adresa obsluhy" );
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE ( 0, e2.insn_len, "přijetí: insn_length 0" );
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE ( 19, e2.t_std, "přijetí: t_std = T-stavy přijetí" );
+    TEST_ASSERT_EQUAL_UINT32 ( 0, e2.wait_clk );
+    TEST_ASSERT_EQUAL_HEX16 ( 0x3434, e3.pc );
+    TEST_ASSERT_EQUAL_UINT8 ( 4, e3.t_std );
+    g_free ( buf );
+}
+
+
 void test_cputrack_self_loop_collapses_to_single_event ( void )
 {
     activate_cputrack ( );
@@ -481,6 +543,10 @@ void test_cputrack_self_loop_collapses_to_single_event ( void )
                                       "Collapsed event musí mít PC smyčky" );
     TEST_ASSERT_EQUAL_UINT32_MESSAGE ( 100 * 12, e1.wait_clk,
                                        "Collapsed event akumuluje 100*12 T-states" );
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE ( 4, e0.t_std, "běžný záznam nese standardní T-stavy" );
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE ( 0, e1.t_std,
+                                      "sbalený záznam má t_std 0 (čas je ve wait_clk)" );
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE ( 12, e2.t_std, "exit instrukce nese standardní T-stavy" );
     TEST_ASSERT_EQUAL_HEX16_MESSAGE ( 0x3000, e2.pc,
                                       "Exit instr emit s pc=collapse pc" );
 
@@ -563,6 +629,7 @@ int main ( int argc, char *argv[] )
     /* Lifecycle */
     RUN_TEST ( test_cputrack_start_stop_basic );
     RUN_TEST ( test_cputrack_start_idempotent );
+    RUN_TEST ( test_cputrack_recompute_sets_post_insn_mask );
     RUN_TEST ( test_cputrack_stop_idempotent );
 
     /* Initial dumps + meta */
@@ -577,6 +644,7 @@ int main ( int argc, char *argv[] )
 
     /* Collapse logic */
     RUN_TEST ( test_cputrack_self_loop_collapses_to_single_event );
+    RUN_TEST ( test_cputrack_interrupt_accept_record );
     RUN_TEST ( test_cputrack_no_collapse_when_pc_changes );
     RUN_TEST ( test_cputrack_collapse_state_reset );
     RUN_TEST ( test_cputrack_collapse_wait_extra_accumulates );

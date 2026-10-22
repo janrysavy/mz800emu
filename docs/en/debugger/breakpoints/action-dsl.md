@@ -16,19 +16,17 @@ breakpoint system.
 
 ## "Stop vs continue" semantics
 
-The action mini-DSL has no explicit `stop` command. The decision to
-halt the emulator is driven solely by whether the action string is
-empty:
-
 - **action == NULL or whitespace-only** -> the emulator stops
   (= classic BP stop).
 - **action with any non-empty content** -> after evaluating all the
-  commands the emulator continues (= implicit continue).
+  commands the emulator continues (= implicit continue), unless the
+  action ran `stop` or `exit`.
+- **`stop`** stops the emulator like an empty action; **`exit`** ends the
+  run with an exit code (see below). Both end the action: the commands
+  after them do not run.
 
-Consequence: if you want a BP that logs and then stops, it is **not
-possible** to express that directly (it would require `stop`). The
-workaround for stop-on-N is incrementing `$hits` plus an external Stop
-BP, or Stop mode without a Custom script.
+A BP that logs and then stops: `log "A=%X", A; stop`, or shorter
+`stop "A=%X", A`. Stop on a condition: `if $hits >= 5 then stop`.
 
 ## Basic rules
 
@@ -47,11 +45,13 @@ BP, or Stop mode without a Custom script.
 
 ## Commands
 
-The action mini-DSL provides 19 commands: 11 basic ones (log, continue,
+The action mini-DSL provides 27 commands: 13 basic ones (log, continue,
 disable_self, enable, disable, poke, set, mark, `$name` assignment,
-clear_vars, if) and 8 forward commands for recording control (cdl_start,
+clear_vars, if, stop, exit) and 14 forward commands for recording control (cdl_start,
 cdl_stop, cdl_reset, cdl_export, trace_start, trace_stop, trace_save,
-snapshot - see the "Forward commands" section below).
+snapshot, ramlog_start, ramlog_stop, ramlog_clear, coverage_start,
+coverage_stop, coverage_mark - see the "Forward
+commands" section below).
 
 ### `log "fmt"[, expr...]`
 
@@ -96,7 +96,13 @@ Semantics of `%s`:
 
 A bank-specific lookup is not exposed in the action DSL.
 
-The output goes to stdout.
+The output goes to stdout. In the `--mcp-pipe` mode stdout carries the
+MCP messages, so the emulator redirects its text output (including
+`[BP-LOG]` lines) to stderr; an MCP client cannot read it through MCP.
+
+In MEM_R / MEM_W / IORQ breakpoints `PC` is already behind the accessing
+instruction; log `InsnPC` for the instruction address (see
+[expression-syntax.md](expression-syntax.md#cpu-registers-z80)).
 
 ### `continue`
 
@@ -204,7 +210,7 @@ branches runs independently** according to configuration:
 1. **Marklog binary record** - if `[TRACE_MARKLOG] mode` is
    `WITH_WINDOW` or `ALWAYS` (and the writer is active), a 24 B record
    is written into `<dir>/<name>.NNN.bin` with a pre-resolved
-   `marker_id`. The id -> name mapping is in `meta.json`.
+   `marker_id`. The id -> name mapping is in the manifest `<name>.json`.
 2. **Stdout printout** `[BP-MARK] <name>` - if
    `[TRACE_MARKLOG].stdout_enabled` is `1` (default).
 
@@ -310,6 +316,44 @@ if A == 0 then log "zero" else log "nonzero=%X", A
 if $state == 1 then enable trace_bp else disable trace_bp
 ```
 
+### `stop ["fmt"[, args...]]`
+
+Stops the emulator like a BP with an empty action. The optional message
+is a format string as in `log` and is printed as `[BP-STOP] ...`. The
+commands after `stop` do not run.
+
+```
+stop
+stop "buffer full at %X, HL=%X", PC, HL
+if $hits >= 5 then stop "5th pass"
+```
+
+### `exit <expr>[, "fmt"[, args...]]`
+
+Ends the run with the exit code `<expr>` (0-255; another value is
+reduced to its low 8 bits with a warning). The optional message is a
+format string as in `log`. The commands after `exit` do not run.
+
+- In `--headless` without an MCP server (or with an unattended-run option,
+  see [Headless mode](../../mcp-server/headless-mode.md#unattended-runs))
+  the process ends with this code, writes the result file and finishes
+  the video and audio recording.
+- In the GUI, with `--mcp-pipe` and with an MCP TCP session the emulator
+  only pauses: stderr shows the code, MCP clients get the event `paused`
+  with `reason: "exit"` and `exit_code`, `emu_run` returns
+  `stopped_by: "exit"`. The process keeps running.
+
+Codes 0 (success), 1 (test failed), 2 (timeout) and 3 (error) have a
+meaning in unattended runs; 64-255 are free for values reported by the
+program.
+
+```
+exit 0
+exit 1, "checksum mismatch: %X", HL
+exit Value                     # IORQ_W / MEM_W BP: the code the program wrote
+if A != 0 then exit 1 else exit 0
+```
+
 ## Forward commands (recording control from a BP)
 
 Forward commands let a breakpoint action run recording operations
@@ -343,7 +387,7 @@ cdl_export "cdl-%d.json", $id
 ### `trace_start <channel>`, `trace_stop <channel>`
 
 Start / stop a binary trace-suite channel. `<channel>` is one of
-`cputrack` / `iorqlog` / `intlog` / `hwlog` (case-sensitive, no quotes).
+`cputrack` / `iorqlog` / `intlog` / `hwlog` / `marklog` (case-sensitive, no quotes).
 
 ```
 trace_start cputrack
@@ -372,6 +416,45 @@ snapshot "snap.mzs"
 snapshot "snap-%d.mzs", $id
 ```
 
+### `ramlog_start [<from>, <to>]`, `ramlog_stop`, `ramlog_clear`
+
+Control the RAM write log ([RAM Write Log](../ram-write-log.md)).
+`ramlog_start` without arguments records writes into all memory; with
+two expressions it records one range of CPU addresses. The expressions
+are evaluated when the breakpoint hits (the order of the two values does
+not matter). `ramlog_start` replaces a running log (ring mode, default
+size). `ramlog_stop` stops recording (the records stay readable),
+`ramlog_clear` empties the log.
+
+```
+ramlog_start
+ramlog_start 0x4000, 0x40FF
+ramlog_start HL, HL + 15
+ramlog_stop
+```
+
+The expression function `lastwriter(addr)` returns the address of the
+instruction that last wrote the cell at `addr`, e.g.
+`if lastwriter(0x4000) == 0x3009 then ramlog_stop`.
+
+### `coverage_start [branch|detail]`, `coverage_stop`, `coverage_mark`
+
+Control code coverage (which instructions ran and which way the
+conditional jumps went; read over MCP, see the `emu_coverage_*` tools
+in [MCP tools overview](../../mcp-server/tools-overview.md)).
+`coverage_start` without an argument collects the level `branch`,
+`coverage_start detail` the level `detail`; data collected before with
+the same settings are continued. `coverage_stop` stops collecting (the
+data stay readable), `coverage_mark` starts a new epoch, so that the
+code that runs for the first time after the mark can be listed.
+
+```
+coverage_start
+coverage_start detail
+coverage_mark
+coverage_stop
+```
+
 All file-name templates (`cdl_export` / `trace_save` / `snapshot`)
 share the same renderer as `log`, so you can generate numbered files
 with `$variables`, e.g.:
@@ -398,10 +481,16 @@ emulator or the disk, they have built-in protection:
   otherwise the global default from configuration applies.
 - **Byte saturation.** When the cumulative volume written by forward
   actions exceeds the threshold the emulator auto-pauses and emits a
-  warning with a reason.
-- Even when a continuing BP triggers a heavy action, pause / stop /
-  clear-breakpoint commands always take effect - the emulator does not
-  get stuck.
+  warning with a reason. It counts snapshots and traces saved by actions
+  and the recording of trace channels that an action started or saves.
+  A trace started only from the Trace Suite menu or over MCP is not
+  counted; its own `max_total_mb` limit stops the recording and the
+  emulation continues.
+- Even when a continuing BP triggers a heavy action, pause and the
+  emulator state query are served right after the action - the
+  emulator does not get stuck. Other commands (reads, writes,
+  breakpoint changes) wait for the end of the frame or for the pause,
+  because the action can run in the middle of an instruction.
 
 ## Full examples
 

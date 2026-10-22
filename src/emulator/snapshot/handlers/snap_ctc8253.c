@@ -1,6 +1,10 @@
 /**
  * @file snap_ctc8253.c
  * @brief Snapshot handler: CTC 8253 — uložení a načtení stavu všech 3 čítačů
+ *
+ * U CTC0 v rychlé cestě (MZ800EMU_CFG_CLK1M1_FAST) ukládá i naplánovanou
+ * událost a bázi líného dopočtu hodnoty; bez nich by po loadu CTC0 čítal
+ * podle času stroje před loadem.
  */
 
 #include <stdio.h>
@@ -46,6 +50,17 @@ static en_SNAPSHOT_RESULT snap_ctc8253_save(st_SNAPSHOT_CONTEXT *ctx)
         snapshot_xml_write_hex16(w, "value", (uint16_t)ctc->value);
         snapshot_xml_write_hex16(w, "mode3_destination_value", (uint16_t)ctc->mode3_destination_value);
         snapshot_xml_write_hex16(w, "mode3_half_value", (uint16_t)ctc->mode3_half_value);
+
+#ifdef MZ800EMU_CFG_CLK1M1_FAST
+        /* CTC0 rychlá cesta: naplánovaná událost a báze líného dopočtu
+         * value (value je uložená k této bázi, ne dopočtená). Obojí je
+         * v čase GDG, který snapshot obnovuje (total_elapsed). */
+        if (i == CTC_CS0) {
+            snapshot_xml_write_uint(w, "clk1m1_event_ticks", ctc->clk1m1_event.ticks);
+            snapshot_xml_write_uint(w, "clk1m1_last_event_total_ticks",
+                                    ctc->clk1m1_last_event_total_ticks);
+        }
+#endif
 
         snapshot_xml_close_element(w); /* counter_N */
     }
@@ -115,6 +130,22 @@ static en_SNAPSHOT_RESULT snap_ctc8253_load(st_SNAPSHOT_CONTEXT *ctx)
         if (snapshot_xml_read_hex16(r, "value", &hval)) ctc->value = hval;
         if (snapshot_xml_read_hex16(r, "mode3_destination_value", &hval)) ctc->mode3_destination_value = hval;
         if (snapshot_xml_read_hex16(r, "mode3_half_value", &hval)) ctc->mode3_half_value = hval;
+
+#ifdef MZ800EMU_CFG_CLK1M1_FAST
+        /* CTC0 rychlá cesta; snapshot bez události (starší verze) ji
+         * naplánuje na nejbližší hranu CLK0 (GDG je už obnovený). */
+        if (i == CTC_CS0) {
+            unsigned ev_ticks, base;
+            if (snapshot_xml_read_uint(r, "clk1m1_event_ticks", &ev_ticks)
+                && snapshot_xml_read_uint(r, "clk1m1_last_event_total_ticks", &base)) {
+                ctc->clk1m1_event.event_name = MZEVENT_CTC0;
+                ctc->clk1m1_event.ticks = ev_ticks;
+                ctc->clk1m1_last_event_total_ticks = base;
+            } else {
+                ctc8253_ctc0_restart_event();
+            }
+        }
+#endif
 
         snapshot_xml_leave_element(r); /* counter_N */
     }

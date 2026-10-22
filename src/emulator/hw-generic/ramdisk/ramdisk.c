@@ -218,6 +218,48 @@ void ramdisk_std_init ( int connect, en_RAMDISK_TYPE type, en_RAMDISK_BANKMASK s
     g_ramdisk.std.connected = connect;
 }
 
+void ramdisk_fit_buffers_after_load ( en_RAMDISK_BANKMASK std_alloc_size ) {
+
+    size_t need = ( (size_t) g_ramdisk.std.size + 1 ) * DEF_BANK_SIZE;
+
+    if ( g_ramdisk.std.memory == NULL ) {
+        if ( g_ramdisk.std.connected ) {
+            g_ramdisk.std.memory = malloc ( need );
+            if ( g_ramdisk.std.memory == NULL ) {
+                fprintf ( stderr, "%s():%d - Could not allocate memory: %s\n", __func__, __LINE__, strerror ( errno ) );
+                emulator_quit ( EXIT_FAILURE );
+            };
+            memset ( g_ramdisk.std.memory, 0xff, need );
+        };
+    } else {
+        size_t have = ( (size_t) std_alloc_size + 1 ) * DEF_BANK_SIZE;
+        if ( need != have ) {
+            uint8_t *mem = realloc ( g_ramdisk.std.memory, need );
+            if ( mem == NULL ) {
+                fprintf ( stderr, "%s():%d - Could not allocate memory: %s\n", __func__, __LINE__, strerror ( errno ) );
+                emulator_quit ( EXIT_FAILURE );
+            };
+            if ( need > have ) {
+                memset ( mem + have, 0xff, need - have );
+            };
+            g_ramdisk.std.memory = mem;
+        };
+    };
+
+    for ( int i = 0; i < 2; i++ ) {
+        if ( ( g_ramdisk.pezik [ i ].connected ) && ( g_ramdisk.pezik [ i ].memory == NULL ) ) {
+            unsigned ramdisk_size = 8 * DEF_BANK_SIZE;
+            g_ramdisk.pezik [ i ].memory = malloc ( ramdisk_size );
+            if ( g_ramdisk.pezik [ i ].memory == NULL ) {
+                fprintf ( stderr, "%s():%d - Could not allocate memory: %s\n", __func__, __LINE__, strerror ( errno ) );
+                emulator_quit ( EXIT_FAILURE );
+            };
+            memset ( g_ramdisk.pezik [ i ].memory, 0xff, ramdisk_size );
+        };
+    };
+}
+
+
 void ramdisk_pezik_disconnect ( int pezik_type ) {
 
     if ( RAMDISK_DISCONNECTED == g_ramdisk.pezik [ pezik_type ].connected ) return;
@@ -340,7 +382,7 @@ void ramdisk_init ( void ) {
 
     CFGELM *elm;
 
-    /* MR1R18 */
+    /* MZ-1R18 */
     elm = cfgmodule_register_new_element ( cmod, "mr1r18_pluged", CFGENTYPE_BOOL, RAMDISK_CONNECTED );
     cfgelement_set_handlers ( elm, NULL, (void*) &g_ramdisk.std.connected );
 

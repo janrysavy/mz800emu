@@ -202,6 +202,24 @@ bool membrowser_window_write_byte_at_cursor ( int instance_idx, uint8_t byte );
  */
 void membrowser_window_apply_persisted ( void );
 
+/**
+ * @brief Otevře hlavní Memory Browser na bajtu regionu.
+ *
+ * Přepne hlavní instanci na region (kind, sub_id), nastaví kurzor na
+ * @p offset (hex view ho posune do viditelné části) a okno otevře
+ * a zaostří. Instance se případně vytvoří. Region se dohledá při příštím
+ * vykreslení; když v sestavě není, okno spadne na Logical jako při
+ * odpojení periferie.
+ *
+ * @param region_kind en_REGION_KIND (dbgapi_regions.h).
+ * @param sub_id      sub_id regionu.
+ * @param offset      Offset v regionu.
+ * @pre Volat z UI vlákna.
+ * @post g_gui->showMemoryBrowserWindow == true; volba se uloží do persistu
+ *       instance jako běžná změna regionu.
+ */
+void membrowser_window_show_at ( int region_kind, int sub_id, uint32_t offset );
+
 #ifdef __cplusplus
 }
 #endif

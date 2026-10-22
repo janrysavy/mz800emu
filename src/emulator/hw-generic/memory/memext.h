@@ -43,6 +43,15 @@
 #define MEMEXT_PEHU_BANK_SIZE 0x2000
 #define MEMEXT_PEHU_ADDR_MASK 0x1fff
 
+/**
+ * @brief Počet raw 4 KB kusů RAM PEHU (= 512 KB).
+ *
+ * PEHU banka (8 KB) zabírá dva raw kusy: memext_map_pwrite() mapuje banku
+ * b na raw 2*b (dolní 4 KB) a 2*b + 1 (horní 4 KB). Debug API (regiony
+ * MEMEXT_RAM) adresuje raw kusy, proto jich je dvojnásobek MEMEXT_PEHU_BANKS.
+ */
+#define MEMEXT_PEHU_RAW_BANKS ( MEMEXT_PEHU_BANKS * 2 )
+
 #define MEMEXT_RAW_MAP_SIZE 0x10
 #define MEMEXT_RAW_BANK_SIZE 0x1000
 

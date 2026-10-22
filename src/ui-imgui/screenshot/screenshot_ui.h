@@ -43,7 +43,8 @@ void imgui_screenshot_menu(void);
 /**
  * @brief Zkratky screenshotu; volá se v Alt větvi globálních zkratek.
  *
- * Alt+F = uložit screenshot, Alt+Shift+F = spustit / ukončit sérii snímků.
+ * Alt+F = uložit screenshot, Alt+Shift+F = spustit / ukončit sérii snímků,
+ * Alt+G = zobrazit / skrýt okno Screenshot Control.
  */
 void imgui_screenshot_shortcuts(void);
 
@@ -69,6 +70,28 @@ void imgui_screenshot_series_poll(void);
  * do INI při ukončení emulátoru), Cancel ji zahodí.
  */
 void imgui_screenshot_setup_dialog(void);
+
+/**
+ * @brief Plovoucí okno Screenshot Control (`###ScreenshotRemote`), zobrazí se
+ *        při g_gui->showScreenshotWindow.
+ *
+ * Ukazuje nastavení (oblast, měřítko, výstupní složka), poslední screenshot
+ * z GUI (soubor a rozměr, nebo chyba) a stav série snímků; tlačítka Save
+ * Screenshot, Save Screenshot As..., Start / Stop Frame Series s viditelnými
+ * zkratkami, Open Output Folder a Settings... Volá UI vlákno jednou za snímek.
+ */
+void imgui_screenshot_window(void);
+
+/**
+ * @brief Zaregistruje sekci INI `[SCREENSHOT_UI]` (viditelnost okna), jen jednou.
+ *
+ * Volá se i v headless režimu, aby uložení INI sekci nepřepsalo.
+ * @pre g_cfgmain existuje.
+ */
+void imgui_screenshot_window_cfg_init(void);
+
+/** @brief Aplikuje uloženou viditelnost okna do `g_gui` (po jeho vzniku). */
+void imgui_screenshot_window_apply_persisted(void);
 
 #ifdef __cplusplus
 }

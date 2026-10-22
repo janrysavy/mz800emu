@@ -27,6 +27,9 @@ struct snapshot_io_t {
     /* Pro inkrementální výpočet checksumu při zápisu */
     GPtrArray *written_names;  /* seznam názvů zapsaných entries */
     GPtrArray *written_data;   /* seznam GBytes* s daty entries */
+    /* Hashovací režim (snapshot_io_open_hash): entries se nezapisují do ZIP,
+     * jen se počítá SHA-256 přes jméno, délku a data; handle je NULL. */
+    GChecksum *hash;
 };
 
 
@@ -113,6 +116,12 @@ snapshot_io_t *snapshot_io_open_read(const char *filepath)
 void snapshot_io_close(snapshot_io_t *io)
 {
     if (!io) return;
+
+    if (io->hash) {
+        g_checksum_free(io->hash);
+        g_free(io);
+        return;
+    }
 
     if (io->writing) {
         mz_zip_writer_close(io->handle);
@@ -322,6 +331,35 @@ en_SNAPSHOT_RESULT snapshot_io_close_to_buffer(snapshot_io_t *io,
 
 
 /* ========================================================================= */
+/*                          Hashovací režim                                  */
+/* ========================================================================= */
+
+snapshot_io_t *snapshot_io_open_hash(void)
+{
+    snapshot_io_t *io = g_new0(snapshot_io_t, 1);
+    io->writing = true;
+    io->hash = g_checksum_new(G_CHECKSUM_SHA256);
+    return io;
+}
+
+
+en_SNAPSHOT_RESULT snapshot_io_close_hash(snapshot_io_t *io, char *out_hex, size_t out_size)
+{
+    if (out_hex && out_size) out_hex[0] = '\0';
+    if (!io || !io->hash) {
+        if (io) snapshot_io_close(io);
+        return SNAPSHOT_ERR_IO;
+    }
+    const char *hex = g_checksum_get_string(io->hash);
+    en_SNAPSHOT_RESULT res = SNAPSHOT_OK;
+    if (!out_hex || out_size <= strlen(hex)) res = SNAPSHOT_ERR_IO;
+    else g_strlcpy(out_hex, hex, out_size);
+    snapshot_io_close(io);
+    return res;
+}
+
+
+/* ========================================================================= */
 /*                              Zápis                                        */
 /* ========================================================================= */
 
@@ -332,6 +370,18 @@ en_SNAPSHOT_RESULT snapshot_io_write_bin(snapshot_io_t *io,
 {
     if (!io || !io->writing || !entry_name || !data) return SNAPSHOT_ERR_IO;
     if (!io_validate_entry_name(entry_name)) return SNAPSHOT_ERR_IO;
+
+    if (io->hash) {
+        /* Jméno s nulou a délka (8 bajtů LE) oddělují entries, takže stejná
+         * data rozdělená jinak dají jiný hash. */
+        guint8 len_le[8];
+        guint64 len = (guint64)size;
+        for (int i = 0; i < 8; i++) len_le[i] = (guint8)(len >> (8 * i));
+        g_checksum_update(io->hash, (const guchar *)entry_name, (gssize)strlen(entry_name) + 1);
+        g_checksum_update(io->hash, len_le, sizeof(len_le));
+        if (size) g_checksum_update(io->hash, data, (gssize)size);
+        return SNAPSHOT_OK;
+    }
 
     /* Připravit file_info pro nový entry */
     mz_zip_file file_info;

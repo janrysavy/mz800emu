@@ -11,7 +11,15 @@
  * | 2      | 1 B      | insn_length (1-4)                              |
  * | 3      | 4 B      | insn_bytes (jen prvních insn_length valid)     |
  * | 7      | 4 B      | wait_clk (uint32_t LE) - WAIT T-states navíc   |
- * | 11     | 1 B      | reserved (zarovnání na 12 B)                   |
+ * | 11     | 1 B      | t_std - standardní T-stavy instrukce (v2)      |
+ *
+ * Formát v2 (@ref CPUTRACK_RECORD_VERSION, `event_record_version` v
+ * manifestu): bajt 11 = standardní délka instrukce v T-stavech (bez WAIT),
+ * u sbaleného záznamu (HALT / smyčka na sebe) 0, protože @c wait_clk nese
+ * celý čas smyčky. Ve v1 byl bajt 11 rezerva (vždy 0). Formát v2 navíc
+ * zapisuje přijetí přerušení jako záznam s `insn_length` 0 (regPC =
+ * adresa obsluhy, bajt 11 = T-stavy přijetí), viz
+ * @ref cputrack_on_interrupt_accept.
  *
  * @c wait_clk == 0 => běžná instrukce (žádný WAIT).
  * @c wait_clk == 0xFFFFFFFF => "saturated" (např. dlouhá HALT smyčka).
@@ -40,6 +48,9 @@
 
 #ifndef CPUTRACK_H
 #define CPUTRACK_H
+
+/** @brief Verze formátu záznamu cputrack (2 = bajt 11 nese standardní T-stavy). */
+#define CPUTRACK_RECORD_VERSION 2
 
 #ifdef __cplusplus
 extern "C"
@@ -129,6 +140,9 @@ extern int g_cputrack_active;
  *
  * Volá se při změně cputrack_mode (UI/CLI) a při změně debugger_active
  * (debug okno open/close).
+ *
+ * @post Maska háčků po instrukci (g_mzarch_post_insn_hooks) odpovídá
+ *       novému stavu @c g_cputrack_active.
  */
 void cputrack_recompute_active ( int debugger_active );
 
@@ -199,6 +213,26 @@ void cputrack_hot_path_hook ( uint16_t pc,
                               uint32_t wait_extra_tstates );
 
 /**
+ * @brief Záznam přijetí přerušení (formát v2: insn_length 0).
+ *
+ * Volá cesta přijetí přerušení v mzarch (ne instrukční smyčka) po
+ * úspěšném z80_process_interrupt(), jen při aktivním cputrack. Nejdřív
+ * zapíše rozpracovaný sbalený záznam (HALT nebo smyčka na sebe, kterou
+ * přerušení ukončilo), pak záznam přijetí: `regPC` = adresa obsluhy (PC
+ * po přijetí), `insn_length` = 0, bajty instrukce 0, `wait_clk` = 0,
+ * `t_std` = T-stavy přijetí. Součet `t_std + wait_clk` všech záznamů tak
+ * dává uplynulý čas CPU včetně přijetí přerušení.
+ *
+ * @param isr_pc       PC po přijetí (adresa obsluhy přerušení).
+ * @param ack_tstates  T-stavy přijetí (návrat z80_process_interrupt).
+ *
+ * @pre Volat jen když @c TEST_TRACE_CPUTRACK_ACTIVE (caller gatuje).
+ * @note Filtr PC (`pc_range_lo/hi`) se uplatní na @p isr_pc stejně jako
+ *       na instrukce.
+ */
+void cputrack_on_interrupt_accept ( uint16_t isr_pc, uint32_t ack_tstates );
+
+/**
  * @brief Reset stavu collapse logiky (volat při emu reset).
  */
 void cputrack_reset_collapse_state ( void );
@@ -217,7 +251,7 @@ void cputrack_finalize ( void );
  *
  * Chování:
  *  - Pokud běží recording, uzavře aktuální segment (flush + close => zapíše
- *    poslední částečný chunk a finalní meta.json).
+ *    poslední částečný chunk a finální manifest <name>.json).
  *  - Pokud je @p path zadané, přesměruje @c dir/name z @p path (split na
  *    dirname + basename, přípona se nechá jako prefix) PŘED restartem.
  *  - Pokud recording běžel, otevře čerstvý segment (pokračování záznamu);
@@ -243,6 +277,18 @@ int cputrack_save_segment ( const char *path );
  *         nebo neaktivní subsystém.
  */
 int cputrack_is_truncated ( void );
+
+/**
+ * @brief Writer kanálu cputrack pro čtení proudu záznamů (trace_read).
+ *
+ * Vrací writer i po stopu (popis posledního uzavřeného segmentu), viz
+ * tlog_writer_read_snapshot() a devdoc/trace/stream-read.md.
+ *
+ * @return Ukazatel na statický writer modulu (nikdy NULL).
+ * @pre Snímek writeru pořizovat jen z emu vlákna; tlog_writer_segment()
+ *      z libovolného vlákna.
+ */
+const st_TLOG_WRITER *cputrack_get_writer ( void );
 
 #ifdef __cplusplus
 }

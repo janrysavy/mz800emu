@@ -151,6 +151,10 @@ static MembrowserView *s_views[MB_INSTANCE_COUNT] = {
     nullptr, nullptr, nullptr, nullptr, nullptr
 };
 
+/* Fokus hlavní instance vyžádaný membrowser_window_show_at() (aplikuje se
+ * v membrowser_window_render před Begin). */
+static bool s_main_focus_pending = false;
+
 
 /* ---- Pomocné rendery -------------------------------------------------- */
 
@@ -2262,6 +2266,11 @@ extern "C" void membrowser_window_render ( bool *p_open )
             SLOT_WINDOW_ID[MB_INSTANCE_MAIN] );
         if ( !s_views[MB_INSTANCE_MAIN] ) return;
     }
+    /* Skok z jiného okna (membrowser_window_show_at): zaostřit. */
+    if ( s_main_focus_pending ) {
+        ImGui::SetNextWindowFocus ( );
+        s_main_focus_pending = false;
+    }
     membrowser_view_render ( s_views[MB_INSTANCE_MAIN], p_open );
 }
 
@@ -2509,6 +2518,25 @@ extern "C" bool membrowser_window_write_byte_at_cursor ( int instance_idx,
         v->state.cursor_addr = ( uint32_t ) ( pos + 1 );
     }
     return true;
+}
+
+
+extern "C" void membrowser_window_show_at ( int region_kind, int sub_id, uint32_t offset )
+{
+    if ( !s_views[MB_INSTANCE_MAIN] ) {
+        s_views[MB_INSTANCE_MAIN] = membrowser_view_create (
+            SLOT_WINDOW_ID[MB_INSTANCE_MAIN] );
+        if ( !s_views[MB_INSTANCE_MAIN] ) return;
+    }
+    st_MEMBROWSER_STATE *st = &s_views[MB_INSTANCE_MAIN]->state;
+    /* ID regionu se dohledá z (kind, sub_id) v příštím membrowser_view_render. */
+    st->current_key.kind = region_kind;
+    st->current_key.sub_id = sub_id;
+    st->cursor_addr = offset;
+    st->edit_nibble = 0;
+    membrowser_state_save_to_persisted ( st );
+    s_main_focus_pending = true;
+    if ( g_gui ) g_gui->showMemoryBrowserWindow = true;
 }
 
 #endif /* MZ800EMU_CFG_DEBUGGER_ENABLED */

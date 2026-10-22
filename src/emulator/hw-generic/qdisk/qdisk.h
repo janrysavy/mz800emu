@@ -368,6 +368,44 @@ extern "C"
      *         chyba zápisu.
      */
     int qdisk_drive_force_save_to_file(void);
+
+    /**
+     * @brief Kopie obsahu nasazeného QD obrazu (záznam vstupů).
+     *
+     * Jen typ IMAGE a UNICARD s otevřeným obrazem: u cached a discard obsah
+     * paměti (včetně nezapsaných změn), u direct obsah souboru (po fflush).
+     *
+     * @param[out] size velikost kopie v bajtech
+     * @return nová kopie (g_free), nebo NULL (bez obrazu, virtuální režim,
+     *         chyba čtení)
+     * @pre Emu vlákno nebo pozastavená emulace.
+     */
+    uint8_t *qdisk_copy_image(size_t *size);
+
+    /**
+     * @brief Nasadí QD obraz z paměti bez zápisu do INI (přehrání vstupů).
+     *
+     * Předchozí obraz se zavře (cached se zapíše do souboru). Nový obraz je
+     * paměťová kopie v režimu discard. Funguje i s odpojenou mechanikou:
+     * přehrání ho nasazuje před načtením startovního snapshotu, který
+     * připojení, stav a pozici obnoví.
+     *
+     * @param data     obsah (zkopíruje se)
+     * @param size     velikost v bajtech (> 0)
+     * @param readonly 1 = jen pro čtení
+     * @param label    jméno pro `filename` (diagnostika)
+     * @return EXIT_SUCCESS; EXIT_FAILURE (alokace) - pak bez obrazu
+     * @pre Emu vlákno nebo pozastavená emulace.
+     */
+    int qdisk_mount_image_buffer(const uint8_t *data, uint32_t size, int readonly, const char *label);
+
+    /**
+     * @brief Zavře obraz bez zápisu do INI (přehrání vstupů).
+     *
+     * Jako qdisk_close() (cached se zapíše do souboru), i když mechanika není
+     * připojená; stav přejde na "bez disku". Původní obraz vrátí qdisk_open().
+     */
+    void qdisk_umount_keep_cfg(void);
 #endif
 
 #ifdef __cplusplus

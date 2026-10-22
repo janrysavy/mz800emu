@@ -156,6 +156,24 @@ extern "C"
 
     extern void ctc8253_init(void);
     extern uint8_t ctc8253_read_byte(unsigned cs);
+
+    /**
+     * @brief Bajt, který by vrátilo čtení čítače @p cs, bez vedlejšího efektu.
+     *
+     * Stejná volba zdroje (read_latch při Counter Latch, jinak value) a bajtu
+     * (LSB / MSB / podle rl_byte u LSBMSB) jako ctc8253_read_byte(), ale
+     * rl_byte ani latch_op nemění. Pro debugger a mapované čtení 0E004h-0E006h
+     * v režimu MZ-700 (memory_read_byte_no_se, Memory Browser, Watch).
+     *
+     * @param cs Index čítače CTC_CS0..CTC_CS2; jiná hodnota vrátí 0x00.
+     * @return Bajt čítače.
+     * @note CTC0 se v rychlé cestě (MZ800EMU_CFG_CLK1M1_FAST) před čtením
+     *       nedosynchronizuje (ctc8253_sync_ctc0() mění stav): vrátí hodnotu
+     *       z poslední synchronizace, která se od čtení CPU v tomtéž okamžiku
+     *       může lišit. CTC1 a CTC2 se synchronizací nečtou.
+     * @pre Emu vlákno, nebo pauza.
+     */
+    extern uint8_t ctc8253_peek_byte(unsigned cs);
     extern void ctc8253_write_byte(unsigned addr, uint8_t value);
     extern void ctc8253_gate(unsigned addr, unsigned gate, unsigned event_screen_ticks);
     extern void ctc8253_clkfall(unsigned cs, unsigned event_ticks);
@@ -181,6 +199,21 @@ extern "C"
 #ifdef MZ800EMU_CFG_CLK1M1_FAST
     extern void ctc8253_ctc1m1_event(unsigned event_ticks);
     extern void ctc8253_sync_ctc0(void);
+
+    /**
+     * @brief Naplánuje událost CTC0 rychlé cesty na nejbližší hranu CLK0.
+     *
+     * Pro snapshot bez uložené události CTC0 (starší verze): událost
+     * `clk1m1_event` se nastaví na nejbližší sestupnou hranu CLK0 od
+     * aktuálního času GDG a báze `clk1m1_last_event_total_ticks` na
+     * aktuální čas, takže ctc8253_ctc1m1_event() zpracuje jedinou hranu
+     * a další událost naplánuje podle stavu čítače. Je-li nová událost
+     * dřív než `g_mzarch_main.event`, převezme ji plánovač.
+     *
+     * @pre g_gdg.total_elapsed je už obnovený (GDG se načítá před CTC).
+     * @post Průběh CTC0 po loadu nezávisí na stavu stroje před loadem.
+     */
+    extern void ctc8253_ctc0_restart_event(void);
 #define ctc8253_get_ctc1m1_event_pointer() (&g_ctc8253[CTC_CS0].clk1m1_event)
 #endif
 

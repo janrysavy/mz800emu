@@ -4,7 +4,7 @@
  * @brief Debugger: Memory Disk State inspector window.
  *
  * Real-time snapshot stavu vsech paametovych disku (ramdisku) emulatoru:
- *   - MR-1R18 kompatibilni standardni ramdisk (typ STD/SRAM/ROM, velikost,
+ *   - MZ-1R18 kompatibilni standardni ramdisk (typ STD/SRAM/ROM, velikost,
  *     aktualni banka, offset, backing soubor),
  *   - Pezik 0xE8-0xEF (latch, portmask, backup, soubor) - jen MZ-700/MZ-800,
  *   - Pezik 0x68-0x6F (latch, portmask, backup, soubor).
@@ -79,7 +79,7 @@ static void ramdisk_std_size_str(char *buf, size_t bufsize, en_RAMDISK_BANKMASK 
 }
 
 /**
- * @brief Vykresli sekci se stavem standardniho MR-1R18 ramdisku.
+ * @brief Vykresli sekci se stavem standardniho MZ-1R18 ramdisku.
  */
 static void render_std_section(void)
 {
@@ -143,8 +143,8 @@ void imgui_ramdisk_state_window(bool *p_open)
         return;
     }
 
-    /* === MR-1R18 (Standard) === (default open) */
-    if (ImGui::CollapsingHeader(_L("MR-1R18 (Standard)"), ImGuiTreeNodeFlags_DefaultOpen))
+    /* === MZ-1R18 (Standard) === (default open) */
+    if (ImGui::CollapsingHeader(_L("MZ-1R18 (Standard)"), ImGuiTreeNodeFlags_DefaultOpen))
     {
         render_std_section();
     }

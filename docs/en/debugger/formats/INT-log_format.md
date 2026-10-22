@@ -30,7 +30,7 @@ CLI / INI. Persistent in INI section `[TRACE_INTLOG]`.
 ```
 
 The initial state of the interrupt bus + PIO-Z80 + CPU IM/IFF is in
-`meta.json` `subsys_header` as a JSON field (= no separate binary
+the manifest `<name>.json` `subsys_header` as a JSON field (= no separate binary
 dump files).
 
 ## Per-event record (24 B fixed)
@@ -159,7 +159,7 @@ bus latch).
 state_bitmask = 0 (= the field is unused, the edge is in the `edge`
 field).
 
-## meta.json
+## Manifest `<name>.json`
 
 ```json
 {

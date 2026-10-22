@@ -211,7 +211,7 @@ void test_clock_domain_cpuclk_is_pxclk_div_5 ( void )
 
 void test_writer_open_close_minimal ( void )
 {
-    st_TLOG_WRITER w;
+    st_TLOG_WRITER w = { 0 };
     int rc = tlog_writer_open ( &w, "test_subsys", s_test_dir, "out",
                                 1, 0, 100, 20, 5 );
     TEST_ASSERT_EQUAL_INT_MESSAGE ( 0, rc, "writer_open musí uspět" );
@@ -229,7 +229,7 @@ void test_writer_open_close_minimal ( void )
 
 void test_writer_open_rejects_empty_args ( void )
 {
-    st_TLOG_WRITER w;
+    st_TLOG_WRITER w = { 0 };
     /* Empty subsys */
     TEST_ASSERT_EQUAL_INT ( -1, tlog_writer_open ( &w, "", s_test_dir, "n", 1, 0, 0, 0, 0 ) );
     /* NULL subsys */
@@ -243,7 +243,7 @@ void test_writer_open_rejects_empty_args ( void )
 
 void test_writer_close_idempotent ( void )
 {
-    st_TLOG_WRITER w;
+    st_TLOG_WRITER w = { 0 };
     tlog_writer_open ( &w, "subsys", s_test_dir, "out", 1, 0, 0, 0, 0 );
     tlog_writer_close ( &w, 0, 0, 0 );
     /* Druhé volání NESMÍ spadnout. */
@@ -258,7 +258,7 @@ void test_writer_close_idempotent ( void )
 
 void test_writer_append_below_chunk_no_flush ( void )
 {
-    st_TLOG_WRITER w;
+    st_TLOG_WRITER w = { 0 };
     tlog_writer_open ( &w, "test", s_test_dir, "out", 1, 0, 0, 0, 0 );
 
     uint8_t evt[ 12 ] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
@@ -277,7 +277,7 @@ void test_writer_append_below_chunk_no_flush ( void )
 
 void test_writer_manual_flush_writes_chunk_file ( void )
 {
-    st_TLOG_WRITER w;
+    st_TLOG_WRITER w = { 0 };
     tlog_writer_open ( &w, "test", s_test_dir, "out", 1, 0, 0, 0, 0 );
 
     uint8_t evt[ 24 ];
@@ -308,7 +308,7 @@ void test_writer_manual_flush_writes_chunk_file ( void )
 
 void test_writer_flush_empty_buffer_is_noop ( void )
 {
-    st_TLOG_WRITER w;
+    st_TLOG_WRITER w = { 0 };
     tlog_writer_open ( &w, "test", s_test_dir, "out", 1, 0, 0, 0, 0 );
 
     /* Bez append flush je no-op. */
@@ -332,7 +332,7 @@ void test_writer_flush_empty_buffer_is_noop ( void )
 
 void test_writer_chunk_boundary_auto_flush ( void )
 {
-    st_TLOG_WRITER w;
+    st_TLOG_WRITER w = { 0 };
     /* 1 MB chunk = 1048576 B. Naplníme ho přesně 12 B eventy.
      * 1048576 / 12 = 87381 events + 4 B remainder. */
     tlog_writer_open ( &w, "test", s_test_dir, "out", 1, 0, 0, 0, 0 );
@@ -369,7 +369,7 @@ void test_writer_chunk_boundary_auto_flush ( void )
 
 void test_writer_event_larger_than_chunk_fails ( void )
 {
-    st_TLOG_WRITER w;
+    st_TLOG_WRITER w = { 0 };
     tlog_writer_open ( &w, "test", s_test_dir, "out", 1, 0, 0, 0, 0 );
 
     /* Single event 2 MB > 1 MB chunk - musí být odmítnut. */
@@ -389,7 +389,7 @@ void test_writer_event_larger_than_chunk_fails ( void )
 
 void test_writer_max_total_truncates ( void )
 {
-    st_TLOG_WRITER w;
+    st_TLOG_WRITER w = { 0 };
     /* chunk=1 MB, max_total=1 MB. Po jednom chunku se musí truncate. */
     tlog_writer_open ( &w, "test", s_test_dir, "out", 1, 1, 0, 0, 0 );
     TEST_ASSERT_EQUAL_size_t ( 1u * 1024 * 1024, w.max_total_bytes );
@@ -424,7 +424,7 @@ void test_writer_max_total_truncates ( void )
 
 void test_meta_json_basic_structure ( void )
 {
-    st_TLOG_WRITER w;
+    st_TLOG_WRITER w = { 0 };
     tlog_writer_open ( &w, "cputrack", s_test_dir, "out", 1, 0,
                        12345, 2469, 0 );
 
@@ -456,7 +456,7 @@ void test_meta_json_basic_structure ( void )
 
 void test_meta_json_records_chunks_after_flush ( void )
 {
-    st_TLOG_WRITER w;
+    st_TLOG_WRITER w = { 0 };
     tlog_writer_open ( &w, "iorqlog", s_test_dir, "out", 1, 0,
                        100, 20, 0 );
 
@@ -485,7 +485,7 @@ void test_meta_json_records_chunks_after_flush ( void )
 
 void test_meta_json_truncated_flag_after_max_total ( void )
 {
-    st_TLOG_WRITER w;
+    st_TLOG_WRITER w = { 0 };
     tlog_writer_open ( &w, "test", s_test_dir, "out", 1, 1, 0, 0, 0 );
 
     uint8_t evt[ 12 ];
@@ -516,7 +516,7 @@ void test_meta_json_truncated_flag_after_max_total ( void )
 
 void test_meta_json_subsys_header_extra ( void )
 {
-    st_TLOG_WRITER w;
+    st_TLOG_WRITER w = { 0 };
     tlog_writer_open ( &w, "cputrack", s_test_dir, "out", 1, 0, 0, 0, 0 );
 
     const char *extra = "{\n    \"my_field\": 42,\n    \"another\": \"value\"\n  }";
@@ -544,7 +544,7 @@ void test_meta_json_subsys_header_extra ( void )
 
 void test_writer_close_flushes_remaining ( void )
 {
-    st_TLOG_WRITER w;
+    st_TLOG_WRITER w = { 0 };
     tlog_writer_open ( &w, "test", s_test_dir, "out", 1, 0, 0, 0, 0 );
 
     uint8_t evt[ 12 ];
@@ -560,6 +560,133 @@ void test_writer_close_flushes_remaining ( void )
     TEST_ASSERT_NOT_NULL_MESSAGE ( buf, "Close musí flushnout zbytek bufferu" );
     TEST_ASSERT_EQUAL_size_t ( 12, fsize );
     g_free ( buf );
+}
+
+
+/* ================================================================
+ * Čtení proudu: segment a snímek (devdoc/trace/stream-read.md)
+ * ================================================================ */
+
+/** @brief Záznam 12 B s pořadovým číslem v prvních 4 bajtech. */
+static void make_rec ( uint8_t rec[ 12 ], uint32_t seq )
+{
+    memset ( rec, 0, 12 );
+    memcpy ( rec, &seq, sizeof ( seq ) );
+}
+
+/** @brief Pořadové číslo uložené v záznamu. */
+static uint32_t rec_seq ( const uint8_t *rec )
+{
+    uint32_t seq;
+    memcpy ( &seq, rec, sizeof ( seq ) );
+    return seq;
+}
+
+/* Segment roste s každým open, close ho ponechá. */
+void test_segment_increments_and_survives_close ( void )
+{
+    st_TLOG_WRITER w = { 0 };
+    TEST_ASSERT_EQUAL_UINT ( 0, tlog_writer_segment ( &w ) );
+    TEST_ASSERT_EQUAL_INT ( 0, tlog_writer_open ( &w, "test", s_test_dir, "out", 1, 0, 0, 0, 0 ) );
+    unsigned s1 = tlog_writer_segment ( &w );
+    TEST_ASSERT_TRUE ( s1 > 0 );
+    tlog_writer_close ( &w, 0, 0, 0 );
+    TEST_ASSERT_EQUAL_UINT_MESSAGE ( s1, tlog_writer_segment ( &w ), "close ponechá segment" );
+    TEST_ASSERT_EQUAL_INT ( 0, tlog_writer_open ( &w, "test", s_test_dir, "out", 1, 0, 0, 0, 0 ) );
+    TEST_ASSERT_TRUE_MESSAGE ( tlog_writer_segment ( &w ) > s1, "nový open = vyšší segment" );
+    tlog_writer_close ( &w, 0, 0, 0 );
+}
+
+/* Nikdy neotevřený writer: snímek se segmentem 0. */
+void test_snapshot_never_opened ( void )
+{
+    st_TLOG_WRITER w = { 0 };
+    st_TLOG_READ_SNAPSHOT snap;
+    TEST_ASSERT_EQUAL_INT ( 0, tlog_writer_read_snapshot ( &w, 0, 10, 4096, &snap ) );
+    TEST_ASSERT_EQUAL_UINT ( 0, snap.segment );
+    TEST_ASSERT_NULL ( snap.ram_copy );
+    tlog_read_snapshot_clear ( &snap );
+}
+
+/* Živý segment: next_seq, hranice RAM/disk a kopie z RAM bufferu. */
+void test_snapshot_live_ram_part ( void )
+{
+    st_TLOG_WRITER w = { 0 };
+    tlog_writer_open ( &w, "test", s_test_dir, "out", 1, 0, 0, 0, 0 );
+    tlog_writer_set_record_size ( &w, 12 );
+
+    /* 1 MB chunk = 87381 záznamů po 12 B; 87381 + 100 = jeden chunk na
+     * disku a 100 záznamů v RAM. */
+    uint8_t rec[ 12 ];
+    for ( uint32_t i = 0; i < 87381 + 100; i++ ) {
+        make_rec ( rec, i );
+        TEST_ASSERT_EQUAL_INT ( 0, tlog_writer_append ( &w, rec, sizeof ( rec ) ) );
+    }
+
+    st_TLOG_READ_SNAPSHOT snap;
+    TEST_ASSERT_EQUAL_INT ( 0, tlog_writer_read_snapshot ( &w, 87381 + 10, 50, 1u << 20, &snap ) );
+    TEST_ASSERT_EQUAL_UINT ( tlog_writer_segment ( &w ), snap.segment );
+    TEST_ASSERT_EQUAL_INT ( 1, snap.live );
+    TEST_ASSERT_EQUAL_size_t ( 12, snap.record_size );
+    TEST_ASSERT_EQUAL_UINT64 ( 87381 + 100, snap.next_seq );
+    TEST_ASSERT_EQUAL_UINT64 ( 87381, snap.ram_first_seq );
+    TEST_ASSERT_EQUAL_UINT ( 1, snap.chunks->len );
+    TEST_ASSERT_EQUAL_STRING ( "out", snap.name );
+    TEST_ASSERT_EQUAL_UINT64 ( 87381 + 10, snap.ram_copy_seq );
+    TEST_ASSERT_EQUAL_UINT64 ( 50, snap.ram_copy_count );
+    for ( uint64_t k = 0; k < snap.ram_copy_count; k++ ) {
+        TEST_ASSERT_EQUAL_UINT32 ( (uint32_t) ( snap.ram_copy_seq + k ), rec_seq ( snap.ram_copy + k * 12 ) );
+    }
+    tlog_read_snapshot_clear ( &snap );
+
+    /* Rozsah přes hranici disk/RAM: kopie začne na ram_first_seq;
+     * strop max_copy_bytes ořízne počet; rozsah za next_seq nic. */
+    tlog_writer_read_snapshot ( &w, 87000, 1000, 24 * 12, &snap );
+    TEST_ASSERT_EQUAL_UINT64 ( 87381, snap.ram_copy_seq );
+    TEST_ASSERT_EQUAL_UINT64 ( 24, snap.ram_copy_count );
+    tlog_read_snapshot_clear ( &snap );
+    tlog_writer_read_snapshot ( &w, 87381 + 100, 10, 1u << 20, &snap );
+    TEST_ASSERT_NULL ( snap.ram_copy );
+    TEST_ASSERT_EQUAL_UINT64 ( 0, snap.ram_copy_count );
+    tlog_read_snapshot_clear ( &snap );
+
+    tlog_writer_close ( &w, 0, 0, 0 );
+}
+
+/* Uzavřený segment zůstane čitelný (vše na disku) do dalšího open. */
+void test_snapshot_after_close ( void )
+{
+    st_TLOG_WRITER w = { 0 };
+    tlog_writer_open ( &w, "test", s_test_dir, "out", 1, 0, 0, 0, 0 );
+    tlog_writer_set_record_size ( &w, 12 );
+    uint8_t rec[ 12 ];
+    for ( uint32_t i = 0; i < 30; i++ ) {
+        make_rec ( rec, i );
+        tlog_writer_append ( &w, rec, sizeof ( rec ) );
+    }
+    unsigned seg = tlog_writer_segment ( &w );
+    tlog_writer_close ( &w, 0, 0, 0 );
+
+    st_TLOG_READ_SNAPSHOT snap;
+    TEST_ASSERT_EQUAL_INT ( 0, tlog_writer_read_snapshot ( &w, 0, 30, 1u << 20, &snap ) );
+    TEST_ASSERT_EQUAL_UINT ( seg, snap.segment );
+    TEST_ASSERT_EQUAL_INT ( 0, snap.live );
+    TEST_ASSERT_EQUAL_UINT64 ( 30, snap.next_seq );
+    TEST_ASSERT_EQUAL_UINT64 ( 30, snap.ram_first_seq );
+    TEST_ASSERT_NULL ( snap.ram_copy );
+    TEST_ASSERT_EQUAL_UINT ( 1, snap.chunks->len );
+    TEST_ASSERT_EQUAL_size_t ( 30 * 12, g_array_index ( snap.chunks, st_TLOG_CHUNK_META, 0 ).bytes );
+    TEST_ASSERT_EQUAL_STRING ( s_test_dir, snap.dir );
+    tlog_read_snapshot_clear ( &snap );
+
+    /* Nový open popis uzavřeného segmentu zahodí. */
+    tlog_writer_open ( &w, "test", s_test_dir, "out", 1, 0, 0, 0, 0 );
+    tlog_writer_read_snapshot ( &w, 0, 30, 1u << 20, &snap );
+    TEST_ASSERT_TRUE ( snap.segment > seg );
+    TEST_ASSERT_EQUAL_UINT64 ( 0, snap.next_seq );
+    TEST_ASSERT_EQUAL_UINT ( 0, snap.chunks->len );
+    tlog_read_snapshot_clear ( &snap );
+    tlog_writer_close ( &w, 0, 0, 0 );
 }
 
 
@@ -608,6 +735,12 @@ int main ( int argc, char *argv[] )
 
     /* Close final flush */
     RUN_TEST ( test_writer_close_flushes_remaining );
+
+    /* Čtení proudu */
+    RUN_TEST ( test_segment_increments_and_survives_close );
+    RUN_TEST ( test_snapshot_never_opened );
+    RUN_TEST ( test_snapshot_live_ram_part );
+    RUN_TEST ( test_snapshot_after_close );
 
     int result = UNITY_END ( );
 

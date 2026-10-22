@@ -380,7 +380,7 @@ PIOZ80 je k dispozici jak v hwlog (decoded state changes, bus events),
 tak v intlog (pin-edge a IRQ-flow events). Různé abstrakční úrovně,
 duální logování je úmyslné a doporučené.
 
-## Hlavička recordingu (meta.json)
+## Hlavička recordingu (manifest `<name>.json`)
 
 ```json
 {

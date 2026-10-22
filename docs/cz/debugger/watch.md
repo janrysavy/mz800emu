@@ -231,3 +231,5 @@ Pro side-effect verze použijte `port[0xCE]!`.
   identické konstrukce v podmínkách smart BP.
 - **`$vars` panel** - identifikátor `$name` ve výrazu čte user var
   nastavený smart BP akcemi.
+- **Memory Search** - pravé tlačítko na kandidátovi -> **Add to Watch**
+  přidá nalezenou proměnnou sem (viz [Memory Search](memory-search.md)).

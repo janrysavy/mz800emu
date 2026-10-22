@@ -20,7 +20,7 @@
  * - DAA lookup tabulka (2048 záznamů)
  * - Inline prefix handlery (CB/ED/DD/FD/DDCB/FDCB)
  *
- * @version multi-v0.3
+ * @version multi-v0.4
  */
 
 #include "z80.h"
@@ -192,10 +192,21 @@ static inline uint16_t rd16_slow(z80_t *cpu, uint16_t addr) {
     return (uint16_t)(lo | (hi << 8));
 }
 
-/** Zápis 16bitové hodnoty (pro použití mimo execute loop). */
-static inline void wr16_slow(z80_t *cpu, uint16_t addr, uint16_t val) {
+/**
+ * @brief Uložení 16bitové hodnoty na zásobník (mimo execute loop: přijetí INT a NMI).
+ *
+ * Pořadí zápisů podle Zilog UM0080 (PUSH qq, CALL, RST, NMI): nejdřív
+ * vyšší bajt na @p addr + 1 (= SP před přijetím - 1), pak nižší bajt na
+ * @p addr. Obsah paměti je little endian jako u ostatních zápisů; pořadí
+ * vidí callback zápisu do paměti (záznam zápisů, breakpointy MEM_W).
+ *
+ * @param cpu  CPU.
+ * @param addr Nový vrchol zásobníku (SP už snížený o 2).
+ * @param val  Ukládaná hodnota (návratová adresa).
+ */
+static inline void wr16_stack_slow(z80_t *cpu, uint16_t addr, uint16_t val) {
+    wr_slow(cpu, (uint16_t)(addr + 1), (uint8_t)(val >> 8));
     wr_slow(cpu, addr, (uint8_t)(val & 0xFF));
-    wr_slow(cpu, addr + 1, (uint8_t)(val >> 8));
 }
 
 /* Forward deklarace - použita v NEXT makru uvnitř z80_execute() */
@@ -477,7 +488,7 @@ static int handle_interrupts_internal(z80_t *cpu) {
          * rutiny. Tím push i HALT_EXIT event vidí X+1 (sémantika beze změny). */
         if (was_halted) cpu->pc++;
         cpu->sp -= 2;
-        wr16_slow(cpu, cpu->sp, cpu->pc);
+        wr16_stack_slow(cpu, cpu->sp, cpu->pc);
         /*
          * Fire HALT_EXIT před změnou cpu->pc (= předáme adresu za HALT,
          * kam by se CPU vrátilo bez NMI). Až pak update cpu->pc na vektor.
@@ -544,21 +555,21 @@ static int handle_interrupts_internal(z80_t *cpu) {
         switch (cpu->im) {
             case 0:
                 cpu->sp -= 2;
-                wr16_slow(cpu, cpu->sp, cpu->pc);
+                wr16_stack_slow(cpu, cpu->sp, cpu->pc);
                 cpu->pc = cpu->int_vector & 0x38;
                 cpu->wz.w = cpu->pc;
                 int_cycles = 13;
                 break;
             case 1:
                 cpu->sp -= 2;
-                wr16_slow(cpu, cpu->sp, cpu->pc);
+                wr16_stack_slow(cpu, cpu->sp, cpu->pc);
                 cpu->pc = 0x0038;
                 cpu->wz.w = cpu->pc;
                 int_cycles = 13;
                 break;
             case 2:
                 cpu->sp -= 2;
-                wr16_slow(cpu, cpu->sp, cpu->pc);
+                wr16_stack_slow(cpu, cpu->sp, cpu->pc);
                 {
                     uint16_t vec_addr = ((uint16_t)cpu->i << 8) | (cpu->int_vector & 0xFE);
                     cpu->pc = rd16_slow(cpu, vec_addr);

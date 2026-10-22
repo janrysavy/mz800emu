@@ -30,6 +30,7 @@
 #include "ui-imgui/debugger/dbgapi_helpers.h"
 #include "ui-imgui/videorec/videorec_menu.h"
 #include "ui-imgui/screenshot/screenshot_ui.h"
+#include "ui-imgui/topmenu/topmenu.h"
 #include "ui-imgui/audiocap/audio_capture_ui.h"
 
 extern "C"
@@ -424,17 +425,27 @@ void imgui_global_shortcuts(void)
         imgui_videorec_shortcuts();
 
         /*
-         * Screenshot: Alt + F
-         * Uloží PNG zobrazovaného obrazu do výstupního adresáře (Tools ->
-         * Screenshot). F není v jiných globálních Alt zkratkách použité.
+         * Screenshot: Alt + F uloží PNG zobrazovaného obrazu do výstupního
+         * adresáře, Alt + Shift + F spustí / ukončí sérii snímků, Alt + G
+         * zobrazí / skryje okno Screenshot Control (Tools -> Screenshot).
+         * F ani G (bez Shift) nejsou v jiných globálních Alt zkratkách použité
+         * (Alt + Shift + G = okno PSG State debuggeru).
          */
         imgui_screenshot_shortcuts();
 
         /*
-         * Zachycení zvuku: Alt + Q (start / stop, Tools -> Audio Capture).
-         * Q není v žádné jiné zkratce GUI použité.
+         * Zachycení zvuku: Alt + Q start / stop, Alt + Shift + Q okno Audio
+         * Capture Control (Tools -> Audio Capture). Q není v žádné jiné
+         * zkratce GUI použité.
          */
         imgui_audio_capture_shortcuts();
+
+        /*
+         * Záznam vstupů: Alt + J okno Replay Control, Alt + Shift + J Rewind
+         * (o jeden checkpoint zpět). J není v jiných Alt zkratkách použité
+         * (globálních ani debuggerových). Platí i bez debuggeru.
+         */
+        imgui_replay_shortcuts();
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
         /*
@@ -494,11 +505,20 @@ void imgui_global_shortcuts(void)
         /*
          * Memory Browser window: Alt + E (membrowser mutant V0).
          * Toggle viditelnosti Memory Browser hex MVP okna.
+         * Memory Search: Alt + Shift + E. Shift se kontroluje uvnitř
+         * (pattern Alt+S / Alt+Shift+S).
          */
         if (ImGui::IsKeyPressed(ImGuiKey_E, false))
         {
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-            g_gui->showMemoryBrowserWindow = !g_gui->showMemoryBrowserWindow;
+            if (io.KeyShift)
+            {
+                g_gui->showMemorySearchWindow = !g_gui->showMemorySearchWindow;
+            }
+            else
+            {
+                g_gui->showMemoryBrowserWindow = !g_gui->showMemoryBrowserWindow;
+            };
 #endif
         };
 

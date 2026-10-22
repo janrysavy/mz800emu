@@ -14,7 +14,7 @@ end
 Při fire BP se zapíše 24 B záznam do `<dir>/<name>.NNN.bin`. Marker
 name je předem zaregistrované při BP parse a v binárce ho reprezentuje
 stabilní `uint16 marker_id`. Mapování id → name se dumpuje do
-`meta.json` `subsys_header.markers`.
+manifest `<name>.json` `subsys_header.markers`.
 
 Slouží pro:
 - označení významných míst v záznamu pro pozdější seek (= "tady startuje
@@ -60,7 +60,7 @@ Alignment 8 B, kompatibilní s intlog headerem (sdílené prvních 16 B).
 ### Pole `marker_id`
 
 Stabilní v rámci jednoho běhu emulátoru. Mapování na human-readable
-jméno je v `meta.json`:
+jméno je v manifestu `<name>.json`:
 
 ```json
 "subsys_header": {
@@ -86,7 +86,7 @@ Aktuálně vždy nulové. Reservováno pro budoucí rozšíření:
 - 1 B marker type tag (info / warn / error)
 - 1 B padding
 
-## meta.json - kompletní struktura
+## Manifest `<name>.json` - kompletní struktura
 
 ```json
 {

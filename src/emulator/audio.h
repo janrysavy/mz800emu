@@ -130,6 +130,21 @@ extern "C"
     extern void audiolog_finish_20ms_frame(uint64_t total_event_ticks);
     extern void audio_log_destroy(st_AUDIO_LOG *audio_log);
     extern void audio_reset_log(uint64_t new_timestamp);
+
+    /**
+     * @brief Fáze krokování PSG: tiky GDG od posledního kroku PSG.
+     *
+     * PSG se krokuje po PSG_DIVIDER ticích od g_audio.log->last_psg_timestamp,
+     * líně (při zápisu do PSG a na konci snímku). Fáze je čas, který ještě
+     * nebyl odkrokovaný; snapshot ji ukládá, aby po načtení PSG krokoval
+     * ve stejné mřížce jako bez načtení (snap_audio.c).
+     *
+     * @param now_ticks Aktuální čas GDG (gdg_get_total_ticks()).
+     * @return now_ticks - last_psg_timestamp, 0 když je log v budoucnosti.
+     * Threading: emu vlákno.
+     */
+    extern uint64_t audio_psg_phase_ticks(uint64_t now_ticks);
+
     extern void audio_exit(void);
 
 #ifdef __cplusplus

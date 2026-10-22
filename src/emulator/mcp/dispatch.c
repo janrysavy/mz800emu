@@ -58,6 +58,17 @@
 #endif
 
 #include "../debugger/dbgapi_cmdrq.h"
+/* mcp-trace-read: čtenář proudu záznamů (kurzor, stránka) */
+#include "../debugger/trace/trace_reader.h"
+#include "../audio_capture.h"
+#include "../audio_analysis.h"
+#include "../debugger/trace/ramlog_hook.h"
+#include "../debugger/coverage/coverage.h"
+#include "../debugger/coverage/coverage_export.h"
+#include "../debugger/memsearch/memsearch.h"
+#include "../debugger/run_control/run_log.h"
+#include "../state_hash.h"
+#include <math.h>
 /* CMTSPEED_CUSTOM pro cmt_tape_block_speed s vlastními pulzy */
 #include "libs/cmtspeed/cmtspeed.h"
 /* history_get potřebuje st_DEBUGGER_HISTORY_ROW + g_debugger_history +
@@ -178,6 +189,10 @@ en_DBGAPI_SUBMIT_STATUS dbgapi_ui_submit_cmd_sync_watched(st_DBGAPI_CMDRQ_QUEUE 
 #include "../../iface/iface_video.h"
 #include "../emulator.h"      /* EMULATOR_TEST_PAUSED, emulator_pause */
 #endif
+
+/* Záznam a přehrání vstupů (replay_*): v test buildu náhrada ve stubu. */
+#include "../replay.h"
+#include "../replay_ckpt.h"
 
 
 /* ------------------------------------------------------------------ */
@@ -386,6 +401,26 @@ static en_MCP_DISPATCH_RESULT _handle_step_n(const st_JSONL_MESSAGE *req,
                                              char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_run_until_addr(const st_JSONL_MESSAGE *req,
                                                      char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_wait_stop(const st_JSONL_MESSAGE *req,
+                                                char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_get_stop_history(const st_JSONL_MESSAGE *req,
+                                                       char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_frame_hash(const st_JSONL_MESSAGE *req,
+                                                 char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_replay_record_start(const st_JSONL_MESSAGE *req,
+                                                          char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_replay_record_stop(const st_JSONL_MESSAGE *req,
+                                                         char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_replay_play(const st_JSONL_MESSAGE *req,
+                                                  char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_replay_play_stop(const st_JSONL_MESSAGE *req,
+                                                       char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_replay_rewind(const st_JSONL_MESSAGE *req,
+                                                    char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_replay_seek(const st_JSONL_MESSAGE *req,
+                                                  char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_replay_status(const st_JSONL_MESSAGE *req,
+                                                    char **out_response);
 /* V0.B.7 - resource backing pro emulator://config/mcp */
 static en_MCP_DISPATCH_RESULT _handle_get_mcp_config(const st_JSONL_MESSAGE *req,
                                                      char **out_response);
@@ -475,6 +510,31 @@ static en_MCP_DISPATCH_RESULT _handle_trace_reset(const st_JSONL_MESSAGE *req,
                                                   char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_trace_save(const st_JSONL_MESSAGE *req,
                                                  char **out_response);
+/* mcp-trace-read - stránkované čtení trace fwd decls */
+static en_MCP_DISPATCH_RESULT _handle_trace_status(const st_JSONL_MESSAGE *req,
+                                                   char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_trace_read(const st_JSONL_MESSAGE *req,
+                                                 char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_ramlog_start(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_ramlog_stop(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_ramlog_clear(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_ramlog_status(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_ramlog_who_wrote(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_ramlog_writers(const st_JSONL_MESSAGE *req, char **out_response);
+
+/* memsearch (M3 debug-gaps) - Freeze Bytes a Memory Search fwd decls */
+static en_MCP_DISPATCH_RESULT _handle_freeze_add(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_freeze_remove(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_freeze_list(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_memsearch_start(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_memsearch_filter(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_memsearch_sample(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_memsearch_undo(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_memsearch_redo(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_memsearch_list(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_memsearch_eliminate(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_memsearch_close(const st_JSONL_MESSAGE *req, char **out_response);
+static void _ms_close_all(void);
 
 /* video-capture Task 15 - video záznam fwd decls */
 static en_MCP_DISPATCH_RESULT _handle_videorec_start(const st_JSONL_MESSAGE *req,
@@ -516,6 +576,10 @@ static en_MCP_DISPATCH_RESULT _handle_audio_capture_stop(const st_JSONL_MESSAGE 
                                                          char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_audio_capture_status(const st_JSONL_MESSAGE *req,
                                                            char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_audio_capture_summary(const st_JSONL_MESSAGE *req,
+                                                            char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_audio_capture_pcm(const st_JSONL_MESSAGE *req,
+                                                        char **out_response);
 
 /* V1.A.7 - Profiler Tools fwd decls */
 static en_MCP_DISPATCH_RESULT _handle_profiler_start(const st_JSONL_MESSAGE *req,
@@ -720,6 +784,17 @@ static en_MCP_DISPATCH_RESULT _handle_get_last_instr(
     const st_JSONL_MESSAGE *req, char **out_response);
 static en_MCP_DISPATCH_RESULT _handle_get_cpu_panel_batch(
     const st_JSONL_MESSAGE *req, char **out_response);
+/* observe-cas (M10) - konzistentní čtení registrů a oken paměti */
+static en_MCP_DISPATCH_RESULT _handle_state_observe(
+    const st_JSONL_MESSAGE *req, char **out_response);
+/* coverage (M11) - pokrytí kódu */
+static en_MCP_DISPATCH_RESULT _handle_coverage_start(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_coverage_stop(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_coverage_reset(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_coverage_status(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_coverage_mark(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_coverage_read(const st_JSONL_MESSAGE *req, char **out_response);
+static en_MCP_DISPATCH_RESULT _handle_coverage_export(const st_JSONL_MESSAGE *req, char **out_response);
 /* V1.E.3 - debugger state Tools (Commit 1: 3 Tools) */
 static en_MCP_DISPATCH_RESULT _handle_debugger_activate(
     const st_JSONL_MESSAGE *req, char **out_response);
@@ -1127,6 +1202,14 @@ static const st_MCP_CMD_MAP_ENTRY g_cmd_map[] = {
     { "trace_stop",              DBGAPI_CMD_TRACE_STOP,               _handle_trace_stop              },
     { "trace_reset",             DBGAPI_CMD_TRACE_RESET,              _handle_trace_reset             },
     { "trace_save",              DBGAPI_CMD_TRACE_SAVE,               _handle_trace_save              },
+    { "trace_status",            DBGAPI_CMD_TRACE_SNAPSHOT,           _handle_trace_status            },
+    { "trace_read",              DBGAPI_CMD_TRACE_SNAPSHOT,           _handle_trace_read              },
+    { "ramlog_start",            DBGAPI_CMD_RAMLOG,                   _handle_ramlog_start            },
+    { "ramlog_stop",             DBGAPI_CMD_RAMLOG,                   _handle_ramlog_stop             },
+    { "ramlog_clear",            DBGAPI_CMD_RAMLOG,                   _handle_ramlog_clear            },
+    { "ramlog_status",           DBGAPI_CMD_RAMLOG,                   _handle_ramlog_status           },
+    { "ramlog_who_wrote",        DBGAPI_CMD_RAMLOG,                   _handle_ramlog_who_wrote        },
+    { "ramlog_writers",          DBGAPI_CMD_RAMLOG,                   _handle_ramlog_writers          },
     /* video-capture Task 15 - video záznam (všechny platformy). Přidáno na KONEC
      * tabulky kvůli stabilitě pozičního indexu v hello supported_commands. */
     { "videorec_start",          DBGAPI_CMD_VIDEOREC,                 _handle_videorec_start          },
@@ -1160,10 +1243,52 @@ static const st_MCP_CMD_MAP_ENTRY g_cmd_map[] = {
     { "audio_capture_start",      DBGAPI_CMD_AUDIO_CAPTURE,           _handle_audio_capture_start      },
     { "audio_capture_stop",       DBGAPI_CMD_AUDIO_CAPTURE,           _handle_audio_capture_stop       },
     { "audio_capture_status",     DBGAPI_CMD_AUDIO_CAPTURE,           _handle_audio_capture_status     },
+    { "audio_capture_summary",    DBGAPI_CMD_NONE,                    _handle_audio_capture_summary    },
+    { "audio_capture_pcm",        DBGAPI_CMD_NONE,                    _handle_audio_capture_pcm        },
     /* Bitmapa vykonaných adres profileru podle PC (pokrytí kódu). Přidáno
      * na KONEC tabulky kvůli stabilitě pozičního indexu v hello
      * supported_commands. */
     { "profiler_pc_bitmap",       DBGAPI_CMD_PROFILER_PC,             _handle_profiler_pc_bitmap       },
+    /* memsearch (M3 debug-gaps) - Freeze Bytes přes MCP a postupné hledání
+     * proměnných. Přidáno na KONEC tabulky kvůli stabilitě pozičního indexu
+     * v hello supported_commands. */
+    { "freeze_add",               DBGAPI_CMD_FREEZE_ADD,              _handle_freeze_add               },
+    { "freeze_remove",            DBGAPI_CMD_FREEZE_REMOVE,           _handle_freeze_remove            },
+    { "freeze_list",              DBGAPI_CMD_FREEZE_LIST,             _handle_freeze_list              },
+    { "memsearch_start",          DBGAPI_CMD_MEMSEARCH_SAMPLE,        _handle_memsearch_start          },
+    { "memsearch_filter",         DBGAPI_CMD_MEMSEARCH_SAMPLE,        _handle_memsearch_filter         },
+    { "memsearch_sample",         DBGAPI_CMD_MEMSEARCH_SAMPLE,        _handle_memsearch_sample         },
+    { "memsearch_undo",           DBGAPI_CMD_NONE,                    _handle_memsearch_undo           },
+    { "memsearch_redo",           DBGAPI_CMD_NONE,                    _handle_memsearch_redo           },
+    { "memsearch_list",           DBGAPI_CMD_NONE,                    _handle_memsearch_list           },
+    { "memsearch_eliminate",      DBGAPI_CMD_NONE,                    _handle_memsearch_eliminate      },
+    { "memsearch_close",          DBGAPI_CMD_NONE,                    _handle_memsearch_close          },
+    /* run-control (M5): čekání na zastavení a historie zastavení (lokální). */
+    { "wait_stop",                DBGAPI_CMD_NONE,                    _handle_wait_stop                },
+    { "get_stop_history",         DBGAPI_CMD_NONE,                    _handle_get_stop_history         },
+    /* run-control (M5): SHA-256 obrazu a VRAM bez přenosu dat. */
+    { "frame_hash",               DBGAPI_CMD_FRAME_HASH,              _handle_frame_hash               },
+    /* replay-core (M6a): záznam a přehrání vstupů (fronta požadavků replay.h). */
+    { "replay_record_start",      DBGAPI_CMD_NONE,                    _handle_replay_record_start      },
+    { "replay_record_stop",       DBGAPI_CMD_NONE,                    _handle_replay_record_stop       },
+    { "replay_play",              DBGAPI_CMD_NONE,                    _handle_replay_play              },
+    { "replay_play_stop",         DBGAPI_CMD_NONE,                    _handle_replay_play_stop         },
+    { "replay_status",            DBGAPI_CMD_NONE,                    _handle_replay_status            },
+    { "replay_rewind",            DBGAPI_CMD_NONE,                    _handle_replay_rewind            },
+    { "replay_seek",              DBGAPI_CMD_NONE,                    _handle_replay_seek              },
+    /* observe-cas (M10 debug-gaps) - registry, příznaky a okna paměti
+     * z jednoho okamžiku (jeden průchod fronty dbgapi). */
+    { "state_observe",            DBGAPI_CMD_STATE_OBSERVE,           _handle_state_observe            },
+    /* coverage (M11 debug-gaps) - pokrytí kódu (instrukce, větve, verze
+     * kódu). Přidáno na KONEC tabulky kvůli stabilitě pozičního indexu
+     * v hello supported_commands. */
+    { "coverage_start",           DBGAPI_CMD_COVERAGE,                _handle_coverage_start           },
+    { "coverage_stop",            DBGAPI_CMD_COVERAGE,                _handle_coverage_stop            },
+    { "coverage_reset",           DBGAPI_CMD_COVERAGE,                _handle_coverage_reset           },
+    { "coverage_status",          DBGAPI_CMD_COVERAGE,                _handle_coverage_status          },
+    { "coverage_mark",            DBGAPI_CMD_COVERAGE,                _handle_coverage_mark            },
+    { "coverage_read",            DBGAPI_CMD_COVERAGE,                _handle_coverage_read            },
+    { "coverage_export",          DBGAPI_CMD_COVERAGE,                _handle_coverage_export          },
     /* sentinel */
     { NULL,              DBGAPI_CMD_NONE,              NULL                  },
 };
@@ -1262,6 +1387,15 @@ static JsonArray *_pulses_us_array(const double us[4]) {
 
 
 /**
+ * @brief Stabilní prefix chyby nesplněné podmínky zápisu (observe-cas M10).
+ *
+ * Podmíněný zápis (`expected_sha256`, `expected`) se v emu vlákně neprovedl,
+ * protože stav se od čtení klienta změnil; viz docs/agent/error_handling.md.
+ */
+#define MCP_PRECONDITION_PREFIX "Precondition failed: "
+
+
+/**
  * @brief Helper - sestaví error RESPONSE řádek s daným textem.
  *
  * Wrap kolem `jsonl_build_response(.., success=false, NULL, msg)`.
@@ -1299,6 +1433,12 @@ static en_MCP_DISPATCH_RESULT _err_response(int64_t req_id,
             default:
                 break;
         }
+    }
+    /* Příkaz odmítla brána záznamu vstupů (replay.h): přidat proč. */
+    char refusal[REPLAY_STATUS_TEXT_MAX] = "";
+    if (rc == MCP_DISPATCH_EMU_ERROR && !reason && replay_is_active()) {
+        replay_take_refusal(refusal, sizeof(refusal));
+        if (refusal[0]) reason = refusal;
     }
     char *combined = reason ? g_strdup_printf("%s [%s]", reason, msg) : NULL;
     char *line = jsonl_build_response(req_id, false, NULL,
@@ -1414,8 +1554,9 @@ static en_MCP_DISPATCH_RESULT _handle_ping(const st_JSONL_MESSAGE *req,
  * @brief `get_state` handler - vrací stav emulace.
  *
  * Volá `DBGAPI_CMD_IS_RUNNING` (result: bool*). Sestaví response s
- * polem `paused` (= `!is_running`). Frame counter / cycles by mělo
- * přidat V0.B (vyžaduje GET_RASTER_POS nebo equivalentní dbgapi call).
+ * polem `paused` (= `!is_running`) a `run_seq` (číslo běžícího, v pauze
+ * posledního běhu, run_log.h). Frame counter / cycles by mělo přidat V0.B
+ * (vyžaduje GET_RASTER_POS nebo equivalentní dbgapi call).
  *
  * Při selhání dbgapi sestaví error response.
  */
@@ -1430,6 +1571,8 @@ static en_MCP_DISPATCH_RESULT _handle_get_state(const st_JSONL_MESSAGE *req,
     JsonObject *data = json_object_new();
     json_object_set_boolean_member(data, "running", is_running);
     json_object_set_boolean_member(data, "paused", !is_running);
+    /* run-control: číslo běžícího (v pauze posledního) běhu, viz wait_stop. */
+    json_object_set_int_member(data, "run_seq", (gint64)run_log_current(NULL));
 
     /* V1.D.1 - last_user_action field. Pokud žádná USER akce nebyla,
      * vystavíme JSON null (= AI vidí "user nic neudělal od startu emu"). */
@@ -1449,20 +1592,295 @@ static en_MCP_DISPATCH_RESULT _handle_get_state(const st_JSONL_MESSAGE *req,
 }
 
 
+/* ------------------------------------------------------------------ */
+/* run-control (M5): záznamy zastavení, deadline, čekání na zastavení  */
+/* ------------------------------------------------------------------ */
+
+/** @brief Nejdelší čekání `wait_stop` [ms] (pod 30 s limitem wrapperu MCP). */
+#define MCP_WAIT_STOP_MAX_MS RUN_LOG_WAIT_MAX_MS
+
+/** @brief Výchozí čekání `wait_stop` [ms]. */
+#define MCP_WAIT_STOP_DEFAULT_MS 5000
+
+/**
+ * @brief Strop doby krokovacích smyček `run_until_raster`, `run_until_tstate`
+ *        a `run_until_event` [ms] (N3).
+ *
+ * Smyčky běží v dispatch vlákně a nejdou zrušit; wrapper MCP čeká na
+ * odpověď nejvýš 30 s. Po vypršení smyčka skončí s `time_limited: true`
+ * a emulace stojí v pauze tam, kam došla.
+ */
+#define MCP_STEP_LOOP_TIME_LIMIT_MS 20000
+
+
+/**
+ * @brief Převede záznam zastavení na JSON objekt (MCP wait_stop, historie).
+ *
+ * @param rec Záznam (run_log.h).
+ * @return Nový JsonObject (vlastník volající).
+ */
+static JsonObject *_stop_record_to_json(const st_RUN_LOG_RECORD *rec) {
+    JsonObject *o = json_object_new();
+    json_object_set_int_member(o, "run_seq", (gint64)rec->run_seq);
+    json_object_set_string_member(o, "reason", rec->reason);
+    json_object_set_int_member(o, "pc", rec->pc);
+    json_object_set_boolean_member(o, "step", rec->step ? TRUE : FALSE);
+    json_object_set_string_member(o, "started_by", rec->started_by);
+    json_object_set_string_member(o, "start_cmd", rec->start_cmd);
+    json_object_set_string_member(o, "stopped_by", rec->stopped_by);
+    json_object_set_int_member(o, "start_ticks", (gint64)rec->start_ticks);
+    json_object_set_int_member(o, "stop_ticks", (gint64)rec->stop_ticks);
+    json_object_set_int_member(o, "elapsed_ticks", (gint64)rec->elapsed_ticks);
+    json_object_set_int_member(o, "frame", (gint64)rec->stop_frame);
+    if (rec->bp_id >= 0) json_object_set_int_member(o, "bp_id", rec->bp_id);
+    if (strcmp(rec->reason, "exit") == 0) {
+        json_object_set_int_member(o, "exit_code", rec->exit_code);
+        json_object_set_string_member(o, "exit_reason", rec->exit_reason);
+        if (rec->detail[0]) json_object_set_string_member(o, "message", rec->detail);
+    } else if (strcmp(rec->reason, "bp_action_saturation") == 0) {
+        json_object_set_int_member(o, "bytes", (gint64)rec->bytes);
+        json_object_set_string_member(o, "detail", rec->detail);
+    }
+    return o;
+}
+
+
+/**
+ * @brief Načte volitelný parametr `deadline` (objekt s právě jedním klíčem).
+ *
+ * Tvary: `{"frames": N}` (1..1000000), `{"emulated_ms": N}` (1..86400000),
+ * `{"ticks": N}` (takty GDG, >= 1). Hodnoty druhu odpovídají
+ * en_RUN_DEADLINE_KIND (run_control.h): 0 frames, 1 emulated_ms, 2 ticks.
+ *
+ * @param obj Objekt `data` požadavku (smí být NULL).
+ * @param[out] out Parametr pro DBGAPI_CMD_RUN_DEADLINE (arm = true).
+ * @param[out] present true = parametr je v požadavku.
+ * @param[out] err Chybová hláška (anglicky) při návratu false.
+ * @param err_size Velikost @p err.
+ * @return false = neplatný tvar nebo hodnota.
+ */
+static bool _parse_deadline(JsonObject *obj, st_DBGAPI_RUN_DEADLINE_PARAM *out,
+                            bool *present, char *err, size_t err_size) {
+    memset(out, 0, sizeof(*out));
+    *present = false;
+    if (!obj || !json_object_has_member(obj, "deadline")) return true;
+    JsonNode *n = json_object_get_member(obj, "deadline");
+    if (!n || json_node_get_node_type(n) == JSON_NODE_NULL) return true;
+    if (json_node_get_node_type(n) != JSON_NODE_OBJECT) {
+        g_snprintf(err, err_size, "deadline must be an object: {frames|emulated_ms|ticks: N}");
+        return false;
+    }
+    JsonObject *d = json_node_get_object(n);
+    static const struct { const char *key; int kind; gint64 max; } KINDS[] = {
+        { "frames",      0, 1000000LL },
+        { "emulated_ms", 1, 86400000LL },
+        { "ticks",       2, G_MAXINT64 / 4 },
+    };
+    int found = 0;
+    for (size_t i = 0; i < G_N_ELEMENTS(KINDS); i++) {
+        if (!json_object_has_member(d, KINDS[i].key)) continue;
+        found++;
+        gint64 v = _obj_int_or(d, KINDS[i].key, -1);
+        if (v < 1 || v > KINDS[i].max) {
+            g_snprintf(err, err_size, "deadline.%s must be in range 1..%" G_GINT64_FORMAT,
+                       KINDS[i].key, KINDS[i].max);
+            return false;
+        }
+        out->kind = KINDS[i].kind;
+        out->value = (uint64_t)v;
+    }
+    if (found != 1 || json_object_get_size(d) != 1) {
+        g_snprintf(err, err_size, "deadline must have exactly one of: frames, emulated_ms, ticks");
+        return false;
+    }
+    out->arm = true;
+    *present = true;
+    return true;
+}
+
+
+/**
+ * @brief Nastaví deadline v emulátoru (DBGAPI_CMD_RUN_DEADLINE).
+ *
+ * @param p Parametr z _parse_deadline() (na výstupu `ticks`).
+ * @return false = emulátor deadline nepřijal nebo příkaz neproběhl.
+ */
+static bool _arm_deadline(st_DBGAPI_RUN_DEADLINE_PARAM *p) {
+    return _submit_dbgapi(DBGAPI_CMD_RUN_DEADLINE, p, NULL);
+}
+
+
+/** @brief Zruší deadline (příkaz, pro který byl nastavený, selhal). */
+static void _clear_deadline(void) {
+    st_DBGAPI_RUN_DEADLINE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.arm = false;
+    (void)_submit_dbgapi(DBGAPI_CMD_RUN_DEADLINE, &p, NULL);
+}
+
+
+/**
+ * @brief Doplní do odpovědi rozběhu délku deadlinu.
+ *
+ * @param resp Odpověď.
+ * @param present Deadline byl v požadavku.
+ * @param p Parametr po nastavení (`ticks` = délka v taktech GDG od nastavení).
+ */
+static void _deadline_to_json(JsonObject *resp, bool present,
+                              const st_DBGAPI_RUN_DEADLINE_PARAM *p) {
+    if (!present) return;
+    json_object_set_int_member(resp, "deadline_ticks", (gint64)p->ticks);
+}
+
+
+/**
+ * @brief `wait_stop` handler - počká, až skončí běh (nejvýš 25 s).
+ *
+ * Parametry v `data` (volitelné):
+ *  - `run_seq` (int) - číslo běhu; bez něj aktuální (běžící) nebo poslední běh
+ *  - `timeout_ms` (int, 0..25000, default 5000)
+ *
+ * Response:
+ *  - `done` (bool) - běh skončil
+ *  - `run_seq` (int) - číslo běhu, na který se čekalo
+ *  - `current_run_seq` (int), `running` (bool) - stav v okamžiku odpovědi
+ *  - `record` (objekt) - záznam zastavení (jen `done` a záznam v historii)
+ *  - `history_lost` (bool) - `done`, ale záznam už historie přepsala
+ *  - `shutdown` (bool) - emulátor končí, čekání přerušeno
+ *
+ * Lokální handler: čeká na dispatch vlákně (run_log_wait), frontu dbgapi
+ * neblokuje.
+ */
+static en_MCP_DISPATCH_RESULT _handle_wait_stop(const st_JSONL_MESSAGE *req,
+                                                char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    JsonObject *obj = (data_node && json_node_get_node_type(data_node) == JSON_NODE_OBJECT)
+                      ? json_node_get_object(data_node) : NULL;
+    gint64 timeout_ms = obj ? _obj_int_or(obj, "timeout_ms", MCP_WAIT_STOP_DEFAULT_MS)
+                            : MCP_WAIT_STOP_DEFAULT_MS;
+    if (timeout_ms < 0 || timeout_ms > MCP_WAIT_STOP_MAX_MS) {
+        return _err_response(req_id, "timeout_ms must be in range 0..25000",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    uint64_t seq;
+    if (obj && json_object_has_member(obj, "run_seq")) {
+        gint64 v = _obj_int_or(obj, "run_seq", -1);
+        if (v < 0) {
+            return _err_response(req_id, "run_seq must be >= 0",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        seq = (uint64_t)v;
+    } else {
+        seq = run_log_current(NULL);
+    }
+
+    st_RUN_LOG_RECORD rec;
+    bool found = false;
+    en_RUN_LOG_WAIT w = run_log_wait(seq, (int)timeout_ms, &rec, &found);
+    bool running = false;
+    uint64_t cur = run_log_current(&running);
+
+    JsonObject *resp = json_object_new();
+    json_object_set_boolean_member(resp, "done", (w == RUN_LOG_WAIT_DONE) ? TRUE : FALSE);
+    json_object_set_int_member(resp, "run_seq", (gint64)seq);
+    json_object_set_int_member(resp, "current_run_seq", (gint64)cur);
+    json_object_set_boolean_member(resp, "running", running ? TRUE : FALSE);
+    if (w == RUN_LOG_WAIT_DONE) {
+        if (found) {
+            json_object_set_object_member(resp, "record", _stop_record_to_json(&rec));
+        } else {
+            json_object_set_boolean_member(resp, "history_lost", TRUE);
+        }
+    }
+    if (w == RUN_LOG_WAIT_SHUTDOWN) {
+        json_object_set_boolean_member(resp, "shutdown", TRUE);
+    }
+    return _ok_response(req_id, resp, out_response);
+}
+
+
+/**
+ * @brief `get_stop_history` handler - posledních N záznamů zastavení.
+ *
+ * Parametr `limit` (int, 1..RUN_LOG_CAPACITY, default RUN_LOG_CAPACITY).
+ * Response: `records` (od nejstaršího), `count`, `current_run_seq`,
+ * `running`. Backing pro resource `emulator://run/history`.
+ */
+static en_MCP_DISPATCH_RESULT _handle_get_stop_history(const st_JSONL_MESSAGE *req,
+                                                       char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    JsonObject *obj = (data_node && json_node_get_node_type(data_node) == JSON_NODE_OBJECT)
+                      ? json_node_get_object(data_node) : NULL;
+    gint64 limit = obj ? _obj_int_or(obj, "limit", RUN_LOG_CAPACITY) : RUN_LOG_CAPACITY;
+    if (limit < 1 || limit > RUN_LOG_CAPACITY) {
+        return _err_response(req_id, "limit must be in range 1..32",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    st_RUN_LOG_RECORD recs[RUN_LOG_CAPACITY];
+    unsigned n = run_log_history(recs, (unsigned)limit);
+    bool running = false;
+    uint64_t cur = run_log_current(&running);
+    JsonObject *resp = json_object_new();
+    JsonArray *arr = json_array_sized_new(n);
+    for (unsigned i = 0; i < n; i++) {
+        json_array_add_object_element(arr, _stop_record_to_json(&recs[i]));
+    }
+    json_object_set_array_member(resp, "records", arr);
+    json_object_set_int_member(resp, "count", (gint64)n);
+    json_object_set_int_member(resp, "current_run_seq", (gint64)cur);
+    json_object_set_boolean_member(resp, "running", running ? TRUE : FALSE);
+    return _ok_response(req_id, resp, out_response);
+}
+
+
 /**
  * @brief `pause` handler - pozastaví emulaci.
  *
- * Proxy na `DBGAPI_CMD_PAUSE`. Vrací `{"paused": true}` při úspěchu.
+ * Proxy na `DBGAPI_CMD_PAUSE` se st_DBGAPI_PAUSE_PARAM. Volitelný parametr
+ * `if_run_seq` (int): pozastaví jen běžící běh s tímto číslem, takže agent
+ * nezastaví běh, který mezitím spustil člověk v GUI.
+ *
+ * Response:
+ *  - `paused` (bool) - emulace je po příkazu v pauze (bez `if_run_seq`
+ *    vždy true)
+ *  - `was_running` (bool), `paused_now` (bool) - běžela / příkaz ji zastavil
+ *  - `run_seq` (int) - číslo běhu běžícího před příkazem (nebo posledního)
+ *  - `skipped` (string, jen s `if_run_seq` bez zastavení) - "not_running"
+ *    nebo "run_seq_mismatch"
  */
 static en_MCP_DISPATCH_RESULT _handle_pause(const st_JSONL_MESSAGE *req,
                                             char **out_response) {
     int64_t req_id = jsonl_msg_get_req_id(req);
-    if (!_submit_dbgapi(DBGAPI_CMD_PAUSE, NULL, NULL)) {
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    JsonObject *obj = (data_node && json_node_get_node_type(data_node) == JSON_NODE_OBJECT)
+                      ? json_node_get_object(data_node) : NULL;
+    st_DBGAPI_PAUSE_PARAM pp;
+    memset(&pp, 0, sizeof(pp));
+    if (obj && json_object_has_member(obj, "if_run_seq")) {
+        gint64 v = _obj_int_or(obj, "if_run_seq", -1);
+        if (v < 0) {
+            return _err_response(req_id, "if_run_seq must be >= 0",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        pp.has_if_run_seq = true;
+        pp.if_run_seq = (uint64_t)v;
+    }
+    if (!_submit_dbgapi(DBGAPI_CMD_PAUSE, &pp, NULL)) {
         return _err_response(req_id, "Pause failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
+    bool paused_after = !pp.was_running || pp.paused_now;
     JsonObject *data = json_object_new();
-    json_object_set_boolean_member(data, "paused", TRUE);
+    json_object_set_boolean_member(data, "paused", paused_after ? TRUE : FALSE);
+    json_object_set_boolean_member(data, "was_running", pp.was_running ? TRUE : FALSE);
+    json_object_set_boolean_member(data, "paused_now", pp.paused_now ? TRUE : FALSE);
+    json_object_set_int_member(data, "run_seq", (gint64)pp.run_seq);
+    if (pp.has_if_run_seq && !pp.paused_now) {
+        json_object_set_string_member(data, "skipped",
+                                      pp.was_running ? "run_seq_mismatch" : "not_running");
+    }
     return _ok_response(req_id, data, out_response);
 }
 
@@ -1472,8 +1890,11 @@ static en_MCP_DISPATCH_RESULT _handle_pause(const st_JSONL_MESSAGE *req,
  *
  * Dvě cesty podle parametru `frames`:
  *  - **Async (legacy)** - frames chybí nebo == 0: jen submit
- *    `DBGAPI_CMD_RUN` (= unpause), response `{"running": true}`.
- *    Emulátor běží asynchronně dál.
+ *    `DBGAPI_CMD_RUN` (= unpause), response `{"running": true, "run_seq",
+ *    "already_running"}`. Emulátor běží asynchronně dál. Volitelný
+ *    `deadline` ({frames|emulated_ms|ticks: N}) běh zastaví v emulovaném
+ *    čase (reason "deadline", odpověď navíc `deadline_ticks`); na konec
+ *    běhu jde čekat přes `wait_stop`.
  *  - **Blokující (deterministická)** - frames > 0: submit
  *    `DBGAPI_CMD_RUN_FRAMES`. Emu vlákno samo deterministicky doběhne N
  *    framů a pausne se přesně na N-té frame hranici (= emu-side stop
@@ -1512,9 +1933,10 @@ static en_MCP_DISPATCH_RESULT _handle_run(const st_JSONL_MESSAGE *req,
     /* Parse frames z optional data objektu. Default 0 = async (legacy). */
     gint64 frames = 0;
     JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    JsonObject *obj = NULL;
     if (data_node
         && json_node_get_node_type(data_node) == JSON_NODE_OBJECT) {
-        JsonObject *obj = json_node_get_object(data_node);
+        obj = json_node_get_object(data_node);
         frames = _obj_int_or(obj, "frames", 0);
     }
 
@@ -1525,15 +1947,41 @@ static en_MCP_DISPATCH_RESULT _handle_run(const st_JSONL_MESSAGE *req,
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
 
+    /* Deadline v emulovaném čase (run-control) jen u asynchronního běhu;
+     * frames je sám deterministický limit. */
+    st_DBGAPI_RUN_DEADLINE_PARAM dl;
+    bool has_deadline = false;
+    char dl_err[128];
+    if (!_parse_deadline(obj, &dl, &has_deadline, dl_err, sizeof(dl_err))) {
+        return _err_response(req_id, dl_err, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (has_deadline && frames > 0) {
+        return _err_response(req_id, "deadline cannot be combined with frames",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+
     if (frames == 0) {
         /* Async path (legacy) - jen unpause, response `running: true`.
-         * Side effect: emulator_pause(false) + audio resume + UI update. */
-        if (!_submit_dbgapi(DBGAPI_CMD_RUN, NULL, NULL)) {
+         * Side effect: emulator_pause(false) + audio resume + UI update.
+         * S deadline se emulace sama zastaví (reason "deadline"); deadline
+         * platí do nejbližší pauzy. */
+        if (has_deadline && !_arm_deadline(&dl)) {
+            return _err_response(req_id, "Invalid deadline",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        st_DBGAPI_RUN_START_RESULT rr;
+        memset(&rr, 0, sizeof(rr));
+        if (!_submit_dbgapi(DBGAPI_CMD_RUN, NULL, &rr)) {
+            if (has_deadline) _clear_deadline();
             return _err_response(req_id, "Run failed",
                                  MCP_DISPATCH_EMU_ERROR, out_response);
         }
         JsonObject *data = json_object_new();
         json_object_set_boolean_member(data, "running", TRUE);
+        json_object_set_int_member(data, "run_seq", (gint64)rr.run_seq);
+        json_object_set_boolean_member(data, "already_running",
+                                       (rr.status == DBGAPI_RUN_START_NOT_PAUSED) ? TRUE : FALSE);
+        _deadline_to_json(data, has_deadline, &dl);
         return _ok_response(req_id, data, out_response);
     }
 
@@ -1589,7 +2037,7 @@ static en_MCP_DISPATCH_RESULT _handle_run(const st_JSONL_MESSAGE *req,
 
     /* stopped_by: proč se emulace zastavila. !done = safety timeout; jinak
      * důvod, který nastavil ten, kdo emu pausnul (frame target / breakpoint /
-     * manuální pauza). "unknown" = emu se zastavil z jiného důvodu, který
+     * dočasný breakpoint / manuální pauza / žádost o konec "exit"). "unknown" = emu se zastavil z jiného důvodu, který
      * pause_reason nenastavuje (HALT, fatal). */
     const char *stopped_by;
     bool reached;
@@ -1602,6 +2050,11 @@ static en_MCP_DISPATCH_RESULT _handle_run(const st_JSONL_MESSAGE *req,
             case EMU_PAUSE_REASON_FRAMES:     stopped_by = "frames";     break;
             case EMU_PAUSE_REASON_BREAKPOINT: stopped_by = "breakpoint"; break;
             case EMU_PAUSE_REASON_MANUAL:     stopped_by = "manual";     break;
+            case EMU_PAUSE_REASON_RUN_TO:     stopped_by = "run_to";     break;
+            case EMU_PAUSE_REASON_EXIT:       stopped_by = "exit";       break;
+            /* Byte backstop akcí BP (jméno jako run_control_reason_name()). */
+            case EMU_PAUSE_REASON_BP_SATURATION:
+                                              stopped_by = "bp_action_saturation"; break;
             default:                          stopped_by = "unknown";    break;
         }
         reached = (g_emulator.pause_reason == EMU_PAUSE_REASON_FRAMES);
@@ -1614,6 +2067,8 @@ static en_MCP_DISPATCH_RESULT _handle_run(const st_JSONL_MESSAGE *req,
 
     JsonObject *data = json_object_new();
     json_object_set_boolean_member(data, "running", FALSE);
+    /* Číslo běhu, který právě skončil (emulace stojí, run_log.h). */
+    json_object_set_int_member(data, "run_seq", (gint64)run_log_current(NULL));
     json_object_set_int_member(data, "actual_frames", actual);
     json_object_set_int_member(data, "requested_frames", frames);
     json_object_set_string_member(data, "stopped_by", stopped_by);
@@ -1732,10 +2187,15 @@ static bool _parse_reg_name(const char *name, uint8_t *out_id) {
  *  - `value` (int, 0..65535) - nová hodnota (pro 8bitové registry I/R
  *    je relevantní jen dolní bajt, pro IR registr backend nastavuje
  *    jen R, I se zachová)
+ *  - `expected` (int, 0..65535, volitelný; observe-cas M10) - zapsat jen,
+ *    když má registr právě tuto hodnotu (porovnání a zápis v emu vlákně
+ *    v jednom příkazu); jinak chyba `Precondition failed: register <reg>
+ *    changed (expected=0x...., current=0x....)` a nic se nezapíše
  *
  * Response payload pri uspechu:
  *  - `reg` (string) - echo
  *  - `value` (int) - echo
+ *  - `previous` (int) - hodnota registru před zápisem
  *
  * Side effects: mění CPU state, klient by měl typicky následně volat
  * `get_registers` pro verifikaci.
@@ -1770,13 +2230,37 @@ static en_MCP_DISPATCH_RESULT _handle_set_register(const st_JSONL_MESSAGE *req,
         .reg_id = reg_id,
         .value  = (uint16_t)value,
     };
+    if (json_object_has_member(data_obj, "expected")) {
+        JsonNode *en = json_object_get_member(data_obj, "expected");
+        gint64 ev = -1;
+        if (en && JSON_NODE_HOLDS_VALUE(en) && json_node_get_value_type(en) == G_TYPE_INT64) {
+            ev = json_node_get_int(en);
+        }
+        if (ev < 0 || ev > 0xFFFF) {
+            return _err_response(req_id, "Invalid parameters: expected must be in range 0..65535",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        param.has_expected = 1;
+        param.expected = (uint16_t)ev;
+    }
     if (!_submit_dbgapi(DBGAPI_CMD_SET_REG, &param, NULL)) {
+        if (param.precondition_failed && s_submit_track.last_status == DBGAPI_SUBMIT_FAILED) {
+            /* observe-cas M10: registr má jinou hodnotu, nic se nezapsalo. */
+            gchar *msg = g_strdup_printf(MCP_PRECONDITION_PREFIX "register %s changed "
+                                         "(expected=0x%04X, current=0x%04X)",
+                                         reg_name, param.expected, param.previous);
+            en_MCP_DISPATCH_RESULT rc = _err_response(req_id, msg, MCP_DISPATCH_EMU_ERROR,
+                                                      out_response);
+            g_free(msg);
+            return rc;
+        }
         return _err_response(req_id, "SET_REG failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
     JsonObject *data = json_object_new();
     json_object_set_string_member(data, "reg", reg_name);
     json_object_set_int_member(data, "value", value);
+    json_object_set_int_member(data, "previous", (gint64)param.previous);
     return _ok_response(req_id, data, out_response);
 }
 
@@ -1879,14 +2363,16 @@ static en_MCP_DISPATCH_RESULT _handle_history_get(const st_JSONL_MESSAGE *req,
     int64_t req_id = jsonl_msg_get_req_id(req);
     st_DEBUGGER_HISTORY_ROW rows[DEBUGGER_HISTORY_LENGTH];
     memset(rows, 0, sizeof(rows));
-    if (!_submit_dbgapi(DBGAPI_CMD_HISTORY_GET, NULL, rows)) {
+    /* Pozice ringu ze stejného okamžiku jako řádky (čte ji emu vlákno
+     * v témže příkazu); dřív se četla až tady, mimo emu vlákno. */
+    unsigned position = 0;
+    if (!_submit_dbgapi(DBGAPI_CMD_HISTORY_GET, &position, rows)) {
         return _err_response(req_id, "HISTORY_GET failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
     JsonObject *data = json_object_new();
     json_object_set_int_member(data, "current_position",
-                               (gint64)(g_debugger_history.position
-                                        & DEBUGGER_HISTORY_POSMASK));
+                               (gint64)(position & DEBUGGER_HISTORY_POSMASK));
     json_object_set_int_member(data, "length",
                                (gint64)DEBUGGER_HISTORY_LENGTH);
     JsonArray *entries = json_array_new();
@@ -2176,6 +2662,145 @@ static en_MCP_DISPATCH_RESULT _handle_get_cpu_flags(
 }
 
 
+/** @brief Pole `set_cpu_flags` s bitem update_mask (pořadí výstupů). */
+static const struct {
+    const char *name;   /**< Klíč v JSON. */
+    uint16_t bit;       /**< DBGAPI_CPU_FLAGS_UM_*. */
+} s_cpu_flag_fields[] = {
+    { "iff1", DBGAPI_CPU_FLAGS_UM_IFF1 },
+    { "iff2", DBGAPI_CPU_FLAGS_UM_IFF2 },
+    { "im",   DBGAPI_CPU_FLAGS_UM_IM },
+    { "i",    DBGAPI_CPU_FLAGS_UM_I },
+    { "r",    DBGAPI_CPU_FLAGS_UM_R_FULL },
+};
+
+/**
+ * @brief Hodnota pole `set_cpu_flags` podle bitu z dané sady (exp_* / prev_*).
+ * @param p Parametr.
+ * @param bit DBGAPI_CPU_FLAGS_UM_*.
+ * @param prev true = prev_*, false = exp_*.
+ * @return Hodnota pole.
+ */
+static uint8_t _cpu_flag_value(const st_DBGAPI_CPU_FLAGS *p, uint16_t bit, bool prev) {
+    switch (bit) {
+        case DBGAPI_CPU_FLAGS_UM_IFF1: return prev ? p->prev_iff1 : p->exp_iff1;
+        case DBGAPI_CPU_FLAGS_UM_IFF2: return prev ? p->prev_iff2 : p->exp_iff2;
+        case DBGAPI_CPU_FLAGS_UM_IM:   return prev ? p->prev_im   : p->exp_im;
+        case DBGAPI_CPU_FLAGS_UM_I:    return prev ? p->prev_i    : p->exp_i;
+        default:                       return prev ? p->prev_r    : p->exp_r;
+    }
+}
+
+/**
+ * @brief Přečte volitelný objekt `expected` u `set_cpu_flags` (observe-cas M10).
+ *
+ * Klíče `iff1`, `iff2` (bool nebo 0/1), `im` (0..2), `i`, `r` (0..255);
+ * smí být jen pole, která požadavek zároveň zapisuje. `r` se porovná
+ * celým bajtem (MCP zapisuje R celý, UM_R_FULL).
+ *
+ * @param obj Parametry požadavku.
+ * @param[in,out] p Parametr SET_CPU_FLAGS s hotovou update_mask; doplní
+ *                expect_mask a exp_*.
+ * @return NULL = OK, jinak statický text chyby parametrů.
+ */
+static const char *_parse_cpu_flags_expected(JsonObject *obj, st_DBGAPI_CPU_FLAGS *p) {
+    if (!json_object_has_member(obj, "expected")) return NULL;
+    JsonNode *en = json_object_get_member(obj, "expected");
+    if (!en || !JSON_NODE_HOLDS_OBJECT(en)) return "expected must be an object";
+    JsonObject *eo = json_node_get_object(en);
+    GList *keys = json_object_get_members(eo);
+    const char *err = NULL;
+    for (GList *k = keys; k && !err; k = k->next) {
+        const char *key = (const char *)k->data;
+        unsigned f = 0;
+        while (f < G_N_ELEMENTS(s_cpu_flag_fields) && strcmp(s_cpu_flag_fields[f].name, key) != 0) f++;
+        if (f == G_N_ELEMENTS(s_cpu_flag_fields)) {
+            err = "expected has an unknown field (iff1, iff2, im, i, r)";
+            break;
+        }
+        uint16_t bit = s_cpu_flag_fields[f].bit;
+        if (!(p->update_mask & bit)) {
+            err = "expected may only contain fields that the request writes";
+            break;
+        }
+        JsonNode *v = json_object_get_member(eo, key);
+        gint64 iv = -1;
+        if (v && JSON_NODE_HOLDS_VALUE(v)) {
+            GType t = json_node_get_value_type(v);
+            if (t == G_TYPE_BOOLEAN && (bit == DBGAPI_CPU_FLAGS_UM_IFF1 || bit == DBGAPI_CPU_FLAGS_UM_IFF2)) {
+                iv = json_node_get_boolean(v) ? 1 : 0;
+            } else if (t == G_TYPE_INT64) {
+                iv = json_node_get_int(v);
+            }
+        }
+        gint64 max = (bit == DBGAPI_CPU_FLAGS_UM_IFF1 || bit == DBGAPI_CPU_FLAGS_UM_IFF2) ? 1
+                   : (bit == DBGAPI_CPU_FLAGS_UM_IM) ? 2 : 0xFF;
+        if (iv < 0 || iv > max) {
+            err = "expected value out of range (iff1/iff2 0..1, im 0..2, i/r 0..255)";
+            break;
+        }
+        switch (bit) {
+            case DBGAPI_CPU_FLAGS_UM_IFF1: p->exp_iff1 = (uint8_t)iv; break;
+            case DBGAPI_CPU_FLAGS_UM_IFF2: p->exp_iff2 = (uint8_t)iv; break;
+            case DBGAPI_CPU_FLAGS_UM_IM:   p->exp_im   = (uint8_t)iv; break;
+            case DBGAPI_CPU_FLAGS_UM_I:    p->exp_i    = (uint8_t)iv; break;
+            default:                       p->exp_r    = (uint8_t)iv; break;
+        }
+        p->expect_mask |= bit;
+    }
+    g_list_free(keys);
+    return err;
+}
+
+/**
+ * @brief Objekt `previous` odpovědi `set_cpu_flags`: hodnoty zapsaných polí před zápisem.
+ * @param p Parametr po návratu z emu vlákna.
+ * @return Nový JsonObject (vlastnictví předává).
+ */
+static JsonObject *_cpu_flags_previous_json(const st_DBGAPI_CPU_FLAGS *p) {
+    JsonObject *o = json_object_new();
+    for (unsigned f = 0; f < G_N_ELEMENTS(s_cpu_flag_fields); f++) {
+        if (p->update_mask & s_cpu_flag_fields[f].bit) {
+            json_object_set_int_member(o, s_cpu_flag_fields[f].name,
+                                       (gint64)_cpu_flag_value(p, s_cpu_flag_fields[f].bit, true));
+        }
+    }
+    return o;
+}
+
+/**
+ * @brief Chyba nesplněné podmínky `set_cpu_flags` s hodnotami polí, která nesouhlasí.
+ *
+ * Text: `Precondition failed: cpu flags changed (iff1: expected=1,
+ * current=0; r: expected=0x12, current=0x34)`.
+ *
+ * @param req_id ID požadavku.
+ * @param p Parametr po návratu z emu vlákna (precondition_failed).
+ * @param[out] out_response Odpověď.
+ */
+static en_MCP_DISPATCH_RESULT _cpu_flags_cond_err(int64_t req_id, const st_DBGAPI_CPU_FLAGS *p,
+                                                  char **out_response) {
+    GString *s = g_string_new(MCP_PRECONDITION_PREFIX "cpu flags changed (");
+    bool first = true;
+    for (unsigned f = 0; f < G_N_ELEMENTS(s_cpu_flag_fields); f++) {
+        uint16_t bit = s_cpu_flag_fields[f].bit;
+        if (!(p->expect_mask & bit)) continue;
+        uint8_t ev = _cpu_flag_value(p, bit, false);
+        uint8_t cv = _cpu_flag_value(p, bit, true);
+        if (ev == cv) continue;
+        bool hex = (bit == DBGAPI_CPU_FLAGS_UM_I || bit == DBGAPI_CPU_FLAGS_UM_R_FULL);
+        g_string_append_printf(s, hex ? "%s%s: expected=0x%02X, current=0x%02X"
+                                      : "%s%s: expected=%u, current=%u",
+                               first ? "" : "; ", s_cpu_flag_fields[f].name, ev, cv);
+        first = false;
+    }
+    g_string_append(s, ")");
+    en_MCP_DISPATCH_RESULT rc = _err_response(req_id, s->str, MCP_DISPATCH_EMU_ERROR, out_response);
+    g_string_free(s, TRUE);
+    return rc;
+}
+
+
 /**
  * @brief `set_cpu_flags` handler - selektivní zápis IFF1/IFF2/IM/I/R.
  *
@@ -2190,9 +2815,14 @@ static en_MCP_DISPATCH_RESULT _handle_get_cpu_flags(
  * Update_mask se sestavuje automaticky podle přítomnosti polí v JSON.
  * Pokud žádné z polí není přítomno, handler vrací invalid params.
  *
+ * Volitelně `expected` (objekt, observe-cas M10): očekávané hodnoty jen
+ * zapisovaných polí; při neshodě se nic nezapíše a vrátí se chyba
+ * `Precondition failed: cpu flags changed (...)` s hodnotami polí.
+ *
  * Response payload:
  *  - `updated` (array of string) - jména polí, která byla zapsána
  *  - `values` (object) - mapping field -> finální hodnota (echo).
+ *  - `previous` (object) - zapsaná pole -> hodnota před zápisem.
  *
  * Bezpečnost: zápis IFF/IM/I/R během running emulace je technically
  * race; backend běží v safepointu mezi instrukcemi, takže atomicita
@@ -2277,7 +2907,19 @@ static en_MCP_DISPATCH_RESULT _handle_set_cpu_flags(
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
 
+    const char *eerr = _parse_cpu_flags_expected(data_obj, &param);
+    if (eerr) {
+        gchar *msg = g_strdup_printf("Invalid parameters: %s", eerr);
+        en_MCP_DISPATCH_RESULT rc = _err_response(req_id, msg, MCP_DISPATCH_INVALID_PARAMS,
+                                                  out_response);
+        g_free(msg);
+        return rc;
+    }
+
     if (!_submit_dbgapi(DBGAPI_CMD_SET_CPU_FLAGS, &param, NULL)) {
+        if (param.precondition_failed && s_submit_track.last_status == DBGAPI_SUBMIT_FAILED) {
+            return _cpu_flags_cond_err(req_id, &param, out_response);
+        }
         return _err_response(req_id, "SET_CPU_FLAGS failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
@@ -2309,6 +2951,7 @@ static en_MCP_DISPATCH_RESULT _handle_set_cpu_flags(
     }
     json_object_set_array_member(data,  "updated", updated);
     json_object_set_object_member(data, "values",  values);
+    json_object_set_object_member(data, "previous", _cpu_flags_previous_json(&param));
     return _ok_response(req_id, data, out_response);
 }
 
@@ -2375,6 +3018,107 @@ static en_MCP_DISPATCH_RESULT _handle_get_last_instr(
     }
     json_object_set_string_member(data, "bytes_hex", hex_buf);
     return _ok_response(req_id, data, out_response);
+}
+
+
+/**
+ * @brief Doplní do odpovědi `regs` a `flags` ze snímku panelu CPU.
+ *
+ * Společné pro `get_cpu_panel_batch` a `state_observe`: `regs` má jména
+ * jako `get_registers` (AF..IR, alternativní sada s podtržítkem), `flags`
+ * stejné schéma jako `get_cpu_flags`.
+ *
+ * @param data Odpověď, do které se přidají objekty `regs` a `flags`.
+ * @param out  Snímek panelu (regs_valid a flags_valid jsou vždy 1).
+ */
+static void _cpu_panel_core_to_json(JsonObject *data,
+                                    const st_DBGAPI_CPU_PANEL_BATCH *out) {
+    /* regs (vždy naplněné) - shoduje se s pojmenováním z get_registers. */
+    JsonObject *regs = json_object_new();
+    static const char *const reg_names[14] = {
+        "AF","BC","DE","HL","AF_","BC_","DE_","HL_",
+        "IX","IY","SP","PC","WZ","IR"
+    };
+    for (int i = 0; i < 14; i++) {
+        json_object_set_int_member(regs, reg_names[i], (gint64)out->regs[i]);
+    }
+    json_object_set_object_member(data, "regs", regs);
+
+    /* flags (vždy naplněné) - shoduje se s get_cpu_flags response. */
+    JsonObject *flags = json_object_new();
+    json_object_set_boolean_member(flags, "iff1",        out->flags.iff1 ? TRUE : FALSE);
+    json_object_set_boolean_member(flags, "iff2",        out->flags.iff2 ? TRUE : FALSE);
+    json_object_set_int_member(flags,    "im",           (gint64)out->flags.im);
+    json_object_set_boolean_member(flags, "halted",      out->flags.halted ? TRUE : FALSE);
+    json_object_set_boolean_member(flags, "int_pending", out->flags.int_pending ? TRUE : FALSE);
+    json_object_set_boolean_member(flags, "nmi_pending", out->flags.nmi_pending ? TRUE : FALSE);
+    json_object_set_boolean_member(flags, "ei_delay",    out->flags.ei_delay ? TRUE : FALSE);
+    json_object_set_int_member(flags,    "q",            (gint64)out->flags.q);
+    json_object_set_int_member(flags,    "total_cycles", (gint64)out->flags.total_cycles);
+    json_object_set_int_member(flags,    "frame_cycles", (gint64)out->flags.cycles);
+    json_object_set_int_member(flags,    "op_tstate",    (gint64)out->flags.op_tstate);
+    json_object_set_int_member(flags,    "i",            (gint64)out->flags.i_reg);
+    json_object_set_int_member(flags,    "r",            (gint64)out->flags.r_reg);
+    json_object_set_object_member(data, "flags", flags);
+}
+
+
+/**
+ * @brief Doplní do odpovědi volitelné sekce panelu CPU (`im2`, `raster`, `last_instr`).
+ *
+ * Sekce se přidá jen tehdy, když je ve snímku platná (*_valid), tj. byla
+ * vyžádaná bitem DBGAPI_CPU_PANEL_WANT_*. Společné pro
+ * `get_cpu_panel_batch` a `state_observe`.
+ *
+ * @param data Odpověď.
+ * @param out  Snímek panelu.
+ */
+static void _cpu_panel_sections_to_json(JsonObject *data,
+                                        const st_DBGAPI_CPU_PANEL_BATCH *out) {
+    if (out->im2_valid) {
+        JsonObject *im2 = json_object_new();
+        json_object_set_boolean_member(im2, "available",
+                                        out->im2.available ? TRUE : FALSE);
+        json_object_set_int_member(im2, "im",         (gint64)out->im2.im);
+        json_object_set_int_member(im2, "i",          (gint64)out->im2.i_register);
+        json_object_set_int_member(im2, "vec",        (gint64)out->im2.vector_byte);
+        json_object_set_int_member(im2, "isr_addr",   (gint64)out->im2.isr_table_addr);
+        json_object_set_int_member(im2, "isr_target", (gint64)out->im2.isr_target_addr);
+        json_object_set_boolean_member(im2, "pio_irq_pending",
+                                        out->im2.pio_irq_pending ? TRUE : FALSE);
+        json_object_set_int_member(im2, "pio_source", (gint64)out->im2.pio_source);
+        json_object_set_object_member(data, "im2", im2);
+    }
+    if (out->raster_valid) {
+        JsonObject *raster = json_object_new();
+        json_object_set_int_member(raster, "frame_number", (gint64)out->raster.frame_number);
+        json_object_set_int_member(raster, "scanline",     (gint64)out->raster.scanline);
+        json_object_set_int_member(raster, "column_pixel", (gint64)out->raster.column_pixel);
+        json_object_set_int_member(raster, "total_cycles", (gint64)out->raster.total_cycles);
+        json_object_set_int_member(raster, "frame_cycles", (gint64)out->raster.frame_cycles);
+        json_object_set_object_member(data, "raster", raster);
+    }
+    if (out->last_instr_valid) {
+        JsonObject *li = json_object_new();
+        json_object_set_boolean_member(li, "valid",
+                                        out->last_instr.valid ? TRUE : FALSE);
+        json_object_set_int_member(li, "addr",   (gint64)out->last_instr.addr);
+        json_object_set_int_member(li, "length", (gint64)out->last_instr.length);
+        char hex_buf[16] = {0};
+        if (out->last_instr.valid && out->last_instr.length > 0) {
+            int n = out->last_instr.length;
+            if (n > 4) n = 4;
+            int hex_pos = 0;
+            for (int b = 0; b < n; b++) {
+                hex_pos += g_snprintf(hex_buf + hex_pos,
+                                      sizeof(hex_buf) - hex_pos,
+                                      (b == 0) ? "%02X" : " %02X",
+                                      out->last_instr.bytes[b]);
+            }
+        }
+        json_object_set_string_member(li, "bytes_hex", hex_buf);
+        json_object_set_object_member(data, "last_instr", li);
+    }
 }
 
 
@@ -2447,34 +3191,7 @@ static en_MCP_DISPATCH_RESULT _handle_get_cpu_panel_batch(
     }
 
     JsonObject *data = json_object_new();
-
-    /* regs (vždy naplněné) - shoduje se s pojmenováním z get_registers. */
-    JsonObject *regs = json_object_new();
-    static const char *const reg_names[14] = {
-        "AF","BC","DE","HL","AF_","BC_","DE_","HL_",
-        "IX","IY","SP","PC","WZ","IR"
-    };
-    for (int i = 0; i < 14; i++) {
-        json_object_set_int_member(regs, reg_names[i], (gint64)out.regs[i]);
-    }
-    json_object_set_object_member(data, "regs", regs);
-
-    /* flags (vždy naplněné) - shoduje se s get_cpu_flags response. */
-    JsonObject *flags = json_object_new();
-    json_object_set_boolean_member(flags, "iff1",        out.flags.iff1 ? TRUE : FALSE);
-    json_object_set_boolean_member(flags, "iff2",        out.flags.iff2 ? TRUE : FALSE);
-    json_object_set_int_member(flags,    "im",           (gint64)out.flags.im);
-    json_object_set_boolean_member(flags, "halted",      out.flags.halted ? TRUE : FALSE);
-    json_object_set_boolean_member(flags, "int_pending", out.flags.int_pending ? TRUE : FALSE);
-    json_object_set_boolean_member(flags, "nmi_pending", out.flags.nmi_pending ? TRUE : FALSE);
-    json_object_set_boolean_member(flags, "ei_delay",    out.flags.ei_delay ? TRUE : FALSE);
-    json_object_set_int_member(flags,    "q",            (gint64)out.flags.q);
-    json_object_set_int_member(flags,    "total_cycles", (gint64)out.flags.total_cycles);
-    json_object_set_int_member(flags,    "frame_cycles", (gint64)out.flags.cycles);
-    json_object_set_int_member(flags,    "op_tstate",    (gint64)out.flags.op_tstate);
-    json_object_set_int_member(flags,    "i",            (gint64)out.flags.i_reg);
-    json_object_set_int_member(flags,    "r",            (gint64)out.flags.r_reg);
-    json_object_set_object_member(data, "flags", flags);
+    _cpu_panel_core_to_json(data, &out);
 
     /* Core fieldy vždy. */
     json_object_set_int_member(data, "frame_number",      (gint64)out.frame_number);
@@ -2490,50 +3207,7 @@ static en_MCP_DISPATCH_RESULT _handle_get_cpu_panel_batch(
     json_object_set_int_member(data, "isrb",              (gint64)out.isrb);
 
     /* Volitelné sub-objekty - přítomné jen pokud valid. */
-    if (out.im2_valid) {
-        JsonObject *im2 = json_object_new();
-        json_object_set_boolean_member(im2, "available",
-                                        out.im2.available ? TRUE : FALSE);
-        json_object_set_int_member(im2, "im",         (gint64)out.im2.im);
-        json_object_set_int_member(im2, "i",          (gint64)out.im2.i_register);
-        json_object_set_int_member(im2, "vec",        (gint64)out.im2.vector_byte);
-        json_object_set_int_member(im2, "isr_addr",   (gint64)out.im2.isr_table_addr);
-        json_object_set_int_member(im2, "isr_target", (gint64)out.im2.isr_target_addr);
-        json_object_set_boolean_member(im2, "pio_irq_pending",
-                                        out.im2.pio_irq_pending ? TRUE : FALSE);
-        json_object_set_int_member(im2, "pio_source", (gint64)out.im2.pio_source);
-        json_object_set_object_member(data, "im2", im2);
-    }
-    if (out.raster_valid) {
-        JsonObject *raster = json_object_new();
-        json_object_set_int_member(raster, "frame_number", (gint64)out.raster.frame_number);
-        json_object_set_int_member(raster, "scanline",     (gint64)out.raster.scanline);
-        json_object_set_int_member(raster, "column_pixel", (gint64)out.raster.column_pixel);
-        json_object_set_int_member(raster, "total_cycles", (gint64)out.raster.total_cycles);
-        json_object_set_int_member(raster, "frame_cycles", (gint64)out.raster.frame_cycles);
-        json_object_set_object_member(data, "raster", raster);
-    }
-    if (out.last_instr_valid) {
-        JsonObject *li = json_object_new();
-        json_object_set_boolean_member(li, "valid",
-                                        out.last_instr.valid ? TRUE : FALSE);
-        json_object_set_int_member(li, "addr",   (gint64)out.last_instr.addr);
-        json_object_set_int_member(li, "length", (gint64)out.last_instr.length);
-        char hex_buf[16] = {0};
-        if (out.last_instr.valid && out.last_instr.length > 0) {
-            int n = out.last_instr.length;
-            if (n > 4) n = 4;
-            int hex_pos = 0;
-            for (int b = 0; b < n; b++) {
-                hex_pos += g_snprintf(hex_buf + hex_pos,
-                                      sizeof(hex_buf) - hex_pos,
-                                      (b == 0) ? "%02X" : " %02X",
-                                      out.last_instr.bytes[b]);
-            }
-        }
-        json_object_set_string_member(li, "bytes_hex", hex_buf);
-        json_object_set_object_member(data, "last_instr", li);
-    }
+    _cpu_panel_sections_to_json(data, &out);
 
     return _ok_response(req_id, data, out_response);
 }
@@ -3825,18 +4499,166 @@ static gchar *_b64_encode_take(const guint8 *data, gsize len) {
 
 
 /**
+ * @brief Načte volitelný parametr `want_data` (default true).
+ *
+ * @param obj Objekt `data` požadavku (smí být NULL).
+ * @param[out] out Hodnota parametru.
+ * @return false = parametr není bool.
+ */
+static bool _parse_want_data(JsonObject *obj, bool *out) {
+    *out = true;
+    if (!obj || !json_object_has_member(obj, "want_data")) return true;
+    JsonNode *n = json_object_get_member(obj, "want_data");
+    if (!n || json_node_get_value_type(n) != G_TYPE_BOOLEAN) return false;
+    *out = json_node_get_boolean(n) ? true : false;
+    return true;
+}
+
+
+/**
+ * @brief Doplní do odpovědi čtení pole `sha256` (a `data_b64`, chce-li klient data).
+ *
+ * SHA-256 přes GLib (stejná implementace jako checksum snapshotu), 64 hex
+ * znaků malými písmeny, nad přečtenými bajty.
+ *
+ * @param resp Odpověď.
+ * @param buf Přečtená data.
+ * @param len Délka dat.
+ * @param want_data false = bez `data_b64` (jen hash).
+ */
+static void _read_result_to_json(JsonObject *resp, const uint8_t *buf, gsize len,
+                                 bool want_data) {
+    gchar *hex = g_compute_checksum_for_data(G_CHECKSUM_SHA256, buf, len);
+    json_object_set_string_member(resp, "sha256", hex ? hex : "");
+    g_free(hex);
+    if (want_data) {
+        gchar *b64 = g_base64_encode(buf, len);
+        json_object_set_string_member(resp, "data_b64", b64 ? b64 : "");
+        g_free(b64);
+    }
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Podmíněné zápisy (observe-cas M10, V1)                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @brief SHA-256 (32 bajtů) jako 64 hex znaků malými písmeny.
+ * @param d Hash.
+ * @param[out] out Buffer aspoň 65 znaků.
+ */
+static void _sha256_to_hex(const uint8_t d[32], char out[65]) {
+    static const char hx[] = "0123456789abcdef";
+    for (int i = 0; i < 32; i++) {
+        out[2 * i]     = hx[d[i] >> 4];
+        out[2 * i + 1] = hx[d[i] & 0x0F];
+    }
+    out[64] = '\0';
+}
+
+/**
+ * @brief Přečte volitelné `expected_sha256` a `want_hashes` zápisu paměti.
+ *
+ * `expected_sha256` = 64 hex znaků (velikost písmen libovolná), SHA-256
+ * přesně přepisovaného rozsahu, stejný jako `sha256` z `mem_read` /
+ * `region_read` / okna `state_observe` téhož rozsahu.
+ *
+ * @param obj Parametry požadavku.
+ * @param[out] c Podmínka (vynuluje se).
+ * @param[out] used true = klient podmínku nebo hashe chce (předat `c`
+ *             emu vláknu), false = zápis beze změny chování.
+ * @return NULL = OK, jinak statický text chyby parametrů.
+ */
+static const char *_parse_write_cond(JsonObject *obj, st_DBGAPI_WRITE_COND *c, bool *used) {
+    memset(c, 0, sizeof(*c));
+    *used = false;
+    if (json_object_has_member(obj, "expected_sha256")) {
+        JsonNode *n = json_object_get_member(obj, "expected_sha256");
+        if (!n || !JSON_NODE_HOLDS_VALUE(n) || json_node_get_value_type(n) != G_TYPE_STRING) {
+            return "expected_sha256 must be a string of 64 hex digits";
+        }
+        const char *h = json_node_get_string(n);
+        if (strlen(h) != 64) return "expected_sha256 must be a string of 64 hex digits";
+        for (int i = 0; i < 32; i++) {
+            int hi = g_ascii_xdigit_value(h[2 * i]);
+            int lo = g_ascii_xdigit_value(h[2 * i + 1]);
+            if (hi < 0 || lo < 0) return "expected_sha256 must be a string of 64 hex digits";
+            c->expected[i] = (uint8_t)((hi << 4) | lo);
+        }
+        c->has_expected = 1;
+        *used = true;
+    }
+    if (json_object_has_member(obj, "want_hashes")) {
+        JsonNode *n = json_object_get_member(obj, "want_hashes");
+        if (!n || !JSON_NODE_HOLDS_VALUE(n) || json_node_get_value_type(n) != G_TYPE_BOOLEAN) {
+            return "want_hashes must be a boolean";
+        }
+        if (json_node_get_boolean(n)) {
+            c->want_hashes = 1;
+            *used = true;
+        }
+    }
+    return NULL;
+}
+
+/**
+ * @brief Doplní do odpovědi zápisu `before_sha256` a `after_sha256`.
+ * @param resp Odpověď.
+ * @param c Podmínka po návratu z emu vlákna (bez hashů nic nepřidá).
+ */
+static void _write_cond_to_json(JsonObject *resp, const st_DBGAPI_WRITE_COND *c) {
+    char hex[65];
+    if (!c->hashes_valid) return;
+    _sha256_to_hex(c->before, hex);
+    json_object_set_string_member(resp, "before_sha256", hex);
+    if (c->written) {
+        _sha256_to_hex(c->after, hex);
+        json_object_set_string_member(resp, "after_sha256", hex);
+    }
+}
+
+/**
+ * @brief Chybová odpověď nesplněné podmínky zápisu paměti.
+ *
+ * Text: `Precondition failed: memory changed (expected_sha256=<hex>,
+ * current_sha256=<hex>)`; hodnoty jsou jen v textu, drát u chyby `data`
+ * nenese.
+ *
+ * @param req_id ID požadavku.
+ * @param c Podmínka po návratu z emu vlákna (precondition_failed).
+ * @param[out] out_response Odpověď.
+ */
+static en_MCP_DISPATCH_RESULT _write_cond_err(int64_t req_id, const st_DBGAPI_WRITE_COND *c,
+                                              char **out_response) {
+    char want[65], cur[65];
+    _sha256_to_hex(c->expected, want);
+    _sha256_to_hex(c->before, cur);
+    gchar *msg = g_strdup_printf(MCP_PRECONDITION_PREFIX "memory changed "
+                                 "(expected_sha256=%s, current_sha256=%s)", want, cur);
+    en_MCP_DISPATCH_RESULT rc = _err_response(req_id, msg, MCP_DISPATCH_EMU_ERROR, out_response);
+    g_free(msg);
+    return rc;
+}
+
+
+/**
  * @brief `mem_read` handler - čte blok paměti.
  *
  * Parametry v `data` poli requestu:
  *  - `addr` (int, 0..65535) - počáteční adresa
- *  - `len`  (int, 1..65535) - počet bajtů; součet addr+len musí být
- *    <= 65536 jinak se neauthorizujeme (= MEM_READ adresuje 16-bit
- *    prostor s wrap-around v emulátoru, ale my odmítáme)
+ *  - `len`  (int, 1..65536) - počet bajtů; součet addr+len musí být
+ *    <= 0x10000 (celých 64 KiB jen od adresy 0), jinak INVALID_PARAMS
+ *    (MEM_READ by adresu za FFFFh přetočil na 0000h, my takový blok
+ *    odmítáme)
+ *
+ *  - `want_data` (bool, volitelný, default true) - false = jen hash
  *
  * Response payload:
  *  - `addr` (int) - echo
  *  - `len`  (int) - echo
- *  - `data_b64` (string) - obsah paměti zakódovaný base64
+ *  - `sha256` (string) - SHA-256 přečtených bajtů (64 hex, malá písmena)
+ *  - `data_b64` (string, jen s want_data) - obsah paměti zakódovaný base64
  */
 static en_MCP_DISPATCH_RESULT _handle_mem_read(const st_JSONL_MESSAGE *req,
                                                char **out_response) {
@@ -3849,15 +4671,20 @@ static en_MCP_DISPATCH_RESULT _handle_mem_read(const st_JSONL_MESSAGE *req,
     JsonObject *data_obj = json_node_get_object(data_node);
     gint64 addr = _obj_int_or(data_obj, "addr", -1);
     gint64 len  = _obj_int_or(data_obj, "len",  -1);
-    if (addr < 0 || addr > 0xFFFF || len <= 0 || len > 0xFFFF ||
+    if (addr < 0 || addr > 0xFFFF || len <= 0 || len > 0x10000 ||
         (addr + len) > 0x10000) {
         return _err_response(req_id, "Invalid parameters",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    bool want_data = true;
+    if (!_parse_want_data(data_obj, &want_data)) {
+        return _err_response(req_id, "want_data must be a boolean",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
     uint8_t *buf = g_malloc0((gsize)len);
     st_DBGAPI_MEM_PARAM param = {
         .addr = (uint16_t)addr,
-        .len  = (uint16_t)len,
+        .len  = (uint32_t)len,
         .buf  = buf,
     };
     if (!_submit_dbgapi(DBGAPI_CMD_MEM_READ, &param, NULL)) {
@@ -3865,13 +4692,11 @@ static en_MCP_DISPATCH_RESULT _handle_mem_read(const st_JSONL_MESSAGE *req,
         return _err_response(req_id, "MEM_READ failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
-    gchar *b64 = _b64_encode_take(buf, (gsize)len);
-    g_free(buf);
     JsonObject *resp = json_object_new();
     json_object_set_int_member(resp, "addr", addr);
     json_object_set_int_member(resp, "len",  len);
-    json_object_set_string_member(resp, "data_b64", b64 ? b64 : "");
-    g_free(b64);
+    _read_result_to_json(resp, buf, (gsize)len, want_data);
+    g_free(buf);
     return _ok_response(req_id, resp, out_response);
 }
 
@@ -3919,19 +4744,33 @@ static int _decode_hex(const char *hex, uint8_t *out, gsize out_max) {
  *  - `addr`     (int, 0..65535) - počáteční adresa
  *  - `data_hex` (string)        - hex reprezentace bajtů ke zápisu
  *    (např. `"DEADBEEF"` = 4 bajty 0xDE, 0xAD, 0xBE, 0xEF). Akceptuje i
- *    mezerou oddělené dvojice (`"DE AD BE EF"`).
+ *    mezerou oddělené dvojice (`"DE AD BE EF"`). Počet bajtů 1..65536,
+ *    `addr` + počet <= 0x10000 (celých 64 KiB jen od adresy 0).
  *
  * Implementace volá `DBGAPI_CMD_MEM_WRITE_CHECKED` (= zápis s region
  * verifikací). Pokud kterákoliv adresa padne do ROM, prohibited nebo
  * unmapped regionu, žádný bajt se nezapíše a handler vrátí success=false
  * s polem `first_failed_addr` v error payloadu.
  *
+ * Volitelně (observe-cas M10, podmíněný zápis):
+ *  - `expected_sha256` (string, 64 hex) - zapsat jen, když SHA-256
+ *    přepisovaného rozsahu (addr..addr+délka-1, přes aktuální mapování)
+ *    souhlasí; kontrola i zápis proběhnou v emu vlákně v jednom příkazu
+ *  - `want_hashes` (bool) - vrátit `before_sha256` / `after_sha256`
+ *    i bez podmínky
+ *
  * Response data (success):
  *  - `addr`   (int) - echo
  *  - `length` (int) - počet zapsaných bajtů
+ *  - `before_sha256`, `after_sha256` (string) - jen s `expected_sha256`
+ *    nebo `want_hashes`
  *
  * Response data (failure region check):
  *  - JSONL `success=false` + `error="MEM_WRITE region check failed"`
+ *    (kontrola regionu má přednost před podmínkou)
+ *
+ * Response (nesplněná podmínka): `Precondition failed: memory changed
+ * (expected_sha256=..., current_sha256=...)`, nic se nezapsalo.
  *
  * Pozn.: V0.B.3 neimplementuje žádný `force_rom` override (= scope V1+).
  * AI klient by si měl tuto destruktivní operaci nechat odsouhlasit
@@ -3968,7 +4807,7 @@ static en_MCP_DISPATCH_RESULT _handle_mem_write(const st_JSONL_MESSAGE *req,
     }
 
     /* Horní limit dekódovaného bloku - drží konzistenci s mem_read
-     * (0..65535) a chrání před monstrózními alokacemi z malicious vstupu. */
+     * (1..65536) a chrání před monstrózními alokacemi z malicious vstupu. */
     const gsize MAX_LEN = 0x10000;
     uint8_t *bytes = g_malloc(MAX_LEN);
     int decoded = _decode_hex(data_hex, bytes, MAX_LEN);
@@ -3978,20 +4817,41 @@ static en_MCP_DISPATCH_RESULT _handle_mem_write(const st_JSONL_MESSAGE *req,
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
 
+    st_DBGAPI_WRITE_COND cond;
+    bool use_cond = false;
+    const char *cerr = _parse_write_cond(data_obj, &cond, &use_cond);
+    if (cerr) {
+        g_free(bytes);
+        gchar *msg = g_strdup_printf("Invalid parameters: %s", cerr);
+        en_MCP_DISPATCH_RESULT rc = _err_response(req_id, msg, MCP_DISPATCH_INVALID_PARAMS,
+                                                  out_response);
+        g_free(msg);
+        return rc;
+    }
+
     st_DBGAPI_MEM_WRITE_CHECKED_PARAM param = {
         .addr               = (uint16_t)addr,
-        .length             = (uint16_t)decoded,
+        .length             = (uint32_t)decoded,
         .data               = bytes,
         .success            = 0,
         .first_failed_addr  = 0,
         .first_failed_kind  = 0,
+        .cond               = use_cond ? &cond : NULL,
     };
     bool submit_ok = _submit_dbgapi(DBGAPI_CMD_MEM_WRITE_CHECKED, &param, NULL);
     g_free(bytes);
 
-    if (!submit_ok) {
+    /* Zamítnutí kontrolou regionu vrací backend jako neúspěch příkazu
+     * (DBGAPI_SUBMIT_FAILED) s vyplněným first_failed_addr/kind; ostatní
+     * neúspěchy odeslání (timeout, plná fronta) jsou chyba emulátoru. */
+    if (!submit_ok && s_submit_track.last_status != DBGAPI_SUBMIT_FAILED) {
         return _err_response(req_id, "MEM_WRITE failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    /* Nesplněná podmínka (observe-cas M10): kontrola regionu prošla,
+     * ale rozsah má jiný hash než expected_sha256; nic se nezapsalo. */
+    if (!submit_ok && use_cond && cond.precondition_failed) {
+        return _write_cond_err(req_id, &cond, out_response);
     }
     if (!param.success) {
         /* Region check abortoval celý zápis. Klient dostane structured
@@ -4008,6 +4868,7 @@ static en_MCP_DISPATCH_RESULT _handle_mem_write(const st_JSONL_MESSAGE *req,
     JsonObject *resp = json_object_new();
     json_object_set_int_member(resp, "addr",   addr);
     json_object_set_int_member(resp, "length", decoded);
+    if (use_cond) _write_cond_to_json(resp, &cond);
     return _ok_response(req_id, resp, out_response);
 }
 
@@ -4327,25 +5188,69 @@ static en_MCP_DISPATCH_RESULT _handle_bp_enable(const st_JSONL_MESSAGE *req,
 
 
 /**
+ * @brief Počká, až emulátor dokončí vyžádaný krok jedné instrukce.
+ *
+ * Krok se provede po dokončení příkazu kroku, v pauze se fronta dbgapi
+ * vybírá až po kroku (dbgapi_emu_drain_paused()). Prázdný příkaz
+ * (DBGAPI_CMD_NONE) se tedy zpracuje až po kroku; po jeho návratu je
+ * krok hotový.
+ *
+ * @return false = příkaz neproběhl (emulátor nedostupný).
+ */
+static bool _wait_step_done(void) {
+    return _submit_dbgapi(DBGAPI_CMD_NONE, NULL, NULL);
+}
+
+
+/**
+ * @brief Doplní do odpovědi kroku pole `completed`, `running`, `run_seq` (N4).
+ *
+ * @param resp Odpověď (už má `stepped: true` kvůli kompatibilitě).
+ * @param rr Výsledek příkazu kroku.
+ * @return true = krok jedné instrukce, na jehož dokončení se má počkat.
+ */
+static bool _step_result_to_json(JsonObject *resp, const st_DBGAPI_RUN_START_RESULT *rr) {
+    bool single = (rr->status == DBGAPI_RUN_TO_STARTED) && rr->step;
+    bool run = (rr->status == DBGAPI_RUN_TO_STARTED) && !rr->step;
+    json_object_set_boolean_member(resp, "completed", single ? TRUE : FALSE);
+    json_object_set_boolean_member(resp, "running",
+                                   (run || rr->status == DBGAPI_RUN_START_NOT_PAUSED) ? TRUE : FALSE);
+    if (rr->status == DBGAPI_RUN_TO_PAUSED_ONLY) {
+        json_object_set_boolean_member(resp, "paused_only", TRUE);
+    }
+    json_object_set_int_member(resp, "run_seq", (gint64)rr->run_seq);
+    return single;
+}
+
+
+/**
  * @brief `step_into` handler - 1 instrukce krok (step into CALL/RST).
  *
- * Žádné parametry. Volá `DBGAPI_CMD_STEP_INTO`. Pokud emu běží (=
- * není pause), dbgapi handler ho nejdřív pause-uje a step se neprovede
- * (= klient musí volat znovu po pause). Caller (= AI klient) si tento
- * UX kontrakt musí ohlídat - typicky: `emu_pause` -> `emu_step_into`.
+ * Žádné parametry. Volá `DBGAPI_CMD_STEP_INTO`. Pokud emu běží (= není
+ * pause), krok se neprovede a emulace běží dál (`completed: false`,
+ * `running: true`); klient musí nejdřív pauznout (`emu_pause` ->
+ * `emu_step_into`). V pauze handler počká na provedení kroku.
  *
  * Response:
- *  - `stepped` (bool) - true
+ *  - `stepped` (bool) - true (kompatibilita, nic neříká o provedení)
+ *  - `completed` (bool) - krok proběhl, stav je po kroku
+ *  - `running` (bool) - emulace běží (krok se neprovedl)
+ *  - `run_seq` (int) - číslo běhu kroku (nebo běžícího běhu)
  */
 static en_MCP_DISPATCH_RESULT _handle_step_into(const st_JSONL_MESSAGE *req,
                                                 char **out_response) {
     int64_t req_id = jsonl_msg_get_req_id(req);
-    if (!_submit_dbgapi(DBGAPI_CMD_STEP_INTO, NULL, NULL)) {
+    st_DBGAPI_RUN_START_RESULT rr;
+    memset(&rr, 0, sizeof(rr));
+    if (!_submit_dbgapi(DBGAPI_CMD_STEP_INTO, NULL, &rr)) {
         return _err_response(req_id, "step_into failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
     JsonObject *resp = json_object_new();
     json_object_set_boolean_member(resp, "stepped", TRUE);
+    if (_step_result_to_json(resp, &rr) && !_wait_step_done()) {
+        json_object_set_boolean_member(resp, "completed", FALSE);
+    }
     return _ok_response(req_id, resp, out_response);
 }
 
@@ -4354,23 +5259,31 @@ static en_MCP_DISPATCH_RESULT _handle_step_into(const st_JSONL_MESSAGE *req,
  * @brief `step_over` handler - 1 instrukce, ale CALL/RST jako atom.
  *
  * Žádné parametry. Volá `DBGAPI_CMD_STEP_OVER`. Pro non-call instrukce
- * se chová jako step_into; pro CALL/RST/DJNZ/blokové instrukce nastaví
- * dočasný BP na addr+length a run-to. Vyžaduje pause stav (= dbgapi
- * handler v dbgapi.c kontroluje `EMULATOR_TEST_PAUSED` - pokud běží,
- * akce se neprovede).
+ * se chová jako step_into (handler počká na provedení kroku); pro
+ * CALL/RST/DJNZ/blokové instrukce nastaví dočasný BP na addr+length
+ * a run-to: odpověď přijde hned (`completed: false`, `running: true`)
+ * a konec běhu ohlásí událost `paused` (`reason: "run_to"`) nebo
+ * `wait_stop`. Za běhu emulaci jen pauzne (`paused_only: true`).
  *
  * Response:
- *  - `stepped` (bool) - true
+ *  - `stepped` (bool) - true (kompatibilita, nic neříká o provedení)
+ *  - `completed` (bool), `running` (bool), `paused_only` (bool, jen při
+ *    pauze běžící emulace), `run_seq` (int) - viz step_into
  */
 static en_MCP_DISPATCH_RESULT _handle_step_over(const st_JSONL_MESSAGE *req,
                                                 char **out_response) {
     int64_t req_id = jsonl_msg_get_req_id(req);
-    if (!_submit_dbgapi(DBGAPI_CMD_STEP_OVER, NULL, NULL)) {
+    st_DBGAPI_RUN_START_RESULT rr;
+    memset(&rr, 0, sizeof(rr));
+    if (!_submit_dbgapi(DBGAPI_CMD_STEP_OVER, NULL, &rr)) {
         return _err_response(req_id, "step_over failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
     JsonObject *resp = json_object_new();
     json_object_set_boolean_member(resp, "stepped", TRUE);
+    if (_step_result_to_json(resp, &rr) && !_wait_step_done()) {
+        json_object_set_boolean_member(resp, "completed", FALSE);
+    }
     return _ok_response(req_id, resp, out_response);
 }
 
@@ -4418,6 +5331,9 @@ static en_MCP_DISPATCH_RESULT _handle_step_n(const st_JSONL_MESSAGE *req,
         }
         done++;
     }
+    /* Poslední krok se provede až po dokončení svého příkazu; odpověď
+     * má vidět stav po něm. */
+    if (done > 0) (void)_wait_step_done();
     JsonObject *resp = json_object_new();
     json_object_set_int_member(resp, "count", done);
     json_object_set_int_member(resp, "requested", count);
@@ -4431,21 +5347,23 @@ static en_MCP_DISPATCH_RESULT _handle_step_n(const st_JSONL_MESSAGE *req,
  *
  * Parametry v `data`:
  *  - `addr` (int, 0..65535) - cílová adresa
- *  - `max_cycles` (int, volitelný) - informativní timeout v T-states
- *    pro klienta. dbgapi implementace `DBGAPI_CMD_RUN_TO` aktuálně
- *    timeout nezahrnuje (= temp BP + RUN, žádný cycle limit). Pole
- *    se v V0.B.6 do dbgapi nepropaguje; je tu pro budoucí rozšíření
- *    (V1.A `run_until_event` family). Klient může pollovat
- *    `get_state` a sám pauznout, pokud emulace zatím nedoběhla.
+ *  - `max_cycles` (int, volitelný) - jen informativní, nic neomezuje
+ *    (kvůli kompatibilitě se dál jen validuje a vrací). Omezení běhu je
+ *    `deadline`.
+ *  - `deadline` (objekt, volitelný) - {frames|emulated_ms|ticks: N}: běh
+ *    se zastaví v emulovaném čase (reason "deadline"), pokud cíle
+ *    nedosáhne dřív
  *
  * Response:
  *  - `addr` (int) - echo
- *  - `running` (bool) - true (emu nastartoval temp-BP + run, dosáhnutí
- *    cílové addr signalizuje pause + breakpoint event; klient musí
- *    pollovat `get_state`)
+ *  - `running` (bool) - true (emu nastartoval temp-BP + run; dosažení
+ *    cíle vyšle událost `paused` s `reason: "run_to"`, na konec běhu jde
+ *    čekat přes `wait_stop`)
+ *  - `run_seq` (int) - číslo spuštěného běhu
+ *  - `deadline_ticks` (int, jen s deadline) - délka deadlinu v taktech GDG
  *
  * Volá `DBGAPI_CMD_RUN_TO` s data_ptr = uint16_t* (cílová adresa)
- * a result_ptr = int* (DBGAPI_RUN_TO_*).
+ * a result_ptr = st_DBGAPI_RUN_START_RESULT* (status DBGAPI_RUN_TO_*).
  *
  * Předpoklad: emulace v pauze. Pokud běží, handler vrátí chybu
  * (MCP_DISPATCH_EMU_ERROR, "Emulator is running ...") a stav emulace
@@ -4479,6 +5397,12 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_addr(const st_JSONL_MESSAGE *req
         return _err_response(req_id, "Invalid max_cycles",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
+    st_DBGAPI_RUN_DEADLINE_PARAM dl;
+    bool has_deadline = false;
+    char dl_err[128];
+    if (!_parse_deadline(data_obj, &dl, &has_deadline, dl_err, sizeof(dl_err))) {
+        return _err_response(req_id, dl_err, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
 #ifndef MZ800EMU_MCP_TEST_BUILD
     if (!EMULATOR_TEST_PAUSED) {
         return _err_response(req_id,
@@ -4487,13 +5411,23 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_addr(const st_JSONL_MESSAGE *req
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
 #endif
+    /* Deadline se nastaví v pauze těsně před rozběhem a platí do nejbližší
+     * pauzy; když se běh nespustí, zruší se. */
+    if (has_deadline && !_arm_deadline(&dl)) {
+        return _err_response(req_id, "Invalid deadline",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
     uint16_t target = (uint16_t)addr;
-    int run_to_result = DBGAPI_RUN_TO_STARTED;
+    st_DBGAPI_RUN_START_RESULT run_to_result;
+    memset(&run_to_result, 0, sizeof(run_to_result));
+    run_to_result.status = DBGAPI_RUN_TO_STARTED;
     if (!_submit_dbgapi(DBGAPI_CMD_RUN_TO, &target, &run_to_result)) {
+        if (has_deadline) _clear_deadline();
         return _err_response(req_id, "run_until_addr failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
-    if (run_to_result == DBGAPI_RUN_TO_PAUSED_ONLY) {
+    if (run_to_result.status == DBGAPI_RUN_TO_PAUSED_ONLY) {
+        if (has_deadline) _clear_deadline();
         return _err_response(req_id,
                              "Emulator was running: run_until_addr needs a "
                              "paused emulator; it has been paused now, call "
@@ -4504,6 +5438,8 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_addr(const st_JSONL_MESSAGE *req
     json_object_set_int_member(resp, "addr", addr);
     json_object_set_int_member(resp, "max_cycles", max_cycles);
     json_object_set_boolean_member(resp, "running", TRUE);
+    json_object_set_int_member(resp, "run_seq", (gint64)run_to_result.run_seq);
+    _deadline_to_json(resp, has_deadline, &dl);
     return _ok_response(req_id, resp, out_response);
 }
 
@@ -5292,10 +6228,11 @@ static en_MCP_DISPATCH_RESULT _handle_symbol_list(const st_JSONL_MESSAGE *req,
 /**
  * @brief `step_out` handler - run until RET z aktuální subroutine.
  *
- * Parametr v `data` (volitelný):
- *  - `max_cycles` (int, default 10000000) - informativní timeout v
- *    T-states. V V1.A.3 ne-enforced dbgapi handlerem (= temp BP nemá
- *    cycle cap), klient může pollovat get_state.
+ * Parametry v `data` (volitelné):
+ *  - `max_cycles` (int, default 10000000) - jen informativní, nic
+ *    neomezuje (validuje se a vrací kvůli kompatibilitě).
+ *  - `deadline` (objekt) - {frames|emulated_ms|ticks: N}: běh se zastaví
+ *    v emulovaném čase (reason "deadline"), pokud RET nedosáhne dřív.
  *
  * Volá `DBGAPI_CMD_STEP_OUT` se st_DBGAPI_STEP_OUT_PARAM. Handler v
  * emu vláknu vyhledá top frame v shadow callstacku, získá return_addr
@@ -5307,6 +6244,8 @@ static en_MCP_DISPATCH_RESULT _handle_symbol_list(const st_JSONL_MESSAGE *req,
  *  - `return_addr` (int)  - cílová RET adresa (hex-friendly int)
  *  - `max_cycles`  (int)  - echo
  *  - `running`     (bool) - true (emu nastartoval temp BP + run)
+ *  - `run_seq`     (int)  - číslo spuštěného běhu (čekání přes wait_stop)
+ *  - `deadline_ticks` (int, jen s deadline) - délka deadlinu v taktech GDG
  *
  * Response při chybě:
  *  - error message + status code v JSONL `error` poli (anglicky).
@@ -5316,13 +6255,24 @@ static en_MCP_DISPATCH_RESULT _handle_step_out(const st_JSONL_MESSAGE *req,
     int64_t req_id = jsonl_msg_get_req_id(req);
     JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
     gint64 max_cycles = 10000000;
+    JsonObject *data_obj = NULL;
     if (data_node && json_node_get_node_type(data_node) == JSON_NODE_OBJECT) {
-        JsonObject *data_obj = json_node_get_object(data_node);
+        data_obj = json_node_get_object(data_node);
         max_cycles = _obj_int_or(data_obj, "max_cycles", 10000000);
         if (max_cycles < 1) {
             return _err_response(req_id, "Invalid max_cycles",
                                  MCP_DISPATCH_INVALID_PARAMS, out_response);
         }
+    }
+    st_DBGAPI_RUN_DEADLINE_PARAM dl;
+    bool has_deadline = false;
+    char dl_err[128];
+    if (!_parse_deadline(data_obj, &dl, &has_deadline, dl_err, sizeof(dl_err))) {
+        return _err_response(req_id, dl_err, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (has_deadline && !_arm_deadline(&dl)) {
+        return _err_response(req_id, "Invalid deadline",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
     st_DBGAPI_STEP_OUT_PARAM param;
     memset(&param, 0, sizeof(param));
@@ -5330,6 +6280,7 @@ static en_MCP_DISPATCH_RESULT _handle_step_out(const st_JSONL_MESSAGE *req,
                                   ? 0xFFFFFFFFu : (uint32_t)max_cycles);
     bool ok = _submit_dbgapi(DBGAPI_CMD_STEP_OUT, &param, NULL);
     if (!ok) {
+        if (has_deadline) _clear_deadline();
         const char *msg = "step_out failed";
         switch (param.status) {
             case 1: msg = "callstack tracking required for step_out"; break;
@@ -5345,6 +6296,8 @@ static en_MCP_DISPATCH_RESULT _handle_step_out(const st_JSONL_MESSAGE *req,
     json_object_set_int_member(resp, "return_addr", (gint64)param.return_addr);
     json_object_set_int_member(resp, "max_cycles",  max_cycles);
     json_object_set_boolean_member(resp, "running", TRUE);
+    json_object_set_int_member(resp, "run_seq", (gint64)param.run_seq);
+    _deadline_to_json(resp, has_deadline, &dl);
     return _ok_response(req_id, resp, out_response);
 }
 
@@ -5473,8 +6426,11 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_raster(const st_JSONL_MESSAGE *r
     /* Polling loop - STEP_INTO + raster check. */
     st_DBGAPI_RASTER_POS now = start;
     bool reached = false;
+    bool time_limited = false;
     uint32_t safety_iter = 0;
     const uint32_t SAFETY_MAX_ITER = 5000000;  /* anti-runaway hard cap */
+    const gint64 t_end = g_get_monotonic_time()
+                         + (gint64)MCP_STEP_LOOP_TIME_LIMIT_MS * G_TIME_SPAN_MILLISECOND;
     while (safety_iter < SAFETY_MAX_ITER) {
         if (!_submit_dbgapi(DBGAPI_CMD_STEP_INTO, NULL, NULL)) {
             /* emu nemůže krokovat (= ending / queue / not paused) */
@@ -5488,6 +6444,10 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_raster(const st_JSONL_MESSAGE *r
             break;
         }
         if (delta >= (uint32_t)max_cycles) break;
+        if (g_get_monotonic_time() >= t_end) {
+            time_limited = true;
+            break;
+        }
         safety_iter++;
     }
 
@@ -5499,6 +6459,7 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_raster(const st_JSONL_MESSAGE *r
     json_object_set_int_member(resp, "delta_cycles",
                                (gint64)(now.total_cycles - start.total_cycles));
     json_object_set_boolean_member(resp, "reached", reached ? TRUE : FALSE);
+    json_object_set_boolean_member(resp, "time_limited", time_limited ? TRUE : FALSE);
     return _ok_response(req_id, resp, out_response);
 }
 
@@ -5562,8 +6523,11 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_tstate(const st_JSONL_MESSAGE *r
 
     st_DBGAPI_RASTER_POS now = start;
     bool reached = false;
+    bool time_limited = false;
     uint32_t safety_iter = 0;
     const uint32_t SAFETY_MAX_ITER = 5000000;
+    const gint64 t_end = g_get_monotonic_time()
+                         + (gint64)MCP_STEP_LOOP_TIME_LIMIT_MS * G_TIME_SPAN_MILLISECOND;
     while (safety_iter < SAFETY_MAX_ITER) {
         if (!_submit_dbgapi(DBGAPI_CMD_STEP_INTO, NULL, NULL)) break;
         if (!_get_raster_now(&now)) break;
@@ -5572,6 +6536,10 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_tstate(const st_JSONL_MESSAGE *r
             break;
         }
         if ((now.total_cycles - start.total_cycles) >= (uint32_t)max_cycles) break;
+        if (g_get_monotonic_time() >= t_end) {
+            time_limited = true;
+            break;
+        }
         safety_iter++;
     }
 
@@ -5581,6 +6549,7 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_tstate(const st_JSONL_MESSAGE *r
     json_object_set_int_member(resp, "delta_cycles",
                                (gint64)(now.total_cycles - start.total_cycles));
     json_object_set_boolean_member(resp, "reached", reached ? TRUE : FALSE);
+    json_object_set_boolean_member(resp, "time_limited", time_limited ? TRUE : FALSE);
     return _ok_response(req_id, resp, out_response);
 }
 
@@ -5667,9 +6636,12 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_event(const st_JSONL_MESSAGE *re
         }
         st_DBGAPI_RASTER_POS now = start;
         bool reached = false;
+        bool time_limited = false;
         uint32_t safety_iter = 0;
         const uint32_t SAFETY_MAX_ITER = 5000000;
         uint32_t target_frame = start.frame_number + (uint32_t)count;
+        const gint64 t_end = g_get_monotonic_time()
+                             + (gint64)MCP_STEP_LOOP_TIME_LIMIT_MS * G_TIME_SPAN_MILLISECOND;
         while (safety_iter < SAFETY_MAX_ITER) {
             if (!_submit_dbgapi(DBGAPI_CMD_STEP_INTO, NULL, NULL)) break;
             if (!_get_raster_now(&now)) break;
@@ -5679,6 +6651,10 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_event(const st_JSONL_MESSAGE *re
             }
             if ((now.total_cycles - start.total_cycles)
                     >= (uint32_t)max_cycles) break;
+            if (g_get_monotonic_time() >= t_end) {
+                time_limited = true;
+                break;
+            }
             safety_iter++;
         }
         JsonObject *resp = json_object_new();
@@ -5688,6 +6664,7 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_event(const st_JSONL_MESSAGE *re
         json_object_set_int_member(resp, "delta_cycles",
             (gint64)(now.total_cycles - start.total_cycles));
         json_object_set_boolean_member(resp, "reached", reached ? TRUE : FALSE);
+        json_object_set_boolean_member(resp, "time_limited", time_limited ? TRUE : FALSE);
         return _ok_response(req_id, resp, out_response);
     }
     if (strcmp(kind, "breakpoint_hit") == 0) {
@@ -5706,9 +6683,12 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_event(const st_JSONL_MESSAGE *re
         }
         st_DBGAPI_RASTER_POS now = start;
         bool reached = false;
+        bool time_limited = false;
         uint32_t safety_iter = 0;
         const uint32_t SAFETY_MAX_ITER = 100000;  /* polling round-trip
                                                    * je drahý, méně iterací */
+        const gint64 t_end = g_get_monotonic_time()
+                             + (gint64)MCP_STEP_LOOP_TIME_LIMIT_MS * G_TIME_SPAN_MILLISECOND;
         while (safety_iter < SAFETY_MAX_ITER) {
             bool running = true;
             if (!_submit_dbgapi(DBGAPI_CMD_IS_RUNNING, NULL, &running)) break;
@@ -5717,8 +6697,9 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_event(const st_JSONL_MESSAGE *re
                 break;
             }
             if (!_get_raster_now(&now)) break;
-            if ((now.total_cycles - start.total_cycles)
-                    >= (uint32_t)max_cycles) {
+            bool over_cycles = (now.total_cycles - start.total_cycles) >= (uint32_t)max_cycles;
+            time_limited = !over_cycles && (g_get_monotonic_time() >= t_end);
+            if (over_cycles || time_limited) {
                 /* Timeout - zastavíme emu, aby klient měl deterministic stav. */
                 _submit_dbgapi(DBGAPI_CMD_PAUSE, NULL, NULL);
                 _get_raster_now(&now);
@@ -5732,6 +6713,7 @@ static en_MCP_DISPATCH_RESULT _handle_run_until_event(const st_JSONL_MESSAGE *re
             (gint64)(now.total_cycles - start.total_cycles));
         json_object_set_boolean_member(resp, "reached", reached ? TRUE : FALSE);
         json_object_set_boolean_member(resp, "paused",  reached ? TRUE : FALSE);
+        json_object_set_boolean_member(resp, "time_limited", time_limited ? TRUE : FALSE);
         return _ok_response(req_id, resp, out_response);
     }
 
@@ -6300,12 +7282,17 @@ static en_MCP_DISPATCH_RESULT _handle_nmi_inject(const st_JSONL_MESSAGE *req,
 /**
  * @brief `mem_write_force` handler - raw memory write bez region check.
  *
- * Parametry: `data.addr` (0..65535), `data.data_hex` (hex string).
+ * Parametry: `data.addr` (0..65535), `data.data_hex` (hex string,
+ * 1..65536 bajtů, `addr` + počet <= 0x10000).
  * Identicky validuje vstup jako `mem_write`, ale forwarduje na
  * DBGAPI_CMD_MEM_WRITE_FORCE (= bez region check), takže zápis
  * proběhne i do ROM oblastí (pokud banking dovolí).
+ * Volitelně `expected_sha256` a `want_hashes` jako u `mem_write`
+ * (podmíněný zápis, observe-cas M10).
  *
- * Response: `{"addr": <int>, "length": <int>}`.
+ * Response: `{"addr": <int>, "length": <int>}`, s podmínkou nebo
+ * `want_hashes` navíc `before_sha256` a `after_sha256`. Nesplněná
+ * podmínka = chyba `Precondition failed: memory changed (...)`.
  *
  * @warning Velmi destruktivní - obchází ochranu ROM/VRAM zapisů.
  *          Doporučeno jen pro fault injection v test scenariu.
@@ -6347,13 +7334,29 @@ static en_MCP_DISPATCH_RESULT _handle_mem_write_force(const st_JSONL_MESSAGE *re
         return _err_response(req_id, "Invalid parameters",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
+    st_DBGAPI_WRITE_COND cond;
+    bool use_cond = false;
+    const char *cerr = _parse_write_cond(data_obj, &cond, &use_cond);
+    if (cerr) {
+        g_free(bytes);
+        gchar *msg = g_strdup_printf("Invalid parameters: %s", cerr);
+        en_MCP_DISPATCH_RESULT rc = _err_response(req_id, msg, MCP_DISPATCH_INVALID_PARAMS,
+                                                  out_response);
+        g_free(msg);
+        return rc;
+    }
     st_DBGAPI_MEM_PARAM param = {
         .addr = (uint16_t)addr,
-        .len  = (uint16_t)decoded,
+        .len  = (uint32_t)decoded,
         .buf  = bytes,
+        .cond = use_cond ? &cond : NULL,
     };
     bool ok = _submit_dbgapi(DBGAPI_CMD_MEM_WRITE_FORCE, &param, NULL);
     g_free(bytes);
+    if (!ok && use_cond && cond.precondition_failed
+        && s_submit_track.last_status == DBGAPI_SUBMIT_FAILED) {
+        return _write_cond_err(req_id, &cond, out_response);
+    }
     if (!ok) {
         return _err_response(req_id, "MEM_WRITE_FORCE failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
@@ -6361,6 +7364,7 @@ static en_MCP_DISPATCH_RESULT _handle_mem_write_force(const st_JSONL_MESSAGE *re
     JsonObject *resp = json_object_new();
     json_object_set_int_member(resp, "addr",   (gint64)addr);
     json_object_set_int_member(resp, "length", (gint64)decoded);
+    if (use_cond) _write_cond_to_json(resp, &cond);
     return _ok_response(req_id, resp, out_response);
 }
 
@@ -7068,7 +8072,7 @@ static en_MCP_DISPATCH_RESULT _handle_cdl_export(const st_JSONL_MESSAGE *req,
 /**
  * @brief Převést channel string na en_DBGAPI_TRACE_CHANNEL.
  *
- * Akceptované hodnoty: "cputrack", "iorqlog", "intlog", "hwlog".
+ * Akceptované hodnoty: "cputrack", "iorqlog", "intlog", "hwlog", "marklog".
  *
  * @param s    Channel string (může být NULL = nevalidní).
  * @param out  Výstupní enum (vyplněn jen při návratu TRUE).
@@ -7093,6 +8097,10 @@ static gboolean _trace_parse_channel(const char *s,
     }
     if (g_strcmp0(s, "hwlog") == 0) {
         *out = DBGAPI_TRACE_CHANNEL_HWLOG;
+        return TRUE;
+    }
+    if (g_strcmp0(s, "marklog") == 0) {
+        *out = DBGAPI_TRACE_CHANNEL_MARKLOG;
         return TRUE;
     }
     return FALSE;
@@ -7156,7 +8164,7 @@ static en_MCP_DISPATCH_RESULT _trace_start_stop_common(
 /**
  * @brief `trace_start` handler - aktivuje trace recording kanálu (ALWAYS).
  *
- * Parametry: `channel` (cputrack/iorqlog/intlog/hwlog). Forward na
+ * Parametry: `channel` (cputrack/iorqlog/intlog/hwlog/marklog). Forward na
  * DBGAPI_CMD_TRACE_START. Response: `{"started": true}`.
  */
 static en_MCP_DISPATCH_RESULT _handle_trace_start(const st_JSONL_MESSAGE *req,
@@ -7206,7 +8214,7 @@ static en_MCP_DISPATCH_RESULT _handle_trace_reset(const st_JSONL_MESSAGE *req,
  * @brief `trace_save` handler - uloží/přesměruje trace segment kanálu.
  *
  * Parametry:
- *   - `channel` (string, povinný) - cputrack/iorqlog/intlog/hwlog.
+ *   - `channel` (string, povinný) - cputrack/iorqlog/intlog/hwlog/marklog.
  *   - `path` (string, volitelný) - cílová cesta NÁSLEDNÉHO segmentu. Bez
  *     `path` se jen uzavře a znovuotevře aktuální segment na stávající
  *     dir/name (= force save now).
@@ -7245,6 +8253,570 @@ static en_MCP_DISPATCH_RESULT _handle_trace_save(const st_JSONL_MESSAGE *req,
     } else {
         json_object_set_null_member(resp, "path");
     }
+    return _ok_response(req_id, resp, out_response);
+}
+
+
+/* ===========================================================================
+ *  mcp-trace-read: trace_status / trace_read (devdoc/trace/stream-read.md)
+ * =========================================================================== */
+
+/** @brief Čitelné kanály v pořadí výpisu trace_status (= en_DBGAPI_TRACE_CHANNEL = en_TRACE_KIND). */
+static const char *const s_trace_read_channels[] = {
+    "cputrack", "iorqlog", "intlog", "hwlog", "marklog", "eventlog",
+    "audio_psg_writes", "audio_levels", "audio_frames", "ramlog"
+};
+
+G_STATIC_ASSERT(G_N_ELEMENTS(s_trace_read_channels) == TRACE_KIND_COUNT);
+G_STATIC_ASSERT((int)DBGAPI_TRACE_CHANNEL_EVENTLOG == (int)TRACE_KIND_EVENTLOG);
+G_STATIC_ASSERT(DBGAPI_EVENT_TEXT_MAX == TRACE_RESOLVE_TEXT_SIZE);
+G_STATIC_ASSERT(DBGAPI_MARKER_NAME_MAX == TRACE_RESOLVE_NAME_SIZE);
+
+/**
+ * @brief Kanál pro čtení (trace_status / trace_read): Trace Suite, eventlog
+ *        a proudy paměti zachycení zvuku (audio_*).
+ *
+ * @param s    Jméno kanálu.
+ * @param out  Výstup (jen při TRUE).
+ * @return TRUE = čitelný kanál.
+ */
+static gboolean _trace_read_parse_channel(const char *s, en_TRACE_KIND *out) {
+    for (int i = 0; i < (int)G_N_ELEMENTS(s_trace_read_channels); i++) {
+        if (g_strcmp0(s, s_trace_read_channels[i]) == 0) {
+            *out = (en_TRACE_KIND)i;
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/** @brief Kanál je proud paměti zachycení zvuku (ne dbgapi)? */
+static bool _trace_kind_is_audio(en_TRACE_KIND k) {
+    return k == TRACE_KIND_AUDIO_PSG_WRITES || k == TRACE_KIND_AUDIO_LEVELS
+           || k == TRACE_KIND_AUDIO_FRAMES;
+}
+
+/** @brief Verze formátu záznamu kanálu (cputrack v2, ostatní v1). */
+static unsigned _trace_format_version(en_TRACE_KIND k) {
+    /* cputrack v2 (bajt 11, záznam přijetí přerušení), ostatní v1 */
+    return (k == TRACE_KIND_CPUTRACK) ? 2u : 1u;
+}
+
+/**
+ * @brief Pořídit snímek kanálu přes dbgapi (emu vlákno).
+ *
+ * @param p  Parametr (channel, from_seq, count, max_copy_bytes, want_time
+ *           vyplní volající); výstup p->out uvolní tlog_read_snapshot_clear().
+ * @return true OK.
+ */
+static bool _trace_snapshot(st_DBGAPI_TRACE_SNAPSHOT_PARAM *p) {
+    memset(&p->out, 0, sizeof(p->out));
+    if (!_submit_dbgapi(DBGAPI_CMD_TRACE_SNAPSHOT, p, NULL) || !p->out_ok) {
+        tlog_read_snapshot_clear(&p->out);
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Pořídit snímek kanálu: Trace Suite a eventlog přes dbgapi, audio_*
+ *        přímo z paměti zachycení (audio_capture_stream_copy() pod zámkem
+ *        modulu, bez čekání na emu vlákno).
+ *
+ * U audio_* má snímek tvar ringu: bez chunků, ram_first_seq = first_seq,
+ * kopie v ram_copy (vlastnictví přejde na snímek).
+ *
+ * @param kind      Kanál.
+ * @param p         Parametr (from_seq, count, max_copy_bytes, want_time vyplní
+ *                  volající); výstup p->out uvolní tlog_read_snapshot_clear().
+ * @param origin    Výstup (smí být NULL): u audio_* absolutní čas začátku
+ *                  zachycení [takty GDG], jinak 0.
+ * @return true OK.
+ */
+static bool _trace_snapshot_kind(en_TRACE_KIND kind, st_DBGAPI_TRACE_SNAPSHOT_PARAM *p,
+                                 uint64_t *origin) {
+    if (origin) *origin = 0;
+    if (kind == TRACE_KIND_RAMLOG) {
+        p->channel = DBGAPI_TRACE_CHANNEL_RAMLOG;
+        return _trace_snapshot(p);
+    }
+    if (!_trace_kind_is_audio(kind)) {
+        p->channel = (en_DBGAPI_TRACE_CHANNEL)kind;
+        return _trace_snapshot(p);
+    }
+    memset(&p->out, 0, sizeof(p->out));
+    en_AUDIO_CAPTURE_STREAM st = (kind == TRACE_KIND_AUDIO_PSG_WRITES) ? AUDIO_CAPTURE_STREAM_PSG_WRITES
+                               : (kind == TRACE_KIND_AUDIO_LEVELS) ? AUDIO_CAPTURE_STREAM_LEVELS
+                               : AUDIO_CAPTURE_STREAM_FRAMES;
+    st_AUDIO_CAPTURE_STREAM_COPY c;
+    bool ok = audio_capture_stream_copy(st, p->from_seq, p->count, p->max_copy_bytes, &c);
+    st_TLOG_READ_SNAPSHOT *s = &p->out;
+    s->segment = c.segment;
+    s->live = c.live ? 1 : 0;
+    s->record_size = c.present ? c.record_size : 0;
+    s->first_seq = c.first_seq;
+    s->next_seq = c.next_seq;
+    s->ram_first_seq = c.first_seq;
+    s->ram_copy = c.data;
+    s->ram_copy_seq = c.data_seq;
+    s->ram_copy_count = c.data_count;
+    c.data = NULL;
+    p->out_ok = ok;
+    p->out_pc_range_full = true;
+    if (origin) *origin = c.origin_ticks;
+    if (!ok) tlog_read_snapshot_clear(&p->out);
+    return ok;
+}
+
+/** @brief Má kanál podle snímku časový sloupec? */
+static bool _trace_has_time(en_TRACE_KIND k,
+                            const st_DBGAPI_TRACE_SNAPSHOT_PARAM *p) {
+    if (k != TRACE_KIND_CPUTRACK) return true;
+    return p->out_pc_range_full;
+}
+
+/** @brief Vyplnit stav kanálu do objektu (společné pro status i read). */
+static void _trace_fill_state(JsonObject *o, en_TRACE_KIND k,
+                              const st_DBGAPI_TRACE_SNAPSHOT_PARAM *p) {
+    const st_TLOG_READ_SNAPSHOT *s = &p->out;
+    json_object_set_string_member(o, "channel", s_trace_read_channels[k]);
+    json_object_set_int_member(o, "segment", (gint64)s->segment);
+    json_object_set_boolean_member(o, "live", s->live ? TRUE : FALSE);
+    json_object_set_boolean_member(o, "truncated", s->truncated ? TRUE : FALSE);
+    json_object_set_int_member(o, "first_seq", (gint64)s->first_seq);
+    json_object_set_int_member(o, "next_seq", (gint64)s->next_seq);
+    /* Trace Suite nic nezahazuje; ring Event Vieweru přepsal first_seq záznamů. */
+    json_object_set_int_member(o, "lost", (gint64)s->first_seq);
+}
+
+/**
+ * @brief `trace_status` handler - stav kanálů Trace Suite pro čtení.
+ *
+ * Parametry: `channel` (string, volitelný; bez něj všechny kanály).
+ * Response: `{"channels": [{channel, segment, live, truncated, first_seq,
+ * next_seq, lost, record_size, format_version, chunks, bytes_on_disk,
+ * dir, name, has_time}]}`.
+ */
+static en_MCP_DISPATCH_RESULT _handle_trace_status(const st_JSONL_MESSAGE *req,
+                                                   char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    JsonObject *data_obj = (data_node && json_node_get_node_type(data_node) == JSON_NODE_OBJECT)
+                           ? json_node_get_object(data_node) : NULL;
+    int only = -1;
+    if (data_obj && json_object_has_member(data_obj, "channel")
+        && !json_node_is_null(json_object_get_member(data_obj, "channel"))) {
+        en_TRACE_KIND ch;
+        if (!_obj_is_string(data_obj, "channel")
+            || !_trace_read_parse_channel(json_object_get_string_member(data_obj, "channel"), &ch)) {
+            return _err_response(req_id, "Invalid parameters: unknown channel",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        only = (int)ch;
+    }
+    JsonArray *arr = json_array_new();
+    for (int i = 0; i < (int)G_N_ELEMENTS(s_trace_read_channels); i++) {
+        if (only >= 0 && i != only) continue;
+        st_DBGAPI_TRACE_SNAPSHOT_PARAM p;
+        memset(&p, 0, sizeof(p));
+        en_TRACE_KIND kind = (en_TRACE_KIND)i;
+        if (!_trace_snapshot_kind(kind, &p, NULL)) {
+            json_array_unref(arr);
+            return _err_response(req_id, "trace_status failed",
+                                 MCP_DISPATCH_EMU_ERROR, out_response);
+        }
+        JsonObject *o = json_object_new();
+        _trace_fill_state(o, kind, &p);
+        uint64_t bytes = 0;
+        guint chunks = p.out.chunks ? p.out.chunks->len : 0;
+        for (guint k = 0; k < chunks; k++) {
+            bytes += g_array_index(p.out.chunks, st_TLOG_CHUNK_META, k).bytes;
+        }
+        json_object_set_int_member(o, "record_size", (gint64)p.out.record_size);
+        json_object_set_int_member(o, "format_version", (gint64)_trace_format_version(kind));
+        json_object_set_int_member(o, "chunks", (gint64)chunks);
+        json_object_set_int_member(o, "bytes_on_disk", (gint64)bytes);
+        if (p.out.dir) json_object_set_string_member(o, "dir", p.out.dir);
+        else json_object_set_null_member(o, "dir");
+        if (p.out.name) json_object_set_string_member(o, "name", p.out.name);
+        else json_object_set_null_member(o, "name");
+        json_object_set_boolean_member(o, "has_time", _trace_has_time(kind, &p) ? TRUE : FALSE);
+        json_array_add_object_element(arr, o);
+        tlog_read_snapshot_clear(&p.out);
+    }
+    JsonObject *resp = json_object_new();
+    json_object_set_array_member(resp, "channels", arr);
+    return _ok_response(req_id, resp, out_response);
+}
+
+/**
+ * @brief Resolver symbolů a jmen značek pro trace_reader_page (přes dbgapi).
+ */
+static bool _trace_resolve_cb(void *user, st_TRACE_RESOLVE_REQ *rr) {
+    (void)user;
+    st_DBGAPI_SYMBOL_HIT *hits = rr->n_addrs ? g_new0(st_DBGAPI_SYMBOL_HIT, rr->n_addrs) : NULL;
+    st_DBGAPI_TRACE_RESOLVE_PARAM p = {
+        .addrs = rr->addrs, .n_addrs = rr->n_addrs, .out_syms = hits,
+        .marker_ids = rr->markers, .n_markers = rr->n_markers,
+        .out_markers = (char (*)[DBGAPI_MARKER_NAME_MAX])rr->marker_names,
+        .events = rr->events, .n_events = rr->n_events,
+        .out_event_texts = (char (*)[DBGAPI_EVENT_TEXT_MAX])rr->event_texts
+    };
+    bool ok = _submit_dbgapi(DBGAPI_CMD_TRACE_RESOLVE, &p, NULL);
+    if (ok) {
+        for (size_t i = 0; i < rr->n_addrs; i++) {
+            g_strlcpy(rr->syms + i * TRACE_RESOLVE_NAME_SIZE, hits[i].name, TRACE_RESOLVE_NAME_SIZE);
+            rr->sym_offs[i] = hits[i].offset;
+        }
+    }
+    g_free(hits);
+    return ok;
+}
+
+/**
+ * @brief Naparsovat objekt `filter` trace_read.
+ *
+ * @return NULL OK, jinak statická chybová zpráva.
+ */
+static const char *_trace_parse_filter(JsonObject *f, en_TRACE_KIND kind, st_TRACE_FILTER *out) {
+    trace_filter_init(out);
+    if (!f) return NULL;
+    if (json_object_has_member(f, "pc_from") || json_object_has_member(f, "pc_to")) {
+        if (kind != TRACE_KIND_CPUTRACK && kind != TRACE_KIND_RAMLOG) return "filter pc_from/pc_to is only for cputrack and ramlog";
+        out->has_pc = true;
+        out->pc_from = (uint16_t)_obj_int_or(f, "pc_from", 0);
+        out->pc_to = (uint16_t)_obj_int_or(f, "pc_to", 0xFFFF);
+    }
+    if (json_object_has_member(f, "port")) {
+        if (kind != TRACE_KIND_IORQLOG) return "filter port is only for iorqlog";
+        out->has_port = true;
+        out->port = (uint16_t)_obj_int_or(f, "port", 0);
+    }
+    if (json_object_has_member(f, "dir")) {
+        if (kind != TRACE_KIND_IORQLOG || !_obj_is_string(f, "dir")) return "filter dir must be in or out (iorqlog)";
+        const char *d = json_object_get_string_member(f, "dir");
+        if (g_strcmp0(d, "in") == 0) out->dir = 0;
+        else if (g_strcmp0(d, "out") == 0) out->dir = 1;
+        else return "filter dir must be in or out (iorqlog)";
+    }
+    if (json_object_has_member(f, "type")) {
+        if (kind != TRACE_KIND_IORQLOG || !_obj_is_string(f, "type")) return "filter type must be iorq, mreq_mapped or iorq_unconnected (iorqlog)";
+        const char *t = json_object_get_string_member(f, "type");
+        if (g_strcmp0(t, "iorq") == 0) out->type = 0;
+        else if (g_strcmp0(t, "mreq_mapped") == 0) out->type = 1;
+        else if (g_strcmp0(t, "iorq_unconnected") == 0) out->type = 2;
+        else return "filter type must be iorq, mreq_mapped or iorq_unconnected (iorqlog)";
+    }
+    if (json_object_has_member(f, "chip")) {
+        if (kind != TRACE_KIND_HWLOG) return "filter chip is only for hwlog";
+        out->chip = (int)_obj_int_or(f, "chip", -1);
+    }
+    if (json_object_has_member(f, "sub")) {
+        if (kind != TRACE_KIND_HWLOG) return "filter sub is only for hwlog";
+        out->sub = (int)_obj_int_or(f, "sub", -1);
+    }
+    if (json_object_has_member(f, "marker")) {
+        if (kind != TRACE_KIND_MARKLOG) return "filter marker is only for marklog";
+        out->marker = (int)_obj_int_or(f, "marker", -1);
+    }
+    if (json_object_has_member(f, "addr_from") || json_object_has_member(f, "addr_to")) {
+        if (kind != TRACE_KIND_RAMLOG) return "filter addr_from/addr_to is only for ramlog";
+        out->has_addr = true;
+        out->addr_from = (uint16_t)_obj_int_or(f, "addr_from", 0);
+        out->addr_to = (uint16_t)_obj_int_or(f, "addr_to", 0xFFFF);
+    }
+    if (json_object_has_member(f, "space")) {
+        int sp = (kind == TRACE_KIND_RAMLOG && _obj_is_string(f, "space"))
+                 ? ramlog_space_from_name(json_object_get_string_member(f, "space")) : -1;
+        if (sp < 0) return "filter space must be ram, vram, pcg, memext or rom (ramlog)";
+        out->space = sp;
+    }
+    if (json_object_has_member(f, "src")) {
+        int sr = -1;
+        if (kind == TRACE_KIND_RAMLOG && _obj_is_string(f, "src")) {
+            const char *v = json_object_get_string_member(f, "src");
+            for (int i = 0; i < RAMLOG_SRC_COUNT; i++) if (g_strcmp0(v, ramlog_src_name((unsigned)i)) == 0) sr = i;
+        }
+        if (sr < 0) return "filter src must be insn, int_ack, nmi_ack, debugger, poke, freeze, cmt_hack or load (ramlog)";
+        out->src = sr;
+    }
+    if (json_object_has_member(f, "all")) {
+        if (kind != TRACE_KIND_RAMLOG) return "filter all is only for ramlog";
+        out->all = json_object_get_boolean_member(f, "all");
+    }
+    if (json_object_has_member(f, "channels")) {
+        if (kind != TRACE_KIND_AUDIO_LEVELS && kind != TRACE_KIND_AUDIO_PSG_WRITES) {
+            return "filter channels is only for audio_levels and audio_psg_writes";
+        }
+        JsonNode *cn = json_object_get_member(f, "channels");
+        if (json_node_get_node_type(cn) != JSON_NODE_ARRAY) return "filter channels must be an array of channel names (ctc0, psg0_0 .. psg1_3)";
+        JsonArray *ca = json_node_get_array(cn);
+        for (guint i = 0; i < json_array_get_length(ca); i++) {
+            JsonNode *e = json_array_get_element(ca, i);
+            const char *nm = (JSON_NODE_HOLDS_VALUE(e) && json_node_get_value_type(e) == G_TYPE_STRING)
+                             ? json_node_get_string(e) : "";
+            unsigned k = 0;
+            while (k < 9 && g_strcmp0(nm, trace_audio_channel_name(k)) != 0) k++;
+            if (k == 9) return "filter channels must be an array of channel names (ctc0, psg0_0 .. psg1_3)";
+            out->channels |= 1u << k;
+        }
+    }
+    if (json_object_has_member(f, "reg")) {
+        static const char *const regs[4] = { "tone_lo", "tone", "volume", "noise" };
+        if (kind != TRACE_KIND_AUDIO_PSG_WRITES || !_obj_is_string(f, "reg")) return "filter reg must be tone_lo, tone, volume or noise (audio_psg_writes)";
+        const char *r = json_object_get_string_member(f, "reg");
+        out->reg = -1;
+        for (int i = 0; i < 4; i++) if (g_strcmp0(r, regs[i]) == 0) out->reg = i;
+        if (out->reg < 0) return "filter reg must be tone_lo, tone, volume or noise (audio_psg_writes)";
+    }
+    if (json_object_has_member(f, "t_from") || json_object_has_member(f, "t_to")) {
+        out->has_t = true;
+        out->t_from = (uint64_t)_obj_int_or(f, "t_from", 0);
+        out->t_to = (uint64_t)_obj_int_or(f, "t_to", G_MAXINT64);
+    }
+    return NULL;
+}
+
+/** @brief Chybová odpověď s formátovanou zprávou (zpráva se uvolní). */
+static en_MCP_DISPATCH_RESULT _trace_err_owned(int64_t req_id, char *msg,
+                                               en_MCP_DISPATCH_RESULT rc,
+                                               char **out_response) {
+    en_MCP_DISPATCH_RESULT r = _err_response(req_id, msg, rc, out_response);
+    g_free(msg);
+    return r;
+}
+
+/**
+ * @brief `trace_read` handler - stránka záznamů kanálu Trace Suite.
+ *
+ * Parametry a odpověď viz devdoc/trace/stream-read.md (channel, cursor,
+ * from, limit, format, columns, filter, max_chars, max_scan). Postup:
+ * snímek kanálu v emu vlákně (metadata + kopie RAM), čtení chunků
+ * z disku a sestavení stránky v dispatch vlákně (trace_reader_page),
+ * symboly a jména značek druhým dotazem v emu vlákně, nakonec kontrola,
+ * že se segment mezitím nezměnil (jinak chyba `segment_replaced:`).
+ */
+static en_MCP_DISPATCH_RESULT _handle_trace_read(const st_JSONL_MESSAGE *req,
+                                                 char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    en_TRACE_KIND ch;
+    JsonNode *dn = (JsonNode *)jsonl_msg_get_data_node(req);
+    if (!dn || json_node_get_node_type(dn) != JSON_NODE_OBJECT
+        || !_obj_is_string(json_node_get_object(dn), "channel")
+        || !_trace_read_parse_channel(json_object_get_string_member(json_node_get_object(dn), "channel"), &ch)) {
+        return _err_response(req_id, "Invalid parameters: unknown channel",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    JsonObject *d = json_node_get_object(dn);
+    const char *chname = s_trace_read_channels[ch];
+    en_TRACE_KIND kind = ch;
+
+    st_TRACE_PAGE_REQ pr;
+    memset(&pr, 0, sizeof(pr));
+    pr.kind = kind;
+    const char *fmt = _obj_is_string(d, "format") ? json_object_get_string_member(d, "format") : "rows";
+    if (g_strcmp0(fmt, "rows") == 0) pr.raw = false;
+    else if (g_strcmp0(fmt, "raw_b64") == 0) pr.raw = true;
+    else return _err_response(req_id, "Invalid parameters: format must be rows or raw_b64",
+                              MCP_DISPATCH_INVALID_PARAMS, out_response);
+    gint64 limit = _obj_int_or(d, "limit", pr.raw ? 0 : TRACE_READ_DEFAULT_LIMIT);
+    if (!pr.raw && (limit < 1 || limit > TRACE_READ_MAX_LIMIT)) {
+        return _err_response(req_id, "Invalid parameters: limit must be 1..5000",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (pr.raw && limit < 0) {
+        return _err_response(req_id, "Invalid parameters: limit must be >= 0",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    /* raw: limit = počet záznamů, 0 = co se vejde do 1 MiB */
+    pr.limit = (unsigned)((limit > 0 && limit < G_MAXUINT) ? limit : (TRACE_READ_MAX_RAW_BYTES / 12u));
+    gint64 max_chars = _obj_int_or(d, "max_chars", TRACE_READ_DEFAULT_MAX_CHARS);
+    if (max_chars < 1000 || max_chars > TRACE_READ_MAX_MAX_CHARS) {
+        return _err_response(req_id, "Invalid parameters: max_chars must be 1000..45000",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    pr.max_chars = (size_t)max_chars;
+    gint64 max_scan = _obj_int_or(d, "max_scan", TRACE_READ_DEFAULT_MAX_SCAN);
+    if (max_scan < 1) {
+        return _err_response(req_id, "Invalid parameters: max_scan must be >= 1",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    pr.max_scan = (uint64_t)max_scan;
+
+    /* Sloupce */
+    const char *bad = NULL;
+    if (json_object_has_member(d, "columns") && !json_node_is_null(json_object_get_member(d, "columns"))) {
+        JsonNode *cn = json_object_get_member(d, "columns");
+        if (json_node_get_node_type(cn) != JSON_NODE_ARRAY) {
+            return _err_response(req_id, "Invalid parameters: columns must be an array of strings",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        JsonArray *ca = json_node_get_array(cn);
+        guint n = json_array_get_length(ca);
+        const char **names = g_new0(const char *, n + 1);
+        for (guint i = 0; i < n; i++) {
+            JsonNode *e = json_array_get_element(ca, i);
+            names[i] = (JSON_NODE_HOLDS_VALUE(e) && json_node_get_value_type(e) == G_TYPE_STRING)
+                       ? json_node_get_string(e) : "";
+        }
+        pr.col_mask = trace_columns_mask(kind, names, n, &bad);
+        if (bad) {
+            char *msg = g_strdup_printf("Invalid parameters: unknown column '%s'", bad);
+            g_free(names);
+            return _trace_err_owned(req_id, msg, MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        g_free(names);
+    } else {
+        pr.col_mask = trace_columns_mask(kind, NULL, 0, &bad);
+    }
+
+    /* Filtr */
+    JsonObject *fo = NULL;
+    if (json_object_has_member(d, "filter") && !json_node_is_null(json_object_get_member(d, "filter"))) {
+        JsonNode *fn = json_object_get_member(d, "filter");
+        if (json_node_get_node_type(fn) != JSON_NODE_OBJECT) {
+            return _err_response(req_id, "Invalid parameters: filter must be an object",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        fo = json_node_get_object(fn);
+    }
+    const char *ferr = _trace_parse_filter(fo, kind, &pr.filter);
+    if (ferr) {
+        return _trace_err_owned(req_id, g_strdup_printf("Invalid parameters: %s", ferr),
+                                MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+
+    /* Výchozí pozice: kurzor, nebo from */
+    const char *cursor = _obj_is_string(d, "cursor") ? json_object_get_string_member(d, "cursor") : NULL;
+    bool have_cursor = cursor && cursor[0];
+    unsigned cur_seg = 0;
+    uint64_t start = 0;
+    bool newest = false;
+    if (have_cursor) {
+        if (!trace_cursor_decode(cursor, chname, &cur_seg, &start)) {
+            return _err_response(req_id, "Invalid parameters: invalid cursor",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+    } else {
+        const char *from = _obj_is_string(d, "from") ? json_object_get_string_member(d, "from") : "oldest";
+        if (g_strcmp0(from, "oldest") == 0) {
+            start = 0;
+        } else if (g_strcmp0(from, "newest") == 0) {
+            newest = true;
+        } else if (g_str_has_prefix(from, "seq:")) {
+            char *end = NULL;
+            start = g_ascii_strtoull(from + 4, &end, 10);
+            if (!end || *end || end == from + 4) {
+                return _err_response(req_id, "Invalid parameters: from must be oldest, newest or seq:N",
+                                     MCP_DISPATCH_INVALID_PARAMS, out_response);
+            }
+        } else {
+            return _err_response(req_id, "Invalid parameters: from must be oldest, newest or seq:N",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+    }
+
+    st_DBGAPI_TRACE_SNAPSHOT_PARAM p;
+    memset(&p, 0, sizeof(p));
+    uint64_t audio_origin = 0;
+    if (newest) {
+        /* Napřed metadata, pak posledních `limit` záznamů. */
+        if (!_trace_snapshot_kind(kind, &p, NULL)) {
+            return _err_response(req_id, "trace_read failed", MCP_DISPATCH_EMU_ERROR, out_response);
+        }
+        uint64_t n = p.out.next_seq;
+        start = (n > pr.limit) ? n - pr.limit : 0;
+        if (start < p.out.first_seq) start = p.out.first_seq;
+        tlog_read_snapshot_clear(&p.out);
+    }
+    p.from_seq = start;
+    p.count = pr.raw ? pr.limit : pr.max_scan;
+    p.max_copy_bytes = TRACE_READ_MAX_RAM_COPY;
+    p.want_time = (kind == TRACE_KIND_CPUTRACK);
+    if (!_trace_snapshot_kind(kind, &p, &audio_origin)) {
+        return _err_response(req_id, "trace_read failed", MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+
+    if (have_cursor && cur_seg != p.out.segment) {
+        char *msg = g_strdup_printf("segment_replaced: cursor segment %u, current segment %u; read again from the start",
+                                    cur_seg, p.out.segment);
+        tlog_read_snapshot_clear(&p.out);
+        return _trace_err_owned(req_id, msg, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (start > p.out.next_seq) {
+        tlog_read_snapshot_clear(&p.out);
+        return _err_response(req_id, "Invalid parameters: invalid cursor (beyond next_seq)",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+
+    JsonObject *resp = json_object_new();
+    _trace_fill_state(resp, ch, &p);
+    if (start < p.out.first_seq) {
+        /* Ring přepsal záznamy [start, first_seq): ne chyba, data od
+         * first_seq a v odpovědi gap. */
+        JsonObject *gap = json_object_new();
+        json_object_set_int_member(gap, "from_seq", (gint64)start);
+        json_object_set_int_member(gap, "to_seq", (gint64)p.out.first_seq);
+        json_object_set_object_member(resp, "gap", gap);
+        start = p.out.first_seq;
+    } else {
+        json_object_set_null_member(resp, "gap");
+    }
+    uint64_t next = start;
+    if (p.out.segment == 0 || p.out.record_size == 0) {
+        /* Kanál nic nezaznamenal: prázdná stránka. */
+        json_object_set_int_member(resp, "scanned", 0);
+        json_object_set_int_member(resp, "matched", 0);
+        json_object_set_boolean_member(resp, "scan_exhausted", FALSE);
+        json_object_set_boolean_member(resp, "page_full", FALSE);
+        json_object_set_boolean_member(resp, "end_of_data", TRUE);
+        if (!pr.raw) {
+            json_object_set_array_member(resp, "columns", json_array_new());
+            json_object_set_array_member(resp, "rows", json_array_new());
+        }
+    } else {
+        pr.from_seq = start;
+        pr.cputrack_time = (kind == TRACE_KIND_CPUTRACK) && _trace_has_time(kind, &p);
+        pr.ram_prefix_t = p.out_ram_prefix_t;
+        pr.cpu_divider = p.out_cpu_divider;
+        if (_trace_kind_is_audio(kind)) {
+            pr.cpu_divider = GDGCLK2CPU_DIVIDER;
+            pr.audio_origin = audio_origin;
+            pr.gdg_hz = GDGCLK_BASE;
+            pr.audio_channels = AUDIO_SRC_CHANNELS_COUNT;
+        }
+        if (trace_reader_page(&pr, &p.out, _trace_resolve_cb, NULL, resp, &next) != 0) {
+            json_object_unref(resp);
+            tlog_read_snapshot_clear(&p.out);
+            return _err_response(req_id, "trace data unavailable: cannot read a chunk file",
+                                 MCP_DISPATCH_EMU_ERROR, out_response);
+        }
+        if (pr.raw) {
+            json_object_set_int_member(resp, "format_version", (gint64)_trace_format_version(ch));
+        }
+        /* Kontrola segmentu po čtení disku: nový záznam se stejným jménem
+         * mohl chunky přepsat. */
+        st_DBGAPI_TRACE_SNAPSHOT_PARAM chk;
+        memset(&chk, 0, sizeof(chk));
+        if (!_trace_snapshot_kind(kind, &chk, NULL)) {
+            json_object_unref(resp);
+            tlog_read_snapshot_clear(&p.out);
+            return _err_response(req_id, "trace_read failed", MCP_DISPATCH_EMU_ERROR, out_response);
+        }
+        unsigned seg_now = chk.out.segment;
+        tlog_read_snapshot_clear(&chk.out);
+        if (seg_now != p.out.segment) {
+            char *msg = g_strdup_printf("segment_replaced: segment %u was replaced by %u while reading; read again from the start",
+                                        p.out.segment, seg_now);
+            json_object_unref(resp);
+            tlog_read_snapshot_clear(&p.out);
+            return _trace_err_owned(req_id, msg, MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+    }
+    char *nc = trace_cursor_encode(chname, p.out.segment, next);
+    json_object_set_string_member(resp, "next_cursor", nc);
+    g_free(nc);
+    tlog_read_snapshot_clear(&p.out);
     return _ok_response(req_id, resp, out_response);
 }
 
@@ -12744,6 +14316,63 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_framebuffer_info(
 
 
 /**
+ * @brief Doplní do odpovědi hash obrazu, hash VRAM a pozici paprsku.
+ *
+ * @param resp Odpověď.
+ * @param h Výsledek z emu vlákna (st_DBGAPI_FRAME_HASH_PARAM).
+ */
+static void _frame_hash_to_json(JsonObject *resp, const st_DBGAPI_FRAME_HASH_PARAM *h) {
+    if (h->available) {
+        json_object_set_string_member(resp, "image_sha256", h->image_sha256);
+    }
+    json_object_set_string_member(resp, "vram_sha256", h->vram_sha256);
+    json_object_set_int_member(resp, "source_screen_id", (gint64)h->source_screen_id);
+    json_object_set_string_member(resp, "image_source",
+        (h->source == SCREENSHOT_SRC_GDG_LIVE) ? "gdg_live" : "sdl_snapshot");
+    JsonObject *beam = json_object_new();
+    json_object_set_int_member(beam, "frame", (gint64)h->frame);
+    json_object_set_int_member(beam, "scanline", (gint64)h->scanline);
+    json_object_set_int_member(beam, "column", (gint64)h->column);
+    json_object_set_object_member(resp, "beam", beam);
+    json_object_set_boolean_member(resp, "paused", h->paused ? TRUE : FALSE);
+}
+
+
+/**
+ * @brief `frame_hash` handler - SHA-256 obrazu a VRAM bez přenosu dat.
+ *
+ * Bez parametrů. `image_sha256` je hash obrazu ze stejného zdroje jako
+ * screenshot (SDL snímek, jinak živý framebuffer GDG): W x H bajtů indexů
+ * palety (INDEX8 & 0Fh, po řádcích), za nimi 16 položek palety po 3 bajtech
+ * R, G, B. `vram_sha256` je hash VRAM (state_hash.h: MZ-800 4 plány po
+ * 8 KB, MZ-700 a MZ-1500 znaková + atributová VRAM). Obraz závisí i na
+ * registrech GDG (paleta, režim, border), proto se hashe vracejí zvlášť.
+ * V pauze uprostřed snímku je část obrazu ještě z minulého snímku - hash
+ * pak závisí na pozici paprsku (`beam`).
+ *
+ * Response: `{available, image_sha256 (jen available), vram_sha256,
+ * source_screen_id, image_source, width, height, beam {frame, scanline,
+ * column}, paused}`.
+ */
+static en_MCP_DISPATCH_RESULT _handle_frame_hash(const st_JSONL_MESSAGE *req,
+                                                 char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    st_DBGAPI_FRAME_HASH_PARAM h;
+    memset(&h, 0, sizeof(h));
+    if (!_submit_dbgapi(DBGAPI_CMD_FRAME_HASH, &h, NULL)) {
+        return _err_response(req_id, "frame_hash failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    JsonObject *resp = json_object_new();
+    json_object_set_boolean_member(resp, "available", h.available ? TRUE : FALSE);
+    json_object_set_int_member(resp, "width", (gint64)h.width);
+    json_object_set_int_member(resp, "height", (gint64)h.height);
+    _frame_hash_to_json(resp, &h);
+    return _ok_response(req_id, resp, out_response);
+}
+
+
+/**
  * @brief `get_frame_screenshot_raw` handler - V1.D.4 Resource pro
  *        `emulator://frame/screenshot.raw`.
  *
@@ -12762,13 +14391,23 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_framebuffer_info(
  *    "bytes_per_pixel": 4, "pixel_format": "rgba8888",
  *    "downscale_factor": 1, "source_screen_id": int,
  *    "fallback_source": "sdl_snapshot" | "gdg_live",
- *    "data_b64": "<base64 RGBA bytes>"}
+ *    "image_sha256", "vram_sha256", "image_source", "beam", "paused"
+ *    (viz _handle_frame_hash), "data_b64": "<base64 RGBA bytes>"}
  *   pokud available=false:
  *   {"available": false, "reason": str}
+ * Parametr `want_data` (bool, default true): false = bez `data_b64`.
  */
 static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot_raw(
     const st_JSONL_MESSAGE *req, char **out_response) {
     int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonNode *raw_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    JsonObject *raw_obj = (raw_node && json_node_get_node_type(raw_node) == JSON_NODE_OBJECT)
+                          ? json_node_get_object(raw_node) : NULL;
+    bool want_data = true;
+    if (!_parse_want_data(raw_obj, &want_data)) {
+        return _err_response(req_id, "want_data must be a boolean",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
     /* Alokujeme buffer dynamicky (= velký, na stack se nevejde). Cap
      * 4 MB rezerva pro factor=1 (max ~928*288*4 = 1.07 MB pro MZ-800). */
     const size_t cap = 4 * 1024 * 1024;
@@ -12795,7 +14434,7 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot_raw(
         g_free(buf);
         return _ok_response(req_id, resp, out_response);
     }
-    gchar *b64 = g_base64_encode(buf, param.buffer_size);
+    gchar *b64 = want_data ? g_base64_encode(buf, param.buffer_size) : NULL;
     g_free(buf);
     /* Mapování enum (uint8_t) -> string field pro klienta. Defaultně
      * "sdl_snapshot" (= pre-V1.E.6.C kompatibilní behavior s memset()
@@ -12812,7 +14451,10 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot_raw(
     json_object_set_int_member(resp,     "downscale_factor",  (gint64)param.downscale_factor);
     json_object_set_int_member(resp,     "source_screen_id",  (gint64)param.source_screen_id);
     json_object_set_string_member(resp,  "fallback_source",   fallback_str);
-    json_object_set_string_member(resp,  "data_b64",          b64 ? b64 : "");
+    _frame_hash_to_json(resp, &param.hash);
+    if (want_data) {
+        json_object_set_string_member(resp, "data_b64", b64 ? b64 : "");
+    }
     g_free(b64);
     return _ok_response(req_id, resp, out_response);
 }
@@ -12835,6 +14477,10 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot_raw(
  *   Bez voleb = celý framebuffer 1:1 (stejný obsah jako screenshot.raw).
  *   Viz _screenshot_opts_from_json(); neplatné volby = INVALID_PARAMS
  *   (dřív se volby tiše ignorovaly).
+ *   - `want_data` (bool, default true) - false = bez `data_b64`.
+ *   Odpověď nese i `image_sha256` (celý framebuffer ze stejného zdroje,
+ *   bez ohledu na oblast a měřítko), `vram_sha256`, `beam`, `paused`
+ *   (viz _handle_frame_hash).
  *
  * Layout response (available=true):
  *   {"available": true, "format": "png", "width": N, "height": N,
@@ -12856,6 +14502,11 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot(
     if (!_screenshot_opts_from_json(data_obj, &opts, opts_err, sizeof(opts_err))) {
         return _err_response(req_id, opts_err, MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
+    bool want_data = true;
+    if (!_parse_want_data(data_obj, &want_data)) {
+        return _err_response(req_id, "want_data must be a boolean",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
 
     st_DBGAPI_FRAME_SCREENSHOT_PNG_PARAM param;
     memset(&param, 0, sizeof(param));
@@ -12876,7 +14527,7 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot(
         return _ok_response(req_id, resp, out_response);
     }
     /* Handler alokoval PNG stream (glib) - po base64 ho uvolníme. */
-    gchar *b64 = g_base64_encode(param.buffer, param.buffer_size);
+    gchar *b64 = want_data ? g_base64_encode(param.buffer, param.buffer_size) : NULL;
     g_free(param.buffer);
     json_object_set_boolean_member(resp, "available", TRUE);
     json_object_set_string_member(resp,  "format",    "png");
@@ -12888,7 +14539,10 @@ static en_MCP_DISPATCH_RESULT _handle_get_frame_screenshot(
     if (opts.scale_mode == SCREENSHOT_SCALE_NATIVE) {
         json_object_set_boolean_member(resp, "hires", param.hires ? TRUE : FALSE);
     }
-    json_object_set_string_member(resp,  "data_b64",  b64 ? b64 : "");
+    _frame_hash_to_json(resp, &param.hash);
+    if (want_data) {
+        json_object_set_string_member(resp, "data_b64", b64 ? b64 : "");
+    }
     g_free(b64);
     return _ok_response(req_id, resp, out_response);
 }
@@ -13092,6 +14746,8 @@ static en_MCP_DISPATCH_RESULT _handle_screenshot_save_to_file(
     if (opts.scale_mode == SCREENSHOT_SCALE_NATIVE) {
         json_object_set_boolean_member(resp, "hires", param.hires ? TRUE : FALSE);
     }
+    /* Hash obrazu (celý framebuffer ze stejného zdroje), VRAM, paprsek. */
+    _frame_hash_to_json(resp, &param.hash);
     g_free(path);
     return _ok_response(req_id, resp, out_response);
 }
@@ -13503,6 +15159,7 @@ void mcp_dispatch_init(void) {
 
 
 void mcp_dispatch_shutdown(void) {
+    _ms_close_all();
     if (g_supported_cmd_names == NULL) {
         return;
     }
@@ -13567,32 +15224,85 @@ static const char *_region_kind_to_str(int kind) {
 
 
 /**
+ * @brief Generace rozložení výčtu z posledního `regions_list` (0 = žádný).
+ *
+ * `region_read` a `region_write` ji předávají backendu, pokud klient
+ * nepošle vlastní `layout_gen`: ID z výčtu před změnou sestavy HW tak
+ * skončí chybou "stale region id", ne čtením jiného regionu. Sdílená pro
+ * všechny MCP klienty (výčet je jeden pro celý emulátor). Atomický přístup
+ * (g_atomic_int_*), handlery běží ve vláknech MCP serveru.
+ */
+static gint s_mcp_regions_layout_gen = 0;
+
+/** @brief Text chyby pro ID regionu ze starší generace rozložení. */
+#define MCP_REGION_STALE_MSG \
+    "stale region id: the hardware configuration changed since regions_list " \
+    "(RAMdisk, MemExt, PEZIK, snapshot load); call regions_list again"
+
+/**
+ * @brief Generace rozložení pro `region_read` / `region_write`.
+ *
+ * @param obj Parametry požadavku.
+ * @param[out] out_gen `layout_gen` z parametrů, jinak generace posledního
+ *             `regions_list` (0 = klient výčet nedělal, bez kontroly).
+ * @return false = `layout_gen` je v parametrech, ale není kladné celé číslo
+ *         do 0xFFFFFFFF.
+ */
+static bool _region_layout_gen_param(JsonObject *obj, uint32_t *out_gen) {
+    if (obj && json_object_has_member(obj, "layout_gen")) {
+        JsonNode *n = json_object_get_member(obj, "layout_gen");
+        if (!JSON_NODE_HOLDS_VALUE(n) || json_node_get_value_type(n) != G_TYPE_INT64) {
+            return false;
+        }
+        gint64 v = json_node_get_int(n);
+        if (v < 1 || v > 0xFFFFFFFFLL) return false;
+        *out_gen = (uint32_t)v;
+        return true;
+    }
+    *out_gen = (uint32_t)g_atomic_int_get(&s_mcp_regions_layout_gen);
+    return true;
+}
+
+/**
  * @brief `regions_list` handler - enumerate všech regionů.
  *
  * Bez params. Vrátí JSON pole regionů s metadaty (id, kind, sub_id,
- * name, logical_base, size, writable, connected, mapped_now). Klient
- * si vybere region a použije ID v `region_read`. ID jsou stable v
- * rámci session, NE per HW reconfigure (= memext/ramdisk attach/detach
- * invaliduje, klient musí re-enumerate).
+ * name, logical_base, size, writable, connected, mapped_now) a
+ * `layout_gen` (generace rozložení výčtu). Klient si vybere region
+ * a použije ID v `region_read`. ID platí, dokud se nezmění sestava HW
+ * (RAMdisk, MemExt, PEZIK, načtení snapshotu s jinou sestavou): potom
+ * `region_read` / `region_write` se starým ID skončí chybou
+ * "stale region id" a klient musí výčet zopakovat.
+ *
+ * Výčet je úplný (bez stropu na počet): plná sestava MZ-800 (MemExt
+ * Luftner, RAMdisk STD 16 MB, oba PEZIKy) má přes 500 regionů. Dřív
+ * pevné pole 128 položek schovalo banky RAMdisku.
+ *
+ * Side effects: zapamatuje generaci výčtu pro následující `region_read`
+ * a `region_write` bez vlastního `layout_gen`.
  */
-#define MCP_REGIONS_MAX 128
 static en_MCP_DISPATCH_RESULT _handle_regions_list(
     const st_JSONL_MESSAGE *req, char **out_response) {
     int64_t req_id = jsonl_msg_get_req_id(req);
-    st_REGION_DESC descs[MCP_REGIONS_MAX];
-    memset(descs, 0, sizeof(descs));
+    /* out == NULL = backend vrátí kopii všech regionů v out_dup. */
     st_DBGAPI_REGIONS_ENUM_PARAM param = {
-        .out = descs,
-        .max_count = MCP_REGIONS_MAX,
+        .out = NULL,
+        .max_count = 0,
         .out_count = 0,
+        .out_dup = NULL,
+        .out_layout_gen = 0,
     };
     if (!_submit_dbgapi(DBGAPI_CMD_REGIONS_ENUMERATE, &param, NULL)) {
+        g_free(param.out_dup);
         return _err_response(req_id, "REGIONS_ENUMERATE failed",
                              MCP_DISPATCH_EMU_ERROR, out_response);
     }
+    g_atomic_int_set(&s_mcp_regions_layout_gen, (gint)param.out_layout_gen);
+    const st_REGION_DESC *descs = (const st_REGION_DESC *)param.out_dup;
+    int count = descs ? param.out_count : 0;
     JsonObject *data = json_object_new();
     JsonArray *arr = json_array_new();
-    for (int i = 0; i < param.out_count; i++) {
+    for (int i = 0; i < count; i++) {
         const st_REGION_DESC *d = &descs[i];
         JsonObject *r = json_object_new();
         json_object_set_int_member(r, "id", d->id);
@@ -13612,7 +15322,9 @@ static en_MCP_DISPATCH_RESULT _handle_regions_list(
         json_array_add_object_element(arr, r);
     }
     json_object_set_array_member(data, "regions", arr);
-    json_object_set_int_member(data, "count", param.out_count);
+    json_object_set_int_member(data, "count", count);
+    json_object_set_int_member(data, "layout_gen", (gint64)param.out_layout_gen);
+    g_free(param.out_dup);
     return _ok_response(req_id, data, out_response);
 }
 
@@ -13621,11 +15333,15 @@ static en_MCP_DISPATCH_RESULT _handle_regions_list(
  * @brief `region_read` handler - raw read N bajtů z regionu.
  *
  * Parametry: `region_id` (= z poslední `regions_list`), `offset`
- * (= 0..size-1), `length` (= 1..65536, clamp na size regionu).
+ * (= 0..size-1), `length` (= 1..65536, clamp na size regionu),
+ * `want_data` (bool, default true; false = jen hash), volitelně
+ * `layout_gen` (generace výčtu, ze kterého ID pochází; výchozí = generace
+ * posledního `regions_list`).
  *
- * Response: `{region_id, offset, length, data_b64, kind}`. `length`
- * v response = skutečně přečtená délka (= clamped). Při chybě
- * `{error: "..."}`.
+ * Response: `{region_id, offset, length, sha256, data_b64}`. `length`
+ * v response = skutečně přečtená délka (= clamped), `sha256` je hash
+ * přečtených bajtů, `data_b64` jen s want_data. Při chybě `{error: "..."}`;
+ * ID ze starší sestavy HW = chyba "stale region id".
  *
  * No-side-effect read - bypass Z80 banking (= klient vidí raw paměti
  * jako GUI Memory browser, bez disruptivních io_write).
@@ -13642,10 +15358,21 @@ static en_MCP_DISPATCH_RESULT _handle_region_read(
     gint64 region_id = _obj_int_or(obj, "region_id", -1);
     gint64 offset    = _obj_int_or(obj, "offset",    0);
     gint64 length    = _obj_int_or(obj, "length",    -1);
-    if (region_id < 0 || region_id > MCP_REGIONS_MAX
+    /* Horní mez ID kontroluje backend proti výčtu (lookup_region_copy). */
+    if (region_id < 0 || region_id > G_MAXINT
             || offset < 0 || offset > 0xFFFFFFFFu
             || length < 1 || length > 65536) {
         return _err_response(req_id, "Invalid parameters",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    bool want_data = true;
+    if (!_parse_want_data(obj, &want_data)) {
+        return _err_response(req_id, "want_data must be a boolean",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    uint32_t layout_gen = 0;
+    if (!_region_layout_gen_param(obj, &layout_gen)) {
+        return _err_response(req_id, "layout_gen must be a positive integer",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
     uint8_t *buf = g_malloc0((gsize)length);
@@ -13655,17 +15382,21 @@ static en_MCP_DISPATCH_RESULT _handle_region_read(
         .buf = buf,
         .len = (uint32_t)length,
         .out_count = 0,
+        .layout_gen = layout_gen,
     };
     if (!_submit_dbgapi(DBGAPI_CMD_REGIONS_READ, &param, NULL)) {
         /* _submit_dbgapi vrací (out_count >= 0). param.out_count rozliší
          * příčinu: backend nastaví -1 když region_id/offset/region je
-         * neplatný (= read proběhl, ale selhal); ponechá initial 0 když
+         * neplatný (= read proběhl, ale selhal), DBGAPI_REGIONS_ERR_STALE
+         * když ID pochází ze starší sestavy HW; ponechá initial 0 když
          * příkaz vůbec neproběhl (= emu nedostupný / fronta plná / timeout).
          * Cache se plní lazy (viz dbgapi_regions lookup_region), takže
          * prázdná enumerace už není příčinou - selhání = opravdu bad ID. */
         en_MCP_DISPATCH_RESULT rc = (param.out_count < 0)
             ? MCP_DISPATCH_INVALID_PARAMS : MCP_DISPATCH_EMU_ERROR;
-        const char *msg = (param.out_count < 0)
+        const char *msg = (param.out_count == DBGAPI_REGIONS_ERR_STALE)
+            ? MCP_REGION_STALE_MSG
+            : (param.out_count < 0)
             ? "region read failed: invalid region_id, offset, or "
               "disconnected region (use regions_list to enumerate valid IDs)"
             : "region read failed: emulator unavailable";
@@ -13676,9 +15407,7 @@ static en_MCP_DISPATCH_RESULT _handle_region_read(
     json_object_set_int_member(data, "region_id", region_id);
     json_object_set_int_member(data, "offset", offset);
     json_object_set_int_member(data, "length", param.out_count);
-    gchar *b64 = g_base64_encode(buf, (gsize)param.out_count);
-    json_object_set_string_member(data, "data_b64", b64);
-    g_free(b64);
+    _read_result_to_json(data, buf, (gsize)param.out_count, want_data);
     g_free(buf);
     return _ok_response(req_id, data, out_response);
 }
@@ -13832,11 +15561,19 @@ static en_MCP_DISPATCH_RESULT _handle_get_platform_info(
  * @brief `region_write` handler - raw write N bajtů do regionu.
  *
  * Parametry: `region_id` (= z poslední `regions_list`), `offset`
- * (= 0..size-1), `data_b64` (= base64 bajty, max 65536 dekódovaných).
+ * (= 0..size-1), `data_b64` (= base64 bajty, max 65536 dekódovaných),
+ * volitelně `layout_gen` (jako u `region_read`), `expected_sha256`
+ * a `want_hashes` (podmíněný zápis, observe-cas M10: hash bajtů, které
+ * zápis po ořezu na konec regionu přepíše, stejný jako `sha256`
+ * z `region_read` téhož rozsahu).
  *
  * Response: `{region_id, offset, length, written}`. `length` = skutečně
  * zapsaná délka (= clamped). `written` = true pokud aspoň 1 bajt
- * prošel; false pokud region read-only nebo disconnected.
+ * prošel; false pokud region read-only nebo disconnected. ID ze starší
+ * sestavy HW = chyba "stale region id", nic se nezapíše. S podmínkou
+ * nebo `want_hashes` navíc `before_sha256` a `after_sha256`; nesplněná
+ * podmínka = chyba `Precondition failed: memory changed (...)` (chyby
+ * ID, generace a zapisovatelnosti mají přednost).
  *
  * **Destruktivní.** Backend respektuje writable flagy:
  * REGION_KIND_MEMEXT_FLASH a REGION_KIND_PROHIBITED_SHADOW vrátí error.
@@ -13853,13 +15590,19 @@ static en_MCP_DISPATCH_RESULT _handle_region_write(
     JsonObject *obj = json_node_get_object(data_node);
     gint64 region_id = _obj_int_or(obj, "region_id", -1);
     gint64 offset    = _obj_int_or(obj, "offset",    0);
-    if (region_id < 0 || region_id > MCP_REGIONS_MAX
+    /* Horní mez ID kontroluje backend proti výčtu (lookup_region_copy). */
+    if (region_id < 0 || region_id > G_MAXINT
             || offset < 0 || offset > 0xFFFFFFFFu) {
         return _err_response(req_id, "Invalid parameters",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
     if (!json_object_has_member(obj, "data_b64")) {
         return _err_response(req_id, "Invalid parameters (data_b64 missing)",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    uint32_t layout_gen = 0;
+    if (!_region_layout_gen_param(obj, &layout_gen)) {
+        return _err_response(req_id, "layout_gen must be a positive integer",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
     const char *b64 = json_object_get_string_member(obj, "data_b64");
@@ -13874,21 +15617,43 @@ static en_MCP_DISPATCH_RESULT _handle_region_write(
         return _err_response(req_id, "Invalid parameters (data_b64 decode)",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
+    st_DBGAPI_WRITE_COND cond;
+    bool use_cond = false;
+    const char *cerr = _parse_write_cond(obj, &cond, &use_cond);
+    if (cerr) {
+        g_free(decoded);
+        gchar *msg = g_strdup_printf("Invalid parameters: %s", cerr);
+        en_MCP_DISPATCH_RESULT rc = _err_response(req_id, msg, MCP_DISPATCH_INVALID_PARAMS,
+                                                  out_response);
+        g_free(msg);
+        return rc;
+    }
     st_DBGAPI_REGIONS_WRITE_PARAM param = {
         .region_id = (int)region_id,
         .offset = (uint32_t)offset,
         .data = decoded,
         .len = (uint32_t)decoded_len,
         .out_count = 0,
+        .layout_gen = layout_gen,
+        .cond = use_cond ? &cond : NULL,
     };
-    if (!_submit_dbgapi(DBGAPI_CMD_REGIONS_WRITE, &param, NULL)) {
+    bool submit_ok = _submit_dbgapi(DBGAPI_CMD_REGIONS_WRITE, &param, NULL);
+    if (!submit_ok && use_cond && cond.precondition_failed
+        && s_submit_track.last_status == DBGAPI_SUBMIT_FAILED) {
+        g_free(decoded);
+        return _write_cond_err(req_id, &cond, out_response);
+    }
+    if (!submit_ok) {
         /* Stejná logika jako region_read: param.out_count rozliší bad
-         * region/read-only (-1, příkaz proběhl) od emu nedostupný (0,
-         * neproběhl). Cache se plní lazy, takže prázdná enumerace už není
-         * příčinou selhání. */
+         * region/read-only (-1, příkaz proběhl) a ID ze starší sestavy HW
+         * (DBGAPI_REGIONS_ERR_STALE) od emu nedostupný (0, neproběhl).
+         * Cache se plní lazy, takže prázdná enumerace už není příčinou
+         * selhání. */
         en_MCP_DISPATCH_RESULT rc = (param.out_count < 0)
             ? MCP_DISPATCH_INVALID_PARAMS : MCP_DISPATCH_EMU_ERROR;
-        const char *msg = (param.out_count < 0)
+        const char *msg = (param.out_count == DBGAPI_REGIONS_ERR_STALE)
+            ? MCP_REGION_STALE_MSG
+            : (param.out_count < 0)
             ? "region write failed: read-only, disconnected, or invalid "
               "region_id/offset (use regions_list to enumerate valid IDs)"
             : "region write failed: emulator unavailable";
@@ -13900,6 +15665,7 @@ static en_MCP_DISPATCH_RESULT _handle_region_write(
     json_object_set_int_member(data, "offset", offset);
     json_object_set_int_member(data, "length", param.out_count);
     json_object_set_boolean_member(data, "written", param.out_count > 0);
+    if (use_cond) _write_cond_to_json(data, &cond);
     g_free(decoded);
     return _ok_response(req_id, data, out_response);
 }
@@ -14553,6 +16319,11 @@ static en_MCP_DISPATCH_RESULT _handle_profiler_pc_bitmap(const st_JSONL_MESSAGE 
  *  audio-capture: zachycení zvuku do složky (events, PSG zápisy, 2x WAV)
  * ============================================================================ */
 
+/** @brief Jména proudů paměti zachycení ve stavu (pořadí en_AUDIO_CAPTURE_STREAM). */
+static const char *const s_ac_stream_names[AUDIO_CAPTURE_STREAM_COUNT] = {
+    "psg_writes", "levels", "frames", "pcm_reference", "pcm_sdl"
+};
+
 /**
  * @brief Stav zachycení zvuku jako JSON objekt.
  * @param st Stav.
@@ -14571,6 +16342,35 @@ static JsonObject *_audio_capture_status_json(const st_AUDIO_CAPTURE_STATUS *st)
     json_object_set_string_member(o, "dir",         st->dir);
     json_object_set_string_member(o, "stop_reason", st->stop_reason);
     json_object_set_string_member(o, "last_error",  st->last_error);
+    /* Paměť zachycení (mcp-trace-read): segment, začátek, kanály, ringy. */
+    json_object_set_int_member(o, "segment", (gint64) st->segment);
+    if (st->began) json_object_set_int_member(o, "origin_ticks", (gint64) st->origin_ticks);
+    else json_object_set_null_member(o, "origin_ticks");
+    JsonArray *chs = json_array_new();
+    for (unsigned i = 0; i < st->channels && i < AUDIO_CAPTURE_MAX_CHANNELS; i++) {
+        json_array_add_string_element(chs, trace_audio_channel_name(i));
+    }
+    json_object_set_array_member(o, "channels", chs);
+    json_object_set_boolean_member(o, "stereo", st->stereo);
+    if (st->memory) {
+        JsonObject *m = json_object_new();
+        json_object_set_int_member(m, "bytes", (gint64) st->memory_bytes);
+        JsonObject *streams = json_object_new();
+        for (unsigned i = 0; i < AUDIO_CAPTURE_STREAM_COUNT; i++) {
+            const st_AUDIO_CAPTURE_STREAM_INFO *si = &st->streams[i];
+            if (!si->present) continue;
+            JsonObject *x = json_object_new();
+            json_object_set_int_member(x, "record_size", (gint64) si->record_size);
+            json_object_set_int_member(x, "capacity", (gint64) si->capacity);
+            json_object_set_int_member(x, "first_seq", (gint64) si->first_seq);
+            json_object_set_int_member(x, "next_seq", (gint64) si->next_seq);
+            json_object_set_object_member(streams, s_ac_stream_names[i], x);
+        }
+        json_object_set_object_member(m, "streams", streams);
+        json_object_set_object_member(o, "memory", m);
+    } else {
+        json_object_set_null_member(o, "memory");
+    }
     return o;
 }
 
@@ -14602,7 +16402,12 @@ static bool _audio_capture_submit(st_DBGAPI_AUDIO_CAPTURE_PARAM *p, const char *
  *     audio_capture_resolve_output_dir()),
  *   - `frames` (int >= 0) - po tolika zvukových snímcích stop (0 = do stop),
  *   - `events`, `psg_writes`, `reference_wav`, `sdl_wav` (bool, výchozí
- *     true) - které soubory zapisovat.
+ *     true) - které soubory zapisovat,
+ *   - `memory` (bool, výchozí true) - držet paměť zachycení (čtení přes
+ *     trace_read audio_*, audio_capture_summary, audio_capture_pcm),
+ *   - `pcm` (pole "reference" / "sdl", výchozí ["reference"]) - PCM ringy,
+ *   - `memory_minutes` (1..120, výchozí 10) - délka ringu souhrnů snímků,
+ *   - `pcm_seconds` (1..3600, výchozí 60) - délka PCM ringů.
  *
  * Response: stav zachycení (pending = true; začne na konci nejbližšího
  * zvukového snímku). Neplatné parametry => INVALID_PARAMS, běžící
@@ -14627,12 +16432,43 @@ static en_MCP_DISPATCH_RESULT _handle_audio_capture_start(const st_JSONL_MESSAGE
         if (h < 0) bad = true;
         else if (h) *flag_ptr[i] = json_object_get_boolean_member(obj, flags[i]);
     }
+    /* Paměť zachycení: přes MCP výchozí zapnutá (GUI a CLI ji nezapínají). */
+    p.params.memory = true;
+    p.params.pcm_reference = true;
+    int has_mem = _videorec_member(obj, "memory", G_TYPE_BOOLEAN);
+    int has_min = _videorec_member(obj, "memory_minutes", G_TYPE_INT64);
+    int has_pcs = _videorec_member(obj, "pcm_seconds", G_TYPE_INT64);
+    if (has_mem < 0 || has_min < 0 || has_pcs < 0) bad = true;
+    if (has_mem > 0) p.params.memory = json_object_get_boolean_member(obj, "memory");
+    gint64 minutes = has_min > 0 ? json_object_get_int_member(obj, "memory_minutes") : AUDIO_CAPTURE_MEMORY_MINUTES_DEFAULT;
+    gint64 pcm_s = has_pcs > 0 ? json_object_get_int_member(obj, "pcm_seconds") : AUDIO_CAPTURE_PCM_SECONDS_DEFAULT;
+    if (minutes < 1 || minutes > 120 || pcm_s < 1 || pcm_s > 3600) bad = true;
+    if (!bad && obj && json_object_has_member(obj, "pcm") && !json_node_is_null(json_object_get_member(obj, "pcm"))) {
+        JsonNode *pn = json_object_get_member(obj, "pcm");
+        if (json_node_get_node_type(pn) != JSON_NODE_ARRAY) {
+            bad = true;
+        } else {
+            p.params.pcm_reference = false;
+            JsonArray *pa = json_node_get_array(pn);
+            for (guint i = 0; i < json_array_get_length(pa) && !bad; i++) {
+                JsonNode *e = json_array_get_element(pa, i);
+                const char *v = (JSON_NODE_HOLDS_VALUE(e) && json_node_get_value_type(e) == G_TYPE_STRING)
+                                ? json_node_get_string(e) : "";
+                if (g_strcmp0(v, "reference") == 0) p.params.pcm_reference = true;
+                else if (g_strcmp0(v, "sdl") == 0) p.params.pcm_sdl = true;
+                else bad = true;
+            }
+        }
+    }
     if (bad) {
         return _err_response(req_id,
                              "Invalid parameters: dir must be a string, frames an integer, "
-                             "events, psg_writes, reference_wav and sdl_wav booleans",
+                             "events, psg_writes, reference_wav, sdl_wav and memory booleans, "
+                             "pcm a list of \"reference\" / \"sdl\", memory_minutes 1..120, pcm_seconds 1..3600",
                              MCP_DISPATCH_INVALID_PARAMS, out_response);
     }
+    p.params.ring_frames = (uint32_t) (minutes * 60 * VIDEO_SCREENS_PER_SEC);
+    p.params.ring_pcm = (uint32_t) (pcm_s * AUDIO_CAPTURE_WAV_RATE);
     gint64 frames = has_frames ? json_object_get_int_member(obj, "frames") : 0;
     if (frames < 0) {
         return _err_response(req_id, "Invalid parameters: frames must be >= 0",
@@ -14689,4 +16525,3074 @@ static en_MCP_DISPATCH_RESULT _handle_audio_capture_status(const st_JSONL_MESSAG
 }
 
 
+/* ---------------- Paměť zachycení zvuku: souhrn a PCM (mcp-trace-read) ---------------- */
+
+/** @brief Kus kopie proudu paměti zachycení na jedno držení zámku modulu [B]. */
+#define AC_READ_CHUNK_BYTES (1u << 20)
+/** @brief Nejvýš porovnávaných vzorků reference a SDL v souhrnu (2 s). */
+#define AC_COMPARE_WINDOW (2u * AUDIO_CAPTURE_WAV_RATE)
+/** @brief Výchozí strop dat PCM výřezu [B] (base64 se vejde pod 50 000 znaků). */
+#define AC_PCM_DEFAULT_MAX_BYTES 32768u
+/** @brief Nejvyšší povolený strop dat PCM výřezu [B]. */
+#define AC_PCM_MAX_MAX_BYTES (4u << 20)
+
+/** @brief Číslo zaokrouhlené na `dec` desetinných míst (pro JSON). */
+static double _ac_round(double v, int dec) {
+    double m = pow(10.0, dec);
+    return floor(v * m + 0.5) / m;
+}
+
+/**
+ * @brief Zkopíruje rozsah proudu [from, to) po kusech (zámek modulu jen na kus).
+ *
+ * @param st        Proud.
+ * @param from      První požadovaný záznam.
+ * @param to        Za posledním požadovaným záznamem.
+ * @param out_rs    Výstup: velikost záznamu (0 = proud se nedrží).
+ * @param out_seq   Výstup: seq prvního zkopírovaného záznamu (>= from; vyšší =
+ *                  starší záznamy ring už přepsal).
+ * @param out_count Výstup: počet souvisle zkopírovaných záznamů.
+ * @param out_seg   Výstup: segment (zachycení) první kopie.
+ * @return Záznamy (g_free volající), NULL = nic; při změně segmentu nebo
+ *         díře uprostřed (ring přepisoval během kopie) skončí dřív.
+ */
+static uint8_t *_ac_copy_range(en_AUDIO_CAPTURE_STREAM st, uint64_t from, uint64_t to,
+                               size_t *out_rs, uint64_t *out_seq, uint64_t *out_count,
+                               unsigned *out_seg) {
+    *out_rs = 0;
+    *out_seq = from;
+    *out_count = 0;
+    *out_seg = 0;
+    GByteArray *buf = NULL;
+    uint64_t seq = from;
+    bool first = true;
+    while (seq < to) {
+        st_AUDIO_CAPTURE_STREAM_COPY c;
+        if (!audio_capture_stream_copy(st, seq, to - seq, AC_READ_CHUNK_BYTES, &c)) {
+            audio_capture_stream_copy_clear(&c);
+            break;
+        }
+        if (first) {
+            *out_seg = c.segment;
+            *out_rs = c.present ? c.record_size : 0;
+            *out_seq = c.data_count ? c.data_seq : seq;
+            first = false;
+        } else if (c.segment != *out_seg || (c.data_count && c.data_seq != seq)) {
+            audio_capture_stream_copy_clear(&c);
+            break;
+        }
+        if (c.data_count == 0) {
+            audio_capture_stream_copy_clear(&c);
+            break;
+        }
+        if (!buf) buf = g_byte_array_new();
+        g_byte_array_append(buf, c.data, (guint) (c.data_count * c.record_size));
+        *out_count += c.data_count;
+        seq = c.data_seq + c.data_count;
+        audio_capture_stream_copy_clear(&c);
+    }
+    if (!buf) return NULL;
+    return g_byte_array_free(buf, FALSE);
+}
+
+/** @brief Pořadí double pro qsort. */
+static int _ac_cmp_double(const void *a, const void *b) {
+    double x = *(const double *) a, y = *(const double *) b;
+    return (x > y) - (x < y);
+}
+
+/** @brief Nota se jménem kanálu pro souhrn. */
+typedef struct st_AC_NOTE_OUT {
+    st_AUDIO_NOTE n;   /**< Nota z detektoru. */
+    unsigned src;      /**< Kanál audio logu (1..8). */
+} st_AC_NOTE_OUT;
+
+/** @brief Pořadí not podle začátku, pak kanálu. */
+static int _ac_cmp_note(const void *a, const void *b) {
+    const st_AC_NOTE_OUT *x = (const st_AC_NOTE_OUT *) a, *y = (const st_AC_NOTE_OUT *) b;
+    if (x->n.from_frame != y->n.from_frame) return (x->n.from_frame > y->n.from_frame) ? 1 : -1;
+    return (int) x->src - (int) y->src;
+}
+
+/** @brief Seznam úseků snímků jako JSON pole [[from, to], ...]. */
+static JsonArray *_ac_spans_json(const uint8_t *flags, size_t n, uint64_t base, bool value,
+                                 size_t max, size_t *total) {
+    st_AUDIO_SPAN *sp = g_new0(st_AUDIO_SPAN, max ? max : 1);
+    size_t k = audio_spans(flags, n, base, value, sp, max, total);
+    JsonArray *a = json_array_new();
+    for (size_t i = 0; i < k; i++) {
+        JsonArray *s = json_array_new();
+        json_array_add_int_element(s, (gint64) sp[i].from);
+        json_array_add_int_element(s, (gint64) sp[i].to);
+        json_array_add_array_element(a, s);
+    }
+    g_free(sp);
+    return a;
+}
+
+/** @brief Index vzorku PCM (44100 Hz) pro absolutní čas [takty GDG]. */
+static uint64_t _ac_sample_at(uint64_t t, uint64_t origin) {
+    if (t <= origin) return 0;
+    return (t - origin) * AUDIO_CAPTURE_WAV_RATE / GDGCLK_BASE;
+}
+
+/**
+ * @brief Detektor not PSG nad zápisy do PSG v rozsahu snímků.
+ *
+ * Stav kanálů začíná stavem PSG na začátku zachycení a přehrává všechny
+ * zápisy držené v ringu (i před `first`), aby byl stav na začátku rozsahu
+ * správný. Když ring nejstarší zápisy přepsal, stav na začátku není znám
+ * (*incomplete = true).
+ */
+static GArray *_ac_psg_notes(uint64_t first, uint64_t last, bool stereo, bool *incomplete) {
+    GArray *notes = g_array_new(FALSE, FALSE, sizeof(st_AC_NOTE_OUT));
+    *incomplete = false;
+#if HAVE_PSG
+    st_AUDIO_CAPTURE_PSG_INITIAL ini;
+    audio_capture_get_psg_initial(&ini);
+    st_AUDIO_NOTE_TRACK tr[2][4];
+    unsigned chips = stereo ? 2u : 1u;
+    for (unsigned c = 0; c < 2; c++) {
+        for (unsigned k = 0; k < 4; k++) {
+            if (ini.valid) audio_note_track_init(&tr[c][k], ini.divider[c][k], ini.attn[c][k], ini.noise[c][k], 0);
+            else audio_note_track_init(&tr[c][k], 0, AUDIO_PSG_ATTN_OFF, k == 3, 0);
+        }
+    }
+    if (!ini.valid) *incomplete = true;
+    size_t rs = 0;
+    uint64_t seq0 = 0, n = 0;
+    unsigned seg = 0;
+    uint8_t *data = _ac_copy_range(AUDIO_CAPTURE_STREAM_PSG_WRITES, 0, UINT64_MAX, &rs, &seq0, &n, &seg);
+    if (seq0 > 0) *incomplete = true;
+    st_AUDIO_NOTE done;
+    for (uint64_t i = 0; i < n && rs == sizeof(st_AUDIO_CAPTURE_PSG_REC); i++) {
+        const st_AUDIO_CAPTURE_PSG_REC *w = (const st_AUDIO_CAPTURE_PSG_REC *) (data + i * rs);
+        if (w->frame > last) break;
+        for (unsigned c = 0; c < chips; c++) {
+            if (!(w->psg & (1u << c))) continue;
+            st_AUDIO_NOTE_TRACK *t = &tr[c][w->channel & 3u];
+            unsigned div = t->divider, attn = t->attn;
+            if (w->reg == AUDIO_CAPTURE_PSG_REG_TONE) div = w->value;
+            else if (w->reg == AUDIO_CAPTURE_PSG_REG_VOLUME) attn = w->value;
+            else continue;
+            if (audio_note_track_update(t, div, attn, t->noise, w->frame, &done) && done.to_frame >= first) {
+                st_AC_NOTE_OUT o = { done, 1u + 4u * c + (w->channel & 3u) };
+                g_array_append_val(notes, o);
+            }
+        }
+    }
+    for (unsigned c = 0; c < chips; c++) {
+        for (unsigned k = 0; k < 4; k++) {
+            if (audio_note_track_finish(&tr[c][k], last, &done) && done.to_frame >= first) {
+                st_AC_NOTE_OUT o = { done, 1u + 4u * c + k };
+                g_array_append_val(notes, o);
+            }
+        }
+    }
+    g_free(data);
+    g_array_sort(notes, _ac_cmp_note);
+#else
+    (void) first; (void) last; (void) stereo;
+#endif
+    return notes;
+}
+
+/**
+ * @brief `audio_capture_summary` handler - souhrn paměti zachycení zvuku.
+ *
+ * Parametry (volitelné): `frame_from` (výchozí 0), `frame_to` (-1 = poslední),
+ * `silence_rms` (0..32767, výchozí 64), `max_notes` (1..2000, výchozí 200),
+ * `lag_frames` (-1 = najít, jinak pevný posun SDL cesty), `max_lag_frames`
+ * (1..60, výchozí 8). Běží v dispatch vlákně, data kopíruje z paměti
+ * zachycení po kusech (audio_capture_stream_copy()), emu vlákno nečeká.
+ *
+ * Response: frames, fps, platforma, kanály, sound_spans / silent_spans,
+ * channels (po kanálech), psg_notes, ctc0 (histogram intervalů a odhad),
+ * ref_vs_sdl. Bez paměti zachycení nebo bez snímků => EMU_ERROR.
+ */
+static en_MCP_DISPATCH_RESULT _handle_audio_capture_summary(const st_JSONL_MESSAGE *req,
+                                                            char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    const char *names[] = { "frame_from", "frame_to", "silence_rms", "max_notes", "lag_frames", "max_lag_frames" };
+    gint64 val[] = { 0, -1, 64, 200, -1, 8 };
+    for (int i = 0; i < 6; i++) {
+        int h = _videorec_member(obj, names[i], G_TYPE_INT64);
+        if (h < 0) {
+            return _err_response(req_id, "Invalid parameters: frame_from, frame_to, silence_rms, max_notes, "
+                                 "lag_frames and max_lag_frames must be integers",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        if (h) val[i] = json_object_get_int_member(obj, names[i]);
+    }
+    gint64 frame_from = val[0], frame_to = val[1], silence = val[2], max_notes = val[3];
+    gint64 lag_frames = val[4], max_lag_frames = val[5];
+    if (frame_from < 0 || frame_to < -1 || silence < 0 || silence > 32767 || max_notes < 1 || max_notes > 2000
+        || lag_frames < -1 || lag_frames > 60 || max_lag_frames < 1 || max_lag_frames > 60) {
+        return _err_response(req_id, "Invalid parameters: frame_from >= 0, frame_to >= -1, silence_rms 0..32767, "
+                             "max_notes 1..2000, lag_frames -1..60, max_lag_frames 1..60",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+
+    st_AUDIO_CAPTURE_STATUS st;
+    audio_capture_get_status(&st);
+    if (!st.memory) {
+        return _err_response(req_id, "No audio capture memory: start the capture with memory=true",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    const st_AUDIO_CAPTURE_STREAM_INFO *fi = &st.streams[AUDIO_CAPTURE_STREAM_FRAMES];
+    if (fi->next_seq == 0) {
+        return _err_response(req_id, "No captured audio frames yet (run the emulation)",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    uint64_t first = ((uint64_t) frame_from > fi->first_seq) ? (uint64_t) frame_from : fi->first_seq;
+    uint64_t last = (frame_to < 0 || (uint64_t) frame_to >= fi->next_seq) ? fi->next_seq - 1 : (uint64_t) frame_to;
+    if (first > last) {
+        char *msg = g_strdup_printf("Invalid parameters: frame range outside the captured frames [%llu, %llu]",
+                                    (unsigned long long) fi->first_seq, (unsigned long long) (fi->next_seq - 1));
+        return _trace_err_owned(req_id, msg, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+
+    size_t rs = 0;
+    uint64_t fseq = 0, nfr = 0;
+    unsigned seg = 0;
+    uint8_t *fdata = _ac_copy_range(AUDIO_CAPTURE_STREAM_FRAMES, first, last + 1, &rs, &fseq, &nfr, &seg);
+    if (!fdata || rs != sizeof(st_AUDIO_CAPTURE_FRAME_REC) || nfr == 0) {
+        g_free(fdata);
+        return _err_response(req_id, "Audio capture frames unavailable (overwritten or a new capture started)",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    first = fseq;
+    last = fseq + nfr - 1;
+    const st_AUDIO_CAPTURE_FRAME_REC *fr = (const st_AUDIO_CAPTURE_FRAME_REC *) fdata;
+    unsigned nch = st.channels;
+    if (nch > AUDIO_CAPTURE_MAX_CHANNELS) nch = AUDIO_CAPTURE_MAX_CHANNELS;
+
+    JsonObject *resp = json_object_new();
+    json_object_set_string_member(resp, "platform", MZARCH_NAME);
+    json_object_set_int_member(resp, "fps", (gint64) VIDEO_SCREENS_PER_SEC);
+    json_object_set_int_member(resp, "gdg_clk_hz", (gint64) GDGCLK_BASE);
+    json_object_set_int_member(resp, "segment", (gint64) seg);
+    json_object_set_boolean_member(resp, "live", st.pending || st.active);
+    json_object_set_boolean_member(resp, "stereo", st.stereo);
+    JsonArray *fa = json_array_new();
+    json_array_add_int_element(fa, (gint64) first);
+    json_array_add_int_element(fa, (gint64) last);
+    json_object_set_array_member(resp, "frames", fa);
+    JsonArray *av = json_array_new();
+    json_array_add_int_element(av, (gint64) fi->first_seq);
+    json_array_add_int_element(av, (gint64) (fi->next_seq - 1));
+    json_object_set_array_member(resp, "frames_available", av);
+
+    /* Ticho a zvuk po snímcích. */
+    uint8_t *sound = g_new0(uint8_t, nfr);
+    uint64_t ticks_total = 0;
+    for (uint64_t i = 0; i < nfr; i++) {
+        const st_AUDIO_CAPTURE_FRAME_REC *f = &fr[i];
+        ticks_total += f->len_ticks;
+        if (f->flags & AUDIO_CAPTURE_FRAME_FLAG_REF) {
+            unsigned m = (f->ref_rms[0] > f->ref_rms[1]) ? f->ref_rms[0] : f->ref_rms[1];
+            sound[i] = (m >= (unsigned) silence);
+        } else {
+            uint64_t e = 0;
+            for (unsigned c = 0; c < nch; c++) e += f->ch[c].edges;
+            sound[i] = (e > 0);
+        }
+    }
+    size_t total = 0;
+    json_object_set_array_member(resp, "sound_spans", _ac_spans_json(sound, nfr, first, true, 50, &total));
+    json_object_set_int_member(resp, "sound_spans_total", (gint64) total);
+    json_object_set_array_member(resp, "silent_spans", _ac_spans_json(sound, nfr, first, false, 50, &total));
+    json_object_set_int_member(resp, "silent_spans_total", (gint64) total);
+    json_object_set_string_member(resp, "silence_rule",
+        (fr[0].flags & AUDIO_CAPTURE_FRAME_FLAG_REF) ? "reference RMS below silence_rms" : "no level change in any channel");
+    g_free(sound);
+
+    /* Kanály. */
+    JsonObject *chs = json_object_new();
+    double *hz = g_new0(double, nfr);
+    for (unsigned c = 0; c < nch; c++) {
+        uint64_t edges = 0, active = 0, on = 0;
+        unsigned maxl = 0;
+        size_t nh = 0;
+        for (uint64_t i = 0; i < nfr; i++) {
+            const st_AUDIO_CAPTURE_FRAME_CH *x = &fr[i].ch[c];
+            edges += x->edges;
+            on += x->on_ticks;
+            if (x->max_level > maxl) maxl = x->max_level;
+            if (x->edges) {
+                active++;
+                if (fr[i].len_ticks) hz[nh++] = (double) x->edges / 2.0 / ((double) fr[i].len_ticks / (double) GDGCLK_BASE);
+            }
+        }
+        JsonObject *o = json_object_new();
+        json_object_set_int_member(o, "active_frames", (gint64) active);
+        json_object_set_int_member(o, "edges", (gint64) edges);
+        json_object_set_int_member(o, "max_level", (gint64) maxl);
+        json_object_set_double_member(o, "on_pct", ticks_total ? _ac_round(100.0 * (double) on / (double) ticks_total, 1) : 0.0);
+        if (nh) {
+            qsort(hz, nh, sizeof(double), _ac_cmp_double);
+            json_object_set_double_member(o, "est_hz_median", _ac_round(hz[nh / 2], 1));
+        } else {
+            json_object_set_null_member(o, "est_hz_median");
+        }
+        json_object_set_object_member(chs, trace_audio_channel_name(c), o);
+    }
+    g_free(hz);
+    json_object_set_object_member(resp, "channels", chs);
+    json_object_set_string_member(resp, "est_hz_rule", "level changes / 2 per second, median over active frames");
+
+    /* Noty PSG. */
+    bool incomplete = false;
+    GArray *notes = _ac_psg_notes(first, last, st.stereo, &incomplete);
+    JsonArray *na = json_array_new();
+    for (guint i = 0; i < notes->len && i < (guint) max_notes; i++) {
+        const st_AC_NOTE_OUT *o = &g_array_index(notes, st_AC_NOTE_OUT, i);
+        JsonObject *n = json_object_new();
+        json_object_set_string_member(n, "ch", trace_audio_channel_name(o->src));
+        if (o->n.noise) {
+            json_object_set_string_member(n, "note", "noise");
+        } else {
+            double f = audio_psg_tone_hz(o->n.divider, GDGCLK_BASE, GDGCLK2CPU_DIVIDER);
+            int pitch = 0, cents = 0;
+            char nm[8];
+            audio_hz_to_midi(f, &pitch, &cents);
+            audio_midi_note_name(pitch, nm, sizeof(nm));
+            json_object_set_string_member(n, "note", nm);
+            json_object_set_int_member(n, "cents", cents);
+            json_object_set_double_member(n, "hz", _ac_round(f, 2));
+            json_object_set_int_member(n, "divider", (gint64) o->n.divider);
+        }
+        json_object_set_int_member(n, "from_frame", (gint64) o->n.from_frame);
+        json_object_set_int_member(n, "to_frame", (gint64) o->n.to_frame);
+        json_object_set_int_member(n, "max_level", (gint64) o->n.max_level);
+        json_array_add_object_element(na, n);
+    }
+    json_object_set_array_member(resp, "psg_notes", na);
+    json_object_set_int_member(resp, "psg_notes_total", (gint64) notes->len);
+    json_object_set_boolean_member(resp, "psg_notes_truncated", notes->len > (guint) max_notes);
+    json_object_set_boolean_member(resp, "psg_state_incomplete", incomplete);
+    g_array_free(notes, TRUE);
+
+    /* CTC0 (reproduktor): histogram intervalů mezi hranami. */
+    {
+        uint32_t hist[AUDIO_HIST_BUCKETS];
+        memset(hist, 0, sizeof(hist));
+        size_t lrs = 0;
+        uint64_t lseq = 0, ln = 0;
+        unsigned lseg = 0;
+        uint8_t *ld = _ac_copy_range(AUDIO_CAPTURE_STREAM_LEVELS, 0, UINT64_MAX, &lrs, &lseq, &ln, &lseg);
+        uint64_t edges = 0;
+        bool have_prev = false;
+        uint64_t prev_t = 0;
+        for (uint64_t i = 0; i < ln && lrs == sizeof(st_AUDIO_CAPTURE_LEVEL_REC); i++) {
+            const st_AUDIO_CAPTURE_LEVEL_REC *l = (const st_AUDIO_CAPTURE_LEVEL_REC *) (ld + i * lrs);
+            if (l->src != 0 || l->frame < first) continue;
+            if (l->frame > last) break;
+            edges++;
+            if (have_prev && l->t > prev_t) audio_hist_add(hist, (double) (l->t - prev_t) * 1e6 / (double) GDGCLK_BASE);
+            prev_t = l->t;
+            have_prev = true;
+        }
+        g_free(ld);
+        double share = 0.0;
+        double secs = (double) ticks_total / (double) GDGCLK_BASE;
+        JsonObject *c0 = json_object_new();
+        json_object_set_int_member(c0, "edges", (gint64) edges);
+        JsonArray *ha = json_array_new();
+        for (unsigned b = 0; b < AUDIO_HIST_BUCKETS; b++) {
+            if (!hist[b]) continue;
+            JsonArray *e = json_array_new();
+            json_array_add_int_element(e, (gint64) audio_hist_bucket_us(b));
+            json_array_add_int_element(e, (gint64) hist[b]);
+            json_array_add_array_element(ha, e);
+        }
+        json_object_set_array_member(c0, "edge_interval_hist_us", ha);
+        json_object_set_string_member(c0, "likely", audio_ctc0_guess(hist, edges, secs, &share));
+        json_object_set_double_member(c0, "dominant_share", _ac_round(share, 3));
+        json_object_set_string_member(c0, "likely_rule",
+            "heuristic estimate: tone = two adjacent buckets hold >= 80 % of the intervals, "
+            "pcm = otherwise with >= 2000 edges/s, else irregular");
+        json_object_set_boolean_member(c0, "levels_complete", lseq == 0);
+        json_object_set_object_member(resp, "ctc0", c0);
+    }
+
+    /* Reference vs SDL cesta (potřebuje oba PCM ringy). */
+    const st_AUDIO_CAPTURE_STREAM_INFO *pr = &st.streams[AUDIO_CAPTURE_STREAM_PCM_REFERENCE];
+    const st_AUDIO_CAPTURE_STREAM_INFO *ps = &st.streams[AUDIO_CAPTURE_STREAM_PCM_SDL];
+    if (pr->present && ps->present) {
+        uint64_t spf = AUDIO_CAPTURE_WAV_RATE / VIDEO_SCREENS_PER_SEC;
+        uint64_t s0 = _ac_sample_at(fr[0].t, st.origin_ticks);
+        uint64_t s1 = _ac_sample_at(fr[nfr - 1].t + fr[nfr - 1].len_ticks, st.origin_ticks);
+        if (s1 > s0 + AC_COMPARE_WINDOW) s1 = s0 + AC_COMPARE_WINDOW;
+        uint64_t max_lag = (lag_frames >= 0 ? (uint64_t) lag_frames : (uint64_t) max_lag_frames) * spf;
+        size_t r1 = 0, r2 = 0;
+        uint64_t q1 = 0, n1 = 0, q2 = 0, n2 = 0;
+        unsigned g1 = 0, g2 = 0;
+        uint8_t *ref = _ac_copy_range(AUDIO_CAPTURE_STREAM_PCM_REFERENCE, s0, s1, &r1, &q1, &n1, &g1);
+        uint8_t *sdl = _ac_copy_range(AUDIO_CAPTURE_STREAM_PCM_SDL, q1, q1 + n1 + max_lag, &r2, &q2, &n2, &g2);
+        JsonObject *rv = json_object_new();
+        st_AUDIO_COMPARE cmp;
+        bool ok = ref && sdl && n1 > 0 && q2 == q1;
+        if (ok && lag_frames >= 0) {
+            audio_diff((const int16_t *) ref, n1, (const int16_t *) sdl, n2, (int) max_lag, 0, n1, &cmp);
+            ok = cmp.compared > 0;
+        } else if (ok) {
+            ok = audio_compare((const int16_t *) ref, n1, (const int16_t *) sdl, n2, (int) max_lag, 0, &cmp);
+        }
+        if (ok) {
+            json_object_set_int_member(rv, "lag_samples", cmp.lag);
+            json_object_set_double_member(rv, "lag_frames", _ac_round((double) cmp.lag / (double) spf, 2));
+            json_object_set_boolean_member(rv, "lag_searched", lag_frames < 0);
+            /* Bez nástupu nebo změny hlasitosti v okně (jen ustálený tón) posun
+             * z dat určit nejde; lag_samples pak může být o periody tónu vedle. */
+            json_object_set_boolean_member(rv, "lag_ambiguous", lag_frames < 0 && cmp.lag_ambiguous);
+            json_object_set_int_member(rv, "compared_samples", (gint64) cmp.compared);
+            json_object_set_int_member(rv, "from_sample", (gint64) q1);
+            json_object_set_double_member(rv, "diff_rms", _ac_round(cmp.diff_rms, 5));
+            json_object_set_double_member(rv, "diff_max", _ac_round(cmp.diff_max, 5));
+            json_object_set_double_member(rv, "reference_rms", _ac_round(cmp.a_rms, 5));
+            /* Nejhorší snímky porovnaného úseku. */
+            JsonArray *worst = json_array_new();
+            double best[5] = { -1, -1, -1, -1, -1 };
+            uint64_t bf[5] = { 0 };
+            for (uint64_t i = 0; i < nfr; i++) {
+                uint64_t a = _ac_sample_at(fr[i].t, st.origin_ticks);
+                if (a < q1) continue;
+                if (a >= q1 + cmp.compared) break;
+                st_AUDIO_COMPARE d;
+                audio_diff((const int16_t *) ref, n1, (const int16_t *) sdl, n2, cmp.lag, (size_t) (a - q1), spf, &d);
+                for (int k = 0; k < 5; k++) {
+                    if (d.compared && d.diff_rms > best[k]) {
+                        for (int m = 4; m > k; m--) { best[m] = best[m - 1]; bf[m] = bf[m - 1]; }
+                        best[k] = d.diff_rms;
+                        bf[k] = first + i;
+                        break;
+                    }
+                }
+            }
+            for (int k = 0; k < 5 && best[k] >= 0; k++) {
+                JsonArray *w = json_array_new();
+                json_array_add_int_element(w, (gint64) bf[k]);
+                json_array_add_double_element(w, _ac_round(best[k], 5));
+                json_array_add_array_element(worst, w);
+            }
+            json_object_set_array_member(rv, "worst_frames", worst);
+        } else {
+            json_object_set_string_member(rv, "error", "reference and output path samples do not overlap in this range");
+        }
+        json_object_set_int_member(rv, "sdl_missing_blocks",
+                                   (gint64) ((st.frames > st.sdl_blocks) ? st.frames - st.sdl_blocks : 0));
+        json_object_set_object_member(resp, "ref_vs_sdl", rv);
+        g_free(ref);
+        g_free(sdl);
+    } else {
+        json_object_set_null_member(resp, "ref_vs_sdl");
+        json_object_set_string_member(resp, "ref_vs_sdl_note",
+                                      "needs pcm=[\"reference\", \"sdl\"] at emu_audio_capture_start");
+    }
+    g_free(fdata);
+    return _ok_response(req_id, resp, out_response);
+}
+
+/**
+ * @brief `audio_capture_pcm` handler - výřez PCM z paměti zachycení.
+ *
+ * Parametry: `source` ("reference" výchozí | "sdl"), začátek `sample_from`
+ * (>= 0, vzorky 44100 Hz od začátku zachycení), jinak `frame_from`
+ * (výchozí 0); délka `samples` (> 0), jinak `frames` (výchozí 25); `rate`
+ * (1000..44100, výchozí 11025), `stereo` (výchozí false), `encoding`
+ * ("wav_b64" výchozí | "pcm_b64"), `max_bytes` (1024..4 MiB, výchozí
+ * 32768 = strop dat před base64).
+ *
+ * Převzorkování je průměrování (analytický náhled); `rate` 44100 se
+ * `stereo` vrací bajtově totéž co reference.wav / sdl.wav. Response:
+ * source, segment, live, rate, channels, from_sample, samples, frames_out,
+ * next_sample, end_of_data, truncated, available [first, next), gap,
+ * encoding, data_b64.
+ */
+static en_MCP_DISPATCH_RESULT _handle_audio_capture_pcm(const st_JSONL_MESSAGE *req,
+                                                        char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    int hs = _videorec_member(obj, "source", G_TYPE_STRING);
+    int he = _videorec_member(obj, "encoding", G_TYPE_STRING);
+    int hst = _videorec_member(obj, "stereo", G_TYPE_BOOLEAN);
+    const char *inames[] = { "sample_from", "frame_from", "samples", "frames", "rate", "max_bytes" };
+    gint64 iv[] = { -1, 0, 0, 25, 11025, AC_PCM_DEFAULT_MAX_BYTES };
+    bool bad = (hs < 0 || he < 0 || hst < 0);
+    for (int i = 0; i < 6 && !bad; i++) {
+        int h = _videorec_member(obj, inames[i], G_TYPE_INT64);
+        if (h < 0) bad = true;
+        else if (h) iv[i] = json_object_get_int_member(obj, inames[i]);
+    }
+    const char *source = hs ? json_object_get_string_member(obj, "source") : "reference";
+    const char *enc = he ? json_object_get_string_member(obj, "encoding") : "wav_b64";
+    bool stereo = hst ? json_object_get_boolean_member(obj, "stereo") : false;
+    bool sdl = (g_strcmp0(source, "sdl") == 0);
+    bool wav = (g_strcmp0(enc, "wav_b64") == 0);
+    if (bad || (!sdl && g_strcmp0(source, "reference") != 0) || (!wav && g_strcmp0(enc, "pcm_b64") != 0)
+        || iv[1] < 0 || iv[2] < 0 || iv[3] < 1 || iv[4] < 1000 || iv[4] > (gint64) AUDIO_CAPTURE_WAV_RATE
+        || iv[5] < 1024 || iv[5] > (gint64) AC_PCM_MAX_MAX_BYTES) {
+        return _err_response(req_id, "Invalid parameters: source reference|sdl, encoding wav_b64|pcm_b64, "
+                             "stereo boolean, sample_from/frame_from >= 0, samples >= 0, frames >= 1, "
+                             "rate 1000..44100, max_bytes 1024..4194304",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    unsigned rate = (unsigned) iv[4];
+    size_t max_bytes = (size_t) iv[5];
+    en_AUDIO_CAPTURE_STREAM stream = sdl ? AUDIO_CAPTURE_STREAM_PCM_SDL : AUDIO_CAPTURE_STREAM_PCM_REFERENCE;
+
+    st_AUDIO_CAPTURE_STATUS st;
+    audio_capture_get_status(&st);
+    const st_AUDIO_CAPTURE_STREAM_INFO *si = &st.streams[stream];
+    if (!st.memory || !si->present) {
+        return _err_response(req_id, sdl ? "No output path PCM in the audio capture memory: start with pcm=[\"sdl\"]"
+                                         : "No reference PCM in the audio capture memory: start with pcm=[\"reference\"]",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+
+    /* Začátek a délka ve vzorcích 44100 Hz. */
+    uint64_t spf_num = AUDIO_CAPTURE_WAV_RATE, spf_den = VIDEO_SCREENS_PER_SEC;
+    uint64_t from = 0, want = 0;
+    if (iv[0] >= 0) {
+        from = (uint64_t) iv[0];
+    } else {
+        /* Začátek snímku z jeho souhrnu (přesný čas), jinak podle fps. */
+        st_AUDIO_CAPTURE_STREAM_COPY c;
+        audio_capture_stream_copy(AUDIO_CAPTURE_STREAM_FRAMES, (uint64_t) iv[1], 1, sizeof(st_AUDIO_CAPTURE_FRAME_REC), &c);
+        if (c.data_count == 1 && c.data_seq == (uint64_t) iv[1]) {
+            from = _ac_sample_at(((const st_AUDIO_CAPTURE_FRAME_REC *) c.data)->t, st.origin_ticks);
+        } else {
+            from = (uint64_t) iv[1] * spf_num / spf_den;
+        }
+        audio_capture_stream_copy_clear(&c);
+    }
+    want = (iv[2] > 0) ? (uint64_t) iv[2] : (uint64_t) iv[3] * spf_num / spf_den;
+
+    unsigned ch = stereo ? 2u : 1u;
+    size_t hdr = wav ? 44u : 0u;
+    size_t out_max = (max_bytes > hdr) ? (max_bytes - hdr) / (2u * ch) : 0;
+    uint64_t in_max = (uint64_t) out_max * AUDIO_CAPTURE_WAV_RATE / rate;
+    bool truncated = false;
+    if (want > in_max) {
+        want = in_max;
+        truncated = true;
+    }
+
+    JsonObject *resp = json_object_new();
+    st_AUDIO_CAPTURE_STREAM_COPY c;
+    bool okc = audio_capture_stream_copy(stream, from, want, (size_t) (want * 4u), &c);
+    if (!okc) {
+        audio_capture_stream_copy_clear(&c);
+        json_object_unref(resp);
+        return _err_response(req_id, "Not enough memory for the PCM copy", MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    if (from < c.first_seq) {
+        JsonObject *gap = json_object_new();
+        json_object_set_int_member(gap, "from_sample", (gint64) from);
+        json_object_set_int_member(gap, "to_sample", (gint64) c.first_seq);
+        json_object_set_object_member(resp, "gap", gap);
+    } else {
+        json_object_set_null_member(resp, "gap");
+    }
+    uint64_t got = c.data_count;
+    uint64_t start = c.data_count ? c.data_seq : ((from > c.next_seq) ? c.next_seq : from);
+    size_t nout = audio_resample_frames((size_t) got, AUDIO_CAPTURE_WAV_RATE, rate);
+    uint8_t *buf = (uint8_t *) g_malloc(hdr + nout * 2u * ch + 2u);
+    if (got) audio_resample_s16((const int16_t *) c.data, (size_t) got, AUDIO_CAPTURE_WAV_RATE, rate, stereo,
+                                (int16_t *) (buf + hdr));
+    if (wav) audio_wav_header(buf, rate, ch, nout);
+    char *b64 = g_base64_encode(buf, hdr + nout * 2u * ch);
+    json_object_set_string_member(resp, "source", sdl ? "sdl" : "reference");
+    json_object_set_int_member(resp, "segment", (gint64) c.segment);
+    json_object_set_boolean_member(resp, "live", c.live);
+    json_object_set_int_member(resp, "rate", rate);
+    json_object_set_int_member(resp, "channels", ch);
+    json_object_set_int_member(resp, "from_sample", (gint64) start);
+    json_object_set_int_member(resp, "samples", (gint64) got);
+    json_object_set_int_member(resp, "frames_out", (gint64) nout);
+    json_object_set_int_member(resp, "next_sample", (gint64) (start + got));
+    json_object_set_boolean_member(resp, "end_of_data", start + got >= c.next_seq);
+    json_object_set_boolean_member(resp, "truncated", truncated);
+    JsonArray *av = json_array_new();
+    json_array_add_int_element(av, (gint64) c.first_seq);
+    json_array_add_int_element(av, (gint64) c.next_seq);
+    json_object_set_array_member(resp, "available", av);
+    json_object_set_string_member(resp, "encoding", wav ? "wav_b64" : "pcm_b64");
+    json_object_set_string_member(resp, "data_b64", b64);
+    g_free(b64);
+    g_free(buf);
+    audio_capture_stream_copy_clear(&c);
+    return _ok_response(req_id, resp, out_response);
+}
+
+
+/* ---------------- Záznam zápisů do paměti: ramlog (M2 debug-gaps) ---------------- */
+
+/** @brief Nejvýš záznamů historie na buňku v ramlog_who_wrote. */
+#define RAMLOG_MCP_MAX_LIMIT 1000
+/** @brief Nejvýš zapisovatelů v ramlog_writers. */
+#define RAMLOG_MCP_MAX_WRITERS 5000
+
+/** @brief Stav ramlogu jako JSON objekt. */
+static JsonObject *_ramlog_status_json(const st_RAMLOG_STATUS *st) {
+    JsonObject *o = json_object_new();
+    json_object_set_boolean_member(o, "active", st->active);
+    json_object_set_boolean_member(o, "allocated", st->allocated);
+    json_object_set_int_member(o, "segment", (gint64)st->segment);
+    json_object_set_string_member(o, "mode", st->mode == RAMLOG_MODE_FILL ? "fill" : "ring");
+    json_object_set_int_member(o, "capacity", (gint64)st->capacity);
+    json_object_set_int_member(o, "first_seq", (gint64)st->first_seq);
+    json_object_set_int_member(o, "next_seq", (gint64)st->next_seq);
+    json_object_set_int_member(o, "total", (gint64)st->total);
+    json_object_set_int_member(o, "dropped", (gint64)st->dropped);
+    json_object_set_int_member(o, "overwritten", (gint64)st->overwritten);
+    json_object_set_int_member(o, "memory_bytes", (gint64)st->memory_bytes);
+    JsonArray *ra = json_array_new();
+    for (unsigned i = 0; i < st->n_ranges; i++) {
+        const st_RAMLOG_RANGE *r = &st->ranges[i];
+        JsonObject *x = json_object_new();
+        if (r->phys) json_object_set_string_member(x, "space", ramlog_space_name(r->space));
+        json_object_set_int_member(x, "from", (gint64)r->from);
+        json_object_set_int_member(x, "to", (gint64)r->to);
+        json_array_add_object_element(ra, x);
+    }
+    json_object_set_array_member(o, "ranges", ra);
+    return o;
+}
+
+/**
+ * @brief Provede DBGAPI_CMD_RAMLOG.
+ * @return false = příkaz se nepodařilo předat; jinak true a chyba operace v p->out_error.
+ */
+static bool _ramlog_submit(st_DBGAPI_RAMLOG_PARAM *p) {
+    p->out_error[0] = '\0';
+    bool ok = _submit_dbgapi(DBGAPI_CMD_RAMLOG, p, NULL);
+    return ok || p->out_error[0];
+}
+
+/** @brief Odpověď stavu nebo chyby po DBGAPI_CMD_RAMLOG. */
+static en_MCP_DISPATCH_RESULT _ramlog_status_response(int64_t req_id, st_DBGAPI_RAMLOG_PARAM *p,
+                                                      char **out_response) {
+    if (!_ramlog_submit(p)) {
+        return _err_response(req_id, "ramlog command failed", MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    if (p->out_error[0]) {
+        return _err_response(req_id, p->out_error, MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    return _ok_response(req_id, _ramlog_status_json(&p->out_status), out_response);
+}
+
+/**
+ * @brief Naparsuje jeden rozsah `{from, to}` (CPU) nebo `{space, from, to}` (fyzický).
+ * @return NULL OK, jinak statická chybová zpráva.
+ */
+static const char *_ramlog_parse_range(JsonNode *n, st_RAMLOG_RANGE *out) {
+    memset(out, 0, sizeof(*out));
+    if (!n || json_node_get_node_type(n) != JSON_NODE_OBJECT) return "ranges items must be objects {from, to} or {space, from, to}";
+    JsonObject *o = json_node_get_object(n);
+    int hf = _videorec_member(o, "from", G_TYPE_INT64);
+    int ht = _videorec_member(o, "to", G_TYPE_INT64);
+    int hs = _videorec_member(o, "space", G_TYPE_STRING);
+    if (hf <= 0 || ht < 0 || hs < 0) return "ranges items need integer from (and optional to, space name)";
+    gint64 from = json_object_get_int_member(o, "from");
+    gint64 to = ht ? json_object_get_int_member(o, "to") : from;
+    if (hs) {
+        int sp = ramlog_space_from_name(json_object_get_string_member(o, "space"));
+        if (sp < 0 || sp == RAMLOG_SPACE_ROM) return "range space must be ram, vram, pcg or memext";
+        out->phys = true;
+        out->space = (uint8_t)sp;
+        if (from < 0 || to < from || to > 0x7FFFF) return "physical range must be 0 <= from <= to <= 7FFFFh";
+    } else if (from < 0 || to < from || to > 0xFFFF) {
+        return "CPU range must be 0 <= from <= to <= FFFFh";
+    }
+    out->from = (uint32_t)from;
+    out->to = (uint32_t)to;
+    return NULL;
+}
+
+/**
+ * @brief `ramlog_start` handler - spustí záznam zápisů do paměti.
+ *
+ * Parametry (volitelné): `ranges` (pole `{from, to}` CPU adres nebo
+ * `{space, from, to}` buněk prostoru ram/vram/pcg/memext, nejvýš 16;
+ * chybí = celá paměť), `mode` ("ring" výchozí | "fill"), `capacity`
+ * (16..16777216 záznamů, výchozí 1048576). Předchozí záznam uvolní.
+ */
+static en_MCP_DISPATCH_RESULT _handle_ramlog_start(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    st_DBGAPI_RAMLOG_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_RAMLOG_OP_START;
+    p.cfg.mode = RAMLOG_MODE_RING;
+    p.cfg.capacity = RAMLOG_DEFAULT_CAPACITY;
+    int hm = _videorec_member(obj, "mode", G_TYPE_STRING);
+    int hc = _videorec_member(obj, "capacity", G_TYPE_INT64);
+    if (hm < 0 || hc < 0) {
+        return _err_response(req_id, "Invalid parameters: mode must be a string, capacity an integer",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (hm) {
+        const char *m = json_object_get_string_member(obj, "mode");
+        if (g_strcmp0(m, "ring") == 0) p.cfg.mode = RAMLOG_MODE_RING;
+        else if (g_strcmp0(m, "fill") == 0) p.cfg.mode = RAMLOG_MODE_FILL;
+        else return _err_response(req_id, "Invalid parameters: mode must be ring or fill",
+                                  MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (hc) {
+        gint64 c = json_object_get_int_member(obj, "capacity");
+        if (c < RAMLOG_MIN_CAPACITY || c > RAMLOG_MAX_CAPACITY) {
+            return _err_response(req_id, "Invalid parameters: capacity must be 16..16777216",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        p.cfg.capacity = (uint32_t)c;
+    }
+    if (obj && json_object_has_member(obj, "ranges") && !json_node_is_null(json_object_get_member(obj, "ranges"))) {
+        JsonNode *rn = json_object_get_member(obj, "ranges");
+        if (json_node_get_node_type(rn) != JSON_NODE_ARRAY) {
+            return _err_response(req_id, "Invalid parameters: ranges must be an array",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        JsonArray *ra = json_node_get_array(rn);
+        guint n = json_array_get_length(ra);
+        if (n > RAMLOG_MAX_RANGES) {
+            return _err_response(req_id, "Invalid parameters: at most 16 ranges",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        for (guint i = 0; i < n; i++) {
+            const char *e = _ramlog_parse_range(json_array_get_element(ra, i), &p.cfg.ranges[i]);
+            if (e) {
+                return _trace_err_owned(req_id, g_strdup_printf("Invalid parameters: %s", e),
+                                        MCP_DISPATCH_INVALID_PARAMS, out_response);
+            }
+        }
+        p.cfg.n_ranges = n;
+    }
+    return _ramlog_status_response(req_id, &p, out_response);
+}
+
+/** @brief `ramlog_stop` handler - konec záznamu, data zůstanou čitelná. */
+static en_MCP_DISPATCH_RESULT _handle_ramlog_stop(const st_JSONL_MESSAGE *req, char **out_response) {
+    st_DBGAPI_RAMLOG_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_RAMLOG_OP_STOP;
+    return _ramlog_status_response(jsonl_msg_get_req_id(req), &p, out_response);
+}
+
+/** @brief `ramlog_clear` handler - vyprázdní ring a mapu (nový segment). */
+static en_MCP_DISPATCH_RESULT _handle_ramlog_clear(const st_JSONL_MESSAGE *req, char **out_response) {
+    st_DBGAPI_RAMLOG_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_RAMLOG_OP_CLEAR;
+    return _ramlog_status_response(jsonl_msg_get_req_id(req), &p, out_response);
+}
+
+/** @brief `ramlog_status` handler - stav záznamu. */
+static en_MCP_DISPATCH_RESULT _handle_ramlog_status(const st_JSONL_MESSAGE *req, char **out_response) {
+    st_DBGAPI_RAMLOG_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_RAMLOG_OP_STATUS;
+    return _ramlog_status_response(jsonl_msg_get_req_id(req), &p, out_response);
+}
+
+/** @brief Záznam ramlogu jako JSON objekt. */
+static JsonObject *_ramlog_rec_json(const st_RAMLOG_REC *r, uint64_t seq, bool has_seq) {
+    JsonObject *o = json_object_new();
+    char b[8];
+    if (has_seq) json_object_set_int_member(o, "seq", (gint64)seq);
+    json_object_set_int_member(o, "t", (gint64)r->t);
+    json_object_set_int_member(o, "frame", (gint64)r->frame);
+    g_snprintf(b, sizeof(b), "%04X", r->insn_pc);
+    json_object_set_string_member(o, "pc", b);
+    if (r->flags & RAMLOG_FLAG_NO_CPU) {
+        json_object_set_null_member(o, "addr");
+    } else {
+        g_snprintf(b, sizeof(b), "%04X", r->cpu_addr);
+        json_object_set_string_member(o, "addr", b);
+    }
+    g_snprintf(b, sizeof(b), "%02X", r->old_value);
+    json_object_set_string_member(o, "old", b);
+    g_snprintf(b, sizeof(b), "%02X", r->new_value);
+    json_object_set_string_member(o, "new", b);
+    json_object_set_string_member(o, "src", ramlog_src_name(r->src));
+    /* T-stav uvnitř instrukce v okamžiku zápisu (t = začátek instrukce). */
+    if (r->src == RAMLOG_SRC_INSN) json_object_set_int_member(o, "tin", r->tin);
+    if (r->flags & RAMLOG_FLAG_SUMMARY) json_object_set_int_member(o, "count", r->count ? r->count : 65536);
+    if (r->flags & RAMLOG_FLAG_UNCHANGED) json_object_set_boolean_member(o, "unchanged", TRUE);
+    if (r->flags & RAMLOG_FLAG_SUPPRESSED) json_object_set_boolean_member(o, "suppressed", TRUE);
+    return o;
+}
+
+/**
+ * @brief Naparsuje cíl dotazu: `addr` (CPU) nebo `space` + `offset`.
+ * @return NULL OK, jinak statická zpráva.
+ */
+static const char *_ramlog_parse_cell(JsonObject *obj, st_DBGAPI_RAMLOG_PARAM *p) {
+    int ha = _videorec_member(obj, "addr", G_TYPE_INT64);
+    int hs = _videorec_member(obj, "space", G_TYPE_STRING);
+    int ho = _videorec_member(obj, "offset", G_TYPE_INT64);
+    if (ha < 0 || hs < 0 || ho < 0) return "addr and offset must be integers, space a string";
+    if (ha) {
+        gint64 a = json_object_get_int_member(obj, "addr");
+        if (a < 0 || a > 0xFFFF) return "addr must be 0..FFFFh";
+        p->by_cpu = true;
+        p->cpu_from = (uint16_t)a;
+        return NULL;
+    }
+    if (!hs || !ho) return "give addr (CPU address) or space + offset";
+    int sp = ramlog_space_from_name(json_object_get_string_member(obj, "space"));
+    gint64 off = json_object_get_int_member(obj, "offset");
+    if (sp < 0) return "space must be ram, vram, pcg, memext or rom";
+    if (off < 0 || off > 0x7FFFF) return "offset must be 0..7FFFFh";
+    p->space = (uint8_t)sp;
+    p->off_from = (uint32_t)off;
+    return NULL;
+}
+
+/**
+ * @brief `ramlog_who_wrote` handler - kdo zapsal buňku (mapa + historie z ringu).
+ *
+ * Parametry: `addr` (CPU adresa v aktuálním mapování; grafická VRAM MZ-800
+ * = 4 plány) nebo `space` + `offset`; `limit` (0..1000, výchozí 20 záznamů
+ * historie na buňku), `all` (i nezměněné a potlačené zápisy, výchozí false).
+ */
+static en_MCP_DISPATCH_RESULT _handle_ramlog_who_wrote(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    st_DBGAPI_RAMLOG_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_RAMLOG_OP_WHO_WROTE;
+    const char *e = _ramlog_parse_cell(obj, &p);
+    int hl = _videorec_member(obj, "limit", G_TYPE_INT64);
+    int hall = _videorec_member(obj, "all", G_TYPE_BOOLEAN);
+    gint64 limit = hl > 0 ? json_object_get_int_member(obj, "limit") : 20;
+    if (!e && (hl < 0 || hall < 0)) e = "limit must be an integer, all a boolean";
+    if (!e && (limit < 0 || limit > RAMLOG_MCP_MAX_LIMIT)) e = "limit must be 0..1000";
+    if (e) {
+        return _trace_err_owned(req_id, g_strdup_printf("Invalid parameters: %s", e),
+                                MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    p.include_unchanged = hall > 0 && json_object_get_boolean_member(obj, "all");
+    p.limit = (size_t)limit;
+    if (p.limit) {
+        p.out_recs = g_new0(st_RAMLOG_REC, p.limit * RAMLOG_TARGETS_MAX);
+        p.out_seqs = g_new0(uint64_t, p.limit * RAMLOG_TARGETS_MAX);
+    }
+    if (!_ramlog_submit(&p) || p.out_error[0]) {
+        g_free(p.out_recs);
+        g_free(p.out_seqs);
+        return _err_response(req_id, p.out_error[0] ? p.out_error : "ramlog command failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    JsonObject *resp = json_object_new();
+    json_object_set_boolean_member(resp, "active", p.out_status.active);
+    json_object_set_int_member(resp, "segment", (gint64)p.out_status.segment);
+    json_object_set_boolean_member(resp, "mmio", p.out_mmio);
+    JsonArray *cells = json_array_new();
+    for (unsigned i = 0; i < p.out_n_cells; i++) {
+        const st_DBGAPI_RAMLOG_CELL *c = &p.out_cells[i];
+        JsonObject *co = json_object_new();
+        json_object_set_string_member(co, "space", ramlog_space_name(c->space));
+        json_object_set_int_member(co, "offset", (gint64)c->offset);
+        if (c->has_plane) json_object_set_int_member(co, "plane", c->plane);
+        if (c->has_last) {
+            JsonObject *lo = json_object_new();
+            char b[8];
+            g_snprintf(b, sizeof(b), "%04X", c->last.insn_pc);
+            json_object_set_int_member(lo, "seq", (gint64)(c->last.seq1 - 1u));
+            json_object_set_string_member(lo, "pc", b);
+            json_object_set_string_member(lo, "src", ramlog_src_name(c->last.src));
+            json_object_set_boolean_member(lo, "in_ring",
+                (uint64_t)(c->last.seq1 - 1u) >= p.out_status.first_seq
+                && (uint64_t)(c->last.seq1 - 1u) < p.out_status.next_seq);
+            json_object_set_object_member(co, "last", lo);
+        } else {
+            json_object_set_null_member(co, "last");
+        }
+        JsonArray *hist = json_array_new();
+        for (size_t k = 0; k < c->n_recs; k++) {
+            json_array_add_object_element(hist, _ramlog_rec_json(&p.out_recs[i * p.limit + k],
+                                                                 p.out_seqs[i * p.limit + k], true));
+        }
+        json_object_set_array_member(co, "history", hist);
+        json_array_add_object_element(cells, co);
+    }
+    json_object_set_array_member(resp, "cells", cells);
+    g_free(p.out_recs);
+    g_free(p.out_seqs);
+    return _ok_response(req_id, resp, out_response);
+}
+
+/**
+ * @brief `ramlog_writers` handler - kdo všechno zapisoval do rozsahu (souhrn podle instrukce).
+ *
+ * Parametry: `from` / `to` (CPU adresy zápisu v okamžiku zápisu) nebo
+ * `space` + `from` / `to` (buňky prostoru); `limit` (1..5000, výchozí 50),
+ * `all` (i nezměněné a potlačené zápisy).
+ */
+static en_MCP_DISPATCH_RESULT _handle_ramlog_writers(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    st_DBGAPI_RAMLOG_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_RAMLOG_OP_WRITERS;
+    int hf = _videorec_member(obj, "from", G_TYPE_INT64);
+    int ht = _videorec_member(obj, "to", G_TYPE_INT64);
+    int hs = _videorec_member(obj, "space", G_TYPE_STRING);
+    int hl = _videorec_member(obj, "limit", G_TYPE_INT64);
+    int hall = _videorec_member(obj, "all", G_TYPE_BOOLEAN);
+    const char *e = NULL;
+    if (hf <= 0 || ht < 0 || hs < 0 || hl < 0 || hall < 0) e = "from (integer) is required; to, limit integers, space a string, all a boolean";
+    gint64 from = hf > 0 ? json_object_get_int_member(obj, "from") : 0;
+    gint64 to = ht > 0 ? json_object_get_int_member(obj, "to") : from;
+    gint64 limit = hl > 0 ? json_object_get_int_member(obj, "limit") : 50;
+    if (!e && (limit < 1 || limit > RAMLOG_MCP_MAX_WRITERS)) e = "limit must be 1..5000";
+    if (!e && hs) {
+        int sp = ramlog_space_from_name(json_object_get_string_member(obj, "space"));
+        if (sp < 0) e = "space must be ram, vram, pcg, memext or rom";
+        else if (from < 0 || to < from || to > 0x7FFFF) e = "physical range must be 0 <= from <= to <= 7FFFFh";
+        p.space = (uint8_t)(sp < 0 ? 0 : sp);
+        p.off_from = (uint32_t)from;
+        p.off_to = (uint32_t)to;
+    } else if (!e) {
+        if (from < 0 || to < from || to > 0xFFFF) e = "CPU range must be 0 <= from <= to <= FFFFh";
+        p.by_cpu = true;
+        p.cpu_from = (uint16_t)from;
+        p.cpu_to = (uint16_t)to;
+    }
+    if (e) {
+        return _trace_err_owned(req_id, g_strdup_printf("Invalid parameters: %s", e),
+                                MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    p.include_unchanged = hall > 0 && json_object_get_boolean_member(obj, "all");
+    p.limit = (size_t)limit;
+    p.out_writers = g_new0(st_RAMLOG_WRITER, p.limit);
+    if (!_ramlog_submit(&p) || p.out_error[0]) {
+        g_free(p.out_writers);
+        return _err_response(req_id, p.out_error[0] ? p.out_error : "ramlog command failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    JsonObject *resp = json_object_new();
+    json_object_set_boolean_member(resp, "active", p.out_status.active);
+    json_object_set_int_member(resp, "segment", (gint64)p.out_status.segment);
+    json_object_set_int_member(resp, "total", (gint64)p.out_total_writers);
+    json_object_set_boolean_member(resp, "truncated", p.out_total_writers > p.out_n_writers);
+    JsonArray *wa = json_array_new();
+    for (size_t i = 0; i < p.out_n_writers; i++) {
+        const st_RAMLOG_WRITER *w = &p.out_writers[i];
+        JsonObject *wo = json_object_new();
+        char b[8];
+        g_snprintf(b, sizeof(b), "%04X", w->insn_pc);
+        json_object_set_string_member(wo, "pc", b);
+        json_object_set_string_member(wo, "src", ramlog_src_name(w->src));
+        json_object_set_int_member(wo, "count", (gint64)w->count);
+        json_object_set_int_member(wo, "first_seq", (gint64)w->first_seq);
+        json_object_set_int_member(wo, "last_seq", (gint64)w->last_seq);
+        json_array_add_object_element(wa, wo);
+    }
+    json_object_set_array_member(resp, "writers", wa);
+    g_free(p.out_writers);
+    return _ok_response(req_id, resp, out_response);
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Freeze Bytes a Memory Search (memsearch, M3 debug-gaps)             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @brief Druh regionu podle názvu z `regions_list` (`_region_kind_to_str`).
+ * @param s Název ("ram", "memext_ram", ...).
+ * @return en_REGION_KIND, nebo -1 pro neznámý název.
+ */
+static int _region_kind_from_str(const char *s) {
+    if (!s) return -1;
+    for (int k = 0; k < (int)REGION_KIND_COUNT; k++) {
+        if (strcmp(_region_kind_to_str(k), s) == 0) return k;
+    }
+    return -1;
+}
+
+/**
+ * @brief Plný výčet regionů přes DBGAPI_CMD_REGIONS_ENUMERATE.
+ * @param[out] out_count Počet regionů.
+ * @return Kopie výčtu (uvolnit g_free), NULL = prázdný výčet nebo chyba.
+ */
+static st_REGION_DESC *_ms_regions(int *out_count) {
+    st_DBGAPI_REGIONS_ENUM_PARAM param = {
+        .out = NULL, .max_count = 0, .out_count = 0, .out_dup = NULL,
+    };
+    *out_count = 0;
+    if (!_submit_dbgapi(DBGAPI_CMD_REGIONS_ENUMERATE, &param, NULL)) {
+        g_free(param.out_dup);
+        return NULL;
+    }
+    if (!param.out_dup) return NULL;
+    *out_count = param.out_count;
+    return (st_REGION_DESC *)param.out_dup;
+}
+
+/**
+ * @brief Najde region ve výčtu podle (kind, sub_id).
+ * @return Ukazatel do @p regs, nebo NULL.
+ */
+static const st_REGION_DESC *_ms_find_region(const st_REGION_DESC *regs, int count,
+                                             int kind, int sub_id) {
+    for (int i = 0; i < count; i++) {
+        if ((int)regs[i].kind == kind && regs[i].sub_id == sub_id) return &regs[i];
+    }
+    return NULL;
+}
+
+/* ------------------------------------------------------------------ */
+/* state_observe (observe-cas, M10 debug-gaps)                         */
+/* ------------------------------------------------------------------ */
+
+/** @brief Nejdelší štítek okna `name` (znaků bez nuly). */
+#define MCP_OBSERVE_NAME_MAX 64
+
+/**
+ * @brief Jména druhů stránek pro `memory_map` v `state_observe`.
+ *
+ * Index = hodnota en_MEMMAP_REGION_KIND (hw-generic/memory/memory.h),
+ * pořadí musí sedět s enumem. Počet hlídá DBGAPI_OBSERVE_PAGE_KINDS
+ * (kontrola v dbgapi.c proti enumu, tady proti tabulce).
+ */
+static const char *const s_observe_page_kind_names[] = {
+    "ram", "rom_low", "rom_high", "cgrom", "vram_i", "vram_ii",
+    "vram_text", "cgram", "pcg_1", "pcg_2", "pcg_3", "mapped_ports",
+    "prohibited", "unmapped",
+};
+G_STATIC_ASSERT(G_N_ELEMENTS(s_observe_page_kind_names) == DBGAPI_OBSERVE_PAGE_KINDS);
+
+/**
+ * @brief Části stavu přijímané v parametru `hashes` (bez `screen`, ten má `frame_hash`).
+ */
+static const struct {
+    const char *name;           /**< Jméno v MCP (= state_hash_part_name()). */
+    en_STATE_HASH_PART part;    /**< Část state_hash. */
+} s_observe_hash_parts[] = {
+    { "cpu",    STATE_HASH_CPU },
+    { "ram",    STATE_HASH_RAM },
+    { "vram",   STATE_HASH_VRAM },
+    { "memext", STATE_HASH_MEMEXT },
+    { "pcg",    STATE_HASH_PCG },
+};
+
+/** @brief Sekce parametru `include` v pořadí bitů masky. */
+static const char *const s_observe_sections[] = { "raster", "im2", "last_instr", "memory_map" };
+
+/**
+ * @brief Údaje okna `state_observe`, které potřebuje jen dispatch vlákno.
+ *
+ * Doplňuje st_DBGAPI_OBSERVE_WINDOW o štítek a volbu dat.
+ */
+typedef struct st_MCP_OBSERVE_WIN_META {
+    char  name[MCP_OBSERVE_NAME_MAX + 1]; /**< Štítek okna, prázdný = bez štítku. */
+    bool  want_data;                      /**< true = vrátit i `data_b64`. */
+} st_MCP_OBSERVE_WIN_META;
+
+/**
+ * @brief Celé číslo z parametrů, přísně (jen JSON integer).
+ *
+ * @param obj Objekt parametrů.
+ * @param key Klíč.
+ * @param def Výchozí hodnota pro chybějící klíč.
+ * @param[out] out Hodnota.
+ * @return false = klíč je přítomen, ale není celé číslo.
+ */
+static bool _observe_int(JsonObject *obj, const char *key, gint64 def, gint64 *out) {
+    *out = def;
+    if (!json_object_has_member(obj, key)) return true;
+    JsonNode *n = json_object_get_member(obj, key);
+    if (!n || !JSON_NODE_HOLDS_VALUE(n) || json_node_get_value_type(n) != G_TYPE_INT64) {
+        return false;
+    }
+    *out = json_node_get_int(n);
+    return true;
+}
+
+/**
+ * @brief Přečte jedno okno z parametru `windows[i]`.
+ *
+ * Forma CPU: `{addr, len}`, forma regionu: `{region: {kind, sub_id},
+ * offset, length}`; volitelně `name` a `want_data`.
+ *
+ * @param node Prvek pole `windows`.
+ * @param def_want_data Výchozí `want_data` (globální parametr).
+ * @param[out] w Okno pro emu vlákno (bez `buf`).
+ * @param[out] meta Štítek a volba dat.
+ * @return NULL = OK, jinak statický popis chyby (anglicky, do textu chyby).
+ */
+static const char *_observe_parse_window(JsonNode *node, bool def_want_data,
+                                         st_DBGAPI_OBSERVE_WINDOW *w,
+                                         st_MCP_OBSERVE_WIN_META *meta) {
+    memset(w, 0, sizeof(*w));
+    memset(meta, 0, sizeof(*meta));
+    meta->want_data = def_want_data;
+    if (!node || !JSON_NODE_HOLDS_OBJECT(node)) return "window must be an object";
+    JsonObject *o = json_node_get_object(node);
+    if (json_object_has_member(o, "name")) {
+        JsonNode *n = json_object_get_member(o, "name");
+        if (!JSON_NODE_HOLDS_VALUE(n) || json_node_get_value_type(n) != G_TYPE_STRING) {
+            return "name must be a string";
+        }
+        const char *nm = json_node_get_string(n);
+        if (strlen(nm) > MCP_OBSERVE_NAME_MAX) return "name is longer than 64 characters";
+        g_strlcpy(meta->name, nm, sizeof(meta->name));
+    }
+    if (json_object_has_member(o, "want_data")) {
+        JsonNode *n = json_object_get_member(o, "want_data");
+        if (!JSON_NODE_HOLDS_VALUE(n) || json_node_get_value_type(n) != G_TYPE_BOOLEAN) {
+            return "want_data must be a boolean";
+        }
+        meta->want_data = json_node_get_boolean(n) ? true : false;
+    }
+    bool has_addr = json_object_has_member(o, "addr");
+    bool has_region = json_object_has_member(o, "region");
+    if (has_addr == has_region) return "a window needs exactly one of addr or region";
+    gint64 a, l;
+    if (has_addr) {
+        if (!_observe_int(o, "addr", -1, &a) || !_observe_int(o, "len", -1, &l)) {
+            return "addr and len must be integers";
+        }
+        if (a < 0 || a > 0xFFFF) return "addr must be in range 0..65535";
+        if (l < 1 || l > (gint64)DBGAPI_OBSERVE_MAX_TOTAL) return "len must be in range 1..65536";
+        if (a + l > 0x10000) return "addr + len exceeds 0x10000";
+        w->by_region = 0;
+        w->start = (uint32_t)a;
+        w->len = (uint32_t)l;
+        return NULL;
+    }
+    JsonNode *rn = json_object_get_member(o, "region");
+    if (!rn || !JSON_NODE_HOLDS_OBJECT(rn)) return "region must be an object {kind, sub_id}";
+    JsonObject *ro = json_node_get_object(rn);
+    JsonNode *kn = json_object_get_member(ro, "kind");
+    if (!kn || !JSON_NODE_HOLDS_VALUE(kn) || json_node_get_value_type(kn) != G_TYPE_STRING) {
+        return "region.kind must be a string";
+    }
+    int kind = _region_kind_from_str(json_node_get_string(kn));
+    if (kind < 0) return "unknown region kind (see regions_list)";
+    gint64 sub;
+    if (!_observe_int(ro, "sub_id", 0, &sub) || sub < 0 || sub > G_MAXINT) {
+        return "region.sub_id must be a non-negative integer";
+    }
+    if (!_observe_int(o, "offset", 0, &a) || !_observe_int(o, "length", -1, &l)) {
+        return "offset and length must be integers";
+    }
+    if (a < 0 || a > 0xFFFFFFFFLL) return "offset must be in range 0..0xFFFFFFFF";
+    if (l < 1 || l > (gint64)DBGAPI_OBSERVE_MAX_TOTAL) return "length must be in range 1..65536";
+    w->by_region = 1;
+    w->region_kind = kind;
+    w->sub_id = (int)sub;
+    w->start = (uint32_t)a;
+    w->len = (uint32_t)l;
+    return NULL;
+}
+
+/**
+ * @brief Přečte pole jmen a převede ho na masku podle tabulky.
+ *
+ * @param obj Parametry.
+ * @param key Klíč pole (`include`, `hashes`); chybějící klíč = prázdná maska.
+ * @param names Tabulka povolených jmen.
+ * @param n_names Počet jmen (nejvýš 32).
+ * @param[out] mask Bit k = jméno names[k] je v poli.
+ * @return false = hodnota není pole řetězců nebo obsahuje neznámé jméno.
+ */
+static bool _observe_name_list(JsonObject *obj, const char *key,
+                               const char *const *names, unsigned n_names,
+                               uint32_t *mask) {
+    *mask = 0;
+    if (!json_object_has_member(obj, key)) return true;
+    JsonNode *n = json_object_get_member(obj, key);
+    if (!n || !JSON_NODE_HOLDS_ARRAY(n)) return false;
+    JsonArray *arr = json_node_get_array(n);
+    for (guint i = 0; i < json_array_get_length(arr); i++) {
+        JsonNode *e = json_array_get_element(arr, i);
+        if (!JSON_NODE_HOLDS_VALUE(e) || json_node_get_value_type(e) != G_TYPE_STRING) return false;
+        const char *v = json_node_get_string(e);
+        unsigned k = 0;
+        while (k < n_names && strcmp(names[k], v) != 0) k++;
+        if (k == n_names) return false;
+        *mask |= 1u << k;
+    }
+    return true;
+}
+
+/**
+ * @brief Doplní do odpovědi `state_observe` objekt `memory_map`.
+ *
+ * Schéma jako `get_memory_map` (`platform`, `slots` po 4 KiB s `source`,
+ * `ro_rw`, `slot_offset`), u každého slotu navíc `kind`: druh stránky
+ * podle aktuálního mapování (en_MEMMAP_REGION_KIND, stejný údaj, podle
+ * kterého `mem_write` kontroluje zapisovatelnost).
+ *
+ * @param data Odpověď.
+ * @param p Vyplněný výsledek STATE_OBSERVE s want_memory_map.
+ */
+static void _observe_memory_map_to_json(JsonObject *data,
+                                        const st_DBGAPI_STATE_OBSERVE_PARAM *p) {
+    JsonObject *mo = json_object_new();
+    json_object_set_string_member(mo, "platform", p->memory_map.platform);
+    JsonArray *sa = json_array_new();
+    for (int i = 0; i < p->memory_map.slot_count && i < 16; i++) {
+        const st_DBGAPI_MEMORY_MAP_SLOT *sl = &p->memory_map.slots[i];
+        JsonObject *so = json_object_new();
+        json_object_set_int_member(so, "addr_start", (gint64)sl->addr_start);
+        json_object_set_int_member(so, "addr_end", (gint64)sl->addr_end);
+        uint8_t k = p->page_kind[i];
+        json_object_set_string_member(so, "kind",
+            (k < G_N_ELEMENTS(s_observe_page_kind_names)) ? s_observe_page_kind_names[k]
+                                                          : "unknown");
+        json_object_set_string_member(so, "source", _memory_source_str(sl->source));
+        json_object_set_string_member(so, "ro_rw", sl->ro_rw ? "rw" : "r");
+        json_object_set_int_member(so, "slot_offset", (gint64)sl->slot_offset);
+        json_array_add_object_element(sa, so);
+    }
+    json_object_set_array_member(mo, "slots", sa);
+    json_object_set_object_member(data, "memory_map", mo);
+}
+
+/**
+ * @brief Převede okna `state_observe` na pole odpovědi.
+ *
+ * Okno nese echo vstupu (`name`, `addr`/`len` nebo `region`/`offset`/
+ * `length`), `sha256` přečtených bajtů (stejný jako `mem_read` /
+ * `region_read` téhož rozsahu) a `data_b64` s want_data. Nedostupné okno
+ * má délku 0, `error: "region_unavailable"` a žádný hash.
+ *
+ * @param data Odpověď (přidá `windows` a `complete`).
+ * @param wins Okna po návratu z emu vlákna.
+ * @param meta Štítky a volby dat oken.
+ * @param n Počet oken.
+ */
+static void _observe_windows_to_json(JsonObject *data, const st_DBGAPI_OBSERVE_WINDOW *wins,
+                                     const st_MCP_OBSERVE_WIN_META *meta, guint n) {
+    bool complete = true;
+    JsonArray *wa = json_array_new();
+    for (guint i = 0; i < n; i++) {
+        const st_DBGAPI_OBSERVE_WINDOW *w = &wins[i];
+        JsonObject *wo = json_object_new();
+        if (meta[i].name[0]) json_object_set_string_member(wo, "name", meta[i].name);
+        if (w->by_region) {
+            JsonObject *ro = json_object_new();
+            json_object_set_string_member(ro, "kind", _region_kind_to_str(w->region_kind));
+            json_object_set_int_member(ro, "sub_id", w->sub_id);
+            json_object_set_object_member(wo, "region", ro);
+            json_object_set_int_member(wo, "offset", (gint64)w->start);
+        } else {
+            json_object_set_int_member(wo, "addr", (gint64)w->start);
+        }
+        const char *len_key = w->by_region ? "length" : "len";
+        if (w->status == DBGAPI_OBSERVE_WINDOW_OK) {
+            json_object_set_int_member(wo, len_key, (gint64)w->len);
+            _read_result_to_json(wo, w->buf, (gsize)w->len, meta[i].want_data);
+        } else {
+            json_object_set_int_member(wo, len_key, 0);
+            json_object_set_string_member(wo, "error", "region_unavailable");
+            complete = false;
+        }
+        json_array_add_object_element(wa, wo);
+    }
+    json_object_set_array_member(data, "windows", wa);
+    json_object_set_boolean_member(data, "complete", complete ? TRUE : FALSE);
+}
+
+/**
+ * @brief `state_observe` handler - registry, příznaky a okna paměti z jednoho okamžiku.
+ *
+ * Parametry v `data`:
+ *  - `windows` (pole 0..16, povinné): okno CPU `{addr, len}` (aktuální
+ *    mapování, addr + len <= 10000h) nebo regionu `{region: {kind, sub_id},
+ *    offset, length}` (druh jako v `regions_list`, bez `region_id`, takže
+ *    okno platí i po změně sestavy HW); volitelně `name` (štítek do
+ *    64 znaků, vrací se zpět) a `want_data`. Součet délek nejvýš 65536 B.
+ *  - `want_data` (bool, default true): výchozí volba dat pro okna.
+ *  - `include` (pole): volitelné sekce `raster`, `im2`, `last_instr`
+ *    (schéma `get_cpu_panel_batch`), `memory_map`.
+ *  - `hashes` (pole): hashe částí stavu `cpu`, `ram`, `vram`, `memext`,
+ *    `pcg` (state_hash.h, stejná definice jako replay a result.json).
+ *
+ * Vše čte emu vlákno v jednom průchodu fronty (DBGAPI_CMD_STATE_OBSERVE):
+ * za běhu na hranici snímku, v pauze okamžitě. Hash oken (SHA-256) počítá
+ * dispatch vlákno z kopie dat.
+ *
+ * Response: `run_seq`, `running`, `stable` (= !running), `drain`
+ * (`frame` za běhu, `paused`), `time` {`frame`, `frame_ticks`,
+ * `total_cycles`}, `regs`, `flags`, `windows`, `complete` (false =
+ * některé okno nedostupné), volitelně `hashes` (nedostupná část = null),
+ * `raster`, `im2`, `last_instr`, `memory_map`.
+ *
+ * Chyby: neplatné parametry a okno regionu přes jeho konec =
+ * `Invalid parameters: ...`; nic se nevrací, stav se nemění.
+ */
+static en_MCP_DISPATCH_RESULT _handle_state_observe(const st_JSONL_MESSAGE *req,
+                                                    char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    if (!data_node || json_node_get_node_type(data_node) != JSON_NODE_OBJECT) {
+        return _err_response(req_id, "Invalid parameters: data must be an object",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    JsonObject *obj = json_node_get_object(data_node);
+    JsonNode *wn = json_object_get_member(obj, "windows");
+    if (!wn || !JSON_NODE_HOLDS_ARRAY(wn)) {
+        return _err_response(req_id, "Invalid parameters: windows must be an array",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    JsonArray *warr = json_node_get_array(wn);
+    guint n_win = json_array_get_length(warr);
+    if (n_win > DBGAPI_OBSERVE_MAX_WINDOWS) {
+        return _err_response(req_id, "Invalid parameters: at most 16 windows",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    bool want_data = true;
+    if (!_parse_want_data(obj, &want_data)) {
+        return _err_response(req_id, "Invalid parameters: want_data must be a boolean",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    uint32_t sections = 0;
+    if (!_observe_name_list(obj, "include", s_observe_sections,
+                            G_N_ELEMENTS(s_observe_sections), &sections)) {
+        return _err_response(req_id, "Invalid parameters: include must be a list of "
+                             "raster, im2, last_instr, memory_map",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    const char *hash_names[G_N_ELEMENTS(s_observe_hash_parts)];
+    for (unsigned i = 0; i < G_N_ELEMENTS(s_observe_hash_parts); i++) {
+        hash_names[i] = s_observe_hash_parts[i].name;
+    }
+    uint32_t hash_sel = 0;
+    if (!_observe_name_list(obj, "hashes", hash_names, G_N_ELEMENTS(hash_names), &hash_sel)) {
+        return _err_response(req_id, "Invalid parameters: hashes must be a list of "
+                             "cpu, ram, vram, memext, pcg",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+
+    st_DBGAPI_STATE_OBSERVE_PARAM *p = g_new0(st_DBGAPI_STATE_OBSERVE_PARAM, 1);
+    st_DBGAPI_OBSERVE_WINDOW *wins = g_new0(st_DBGAPI_OBSERVE_WINDOW, n_win ? n_win : 1);
+    st_MCP_OBSERVE_WIN_META *meta = g_new0(st_MCP_OBSERVE_WIN_META, n_win ? n_win : 1);
+    uint8_t *bufs = NULL;
+    en_MCP_DISPATCH_RESULT rc;
+    gchar *msg = NULL;
+    uint64_t total = 0;
+    for (guint i = 0; i < n_win && !msg; i++) {
+        const char *perr = _observe_parse_window(json_array_get_element(warr, i), want_data,
+                                                 &wins[i], &meta[i]);
+        if (perr) msg = g_strdup_printf("Invalid parameters: windows[%u]: %s", i, perr);
+        total += wins[i].len;
+    }
+    if (!msg && total > DBGAPI_OBSERVE_MAX_TOTAL) {
+        msg = g_strdup("Invalid parameters: the sum of window lengths exceeds 65536 bytes");
+    }
+    if (msg) {
+        rc = _err_response(req_id, msg, MCP_DISPATCH_INVALID_PARAMS, out_response);
+        goto out;
+    }
+    bufs = g_malloc0(total ? (gsize)total : 1);
+    uint64_t pos = 0;
+    for (guint i = 0; i < n_win; i++) {
+        wins[i].buf = bufs + pos;
+        pos += wins[i].len;
+    }
+    p->which = ((sections & 1u) ? DBGAPI_CPU_PANEL_WANT_RASTER : 0)
+             | ((sections & 2u) ? DBGAPI_CPU_PANEL_WANT_IM2 : 0)
+             | ((sections & 4u) ? DBGAPI_CPU_PANEL_WANT_LAST_INSTR : 0);
+    p->want_memory_map = (sections & 8u) ? 1 : 0;
+    for (unsigned i = 0; i < G_N_ELEMENTS(s_observe_hash_parts); i++) {
+        if (hash_sel & (1u << i)) p->hash_mask |= 1u << (unsigned)s_observe_hash_parts[i].part;
+    }
+    p->windows = n_win ? wins : NULL;
+    p->window_count = n_win;
+
+    if (!_submit_dbgapi(DBGAPI_CMD_STATE_OBSERVE, p, NULL)) {
+        rc = _err_response(req_id, "STATE_OBSERVE failed",
+                           MCP_DISPATCH_EMU_ERROR, out_response);
+        goto out;
+    }
+    for (guint i = 0; i < n_win && !msg; i++) {
+        if (wins[i].status == DBGAPI_OBSERVE_WINDOW_OUT_OF_RANGE) {
+            msg = g_strdup_printf("Invalid parameters: windows[%u]: offset + length "
+                                  "exceeds the region size %u", i, wins[i].region_size);
+        }
+    }
+    if (msg) {
+        rc = _err_response(req_id, msg, MCP_DISPATCH_INVALID_PARAMS, out_response);
+        goto out;
+    }
+
+    JsonObject *data = json_object_new();
+    json_object_set_int_member(data, "run_seq", (gint64)p->run_seq);
+    json_object_set_boolean_member(data, "running", p->running ? TRUE : FALSE);
+    json_object_set_boolean_member(data, "stable", p->running ? FALSE : TRUE);
+    json_object_set_string_member(data, "drain", p->running ? "frame" : "paused");
+    JsonObject *tm = json_object_new();
+    json_object_set_int_member(tm, "frame", (gint64)p->frame);
+    json_object_set_int_member(tm, "frame_ticks", (gint64)p->frame_ticks);
+    json_object_set_int_member(tm, "total_cycles", (gint64)p->total_cycles);
+    json_object_set_object_member(data, "time", tm);
+    _cpu_panel_core_to_json(data, &p->panel);
+    _cpu_panel_sections_to_json(data, &p->panel);
+    _observe_windows_to_json(data, wins, meta, n_win);
+    if (hash_sel) {
+        JsonObject *ho = json_object_new();
+        for (unsigned i = 0; i < G_N_ELEMENTS(s_observe_hash_parts); i++) {
+            if (!(hash_sel & (1u << i))) continue;
+            unsigned part = (unsigned)s_observe_hash_parts[i].part;
+            if (part < DBGAPI_OBSERVE_HASH_PARTS && p->hash_ok[part]) {
+                json_object_set_string_member(ho, s_observe_hash_parts[i].name, p->hash_hex[part]);
+            } else {
+                json_object_set_null_member(ho, s_observe_hash_parts[i].name);
+            }
+        }
+        json_object_set_object_member(data, "hashes", ho);
+    }
+    if (p->want_memory_map) _observe_memory_map_to_json(data, p);
+    rc = _ok_response(req_id, data, out_response);
+
+out:
+    g_free(msg);
+    g_free(bufs);
+    g_free(meta);
+    g_free(wins);
+    g_free(p);
+    return rc;
+}
+
+
+/**
+ * @brief Načte klíč bajtu (`kind`, `sub_id`, `offset`) z parametrů freeze_*.
+ * @return NULL OK, jinak statická chybová zpráva.
+ */
+static const char *_freeze_parse_key(JsonObject *obj, int *kind, int *sub_id, uint32_t *offset) {
+    int hk = _videorec_member(obj, "kind", G_TYPE_STRING);
+    int hs = _videorec_member(obj, "sub_id", G_TYPE_INT64);
+    int ho = _videorec_member(obj, "offset", G_TYPE_INT64);
+    if (hk <= 0 || hs < 0 || ho <= 0) {
+        return "Invalid parameters: kind (string from regions_list), offset (integer) and optional sub_id (integer) are required";
+    }
+    *kind = _region_kind_from_str(json_object_get_string_member(obj, "kind"));
+    if (*kind < 0) return "Invalid parameters: unknown region kind (see regions_list)";
+    gint64 s = hs ? json_object_get_int_member(obj, "sub_id") : 0;
+    gint64 o = json_object_get_int_member(obj, "offset");
+    if (s < 0 || s > G_MAXINT || o < 0 || o > 0xFFFFFFFFLL) {
+        return "Invalid parameters: sub_id and offset must not be negative";
+    }
+    *sub_id = (int)s;
+    *offset = (uint32_t)o;
+    return NULL;
+}
+
+/**
+ * @brief `freeze_add` handler - zafrozí bajt nebo souvislý úsek bajtů regionu.
+ *
+ * Parametry: `kind` (název z `regions_list`), `sub_id` (výchozí 0),
+ * `offset`, a buď `value` (0-255), nebo `bytes` (pole 1-64 hodnot 0-255
+ * od `offset`). Bajty se přepisují jednou za snímek emulace (Freeze
+ * Bytes, tabulka nejvýš 256 bajtů); existující záznam se jen aktualizuje.
+ * Region musí v sestavě existovat a být zapisovatelný.
+ *
+ * Odpověď `{added, frozen}` (frozen = počet zafrozených bajtů celkem).
+ */
+static en_MCP_DISPATCH_RESULT _handle_freeze_add(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    int kind, sub_id;
+    uint32_t offset;
+    const char *e = _freeze_parse_key(obj, &kind, &sub_id, &offset);
+    if (e) return _err_response(req_id, e, MCP_DISPATCH_INVALID_PARAMS, out_response);
+
+    uint8_t bytes[64];
+    guint n = 0;
+    int hv = _videorec_member(obj, "value", G_TYPE_INT64);
+    bool has_bytes = json_object_has_member(obj, "bytes")
+                     && !json_node_is_null(json_object_get_member(obj, "bytes"));
+    if (hv < 0 || (hv > 0) == has_bytes) {
+        return _err_response(req_id, "Invalid parameters: give either value (0-255) or bytes (array of 0-255)",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (hv > 0) {
+        gint64 v = json_object_get_int_member(obj, "value");
+        if (v < 0 || v > 255) {
+            return _err_response(req_id, "Invalid parameters: value must be 0-255",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        bytes[0] = (uint8_t)v;
+        n = 1;
+    } else {
+        JsonNode *bn = json_object_get_member(obj, "bytes");
+        if (json_node_get_node_type(bn) != JSON_NODE_ARRAY) {
+            return _err_response(req_id, "Invalid parameters: bytes must be an array",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        JsonArray *ba = json_node_get_array(bn);
+        n = json_array_get_length(ba);
+        if (n < 1 || n > G_N_ELEMENTS(bytes)) {
+            return _err_response(req_id, "Invalid parameters: bytes must have 1-64 items",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        for (guint i = 0; i < n; i++) {
+            JsonNode *it = json_array_get_element(ba, i);
+            if (json_node_get_node_type(it) != JSON_NODE_VALUE
+                || json_node_get_value_type(it) != G_TYPE_INT64
+                || json_node_get_int(it) < 0 || json_node_get_int(it) > 255) {
+                return _err_response(req_id, "Invalid parameters: bytes items must be integers 0-255",
+                                     MCP_DISPATCH_INVALID_PARAMS, out_response);
+            }
+            bytes[i] = (uint8_t)json_node_get_int(it);
+        }
+    }
+
+    int rcount = 0;
+    st_REGION_DESC *regs = _ms_regions(&rcount);
+    const st_REGION_DESC *r = regs ? _ms_find_region(regs, rcount, kind, sub_id) : NULL;
+    const char *re = NULL;
+    if (!r) re = "freeze_add: region not present in this configuration (see regions_list)";
+    else if (!r->writable) re = "freeze_add: region is read-only";
+    else if (offset >= r->size || n > r->size - offset) re = "freeze_add: offset outside the region";
+    g_free(regs);
+    if (re) return _err_response(req_id, re, MCP_DISPATCH_INVALID_PARAMS, out_response);
+
+    guint added = 0;
+    for (guint i = 0; i < n; i++) {
+        st_DBGAPI_FREEZE_PARAM p;
+        memset(&p, 0, sizeof(p));
+        p.region_kind = kind;
+        p.sub_id = sub_id;
+        p.offset = offset + i;
+        p.value = bytes[i];
+        if (!_submit_dbgapi(DBGAPI_CMD_FREEZE_ADD, &p, NULL)) break;
+        added++;
+    }
+    if (added < n) {
+        char msg[128];
+        g_snprintf(msg, sizeof(msg), "freeze_add: freeze table full (256 bytes) or emulator unavailable: %u of %u bytes frozen",
+                   added, n);
+        return _err_response(req_id, msg, MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    st_DBGAPI_FREEZE_LIST_PARAM *lp = g_new0(st_DBGAPI_FREEZE_LIST_PARAM, 1);
+    bool lok = _submit_dbgapi(DBGAPI_CMD_FREEZE_LIST, lp, NULL);
+    JsonObject *data = json_object_new();
+    json_object_set_int_member(data, "added", added);
+    json_object_set_int_member(data, "frozen", lok ? (gint64)lp->out_count : -1);
+    g_free(lp);
+    return _ok_response(req_id, data, out_response);
+}
+
+/**
+ * @brief `freeze_remove` handler - uvolní zafrozené bajty.
+ *
+ * Parametry: buď `all: true`, nebo `kind`, `sub_id` (výchozí 0), `offset`
+ * a `length` (výchozí 1, nejvýš 256). Odpověď `{removed}`.
+ */
+static en_MCP_DISPATCH_RESULT _handle_freeze_remove(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    int ha = _videorec_member(obj, "all", G_TYPE_BOOLEAN);
+    if (ha < 0) {
+        return _err_response(req_id, "Invalid parameters: all must be a boolean",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    guint removed = 0;
+    if (ha > 0 && json_object_get_boolean_member(obj, "all")) {
+        st_DBGAPI_FREEZE_LIST_PARAM *lp = g_new0(st_DBGAPI_FREEZE_LIST_PARAM, 1);
+        if (!_submit_dbgapi(DBGAPI_CMD_FREEZE_LIST, lp, NULL)) {
+            g_free(lp);
+            return _err_response(req_id, "freeze_remove: emulator unavailable",
+                                 MCP_DISPATCH_EMU_ERROR, out_response);
+        }
+        for (uint32_t i = 0; i < lp->out_count; i++) {
+            st_DBGAPI_FREEZE_PARAM p;
+            memset(&p, 0, sizeof(p));
+            p.region_kind = lp->items[i].region_kind;
+            p.sub_id = lp->items[i].sub_id;
+            p.offset = lp->items[i].offset;
+            if (_submit_dbgapi(DBGAPI_CMD_FREEZE_REMOVE, &p, NULL)) removed++;
+        }
+        g_free(lp);
+    } else {
+        int kind, sub_id;
+        uint32_t offset;
+        const char *e = _freeze_parse_key(obj, &kind, &sub_id, &offset);
+        if (e) return _err_response(req_id, e, MCP_DISPATCH_INVALID_PARAMS, out_response);
+        int hl = _videorec_member(obj, "length", G_TYPE_INT64);
+        gint64 len = (hl > 0) ? json_object_get_int_member(obj, "length") : 1;
+        if (hl < 0 || len < 1 || len > 256) {
+            return _err_response(req_id, "Invalid parameters: length must be 1-256",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        for (gint64 i = 0; i < len; i++) {
+            st_DBGAPI_FREEZE_PARAM p;
+            memset(&p, 0, sizeof(p));
+            p.region_kind = kind;
+            p.sub_id = sub_id;
+            p.offset = offset + (uint32_t)i;
+            if (_submit_dbgapi(DBGAPI_CMD_FREEZE_REMOVE, &p, NULL)) removed++;
+        }
+    }
+    JsonObject *data = json_object_new();
+    json_object_set_int_member(data, "removed", removed);
+    return _ok_response(req_id, data, out_response);
+}
+
+/**
+ * @brief `freeze_list` handler - zafrozené bajty.
+ *
+ * Bez parametrů. Odpověď `{count, max, entries: [{kind, sub_id, offset, value}]}`.
+ */
+static en_MCP_DISPATCH_RESULT _handle_freeze_list(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    st_DBGAPI_FREEZE_LIST_PARAM *lp = g_new0(st_DBGAPI_FREEZE_LIST_PARAM, 1);
+    if (!_submit_dbgapi(DBGAPI_CMD_FREEZE_LIST, lp, NULL)) {
+        g_free(lp);
+        return _err_response(req_id, "freeze_list: emulator unavailable",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    JsonObject *data = json_object_new();
+    JsonArray *arr = json_array_new();
+    for (uint32_t i = 0; i < lp->out_count; i++) {
+        JsonObject *o = json_object_new();
+        json_object_set_string_member(o, "kind", _region_kind_to_str(lp->items[i].region_kind));
+        json_object_set_int_member(o, "sub_id", lp->items[i].sub_id);
+        json_object_set_int_member(o, "offset", (gint64)lp->items[i].offset);
+        json_object_set_int_member(o, "value", lp->items[i].value);
+        json_array_add_object_element(arr, o);
+    }
+    json_object_set_array_member(data, "entries", arr);
+    json_object_set_int_member(data, "count", (gint64)lp->out_count);
+    json_object_set_int_member(data, "max", (gint64)G_N_ELEMENTS(lp->items));
+    g_free(lp);
+    return _ok_response(req_id, data, out_response);
+}
+
+
+/** @brief Nejvyšší počet současně otevřených sezení memsearch přes MCP. */
+#define MCP_MEMSEARCH_MAX_SESSIONS 8
+
+/** @brief Výchozí a nejvyšší počet položek jedné stránky memsearch_list. */
+#define MCP_MEMSEARCH_LIST_DEFAULT 100
+#define MCP_MEMSEARCH_LIST_MAX     1000
+
+/**
+ * @brief Slot sezení memsearch otevřeného přes MCP.
+ *
+ * @invariant id > 0 právě když sess != NULL.
+ */
+typedef struct st_MCP_MEMSEARCH_SLOT {
+    int                   id;    /**< ID sezení pro klienta (0 = volný slot). */
+    st_MEMSEARCH_SESSION *sess;  /**< Sezení (vlastní slot). */
+} st_MCP_MEMSEARCH_SLOT;
+
+/**
+ * @brief Sezení memsearch otevřená přes MCP (oddělená od okna GUI).
+ *
+ * Chráněno s_ms_lock po celou dobu handleru (sezení nemá vlastní zámek,
+ * MCP TCP může obsluhovat více klientů). Statický GMutex nepotřebuje init.
+ */
+static st_MCP_MEMSEARCH_SLOT s_ms_slots[MCP_MEMSEARCH_MAX_SESSIONS];
+static int    s_ms_next_id = 1;
+static GMutex s_ms_lock;
+
+/**
+ * @brief Najde sezení podle ID z parametru `session_id`.
+ * @pre Drží s_ms_lock.
+ * @return Slot, nebo NULL.
+ */
+static st_MCP_MEMSEARCH_SLOT *_ms_slot(JsonObject *obj) {
+    if (_videorec_member(obj, "session_id", G_TYPE_INT64) <= 0) return NULL;
+    gint64 id = json_object_get_int_member(obj, "session_id");
+    for (int i = 0; i < MCP_MEMSEARCH_MAX_SESSIONS; i++) {
+        if (s_ms_slots[i].sess && s_ms_slots[i].id == id) return &s_ms_slots[i];
+    }
+    return NULL;
+}
+
+/**
+ * @brief Uvolní všechna sezení memsearch (konec MCP dispatch).
+ */
+static void _ms_close_all(void) {
+    g_mutex_lock(&s_ms_lock);
+    for (int i = 0; i < MCP_MEMSEARCH_MAX_SESSIONS; i++) {
+        memsearch_session_free(s_ms_slots[i].sess);
+        s_ms_slots[i].sess = NULL;
+        s_ms_slots[i].id = 0;
+    }
+    g_mutex_unlock(&s_ms_lock);
+}
+
+/**
+ * @brief Pořídí nový vzorek prostoru sezení (DBGAPI_CMD_MEMSEARCH_SAMPLE).
+ * @return Vzorek s refcount 1 (uvolnit memsearch_sample_unref), NULL = chyba.
+ */
+static st_MEMSEARCH_SAMPLE *_ms_take_sample(st_MEMSEARCH_SESSION *s) {
+    st_MEMSEARCH_SAMPLE *smp = memsearch_sample_new(memsearch_space_size(s),
+                                                    memsearch_span_count(s));
+    if (!smp) return NULL;
+    st_DBGAPI_MEMSEARCH_SAMPLE_PARAM p;
+    p.spans = memsearch_span(s, 0);   /* spany sezení jsou souvislé pole */
+    p.span_count = memsearch_span_count(s);
+    p.sample = smp;
+    if (!_submit_dbgapi(DBGAPI_CMD_MEMSEARCH_SAMPLE, &p, NULL)) {
+        memsearch_sample_unref(smp);
+        return NULL;
+    }
+    return smp;
+}
+
+/** @brief Společná pole stavu sezení do odpovědi. */
+static void _ms_state_json(JsonObject *o, const st_MEMSEARCH_SESSION *s) {
+    json_object_set_int_member(o, "candidates", (gint64)memsearch_candidate_count(s));
+    json_object_set_int_member(o, "step", memsearch_step(s));
+    json_object_set_int_member(o, "sample_frame", (gint64)memsearch_sample_frame(s));
+    json_object_set_int_member(o, "undo_depth", memsearch_undo_depth(s));
+    json_object_set_int_member(o, "redo_depth", memsearch_redo_depth(s));
+}
+
+/**
+ * @brief Načte formát hodnoty z parametrů memsearch_start.
+ *
+ * `type` (u8 výchozí, s8, u16, s16, u24, s24, u32, s32, bcd, digits),
+ * `width` (bcd 1-4, výchozí 2; digits 1-8, výchozí 4), `endian` ("le"
+ * výchozí u čísel a BCD, "be" výchozí u číslic = pořadí tisku),
+ * `aligned`, `digit_encoding` (raw, ascii, display výchozí),
+ * `leading_space` (výchozí true).
+ *
+ * @return NULL OK, jinak statická chybová zpráva.
+ */
+static const char *_ms_parse_fmt(JsonObject *obj, st_MEMSEARCH_FMT *f) {
+    memset(f, 0, sizeof(*f));
+    int ht = _videorec_member(obj, "type", G_TYPE_STRING);
+    int hw = _videorec_member(obj, "width", G_TYPE_INT64);
+    int he = _videorec_member(obj, "endian", G_TYPE_STRING);
+    int ha = _videorec_member(obj, "aligned", G_TYPE_BOOLEAN);
+    int hd = _videorec_member(obj, "digit_encoding", G_TYPE_STRING);
+    int hl = _videorec_member(obj, "leading_space", G_TYPE_BOOLEAN);
+    if (ht < 0 || hw < 0 || he < 0 || ha < 0 || hd < 0 || hl < 0) {
+        return "Invalid parameters: type, endian, digit_encoding must be strings, width an integer, aligned and leading_space booleans";
+    }
+    unsigned width = 1;
+    f->type = MEMSEARCH_TYPE_UINT;
+    if (ht && !memsearch_type_from_name(json_object_get_string_member(obj, "type"), &f->type, &width)) {
+        return "Invalid parameters: type must be u8, s8, u16, s16, u24, s24, u32, s32, bcd or digits";
+    }
+    if (f->type == MEMSEARCH_TYPE_BCD || f->type == MEMSEARCH_TYPE_DIGITS) {
+        width = (f->type == MEMSEARCH_TYPE_BCD) ? 2 : 4;
+        if (hw) {
+            gint64 w = json_object_get_int_member(obj, "width");
+            width = (w < 0 || w > 64) ? 0 : (unsigned)w;
+        }
+    } else if (hw) {
+        return "Invalid parameters: width applies only to bcd and digits (the integer width is in the type name)";
+    }
+    f->width = width;
+    f->big_endian = (f->type == MEMSEARCH_TYPE_DIGITS);
+    if (he) {
+        const char *e = json_object_get_string_member(obj, "endian");
+        if (g_strcmp0(e, "le") == 0) f->big_endian = false;
+        else if (g_strcmp0(e, "be") == 0) f->big_endian = true;
+        else return "Invalid parameters: endian must be le or be";
+    }
+    f->aligned = ha ? json_object_get_boolean_member(obj, "aligned") : false;
+    f->digit_enc = MEMSEARCH_DIGITS_DISPLAY;
+    if (hd) {
+        int d = memsearch_digit_enc_from_name(json_object_get_string_member(obj, "digit_encoding"));
+        if (d < 0) return "Invalid parameters: digit_encoding must be raw, ascii or display";
+        f->digit_enc = (en_MEMSEARCH_DIGIT_ENC)d;
+    }
+    f->leading_space = hl ? json_object_get_boolean_member(obj, "leading_space") : true;
+    const char *err = NULL;
+    if (!memsearch_fmt_validate(f, &err)) return err;
+    return NULL;
+}
+
+/**
+ * @brief Načte filtr (`op`, `compare_to`, `value`, `value2`, `mask`, `negate`).
+ *
+ * Výchozí `compare_to`: "previous" u operací se vzorkem (inc, dec, ...),
+ * jinak "value", když je zadané `value`, jinak "previous".
+ *
+ * @param obj     Parametry.
+ * @param fmt     Formát sezení.
+ * @param[out] f  Filtr.
+ * @param[out] present false = `op` chybí (žádný filtr).
+ * @return NULL OK, jinak chybová zpráva (statická nebo z memsearch).
+ */
+static const char *_ms_parse_filter(JsonObject *obj, const st_MEMSEARCH_FMT *fmt,
+                                    st_MEMSEARCH_FILTER *f, bool *present) {
+    memset(f, 0, sizeof(*f));
+    *present = false;
+    int ho = _videorec_member(obj, "op", G_TYPE_STRING);
+    int hc = _videorec_member(obj, "compare_to", G_TYPE_STRING);
+    int hv = _videorec_member(obj, "value", G_TYPE_INT64);
+    int hv2 = _videorec_member(obj, "value2", G_TYPE_INT64);
+    int hm = _videorec_member(obj, "mask", G_TYPE_INT64);
+    int hn = _videorec_member(obj, "negate", G_TYPE_BOOLEAN);
+    if (ho < 0 || hc < 0 || hv < 0 || hv2 < 0 || hm < 0 || hn < 0) {
+        return "Invalid parameters: op and compare_to must be strings, value, value2 and mask integers, negate a boolean";
+    }
+    if (!ho) return NULL;
+    int op = memsearch_op_from_name(json_object_get_string_member(obj, "op"));
+    if (op < 0) {
+        return "Invalid parameters: op must be eq, ne, lt, le, gt, ge, between, inc, dec, inc_by, dec_by, changed, unchanged, changed_by or mask_eq";
+    }
+    f->op = (en_MEMSEARCH_OP)op;
+    f->value = hv ? json_object_get_int_member(obj, "value") : 0;
+    f->value2 = hv2 ? json_object_get_int_member(obj, "value2") : 0;
+    gint64 mask = hm ? json_object_get_int_member(obj, "mask") : 0xFFFFFFFFLL;
+    if (mask < 0 || mask > 0xFFFFFFFFLL) return "Invalid parameters: mask must be 0..FFFFFFFFh";
+    f->mask = (uint32_t)mask;
+    f->negate = hn ? json_object_get_boolean_member(obj, "negate") : false;
+    bool needs_ref = (f->op == MEMSEARCH_OP_INC || f->op == MEMSEARCH_OP_DEC
+                      || f->op == MEMSEARCH_OP_INC_BY || f->op == MEMSEARCH_OP_DEC_BY
+                      || f->op == MEMSEARCH_OP_CHANGED || f->op == MEMSEARCH_OP_UNCHANGED
+                      || f->op == MEMSEARCH_OP_CHANGED_BY);
+    f->compare_to = (!needs_ref && hv) ? MEMSEARCH_CMP_VALUE : MEMSEARCH_CMP_PREVIOUS;
+    if (f->op == MEMSEARCH_OP_BETWEEN) f->compare_to = MEMSEARCH_CMP_VALUE;
+    if (hc) {
+        int c = memsearch_cmp_from_name(json_object_get_string_member(obj, "compare_to"));
+        if (c < 0) return "Invalid parameters: compare_to must be value, previous or first";
+        f->compare_to = (en_MEMSEARCH_CMP)c;
+    }
+    if (f->compare_to == MEMSEARCH_CMP_VALUE && !hv) {
+        return "Invalid parameters: compare_to value needs value";
+    }
+    if (f->op == MEMSEARCH_OP_BETWEEN && !hv2) return "Invalid parameters: between needs value and value2";
+    const char *err = NULL;
+    if (!memsearch_filter_validate(f, fmt, &err)) return err;
+    *present = true;
+    return NULL;
+}
+
+/**
+ * @brief Sestaví spany z parametru `space` (název předvolby nebo pole).
+ *
+ * Pole: `[{kind, sub_id, offset, length}]`, `sub_id` a `offset` výchozí 0,
+ * `length` výchozí do konce regionu. Region musí v sestavě existovat.
+ *
+ * @param obj Parametry.
+ * @param regs, count Výčet regionů.
+ * @param[out] out Spany (alokuje se, uvolnit g_free).
+ * @param[out] n Počet spanů.
+ * @return NULL OK, jinak statická chybová zpráva.
+ */
+static const char *_ms_parse_space(JsonObject *obj, const st_REGION_DESC *regs, int count,
+                                   st_MEMSEARCH_SPAN **out, unsigned *n) {
+    *out = NULL;
+    *n = 0;
+    JsonNode *sn = (obj && json_object_has_member(obj, "space")) ? json_object_get_member(obj, "space") : NULL;
+    if (!sn || json_node_is_null(sn)
+        || (json_node_get_node_type(sn) == JSON_NODE_VALUE && json_node_get_value_type(sn) == G_TYPE_STRING)) {
+        const char *name = sn && !json_node_is_null(sn) ? json_node_get_string(sn) : "ram";
+        int p = memsearch_preset_from_name(name);
+        if (p < 0) return "Invalid parameters: space must be ram, logical, vram, memext, ramdisk, all_writable or an array of {kind, sub_id, offset, length}";
+        *out = g_new0(st_MEMSEARCH_SPAN, count > 0 ? count : 1);
+        *n = memsearch_spans_from_preset((en_MEMSEARCH_PRESET)p, regs, count, *out);
+        if (*n == 0) return "memsearch_start: the space preset has no connected region in this configuration";
+        return NULL;
+    }
+    if (json_node_get_node_type(sn) != JSON_NODE_ARRAY) return "Invalid parameters: space must be a preset name or an array";
+    JsonArray *a = json_node_get_array(sn);
+    guint len = json_array_get_length(a);
+    if (len < 1 || len > 1024) return "Invalid parameters: space array must have 1-1024 items";
+    *out = g_new0(st_MEMSEARCH_SPAN, len);
+    for (guint i = 0; i < len; i++) {
+        JsonNode *it = json_array_get_element(a, i);
+        if (json_node_get_node_type(it) != JSON_NODE_OBJECT) return "Invalid parameters: space items must be objects";
+        JsonObject *io = json_node_get_object(it);
+        int kind, sub_id;
+        uint32_t offset = 0;
+        if (_videorec_member(io, "offset", G_TYPE_INT64) <= 0) json_object_set_int_member(io, "offset", 0);
+        const char *e = _freeze_parse_key(io, &kind, &sub_id, &offset);
+        if (e) return e;
+        const st_REGION_DESC *r = _ms_find_region(regs, count, kind, sub_id);
+        if (!r) return "memsearch_start: a space region is not present in this configuration (see regions_list)";
+        if (offset >= r->size) return "memsearch_start: span offset outside the region";
+        int hl = _videorec_member(io, "length", G_TYPE_INT64);
+        gint64 l = (hl > 0) ? json_object_get_int_member(io, "length") : (gint64)(r->size - offset);
+        if (hl < 0 || l < 1 || l > (gint64)(r->size - offset)) return "memsearch_start: span length outside the region";
+        (*out)[i].region_kind = kind;
+        (*out)[i].sub_id = sub_id;
+        (*out)[i].offset = offset;
+        (*out)[i].length = (uint32_t)l;
+    }
+    *n = len;
+    return NULL;
+}
+
+/**
+ * @brief `memsearch_start` handler - založí sezení a pořídí první vzorek.
+ *
+ * Parametry: `space`, formát (`_ms_parse_fmt`), `allow_large` (strop
+ * prostoru 32 MiB místo 4 MiB) a volitelný první filtr (`op`, `value`, ...,
+ * jen proti hodnotě). Odpověď `{session_id, space_size, spans, candidates,
+ * step, sample_frame, undo_depth, redo_depth}`.
+ */
+static en_MCP_DISPATCH_RESULT _handle_memsearch_start(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    st_MEMSEARCH_FMT fmt;
+    const char *e = _ms_parse_fmt(obj, &fmt);
+    if (e) return _err_response(req_id, e, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    st_MEMSEARCH_FILTER f;
+    bool has_filter = false;
+    e = _ms_parse_filter(obj, &fmt, &f, &has_filter);
+    if (e) return _err_response(req_id, e, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    if (has_filter && f.compare_to != MEMSEARCH_CMP_VALUE) {
+        return _err_response(req_id, "Invalid parameters: the first filter can only compare with a value",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    int hal = _videorec_member(obj, "allow_large", G_TYPE_BOOLEAN);
+    if (hal < 0) {
+        return _err_response(req_id, "Invalid parameters: allow_large must be a boolean",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    bool allow_large = hal ? json_object_get_boolean_member(obj, "allow_large") : false;
+
+    int rcount = 0;
+    st_REGION_DESC *regs = _ms_regions(&rcount);
+    if (!regs) {
+        return _err_response(req_id, "memsearch_start: region list unavailable",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    st_MEMSEARCH_SPAN *spans = NULL;
+    unsigned n = 0;
+    e = _ms_parse_space(obj, regs, rcount, &spans, &n);
+    g_free(regs);
+    if (e) {
+        g_free(spans);
+        return _err_response(req_id, e, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+
+    st_MEMSEARCH_SESSION *s = memsearch_session_new(spans, n, &fmt,
+        allow_large ? MEMSEARCH_HARD_MAX_SPACE : MEMSEARCH_DEFAULT_MAX_SPACE, &e);
+    g_free(spans);
+    if (!s) return _err_response(req_id, e ? e : "memsearch_start failed", MCP_DISPATCH_INVALID_PARAMS, out_response);
+
+    st_MEMSEARCH_SAMPLE *smp = _ms_take_sample(s);
+    if (!smp) {
+        memsearch_session_free(s);
+        return _err_response(req_id, "memsearch_start: memory sample failed (emulator unavailable)",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    bool ok = memsearch_start(s, smp, has_filter ? &f : NULL, &e);
+    if (!ok) {
+        memsearch_sample_unref(smp);
+        memsearch_session_free(s);
+        return _err_response(req_id, e ? e : "memsearch_start failed", MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+
+    g_mutex_lock(&s_ms_lock);
+    st_MCP_MEMSEARCH_SLOT *slot = NULL;
+    for (int i = 0; i < MCP_MEMSEARCH_MAX_SESSIONS && !slot; i++) {
+        if (!s_ms_slots[i].sess) slot = &s_ms_slots[i];
+    }
+    if (!slot) {
+        g_mutex_unlock(&s_ms_lock);
+        memsearch_sample_unref(smp);
+        memsearch_session_free(s);
+        return _err_response(req_id, "memsearch_start: too many open sessions (8), close one with memsearch_close",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    slot->sess = s;
+    slot->id = s_ms_next_id++;
+
+    JsonObject *data = json_object_new();
+    json_object_set_int_member(data, "session_id", slot->id);
+    json_object_set_int_member(data, "space_size", (gint64)memsearch_space_size(s));
+    JsonArray *sa = json_array_new();
+    for (unsigned i = 0; i < memsearch_span_count(s); i++) {
+        const st_MEMSEARCH_SPAN *sp = memsearch_span(s, i);
+        JsonObject *so = json_object_new();
+        json_object_set_string_member(so, "kind", _region_kind_to_str(sp->region_kind));
+        json_object_set_int_member(so, "sub_id", sp->sub_id);
+        json_object_set_int_member(so, "offset", (gint64)sp->offset);
+        json_object_set_int_member(so, "length", (gint64)sp->length);
+        json_object_set_boolean_member(so, "connected", smp->span_connected[i] != 0);
+        json_array_add_object_element(sa, so);
+    }
+    json_object_set_array_member(data, "spans", sa);
+    _ms_state_json(data, s);
+    g_mutex_unlock(&s_ms_lock);
+    memsearch_sample_unref(smp);
+    return _ok_response(req_id, data, out_response);
+}
+
+/** @brief Chyba "neznámé sezení". */
+static en_MCP_DISPATCH_RESULT _ms_err_session(int64_t req_id, char **out_response) {
+    return _err_response(req_id, "unknown memsearch session_id (start one with memsearch_start)",
+                         MCP_DISPATCH_INVALID_PARAMS, out_response);
+}
+
+/**
+ * @brief `memsearch_filter` handler - zúží kandidáty.
+ *
+ * Parametry: `session_id`, filtr (`_ms_parse_filter`, `op` povinný) a
+ * `sample` (výchozí true = nejdřív nový vzorek; false = porovná poslední
+ * vzorek s předchozím). Odpověď `{removed, candidates, step, ...}`.
+ */
+static en_MCP_DISPATCH_RESULT _handle_memsearch_filter(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    int hs = _videorec_member(obj, "sample", G_TYPE_BOOLEAN);
+    if (hs < 0) {
+        return _err_response(req_id, "Invalid parameters: sample must be a boolean",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    bool take = hs ? json_object_get_boolean_member(obj, "sample") : true;
+
+    g_mutex_lock(&s_ms_lock);
+    st_MCP_MEMSEARCH_SLOT *slot = _ms_slot(obj);
+    if (!slot) {
+        g_mutex_unlock(&s_ms_lock);
+        return _ms_err_session(req_id, out_response);
+    }
+    st_MEMSEARCH_FILTER f;
+    bool present = false;
+    const char *e = _ms_parse_filter(obj, memsearch_fmt(slot->sess), &f, &present);
+    if (!e && !present) e = "Invalid parameters: op is required";
+    if (e) {
+        g_mutex_unlock(&s_ms_lock);
+        return _err_response(req_id, e, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    st_MEMSEARCH_SAMPLE *smp = NULL;
+    if (take) {
+        smp = _ms_take_sample(slot->sess);
+        if (!smp) {
+            g_mutex_unlock(&s_ms_lock);
+            return _err_response(req_id, "memsearch_filter: memory sample failed (emulator unavailable)",
+                                 MCP_DISPATCH_EMU_ERROR, out_response);
+        }
+    }
+    uint64_t removed = 0;
+    bool ok = memsearch_filter(slot->sess, smp, &f, &removed, &e);
+    memsearch_sample_unref(smp);
+    if (!ok) {
+        g_mutex_unlock(&s_ms_lock);
+        return _err_response(req_id, e ? e : "memsearch_filter failed", MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    JsonObject *data = json_object_new();
+    json_object_set_int_member(data, "removed", (gint64)removed);
+    _ms_state_json(data, slot->sess);
+    g_mutex_unlock(&s_ms_lock);
+    return _ok_response(req_id, data, out_response);
+}
+
+/**
+ * @brief `memsearch_sample` handler - nový vzorek bez filtrace.
+ *
+ * Parametr `session_id`. Předchozí vzorek se stane referencí pro další
+ * filtr s `sample: false`. Odpověď stav sezení.
+ */
+static en_MCP_DISPATCH_RESULT _handle_memsearch_sample(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    g_mutex_lock(&s_ms_lock);
+    st_MCP_MEMSEARCH_SLOT *slot = _ms_slot(obj);
+    if (!slot) {
+        g_mutex_unlock(&s_ms_lock);
+        return _ms_err_session(req_id, out_response);
+    }
+    st_MEMSEARCH_SAMPLE *smp = _ms_take_sample(slot->sess);
+    const char *e = smp ? NULL : "memsearch_sample: memory sample failed (emulator unavailable)";
+    if (smp && !memsearch_sample(slot->sess, smp, &e) && !e) e = "memsearch_sample failed";
+    memsearch_sample_unref(smp);
+    if (e) {
+        g_mutex_unlock(&s_ms_lock);
+        return _err_response(req_id, e, MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    JsonObject *data = json_object_new();
+    _ms_state_json(data, slot->sess);
+    g_mutex_unlock(&s_ms_lock);
+    return _ok_response(req_id, data, out_response);
+}
+
+/**
+ * @brief Společné tělo memsearch_undo / memsearch_redo.
+ * @param redo false = undo, true = redo.
+ */
+static en_MCP_DISPATCH_RESULT _ms_undo_redo(const st_JSONL_MESSAGE *req, char **out_response, bool redo) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    g_mutex_lock(&s_ms_lock);
+    st_MCP_MEMSEARCH_SLOT *slot = _ms_slot(obj);
+    if (!slot) {
+        g_mutex_unlock(&s_ms_lock);
+        return _ms_err_session(req_id, out_response);
+    }
+    bool ok = redo ? memsearch_redo(slot->sess) : memsearch_undo(slot->sess);
+    if (!ok) {
+        g_mutex_unlock(&s_ms_lock);
+        return _err_response(req_id, redo ? "nothing to redo" : "nothing to undo",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    JsonObject *data = json_object_new();
+    json_object_set_boolean_member(data, "started", memsearch_started(slot->sess));
+    _ms_state_json(data, slot->sess);
+    g_mutex_unlock(&s_ms_lock);
+    return _ok_response(req_id, data, out_response);
+}
+
+/** @brief `memsearch_undo` handler - vrátí poslední krok (kandidáty i referenční vzorky). */
+static en_MCP_DISPATCH_RESULT _handle_memsearch_undo(const st_JSONL_MESSAGE *req, char **out_response) {
+    return _ms_undo_redo(req, out_response, false);
+}
+
+/** @brief `memsearch_redo` handler - znovu provede vrácený krok. */
+static en_MCP_DISPATCH_RESULT _handle_memsearch_redo(const st_JSONL_MESSAGE *req, char **out_response) {
+    return _ms_undo_redo(req, out_response, true);
+}
+
+/** @brief Hodnota kandidáta do JSON (číslo, nebo null u neplatné hodnoty). */
+static void _ms_set_value(JsonObject *o, const char *key, const st_MEMSEARCH_VALUE *v) {
+    if (v->valid) json_object_set_int_member(o, key, v->value);
+    else json_object_set_null_member(o, key);
+}
+
+/**
+ * @brief Adresa Z80 a parametry write breakpointu pro kandidáta.
+ *
+ * Převod dělá memsearch_target() (stejný jako v okně Memory Search).
+ * `bp_hint` = parametry pro emu_bp_create_with_init (MEM_W, zóna, u PEHU
+ * bank_id + bp_addr_space bank_offset, u šířky > 1 rozsah), null = buňku
+ * write breakpoint nezachytí.
+ *
+ * @param o     Položka výpisu.
+ * @param it    Kandidát.
+ * @param width Šířka hodnoty.
+ * @param mi    Stav MemExt (NULL = nezjištěn).
+ */
+static void _ms_set_addr_hint(JsonObject *o, const st_MEMSEARCH_ITEM *it, unsigned width,
+                              const st_DBGAPI_MEMEXT_INFO_PARAM *mi) {
+    st_MEMSEARCH_MEMEXT mx;
+    memset(&mx, 0, sizeof(mx));
+    if (mi) {
+        mx.connected = mi->connected != 0;
+        mx.pehu = strcmp(mi->type, "pehu") == 0;
+        mx.map_valid = mi->map_available != 0;
+        memcpy(mx.map, mi->current_map, sizeof(mx.map));
+    }
+    st_MEMSEARCH_TARGET t;
+    (void)memsearch_target(it->region_kind, it->sub_id, it->region_offset, width,
+                           mi ? &mx : NULL, &t);
+    if (t.has_z80) json_object_set_int_member(o, "z80_addr", t.z80_addr);
+    else json_object_set_null_member(o, "z80_addr");
+    if (t.bp_zone == MEMSEARCH_BPZONE_NONE) {
+        json_object_set_null_member(o, "bp_hint");
+        return;
+    }
+    JsonObject *h = json_object_new();
+    JsonArray *fa = json_array_new();
+    JsonObject *va = json_object_new();
+    json_object_set_int_member(h, "addr", t.bp_addr);
+    json_array_add_string_element(fa, "type");
+    json_object_set_string_member(va, "type", "MEM_W");
+    json_array_add_string_element(fa, "zone");
+    json_object_set_string_member(va, "zone", memsearch_bpzone_name(t.bp_zone));
+    if (t.bp_bank >= 0) {
+        json_array_add_string_element(fa, "bank_id");
+        json_object_set_int_member(va, "bank_id", t.bp_bank);
+        json_array_add_string_element(fa, "bp_addr_space");
+        json_object_set_string_member(va, "bp_addr_space", "bank_offset");
+    }
+    if (width > 1) {
+        json_array_add_string_element(fa, "addr_end");
+        json_object_set_int_member(va, "addr_end", t.bp_addr_end);
+        json_array_add_string_element(fa, "addr_match_mode");
+        json_object_set_string_member(va, "addr_match_mode", "RANGE");
+    }
+    json_object_set_array_member(h, "fields", fa);
+    json_object_set_object_member(h, "values", va);
+    json_object_set_object_member(o, "bp_hint", h);
+}
+
+/**
+ * @brief `memsearch_list` handler - stránka kandidátů.
+ *
+ * Parametry: `session_id`, `offset` (pořadí prvního kandidáta, výchozí 0),
+ * `limit` (výchozí 100, nejvýš 1000). Položka: `index`, `space_offset`,
+ * `kind`, `sub_id`, `region_offset`, `connected`, `cur`, `prev`, `first`
+ * (čísla, null u neplatné hodnoty), `cur_hex` (bajty v pořadí adres),
+ * `z80_addr` a `bp_hint` (parametry pro emu_bp_create_with_init, nebo null).
+ */
+static en_MCP_DISPATCH_RESULT _handle_memsearch_list(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    int ho = _videorec_member(obj, "offset", G_TYPE_INT64);
+    int hl = _videorec_member(obj, "limit", G_TYPE_INT64);
+    gint64 off = ho > 0 ? json_object_get_int_member(obj, "offset") : 0;
+    gint64 lim = hl > 0 ? json_object_get_int_member(obj, "limit") : MCP_MEMSEARCH_LIST_DEFAULT;
+    if (ho < 0 || hl < 0 || off < 0 || lim < 1 || lim > MCP_MEMSEARCH_LIST_MAX) {
+        return _err_response(req_id, "Invalid parameters: offset >= 0, limit 1-1000",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    st_DBGAPI_MEMEXT_INFO_PARAM mi;
+    memset(&mi, 0, sizeof(mi));
+    bool have_mi = false;
+
+    g_mutex_lock(&s_ms_lock);
+    st_MCP_MEMSEARCH_SLOT *slot = _ms_slot(obj);
+    if (!slot) {
+        g_mutex_unlock(&s_ms_lock);
+        return _ms_err_session(req_id, out_response);
+    }
+    st_MEMSEARCH_SESSION *s = slot->sess;
+    for (unsigned i = 0; i < memsearch_span_count(s) && !have_mi; i++) {
+        if (memsearch_span(s, i)->region_kind == REGION_KIND_MEMEXT_RAM) {
+            have_mi = _submit_dbgapi(DBGAPI_CMD_GET_MEMEXT_INFO, &mi, NULL);
+            break;
+        }
+    }
+    unsigned width = memsearch_fmt(s)->width;
+    uint64_t total = memsearch_candidate_count(s);
+    JsonObject *data = json_object_new();
+    JsonArray *arr = json_array_new();
+    for (uint64_t n = (uint64_t)off; n < total && n < (uint64_t)(off + lim); n++) {
+        uint32_t so = 0;
+        st_MEMSEARCH_ITEM it;
+        if (!memsearch_nth_candidate(s, n, &so) || !memsearch_item(s, so, &it)) break;
+        JsonObject *o = json_object_new();
+        json_object_set_int_member(o, "index", (gint64)n);
+        json_object_set_int_member(o, "space_offset", (gint64)so);
+        json_object_set_string_member(o, "kind", _region_kind_to_str(it.region_kind));
+        json_object_set_int_member(o, "sub_id", it.sub_id);
+        json_object_set_int_member(o, "region_offset", (gint64)it.region_offset);
+        json_object_set_boolean_member(o, "connected", it.connected);
+        _ms_set_value(o, "cur", &it.cur);
+        _ms_set_value(o, "prev", &it.prev);
+        _ms_set_value(o, "first", &it.first);
+        char hex[2 * MEMSEARCH_MAX_WIDTH + 1];
+        for (unsigned b = 0; b < width; b++) g_snprintf(&hex[2 * b], 3, "%02X", it.cur.raw[b]);
+        hex[2 * width] = '\0';
+        json_object_set_string_member(o, "cur_hex", hex);
+        _ms_set_addr_hint(o, &it, width, have_mi ? &mi : NULL);
+        json_array_add_object_element(arr, o);
+    }
+    json_object_set_array_member(data, "items", arr);
+    json_object_set_int_member(data, "total", (gint64)total);
+    json_object_set_int_member(data, "offset", off);
+    _ms_state_json(data, s);
+    g_mutex_unlock(&s_ms_lock);
+    return _ok_response(req_id, data, out_response);
+}
+
+/**
+ * @brief `memsearch_eliminate` handler - ručně vyřadí kandidáty.
+ *
+ * Parametry: `session_id`, `space_offsets` (pole hodnot `space_offset`
+ * z memsearch_list, nejvýš 1000). Odpověď `{removed, candidates, ...}`.
+ */
+static en_MCP_DISPATCH_RESULT _handle_memsearch_eliminate(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    JsonNode *an = (obj && json_object_has_member(obj, "space_offsets"))
+                   ? json_object_get_member(obj, "space_offsets") : NULL;
+    if (!an || json_node_get_node_type(an) != JSON_NODE_ARRAY) {
+        return _err_response(req_id, "Invalid parameters: space_offsets must be an array of integers",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    JsonArray *a = json_node_get_array(an);
+    guint n = json_array_get_length(a);
+    if (n > MCP_MEMSEARCH_LIST_MAX) {
+        return _err_response(req_id, "Invalid parameters: at most 1000 space_offsets",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    uint32_t *offs = g_new0(uint32_t, n ? n : 1);
+    for (guint i = 0; i < n; i++) {
+        JsonNode *it = json_array_get_element(a, i);
+        if (json_node_get_node_type(it) != JSON_NODE_VALUE
+            || json_node_get_value_type(it) != G_TYPE_INT64
+            || json_node_get_int(it) < 0 || json_node_get_int(it) > 0xFFFFFFFFLL) {
+            g_free(offs);
+            return _err_response(req_id, "Invalid parameters: space_offsets items must be non-negative integers",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        offs[i] = (uint32_t)json_node_get_int(it);
+    }
+    g_mutex_lock(&s_ms_lock);
+    st_MCP_MEMSEARCH_SLOT *slot = _ms_slot(obj);
+    if (!slot) {
+        g_mutex_unlock(&s_ms_lock);
+        g_free(offs);
+        return _ms_err_session(req_id, out_response);
+    }
+    uint64_t removed = memsearch_eliminate(slot->sess, offs, n);
+    g_free(offs);
+    JsonObject *data = json_object_new();
+    json_object_set_int_member(data, "removed", (gint64)removed);
+    _ms_state_json(data, slot->sess);
+    g_mutex_unlock(&s_ms_lock);
+    return _ok_response(req_id, data, out_response);
+}
+
+/**
+ * @brief `memsearch_close` handler - zavře sezení a uvolní jeho paměť.
+ *
+ * Parametr `session_id`. Odpověď `{closed: true}`.
+ */
+static en_MCP_DISPATCH_RESULT _handle_memsearch_close(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    g_mutex_lock(&s_ms_lock);
+    st_MCP_MEMSEARCH_SLOT *slot = _ms_slot(obj);
+    if (!slot) {
+        g_mutex_unlock(&s_ms_lock);
+        return _ms_err_session(req_id, out_response);
+    }
+    memsearch_session_free(slot->sess);
+    slot->sess = NULL;
+    slot->id = 0;
+    g_mutex_unlock(&s_ms_lock);
+    JsonObject *data = json_object_new();
+    json_object_set_boolean_member(data, "closed", TRUE);
+    return _ok_response(req_id, data, out_response);
+}
+
+
+
+
+/* ============================================================================
+ * Záznam a přehrání vstupů (replay.h)
+ * ============================================================================ */
+
+/** @brief Nejdelší čekání na vyřízení požadavku záznamu (ms). */
+#define MCP_REPLAY_REQUEST_TIMEOUT_MS 10000
+
+
+/**
+ * @brief Stav záznamu / přehrávání jako JSON objekt.
+ *
+ * Členy: `mode`, `frame`, `frames`, `events`, `hashes`, `hash_interval`,
+ * `warnings`, `deviated`, `deviation`, `path`, `outcome`, `outcome_frame`,
+ * `outcome_message`, `desync_parts` (pole jmen částí), `rerecord_count`,
+ * `seeking`, `seek_target` a objekt `checkpoints` (`interval`, `capacity`,
+ * `count`, `first_frame`, `last_frame`, `bytes`; snímky jen při `count` > 0).
+ */
+static JsonObject *_replay_status_to_json(const st_REPLAY_STATUS *st) {
+    JsonObject *o = json_object_new();
+    json_object_set_string_member(o, "mode", replay_mode_name(st->mode));
+    json_object_set_int_member(o, "frame", (gint64)st->frame);
+    json_object_set_int_member(o, "frames", (gint64)st->frames);
+    json_object_set_int_member(o, "events", (gint64)st->events);
+    json_object_set_int_member(o, "hashes", (gint64)st->hashes);
+    json_object_set_int_member(o, "hash_interval", (gint64)st->hash_interval);
+    json_object_set_int_member(o, "warnings", (gint64)st->warnings);
+    json_object_set_boolean_member(o, "deviated", st->deviated ? TRUE : FALSE);
+    json_object_set_string_member(o, "deviation", st->deviation);
+    json_object_set_string_member(o, "path", st->path);
+    json_object_set_string_member(o, "outcome", replay_outcome_name(st->outcome));
+    json_object_set_int_member(o, "outcome_frame", (gint64)st->outcome_frame);
+    json_object_set_string_member(o, "outcome_message", st->outcome_message);
+    JsonArray *parts = json_array_new();
+    if (st->desync_parts[0]) {
+        char **v = g_strsplit(st->desync_parts, ",", -1);
+        for (int i = 0; v[i]; i++) json_array_add_string_element(parts, v[i]);
+        g_strfreev(v);
+    }
+    json_object_set_array_member(o, "desync_parts", parts);
+    json_object_set_int_member(o, "rerecord_count", (gint64)st->rerecord_count);
+    json_object_set_boolean_member(o, "seeking", st->seeking ? TRUE : FALSE);
+    json_object_set_int_member(o, "seek_target", (gint64)st->seek_target);
+    JsonObject *ck = json_object_new();
+    json_object_set_int_member(ck, "interval", (gint64)st->checkpoint_interval);
+    json_object_set_int_member(ck, "capacity", (gint64)st->checkpoint_capacity);
+    json_object_set_int_member(ck, "count", (gint64)st->checkpoints);
+    if (st->checkpoints) {
+        json_object_set_int_member(ck, "first_frame", (gint64)st->checkpoint_first);
+        json_object_set_int_member(ck, "last_frame", (gint64)st->checkpoint_last);
+    }
+    json_object_set_int_member(ck, "bytes", (gint64)st->checkpoint_bytes);
+    json_object_set_object_member(o, "checkpoints", ck);
+    return o;
+}
+
+
+/**
+ * @brief Počká na vyřízení požadavku a vrátí odpověď (stav) nebo chybu.
+ *
+ * Chyba požadavku (`request_ok` false) = EMU_ERROR s textem z emu vlákna;
+ * nevyřízení do MCP_REPLAY_REQUEST_TIMEOUT_MS = EMU_ERROR "not processed".
+ */
+static en_MCP_DISPATCH_RESULT _replay_finish_request(int64_t req_id, uint32_t seq,
+                                                     char **out_response) {
+    if (!replay_wait_request(seq, MCP_REPLAY_REQUEST_TIMEOUT_MS)) {
+        return _err_response(req_id, "replay request was not processed in time",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    st_REPLAY_STATUS st;
+    replay_get_status(&st);
+    if (!st.request_ok) {
+        return _err_response(req_id, st.request_message[0] ? st.request_message : "replay request failed",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    return _ok_response(req_id, _replay_status_to_json(&st), out_response);
+}
+
+
+/** @brief Datový objekt požadavku nebo NULL. */
+static JsonObject *_replay_data_obj(const st_JSONL_MESSAGE *req) {
+    JsonNode *data_node = (JsonNode *)jsonl_msg_get_data_node(req);
+    return (data_node && json_node_get_node_type(data_node) == JSON_NODE_OBJECT)
+           ? json_node_get_object(data_node) : NULL;
+}
+
+
+/**
+ * @brief Volitelný bool parametr.
+ * @return true = v pořádku (chybí -> @p def); false = parametr není bool.
+ */
+static bool _replay_obj_bool(JsonObject *obj, const char *key, bool def, bool *out) {
+    *out = def;
+    if (!obj || !json_object_has_member(obj, key)) return true;
+    JsonNode *n = json_object_get_member(obj, key);
+    if (!n || json_node_get_node_type(n) != JSON_NODE_VALUE
+        || json_node_get_value_type(n) != G_TYPE_BOOLEAN) return false;
+    *out = json_node_get_boolean(n) ? true : false;
+    return true;
+}
+
+
+/**
+ * @brief Volitelné parametry checkpointů `checkpoint_interval` a `checkpoint_count`.
+ *
+ * @param[out] cfg Chybějící parametr = -1 (z INI).
+ * @param[out] err Text chyby při neplatné hodnotě.
+ * @return true = v pořádku; false = hodnota mimo rozsah (interval 0..100000,
+ *         počet 1..REPLAY_CKPT_MAX_COUNT).
+ */
+static bool _replay_ckpt_params(JsonObject *obj, st_REPLAY_CKPT_CFG *cfg, const char **err) {
+    cfg->interval = -1;
+    cfg->count = -1;
+    if (obj && json_object_has_member(obj, "checkpoint_interval")) {
+        gint64 v = _obj_int_or(obj, "checkpoint_interval", -1);
+        if (v < 0 || v > 100000) {
+            *err = "checkpoint_interval must be in range 0..100000 (0 = no checkpoints)";
+            return false;
+        }
+        cfg->interval = (int)v;
+    }
+    if (obj && json_object_has_member(obj, "checkpoint_count")) {
+        gint64 v = _obj_int_or(obj, "checkpoint_count", -1);
+        if (v < 1 || v > REPLAY_CKPT_MAX_COUNT) {
+            *err = "checkpoint_count must be in range 1..1000";
+            return false;
+        }
+        cfg->count = (int)v;
+    }
+    return true;
+}
+
+
+/**
+ * @brief `replay_record_start` handler - start záznamu vstupů do souboru.
+ *
+ * Parametry: `path` (string, povinný, `.mzr`), `hash_interval` (int
+ * 1..100000, default 50 snímků), `description` (string),
+ * `checkpoint_interval` (0..100000 snímků, 0 = bez checkpointů, default
+ * z INI = 250), `checkpoint_count` (1..1000, default z INI = 60). Za běhu
+ * se emulace na nejbližší hranici snímku pozastaví, záznam začne a
+ * emulace běží dál; v pauze zůstane v pauze. Response: stav (viz
+ * replay_status).
+ */
+static en_MCP_DISPATCH_RESULT _handle_replay_record_start(const st_JSONL_MESSAGE *req,
+                                                          char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _replay_data_obj(req);
+    char *path = _obj_str_dup(obj, "path");
+    if (!path || !path[0]) {
+        g_free(path);
+        return _err_response(req_id, "path is required", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    gint64 interval = _obj_int_or(obj, "hash_interval", 0);
+    if (obj && json_object_has_member(obj, "hash_interval") && (interval < 1 || interval > 100000)) {
+        g_free(path);
+        return _err_response(req_id, "hash_interval must be in range 1..100000",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    st_REPLAY_CKPT_CFG ckpt;
+    const char *perr = NULL;
+    if (!_replay_ckpt_params(obj, &ckpt, &perr)) {
+        g_free(path);
+        return _err_response(req_id, perr, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    char *desc = _obj_str_dup(obj, "description");
+    uint32_t seq = replay_request_record_ex(path, (uint32_t)interval, desc, &ckpt);
+    g_free(path);
+    g_free(desc);
+    return _replay_finish_request(req_id, seq, out_response);
+}
+
+
+/**
+ * @brief Společná obsluha `replay_record_stop` a `replay_play_stop`.
+ * @param want Režim, který má běžet; jinak chyba bez požadavku.
+ */
+static en_MCP_DISPATCH_RESULT _replay_stop(const st_JSONL_MESSAGE *req, en_REPLAY_MODE want,
+                                           char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    st_REPLAY_STATUS st;
+    replay_get_status(&st);
+    if (st.mode != want) {
+        return _err_response(req_id, want == REPLAY_MODE_RECORDING ? "no recording is running"
+                                                                   : "no playback is running",
+                             MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    return _replay_finish_request(req_id, replay_request_stop(), out_response);
+}
+
+
+/**
+ * @brief `replay_record_stop` handler - konec záznamu a uložení souboru.
+ *
+ * Response: stav s `outcome` = `recorded` (nebo chyba uložení).
+ */
+static en_MCP_DISPATCH_RESULT _handle_replay_record_stop(const st_JSONL_MESSAGE *req,
+                                                         char **out_response) {
+    return _replay_stop(req, REPLAY_MODE_RECORDING, out_response);
+}
+
+
+/**
+ * @brief `replay_play` handler - start přehrávání záznamu.
+ *
+ * Parametry: `path` (string, povinný), `pause_after_load` (bool, default
+ * false: po načtení startovního snapshotu se emulace rozběhne),
+ * `checkpoint_interval` a `checkpoint_count` (jako u replay_record_start;
+ * checkpointy přehrávání urychlí seek zpět). Konec přehrávání = pauza
+ * s důvodem `replay_end` nebo `replay_desync` (událost `paused`,
+ * wait_stop). Response: stav (viz replay_status).
+ */
+static en_MCP_DISPATCH_RESULT _handle_replay_play(const st_JSONL_MESSAGE *req,
+                                                  char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _replay_data_obj(req);
+    char *path = _obj_str_dup(obj, "path");
+    if (!path || !path[0]) {
+        g_free(path);
+        return _err_response(req_id, "path is required", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    bool pause_after_load = false;
+    if (!_replay_obj_bool(obj, "pause_after_load", false, &pause_after_load)) {
+        g_free(path);
+        return _err_response(req_id, "pause_after_load must be a boolean",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    st_REPLAY_CKPT_CFG ckpt;
+    const char *perr = NULL;
+    if (!_replay_ckpt_params(obj, &ckpt, &perr)) {
+        g_free(path);
+        return _err_response(req_id, perr, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    uint32_t seq = replay_request_play_ex(path, pause_after_load, &ckpt);
+    g_free(path);
+    return _replay_finish_request(req_id, seq, out_response);
+}
+
+
+/**
+ * @brief `replay_play_stop` handler - ukončí přehrávání (outcome `stopped`).
+ */
+static en_MCP_DISPATCH_RESULT _handle_replay_play_stop(const st_JSONL_MESSAGE *req,
+                                                       char **out_response) {
+    return _replay_stop(req, REPLAY_MODE_PLAYING, out_response);
+}
+
+
+/**
+ * @brief `replay_rewind` handler - návrat na checkpoint.
+ *
+ * Parametr `frames` (int >= 0, default 0 = o jeden checkpoint zpět; jinak
+ * nejnovější checkpoint aspoň o tolik snímků zpět). Při záznamu se vstupy
+ * po checkpointu zahodí (`rerecord_count` + 1) a emulace zůstane stát na
+ * hranici snímku checkpointu; při přehrávání jde o seek zpět (viz
+ * replay_seek). Odmítnutí (žádný checkpoint, zápis na médium po
+ * checkpointu, nic neběží) = EMU_ERROR s vysvětlením. Response: stav.
+ */
+static en_MCP_DISPATCH_RESULT _handle_replay_rewind(const st_JSONL_MESSAGE *req,
+                                                    char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _replay_data_obj(req);
+    gint64 frames = _obj_int_or(obj, "frames", 0);
+    if (frames < 0 || frames > G_MAXUINT32) {
+        return _err_response(req_id, "frames must be >= 0", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    return _replay_finish_request(req_id, replay_request_rewind((uint32_t)frames), out_response);
+}
+
+
+/**
+ * @brief `replay_seek` handler - skok přehrávání na snímek.
+ *
+ * Parametr `frame` (int >= 0, povinný; za koncem záznamu se omezí na
+ * konec). Zpět: nejbližší použitelný checkpoint, jinak přehrávání znovu od
+ * začátku; dopředu (nebo od checkpointu) dohraje v MAX SPEED a zastaví na
+ * hranici cílového snímku s důvodem pauzy `replay_seek` (událost `paused`,
+ * emu_wait_stop). Odpověď přijde hned po spuštění: `seeking` true =
+ * dohrávání běží, false = emulace už stojí na cíli. Response: stav.
+ */
+static en_MCP_DISPATCH_RESULT _handle_replay_seek(const st_JSONL_MESSAGE *req,
+                                                  char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _replay_data_obj(req);
+    if (!obj || !json_object_has_member(obj, "frame")) {
+        return _err_response(req_id, "frame is required", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    gint64 frame = _obj_int_or(obj, "frame", -1);
+    if (frame < 0 || frame > G_MAXUINT32) {
+        return _err_response(req_id, "frame must be >= 0", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    return _replay_finish_request(req_id, replay_request_seek((uint32_t)frame), out_response);
+}
+
+
+/**
+ * @brief `replay_status` handler - stav záznamu a přehrávání (lokální, bez fronty).
+ */
+static en_MCP_DISPATCH_RESULT _handle_replay_status(const st_JSONL_MESSAGE *req,
+                                                    char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    st_REPLAY_STATUS st;
+    replay_get_status(&st);
+    return _ok_response(req_id, _replay_status_to_json(&st), out_response);
+}
+
+
+/* ---------------- Pokrytí kódu (coverage, M11 debug-gaps) ---------------- */
+
+/** @brief Výchozí počet řádků stránky coverage_read. */
+#define COVERAGE_READ_DEFAULT_LIMIT 500
+/** @brief Nejvyšší počet řádků stránky coverage_read. */
+#define COVERAGE_READ_MAX_LIMIT 5000
+/** @brief Rezerva znaků na obálku stránky (stav, kurzor) nad řádky. */
+#define COVERAGE_READ_ENVELOPE_CHARS 600
+
+/** @brief Filtr coverage_read (naparsovaný). */
+typedef struct st_COV_FILTER {
+    uint16_t pc_from;       /**< Nejnižší adresa (včetně). */
+    uint16_t pc_to;         /**< Nejvyšší adresa (včetně). */
+    bool has_space;         /**< Filtr prostoru buňky (detail). */
+    uint8_t space;          /**< Prostor (coverage_space_parse). */
+    unsigned state_mask;    /**< Bity COVERAGE_STATE_*, 0 = všechny stavy. */
+    bool has_epoch;         /**< Filtr epochy vzniku. */
+    uint32_t epoch_from;    /**< first_epoch >= epoch_from. */
+    uint16_t flags_any;     /**< Řádek musí mít aspoň jeden z příznaků (0 = bez filtru). */
+} st_COV_FILTER;
+
+/**
+ * @brief Provede DBGAPI_CMD_COVERAGE.
+ * @return false = příkaz se nepodařilo předat; jinak true a chyba operace v p->out_error.
+ */
+static bool _cov_submit(st_DBGAPI_COVERAGE_PARAM *p) {
+    p->out_error[0] = '\0';
+    bool ok = _submit_dbgapi(DBGAPI_CMD_COVERAGE, p, NULL);
+    return ok || p->out_error[0];
+}
+
+/** @brief Provede operaci bez dat a odpoví stavem (u MARK s novou `epoch`). */
+static en_MCP_DISPATCH_RESULT _cov_op_response(int64_t req_id, st_DBGAPI_COVERAGE_PARAM *p,
+                                               char **out_response) {
+    if (!_cov_submit(p)) {
+        return _err_response(req_id, "coverage command failed", MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    if (p->out_error[0]) {
+        return _err_response(req_id, p->out_error, MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    return _ok_response(req_id, coverage_status_to_json(&p->out_status), out_response);
+}
+
+/**
+ * @brief `coverage_start` handler - spustí sběr pokrytí kódu.
+ *
+ * Parametry (volitelné): `level` ("branch" výchozí | "detail"), `key`
+ * ("opcode" výchozí | "full_bytes", jen detail), `capacity` (1..1048576
+ * jednotek, výchozí 65536, jen detail), `reset` (bool, výchozí false =
+ * pokračovat do stávajících dat se stejným nastavením),
+ * `reset_on_discontinuity` (bool, výchozí false). Response: stav.
+ */
+static en_MCP_DISPATCH_RESULT _handle_coverage_start(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_COVERAGE_OP_START;
+    p.cfg.level = COVERAGE_LEVEL_BRANCH;
+    p.cfg.key = COVERAGE_KEY_OPCODE;
+    p.cfg.capacity = COVERAGE_DEFAULT_CAPACITY;
+    int hl = _videorec_member(obj, "level", G_TYPE_STRING);
+    int hk = _videorec_member(obj, "key", G_TYPE_STRING);
+    int hc = _videorec_member(obj, "capacity", G_TYPE_INT64);
+    int hr = _videorec_member(obj, "reset", G_TYPE_BOOLEAN);
+    int hd = _videorec_member(obj, "reset_on_discontinuity", G_TYPE_BOOLEAN);
+    if (hl < 0 || hk < 0 || hc < 0 || hr < 0 || hd < 0) {
+        return _err_response(req_id, "Invalid parameters: level and key must be strings, capacity an integer, "
+                             "reset and reset_on_discontinuity booleans",
+                             MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (hl) {
+        const char *l = json_object_get_string_member(obj, "level");
+        if (g_strcmp0(l, "branch") == 0) p.cfg.level = COVERAGE_LEVEL_BRANCH;
+        else if (g_strcmp0(l, "detail") == 0) p.cfg.level = COVERAGE_LEVEL_DETAIL;
+        else return _err_response(req_id, "Invalid parameters: level must be branch or detail",
+                                  MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (hk) {
+        const char *k = json_object_get_string_member(obj, "key");
+        if (g_strcmp0(k, "opcode") == 0) p.cfg.key = COVERAGE_KEY_OPCODE;
+        else if (g_strcmp0(k, "full_bytes") == 0) p.cfg.key = COVERAGE_KEY_FULL_BYTES;
+        else return _err_response(req_id, "Invalid parameters: key must be opcode or full_bytes",
+                                  MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (hc) {
+        gint64 c = json_object_get_int_member(obj, "capacity");
+        if (c < 1 || c > (gint64)COVERAGE_MAX_CAPACITY) {
+            return _err_response(req_id, "Invalid parameters: capacity must be 1..1048576",
+                                 MCP_DISPATCH_INVALID_PARAMS, out_response);
+        }
+        p.cfg.capacity = (uint32_t)c;
+    }
+    p.reset = hr ? json_object_get_boolean_member(obj, "reset") : false;
+    p.cfg.reset_on_discontinuity = hd ? json_object_get_boolean_member(obj, "reset_on_discontinuity") : false;
+    return _cov_op_response(req_id, &p, out_response);
+}
+
+/** @brief `coverage_stop` handler - zastaví sběr, data zůstanou čitelná. */
+static en_MCP_DISPATCH_RESULT _handle_coverage_stop(const st_JSONL_MESSAGE *req, char **out_response) {
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_COVERAGE_OP_STOP;
+    return _cov_op_response(jsonl_msg_get_req_id(req), &p, out_response);
+}
+
+/** @brief `coverage_reset` handler - smaže data (nová generace), sběr běží dál, pokud běžel. */
+static en_MCP_DISPATCH_RESULT _handle_coverage_reset(const st_JSONL_MESSAGE *req, char **out_response) {
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_COVERAGE_OP_RESET;
+    return _cov_op_response(jsonl_msg_get_req_id(req), &p, out_response);
+}
+
+/** @brief `coverage_status` handler - stav sběru a úplnost dat. */
+static en_MCP_DISPATCH_RESULT _handle_coverage_status(const st_JSONL_MESSAGE *req, char **out_response) {
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_COVERAGE_OP_STATUS;
+    return _cov_op_response(jsonl_msg_get_req_id(req), &p, out_response);
+}
+
+/** @brief `coverage_mark` handler - nová epocha; stav obsahuje její číslo (`epoch`). */
+static en_MCP_DISPATCH_RESULT _handle_coverage_mark(const st_JSONL_MESSAGE *req, char **out_response) {
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_COVERAGE_OP_MARK;
+    return _cov_op_response(jsonl_msg_get_req_id(req), &p, out_response);
+}
+
+/**
+ * @brief Snímek dat pokrytí z emu vlákna.
+ * @return Nový snímek (_cov_snapshot_free()), nebo NULL při chybě.
+ */
+static st_COVERAGE_SNAPSHOT *_cov_snapshot(void) {
+    st_DBGAPI_COVERAGE_PARAM p;
+    memset(&p, 0, sizeof(p));
+    p.op = DBGAPI_COVERAGE_OP_SNAPSHOT;
+    p.snap = g_new0(st_COVERAGE_SNAPSHOT, 1);
+    if (!_cov_submit(&p) || p.out_error[0]) {
+        coverage_snapshot_clear(p.snap);
+        g_free(p.snap);
+        return NULL;
+    }
+    return p.snap;
+}
+
+/** @brief Uvolní snímek z _cov_snapshot(). */
+static void _cov_snapshot_free(st_COVERAGE_SNAPSHOT *s) {
+    if (!s) return;
+    coverage_snapshot_clear(s);
+    g_free(s);
+}
+
+/**
+ * @brief Naparsuje filtr coverage_read.
+ * @param fo     Objekt `filter` (smí být NULL).
+ * @param detail Data jsou úrovně detail (filtr `space` jinak nedává smysl).
+ * @param out    Výstup.
+ * @return NULL OK, jinak statická chybová zpráva.
+ */
+static const char *_cov_parse_filter(JsonObject *fo, bool detail, st_COV_FILTER *out) {
+    memset(out, 0, sizeof(*out));
+    out->pc_to = 0xFFFF;
+    if (!fo) return NULL;
+    int hf = _videorec_member(fo, "pc_from", G_TYPE_INT64);
+    int ht = _videorec_member(fo, "pc_to", G_TYPE_INT64);
+    int hs = _videorec_member(fo, "space", G_TYPE_STRING);
+    int he = _videorec_member(fo, "new_since_epoch", G_TYPE_INT64);
+    if (hf < 0 || ht < 0 || hs < 0 || he < 0) {
+        return "pc_from, pc_to and new_since_epoch must be integers, space a string";
+    }
+    gint64 from = hf ? json_object_get_int_member(fo, "pc_from") : 0;
+    gint64 to = ht ? json_object_get_int_member(fo, "pc_to") : 0xFFFF;
+    if (from < 0 || to < from || to > 0xFFFF) return "filter must satisfy 0 <= pc_from <= pc_to <= 65535";
+    out->pc_from = (uint16_t)from;
+    out->pc_to = (uint16_t)to;
+    if (hs) {
+        if (!detail) return "filter space needs level detail";
+        if (!coverage_space_parse(json_object_get_string_member(fo, "space"), &out->space)) {
+            return "space must be ram, vram, pcg, memext, rom or bus";
+        }
+        out->has_space = true;
+    }
+    if (he) {
+        gint64 e = json_object_get_int_member(fo, "new_since_epoch");
+        if (e < 0 || e > COVERAGE_EPOCH_MAX) return "new_since_epoch must be 0..65535";
+        out->has_epoch = true;
+        out->epoch_from = (uint32_t)e;
+    }
+    if (json_object_has_member(fo, "state") && !json_node_is_null(json_object_get_member(fo, "state"))) {
+        JsonNode *sn = json_object_get_member(fo, "state");
+        if (JSON_NODE_HOLDS_VALUE(sn) && json_node_get_value_type(sn) == G_TYPE_STRING) {
+            out->state_mask = coverage_state_bits(json_node_get_string(sn));
+            if (!out->state_mask) return "unknown state (none, unobserved, taken_only, not_taken_only, both, partial, decision)";
+        } else if (JSON_NODE_HOLDS_ARRAY(sn)) {
+            JsonArray *a = json_node_get_array(sn);
+            for (guint i = 0; i < json_array_get_length(a); i++) {
+                JsonNode *e = json_array_get_element(a, i);
+                unsigned b = (JSON_NODE_HOLDS_VALUE(e) && json_node_get_value_type(e) == G_TYPE_STRING)
+                             ? coverage_state_bits(json_node_get_string(e)) : 0;
+                if (!b) return "unknown state (none, unobserved, taken_only, not_taken_only, both, partial, decision)";
+                out->state_mask |= b;
+            }
+        } else {
+            return "state must be a string or an array of strings";
+        }
+    }
+    if (json_object_has_member(fo, "flags") && !json_node_is_null(json_object_get_member(fo, "flags"))) {
+        JsonNode *fn = json_object_get_member(fo, "flags");
+        if (!JSON_NODE_HOLDS_ARRAY(fn)) return "flags must be an array of flag names";
+        JsonArray *a = json_node_get_array(fn);
+        for (guint i = 0; i < json_array_get_length(a); i++) {
+            JsonNode *e = json_array_get_element(a, i);
+            const char *nm = (JSON_NODE_HOLDS_VALUE(e) && json_node_get_value_type(e) == G_TYPE_STRING)
+                             ? json_node_get_string(e) : NULL;
+            uint16_t bit = coverage_flag_from_name(nm);
+            if (!bit) return "unknown flag name";
+            out->flags_any |= bit;
+        }
+    }
+    return NULL;
+}
+
+/** @brief Řádek vyhovuje filtru. */
+static bool _cov_row_match(const st_COVERAGE_SNAPSHOT *s, const st_COVERAGE_ROW *r, const st_COV_FILTER *f) {
+    if (r->pc < f->pc_from || r->pc > f->pc_to) return false;
+    if (f->has_space && (!r->unit || COVERAGE_CELL_SPACE(r->unit->cell) != f->space)) return false;
+    if (f->has_epoch && coverage_row_epoch(s, r) < f->epoch_from) return false;
+    if (f->state_mask && !(f->state_mask & coverage_state_bits(coverage_row_state(s, r)))) return false;
+    if (f->flags_any && !(f->flags_any & coverage_row_flags(s, r))) return false;
+    return true;
+}
+
+/** @brief Délka JSON textu uzlu (místo, které zabere ve stránce). */
+static size_t _cov_node_chars(JsonNode *n) {
+    gchar *t = json_to_string(n, FALSE);
+    size_t l = t ? strlen(t) : 0;
+    g_free(t);
+    return l;
+}
+
+/**
+ * @brief `coverage_read` handler - stránka řádků pokrytí.
+ *
+ * Řádek = adresa (úroveň branch, jen vykonané adresy) nebo jednotka
+ * (detail), seřazené podle PC (u detail dál podle buňky a klíče).
+ * Parametry: `cursor` (z `next_cursor`), `columns` (pole jmen, výchozí
+ * všechny sloupce úrovně), `filter` (`pc_from`, `pc_to`, `space`,
+ * `state`, `new_since_epoch`, `flags`), `limit` (1..5000, výchozí 500),
+ * `max_chars` (1000..45000, výchozí 20000). Kurzor má tvar `t1.` jako
+ * trace_read (kanál "coverage", segment = generace dat, seq = PC << 16 |
+ * pořadí řádku v rámci PC). Řádky přidané za běhu sběru na adresu před
+ * kurzorem se v dalších stránkách neobjeví (čtení od začátku je ukáže).
+ * Po coverage_reset nebo novém startu chyba `segment_replaced:`.
+ */
+static en_MCP_DISPATCH_RESULT _handle_coverage_read(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *d = _videorec_data_obj(req);
+    gint64 limit = _obj_int_or(d, "limit", COVERAGE_READ_DEFAULT_LIMIT);
+    if (limit < 1 || limit > COVERAGE_READ_MAX_LIMIT) {
+        return _err_response(req_id, "Invalid parameters: limit must be 1..5000", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    gint64 max_chars = _obj_int_or(d, "max_chars", TRACE_READ_DEFAULT_MAX_CHARS);
+    if (max_chars < 1000 || max_chars > TRACE_READ_MAX_MAX_CHARS) {
+        return _err_response(req_id, "Invalid parameters: max_chars must be 1000..45000", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    const char *cursor = (d && _obj_is_string(d, "cursor")) ? json_object_get_string_member(d, "cursor") : NULL;
+    bool have_cursor = cursor && cursor[0];
+    unsigned cur_gen = 0;
+    uint64_t cur_seq = 0;
+    if (have_cursor && !trace_cursor_decode(cursor, "coverage", &cur_gen, &cur_seq)) {
+        return _err_response(req_id, "Invalid parameters: invalid cursor", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+
+    st_COVERAGE_SNAPSHOT *snap = _cov_snapshot();
+    if (!snap) {
+        return _err_response(req_id, "coverage snapshot failed", MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    size_t n = 0, n_all = 0, n_cols = 0;
+    st_COVERAGE_ROW *rows = coverage_rows_build(snap, &n);
+    bool detail = (snap->status.level == COVERAGE_LEVEL_DETAIL);
+    const char *const *all = coverage_columns(snap->status.level, &n_all);
+    const char *perr = NULL;
+    char *owned_err = NULL;
+    const char **cols = NULL;
+    JsonObject *resp = NULL;
+
+    if (have_cursor && cur_gen != snap->status.generation) {
+        owned_err = g_strdup_printf("segment_replaced: coverage data generation %u replaced by %u; read again from the start",
+                                    cur_gen, (unsigned)snap->status.generation);
+        goto out;
+    }
+
+    /* Sloupce */
+    if (d && json_object_has_member(d, "columns") && !json_node_is_null(json_object_get_member(d, "columns"))) {
+        JsonNode *cn = json_object_get_member(d, "columns");
+        if (!JSON_NODE_HOLDS_ARRAY(cn)) {
+            perr = "Invalid parameters: columns must be an array of strings";
+            goto out;
+        }
+        JsonArray *ca = json_node_get_array(cn);
+        cols = g_new0(const char *, json_array_get_length(ca) + 1);
+        for (guint i = 0; i < json_array_get_length(ca); i++) {
+            JsonNode *e = json_array_get_element(ca, i);
+            const char *nm = (JSON_NODE_HOLDS_VALUE(e) && json_node_get_value_type(e) == G_TYPE_STRING)
+                             ? json_node_get_string(e) : "";
+            const char *found = NULL;
+            for (size_t k = 0; k < n_all; k++) {
+                if (strcmp(nm, all[k]) == 0) found = all[k];
+            }
+            if (!found) {
+                owned_err = g_strdup_printf("Invalid parameters: unknown column '%s' for level %s",
+                                            nm, coverage_level_name(snap->status.level));
+                goto out;
+            }
+            cols[n_cols++] = found;
+        }
+    } else {
+        cols = g_new0(const char *, n_all + 1);
+        for (size_t k = 0; k < n_all; k++) cols[n_cols++] = all[k];
+    }
+
+    /* Filtr */
+    JsonObject *fo = NULL;
+    if (d && json_object_has_member(d, "filter") && !json_node_is_null(json_object_get_member(d, "filter"))) {
+        JsonNode *fn = json_object_get_member(d, "filter");
+        if (!JSON_NODE_HOLDS_OBJECT(fn)) {
+            perr = "Invalid parameters: filter must be an object";
+            goto out;
+        }
+        fo = json_node_get_object(fn);
+    }
+    st_COV_FILTER f;
+    const char *ferr = _cov_parse_filter(fo, detail, &f);
+    if (ferr) {
+        owned_err = g_strdup_printf("Invalid parameters: %s", ferr);
+        goto out;
+    }
+
+    /* Začátek stránky podle kurzoru: první řádek s (pc, k) >= (seq >> 16, seq & FFFF). */
+    size_t i = 0;
+    if (have_cursor) {
+        uint32_t cpc = (uint32_t)(cur_seq >> 16);
+        uint32_t ck = (uint32_t)(cur_seq & 0xFFFFu);
+        while (i < n && (rows[i].pc < cpc || (rows[i].pc == cpc && rows[i].k < ck))) i++;
+    }
+
+    JsonArray *out_rows = json_array_new();
+    size_t chars = COVERAGE_READ_ENVELOPE_CHARS;
+    gint64 returned = 0;
+    bool page_full = false;
+    while (i < n) {
+        if (!_cov_row_match(snap, &rows[i], &f)) {
+            i++;
+            continue;
+        }
+        JsonArray *ra = json_array_new();
+        for (size_t c = 0; c < n_cols; c++) json_array_add_element(ra, coverage_row_column(snap, &rows[i], cols[c]));
+        JsonNode *rn = json_node_new(JSON_NODE_ARRAY);
+        json_node_take_array(rn, ra);
+        size_t row_chars = _cov_node_chars(rn) + 1;
+        if (returned > 0 && (returned >= limit || chars + row_chars > (size_t)max_chars)) {
+            json_node_free(rn);
+            page_full = true;
+            break;
+        }
+        json_array_add_element(out_rows, rn);
+        chars += row_chars;
+        returned++;
+        i++;
+    }
+
+    resp = coverage_status_to_json(&snap->status);
+    JsonArray *ca = json_array_new();
+    for (size_t c = 0; c < n_cols; c++) json_array_add_string_element(ca, cols[c]);
+    json_object_set_array_member(resp, "columns", ca);
+    json_object_set_array_member(resp, "rows", out_rows);
+    json_object_set_int_member(resp, "returned", returned);
+    json_object_set_boolean_member(resp, "page_full", page_full);
+    json_object_set_boolean_member(resp, "end_of_data", i >= n);
+    uint64_t next_seq = (i < n) ? (((uint64_t)rows[i].pc << 16) | rows[i].k) : ((uint64_t)0x10000 << 16);
+    char *nc = trace_cursor_encode("coverage", (unsigned)snap->status.generation, next_seq);
+    json_object_set_string_member(resp, "next_cursor", nc);
+    g_free(nc);
+
+out:
+    g_free(cols);
+    g_free(rows);
+    _cov_snapshot_free(snap);
+    if (owned_err) {
+        return _trace_err_owned(req_id, owned_err, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    if (perr) {
+        return _err_response(req_id, perr, MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    return _ok_response(req_id, resp, out_response);
+}
+
+/**
+ * @brief `coverage_export` handler - všechny řádky pokrytí do souboru.
+ *
+ * Parametry: `path` (povinný, soubor se přepíše), `format` ("json"
+ * výchozí | "csv"); obsah viz coverage_export_write(). Filtr se
+ * nepoužije. Response: stav + `path`, `format`, `rows`. Chyba zápisu =>
+ * EMU_ERROR s textem.
+ */
+static en_MCP_DISPATCH_RESULT _handle_coverage_export(const st_JSONL_MESSAGE *req, char **out_response) {
+    int64_t req_id = jsonl_msg_get_req_id(req);
+    JsonObject *obj = _videorec_data_obj(req);
+    if (_videorec_member(obj, "path", G_TYPE_STRING) != 1 || !json_object_get_string_member(obj, "path")[0]) {
+        return _err_response(req_id, "Invalid parameters: path must be a non-empty string", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    int hf = _videorec_member(obj, "format", G_TYPE_STRING);
+    const char *fmt = (hf == 1) ? json_object_get_string_member(obj, "format") : "json";
+    if (hf < 0 || (g_strcmp0(fmt, "json") != 0 && g_strcmp0(fmt, "csv") != 0)) {
+        return _err_response(req_id, "Invalid parameters: format must be json or csv", MCP_DISPATCH_INVALID_PARAMS, out_response);
+    }
+    const char *path = json_object_get_string_member(obj, "path");
+    st_COVERAGE_SNAPSHOT *snap = _cov_snapshot();
+    if (!snap) {
+        return _err_response(req_id, "coverage snapshot failed", MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    size_t rows = 0;
+    char *err = NULL;
+    bool ok = coverage_export_write(snap, path, g_strcmp0(fmt, "csv") == 0, &rows, &err);
+    JsonObject *resp = ok ? coverage_status_to_json(&snap->status) : NULL;
+    _cov_snapshot_free(snap);
+    if (!ok) {
+        return _trace_err_owned(req_id, err, MCP_DISPATCH_EMU_ERROR, out_response);
+    }
+    json_object_set_string_member(resp, "path", path);
+    json_object_set_string_member(resp, "format", fmt);
+    json_object_set_int_member(resp, "rows", (gint64)rows);
+    return _ok_response(req_id, resp, out_response);
+}
 #endif /* MZ800EMU_CFG_MCP_SERVER_ENABLED */

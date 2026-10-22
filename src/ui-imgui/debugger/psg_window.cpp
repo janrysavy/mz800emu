@@ -52,6 +52,7 @@ extern "C"
 {
 #include "hw-generic/psg/psg.h"
 #include "hw-generic/gdg/gdgclk.h"
+#include "emulator/audio_analysis.h" /* sdílený výpočet výšky tónu */
 
     void imgui_psg_state_window(bool *p_open);
 }
@@ -133,14 +134,15 @@ static void format_attn_db(unsigned attn, char *out, size_t sz)
  * 14 336 640 / 4 = 3.5796 MHz. Standardní SN76489 formule s input
  * clock = CPU clock, interní /16 prescaler a 2x toggle pro plnou periodu.
  *
+ * Počítá sdílená audio_psg_tone_hz() (audio_analysis.h), stejně jako PSG
+ * Audio Scope a MCP souhrn zachyceného zvuku.
+ *
  * @param divider  10-bit tone divider (0..1023).
  * @return Frekvence v Hz, nebo 0.0 pro DC případ.
  */
 static double psg_tone_frequency_hz(unsigned divider)
 {
-    if (divider < 2u)
-        return 0.0;
-    return (double)GDGCLK_BASE / (32.0 * (double)divider * (double)GDGCLK2CPU_DIVIDER);
+    return audio_psg_tone_hz(divider, (uint64_t)GDGCLK_BASE, (unsigned)GDGCLK2CPU_DIVIDER);
 }
 
 /**

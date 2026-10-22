@@ -8,10 +8,19 @@ a NTSC, MZ-1500). Menu **Tools -> Screenshot**:
 | Save Screenshot | `Alt + F` | Uloží PNG obrazu zobrazeného v okně do výstupní složky se jménem `<platforma>_RRRRMMDD_HHMMSS.png` (např. `mz800_20261013_183005.png`). Notifikace ukáže rozměr a cestu. |
 | Save Screenshot As... | | Totéž, ale zeptá se na jméno souboru. |
 | Record Changed Frames | `Alt + Shift + F` | Spustí / ukončí sérii snímků (viz níže). |
+| Screenshot Control... | `Alt + G` | Zobrazí / skryje okno Screenshot Control (viz níže). |
 | Settings... | | Oblast, měřítko a výstupní složka (viz níže). |
 | Open Output Folder | | Otevře výstupní složku ve správci souborů. |
 
 Screenshot je přesně ten obraz, který okno v tu chvíli zobrazuje.
+
+**Screenshot Control** je plovoucí okno, které může zůstat otevřené i při
+hraní: ukazuje oblast, měřítko, výstupní složku, poslední screenshot
+(soubor a rozměr, nebo chybu) a sérii snímků (za běhu dosavadní soubory
+a snímky, po konci výsledek a její složku). Jeho tlačítka uloží
+screenshot, uloží ho pod jménem, spustí nebo ukončí sérii snímků a otevřou
+výstupní složku a nastavení; klávesy jsou vypsané vedle tlačítek. Okno,
+které bylo otevřené, se po novém spuštění emulátoru otevře znovu.
 
 ## Nastavení
 

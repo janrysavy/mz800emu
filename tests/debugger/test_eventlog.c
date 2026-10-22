@@ -178,6 +178,29 @@ void test_eventlog_ring_wrap ( void )
 }
 
 
+/* seq proudu (trace_read): next_seq roste i přes wrap, nejstarší event má
+ * seq next_seq - count; clear a změna kapacity = nový segment, seq od 0. */
+void test_eventlog_seq_and_segment ( void )
+{
+    eventlog_set_capacity ( EVENTLOG_MIN_CAPACITY );
+    unsigned seg = g_eventlog.segment;
+    TEST_ASSERT_TRUE ( seg > 0 );
+    TEST_ASSERT_EQUAL_UINT64 ( 0, g_eventlog.next_seq );
+    size_t total = EVENTLOG_MIN_CAPACITY + 7;
+    for ( size_t i = 0; i < total; i++ ) {
+        eventlog_record ( EVENTLOG_CAT_IORQ_IN, 0, 0, (uint32_t) i );
+    }
+    TEST_ASSERT_EQUAL_UINT64 ( total, g_eventlog.next_seq );
+    TEST_ASSERT_EQUAL_UINT64 ( 7, g_eventlog.next_seq - g_eventlog.count );
+    TEST_ASSERT_EQUAL_UINT ( seg, g_eventlog.segment );
+    eventlog_clear ( );
+    TEST_ASSERT_EQUAL_UINT64 ( 0, g_eventlog.next_seq );
+    TEST_ASSERT_EQUAL_UINT ( seg + 1, g_eventlog.segment );
+    eventlog_set_capacity ( EVENTLOG_MIN_CAPACITY * 2 );
+    TEST_ASSERT_EQUAL_UINT ( seg + 2, g_eventlog.segment );
+}
+
+
 /* ================================================================
  * Clear
  * ================================================================ */
@@ -1721,6 +1744,7 @@ int main ( int argc, char *argv[] )
     RUN_TEST ( test_eventlog_get_count_matches_writes );
 
     RUN_TEST ( test_eventlog_ring_wrap );
+    RUN_TEST ( test_eventlog_seq_and_segment );
     RUN_TEST ( test_eventlog_clear );
     RUN_TEST ( test_eventlog_set_capacity_resizes_and_clears );
     RUN_TEST ( test_eventlog_set_capacity_clamps );

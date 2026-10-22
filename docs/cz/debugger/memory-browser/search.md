@@ -6,6 +6,9 @@ regionem nebo všemi regiony aktuální architektury. Pro pohodlné
 sestavení hledaného vzoru slouží **Pattern Builder** (dual editable
 HEX + ASCII pole) a **Char Inserter** (paleta speciálních znaků).
 
+Hledání je jednorázové. Proměnnou s neznámou hodnotou (životy, skóre,
+časovač) podle toho, jak se mění, najde [Memory Search](../memory-search.md).
+
 ## 1. Otevření search panelu
 
 | Cesta | Co se stane |

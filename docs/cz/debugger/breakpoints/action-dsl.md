@@ -14,18 +14,17 @@ Tento dokument popisuje syntaxi mini-DSL pro Custom mode v breakpoint systému.
 
 ## Sémantika "stop vs continue"
 
-Action mini-DSL nemá explicit `stop` příkaz. Rozhodnutí o zastavení emulátoru se
-řídí pouze podle toho, zda action string je prázdný:
-
 - **action == NULL nebo whitespace-only** -> emulátor zastaví
   (= klasický BP stop).
 - **action s libovolným non-empty obsahem** -> po vyhodnocení všech
-  příkazů emulátor pokračuje (= implicit continue).
+  příkazů emulátor pokračuje (= implicit continue), pokud akce
+  nevykonala `stop` nebo `exit`.
+- **`stop`** zastaví emulátor stejně jako prázdná akce; **`exit`** ukončí
+  běh s návratovým kódem (viz níže). Oba ukončí akci: příkazy za nimi se
+  nevykonají.
 
-Důsledek: pokud chcete BP, který logne a pak zastaví, **není možné**
-to vyjádřit přímo (vyžadovalo by `stop`). Workaround pro stop-on-N
-je inkrement `$hits` a externí Stop BP, nebo Stop mode bez Custom
-skriptu.
+BP, který zaloguje a zastaví: `log "A=%X", A; stop`, nebo kratší
+`stop "A=%X", A`. Zastavení při podmínce: `if $hits >= 5 then stop`.
 
 ## Základní pravidla
 
@@ -44,11 +43,13 @@ skriptu.
 
 ## Příkazy
 
-Action mini-DSL poskytuje 19 příkazů: 11 základních (log, continue,
+Action mini-DSL poskytuje 27 příkazů: 13 základních (log, continue,
 disable_self, enable, disable, poke, set, mark, přiřazení `$name`,
-clear_vars, if) a 8 forward příkazů pro řízení záznamu (cdl_start, cdl_stop,
-cdl_reset, cdl_export, trace_start, trace_stop, trace_save, snapshot - viz
-sekce "Forward příkazy" níže).
+clear_vars, if, stop, exit) a 14 forward příkazů pro řízení záznamu (cdl_start, cdl_stop,
+cdl_reset, cdl_export, trace_start, trace_stop, trace_save, snapshot,
+ramlog_start, ramlog_stop, ramlog_clear, coverage_start, coverage_stop,
+coverage_mark - viz sekce "Forward příkazy"
+níže).
 
 ### `log "fmt"[, expr...]`
 
@@ -90,7 +91,13 @@ Sémantika `%s`:
 
 Bank-specific lookup není v action DSL exposed.
 
-Výstup jde na stdout.
+Výstup jde na stdout. V režimu `--mcp-pipe` nese stdout zprávy MCP,
+emulátor proto svůj textový výstup (včetně řádků `[BP-LOG]`) přesměruje
+na stderr; MCP klient ho přes MCP nepřečte.
+
+V MEM_R / MEM_W / IORQ breakpointech je `PC` už za instrukcí, která
+přístup dělá; adresu instrukce vypíše `InsnPC` (viz
+[expression-syntax.md](expression-syntax.md#cpu-registry-z80)).
 
 ### `continue`
 
@@ -195,7 +202,7 @@ větví nezávisle** podle konfigurace:
 1. **Marklog binární záznam** - pokud `[TRACE_MARKLOG] mode` je
    `WITH_WINDOW` nebo `ALWAYS` (a writer je aktivní), zapíše se 24 B
    záznam do `<dir>/<name>.NNN.bin` s pre-resolved `marker_id`.
-   Mapování id -> name je v `meta.json`.
+   Mapování id -> name je v manifestu `<name>.json`.
 2. **Stdout printout** `[BP-MARK] <name>` - pokud
    `[TRACE_MARKLOG].stdout_enabled` je `1` (default).
 
@@ -298,6 +305,44 @@ if A == 0 then log "zero" else log "nonzero=%X", A
 if $state == 1 then enable trace_bp else disable trace_bp
 ```
 
+### `stop ["fmt"[, args...]]`
+
+Zastaví emulátor stejně jako BP s prázdnou akcí. Volitelná hláška je
+formátovací řetězec jako u `log` a vypíše se jako `[BP-STOP] ...`.
+Příkazy za `stop` se nevykonají.
+
+```
+stop
+stop "buffer plný na %X, HL=%X", PC, HL
+if $hits >= 5 then stop "5. průchod"
+```
+
+### `exit <expr>[, "fmt"[, args...]]`
+
+Ukončí běh s návratovým kódem `<expr>` (0-255; jiná hodnota se s
+varováním zkrátí na dolních 8 bitů). Volitelná hláška je formátovací
+řetězec jako u `log`. Příkazy za `exit` se nevykonají.
+
+- V `--headless` bez MCP serveru (nebo s volbou automatického běhu, viz
+  [Headless režim](../../mcp-server/headless-mode.md#automatické-běhy))
+  proces skončí s tímto kódem, zapíše soubor s výsledkem a dokončí
+  nahrávání videa a zvuku.
+- V GUI, s `--mcp-pipe` a v relaci MCP TCP se emulátor jen pozastaví:
+  na stderr je kód, klienti MCP dostanou událost `paused` s
+  `reason: "exit"` a `exit_code`, `emu_run` vrátí `stopped_by: "exit"`.
+  Proces běží dál.
+
+Kódy 0 (úspěch), 1 (test selhal), 2 (timeout) a 3 (chyba) mají
+v automatických bězích význam; 64-255 jsou volné pro hodnoty, které
+hlásí program.
+
+```
+exit 0
+exit 1, "nesouhlasí kontrolní součet: %X", HL
+exit Value                     # IORQ_W / MEM_W BP: kód zapsaný programem
+if A != 0 then exit 1 else exit 0
+```
+
 ## Forward příkazy (řízení záznamu z BP)
 
 Forward příkazy umožní akci breakpointu spustit záznamové operace
@@ -328,7 +373,7 @@ cdl_export "cdl-%d.json", $id
 ### `trace_start <kanál>`, `trace_stop <kanál>`
 
 Start / stop binárního trace kanálu trace-suite. `<kanál>` je jeden z
-`cputrack` / `iorqlog` / `intlog` / `hwlog` (case-sensitive, bez
+`cputrack` / `iorqlog` / `intlog` / `hwlog` / `marklog` (case-sensitive, bez
 uvozovek).
 
 ```
@@ -358,6 +403,44 @@ snapshot "snap.mzs"
 snapshot "snap-%d.mzs", $id
 ```
 
+### `ramlog_start [<from>, <to>]`, `ramlog_stop`, `ramlog_clear`
+
+Ovládají záznam zápisů do paměti ([RAM Write Log](../ram-write-log.md)).
+`ramlog_start` bez argumentů zaznamenává zápisy do celé paměti, se dvěma
+výrazy jeden rozsah CPU adres. Výrazy se vyhodnotí při zásahu breakpointu
+(na pořadí obou hodnot nezáleží). `ramlog_start` nahradí běžící záznam
+(režim ring, výchozí velikost). `ramlog_stop` záznam zastaví (záznamy
+zůstanou čitelné), `ramlog_clear` záznam vyprázdní.
+
+```
+ramlog_start
+ramlog_start 0x4000, 0x40FF
+ramlog_start HL, HL + 15
+ramlog_stop
+```
+
+Funkce výrazu `lastwriter(addr)` vrací adresu instrukce, která naposledy
+zapsala buňku na `addr`, např.
+`if lastwriter(0x4000) == 0x3009 then ramlog_stop`.
+
+### `coverage_start [branch|detail]`, `coverage_stop`, `coverage_mark`
+
+Ovládají pokrytí kódu (které instrukce se vykonaly a kterým směrem šly
+podmíněné skoky; čte se přes MCP, viz nástroje `emu_coverage_*`
+v [Přehledu MCP nástrojů](../../mcp-server/tools-overview.md)).
+`coverage_start` bez argumentu sbírá úroveň `branch`, `coverage_start
+detail` úroveň `detail`; data sebraná dřív se stejným nastavením se
+doplňují. `coverage_stop` sběr zastaví (data zůstanou čitelná),
+`coverage_mark` začne novou epochu, takže lze vypsat kód, který se poprvé
+vykonal až po značce.
+
+```
+coverage_start
+coverage_start detail
+coverage_mark
+coverage_stop
+```
+
 Všechny šablony názvu (`cdl_export` / `trace_save` / `snapshot`) sdílejí
 stejný renderer jako `log`, takže lze generovat číslované soubory pomocí
 `$proměnné`, např.:
@@ -383,8 +466,14 @@ mají implicitní ochranu:
   jinak platí globální default z konfigurace.
 - **Byte saturace.** Při překročení kumulativního objemu zapsaných dat
   z forward akcí emulátor sám zapauzuje a vydá varování s důvodem.
-- I když pokračující BP spustí těžkou akci, příkazy pauza / stop /
-  vyčištění breakpointů zaberou vždy - emulátor se nezasekne.
+  Počítají se snapshoty a trace uložené akcemi a nahrávání trace kanálů,
+  které akce spustila nebo ukládá. Trace spuštěný jen z menu Trace Suite
+  nebo přes MCP se nepočítá; hlídá ho jeho vlastní limit `max_total_mb`,
+  který zastaví nahrávání a emulace běží dál.
+- I když pokračující BP spustí těžkou akci, pauza a dotaz na stav
+  emulátoru se vyřídí hned po akci - emulátor se nezasekne. Ostatní
+  příkazy (čtení, zápisy, změny breakpointů) počkají na konec snímku
+  nebo na pauzu, protože akce může běžet uprostřed instrukce.
 
 ## Kompletní příklady
 

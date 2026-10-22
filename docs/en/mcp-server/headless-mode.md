@@ -14,7 +14,8 @@ mz800emu --headless --no-first-run-windows
 
 The process keeps running until externally terminated (`Ctrl+C` on
 Linux, `taskkill /F /IM mz800emu.exe` on Windows, or an SDL quit
-event).
+event), or until an exit condition of an unattended run is met (see
+[Unattended runs](#unattended-runs)).
 
 ## When to use it
 
@@ -43,6 +44,163 @@ event).
 | ImGui debugger | **no** (context not created) |
 
 Headless emulation therefore runs in real time. To run faster (tests, batches), set the speed at start with `--speed` (`--speed max` = MAX SPEED, `--speed 400` = four times real time; valid range 1-4000 %), or change it at runtime with the MCP `set_speed` tool. The `--speed` option applies to `mz800emu --headless`; with `--mcp-pipe` it is rejected (`Unknown option: --speed`, startup fails); in pipe mode set the speed with `set_speed`.
+
+## Unattended runs
+
+For CI and scripts without an MCP client, the emulator in `--headless`
+ends by itself when a condition is met, writes the result to a JSON file
+and returns an exit code.
+
+```
+mz800emu --headless --speed max --run-mzf test.mzf \
+         --exit-on-pc 2000h --fail-on-pc 2100h --timeout-seconds 30 \
+         --automation-dir out
+```
+
+### Exit conditions
+
+| Option | Ends the run | Exit code |
+|--------|--------------|-----------|
+| `--exit-after-frames N` | after N emulated frames | 0 |
+| `--timeout-frames N` | after N emulated frames, unless another condition came first | 2 |
+| `--timeout-seconds S` | same, in emulated seconds (rounded up to whole frames) | 2 |
+| `--exit-on-pc ADDR[,skip=N][,code=C]` | when the CPU executes ADDR (after skipping the first N passes) | C, default 0 |
+| `--fail-on-pc ADDR[,skip=N]` | when the CPU executes ADDR | 1 |
+| `--exit-on-write ADDR[=VAL][,skip=N][,code=C]` | when the program writes to memory address ADDR (only the value VAL, if given) | the written value, or C |
+| `--exit-on-out PORT[,skip=N][,code=C]` | when the program writes to I/O port PORT (0-255) | the written value, or C |
+| `--bpt FILE` | loads a breakpoint set; a breakpoint with the action `exit` ends the run | from the action |
+
+- The first condition met wins. When `--exit-after-frames` and a timeout
+  fall on the same frame, `--exit-after-frames` wins.
+- `--exit-on-*` and `--fail-on-pc` can be repeated. They create normal
+  breakpoints with the action `exit`; any breakpoint with this action
+  works the same way (see
+  [Action DSL](../debugger/breakpoints/action-dsl.md)). They and `--bpt`
+  need a build with the debugger.
+- Numbers: decimal, `0x2000` or `2000h`.
+- Frames are counted from the start of the run, after `--run-mzf`. Time
+  conditions are checked once per frame; they also work in a build
+  without the debugger.
+- Use `--timeout-*` as a safety net, so a stuck program does not block
+  the CI job.
+- The port for `--exit-on-out` is your choice. Pick one that the program
+  and the hardware configuration you run do not use; writing to it still
+  reaches the emulated hardware.
+- In an unattended run (any of the options in this section) the
+  breakpoints and `$` variables saved from earlier sessions are neither
+  loaded nor saved, so leftovers from the GUI cannot change the result.
+  Breakpoints come only from `--bpt` and the `--exit-on-*` /
+  `--fail-on-pc` options.
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | success: `--exit-after-frames` done, `--exit-on-pc`, `exit 0` |
+| 1 | test failed: `--fail-on-pc`, `exit 1` |
+| 2 | timeout |
+| 3 | error of the emulator or of the options (invalid option, missing file) |
+| 4 | a replay played back with `--exit-at-replay-end` differs from the recording (`replay_desync`, see [../replay.md](../replay.md)) |
+| 64-255 | free for codes written by the program (`--exit-on-out`, `exit Value`) |
+
+Code 3 for an invalid option is used only when an unattended-run option is
+given; otherwise an invalid option returns 1 as before.
+
+### Result file and artifacts
+
+| Option | Writes |
+|--------|--------|
+| `--result-json FILE` | the result as JSON |
+| `--automation-dir DIR` | `DIR/result.json` and `DIR/screen.png` (the final screen); the folder is created |
+| `--exit-screenshot FILE` | PNG of the final screen |
+| `--exit-snapshot FILE` | snapshot (`.mzs`) of the final state |
+
+The result is written at the end, also on a timeout or an error, so a
+script can always read it. Video recording (`--record`) and audio capture
+(`--audio-capture`) are finished before the process ends, whatever the
+exit code.
+
+Example (`--exit-after-frames 100 --automation-dir out`, MZ-800; hashes
+and paths shortened):
+
+```json
+{
+  "schema" : "mz800emu-result/1",
+  "emulator" : { "version" : "2.0.6 devel", "build_revision" : -1, "commit" : "5ce317db",
+                 "platform" : "MZ-800", "screens_per_second" : 50, "debugger" : true },
+  "reason" : "frames",
+  "exit_code" : 0,
+  "message" : "100 frames done",
+  "trigger" : { "kind" : "frames", "option" : "--exit-after-frames" },
+  "time" : { "frames" : 100, "frames_total" : 100, "gdg_ticks" : 35442605,
+             "gdg_ticks_total" : 35443245, "emulated_seconds" : 1.999966425153485,
+             "wall_seconds" : 0.081809 },
+  "cpu" : { "pc" : 33667, "sp" : 4334, "af" : 65356, "bc" : 1372, "de" : 842, "hl" : 842,
+            "ix" : 16612, "iy" : 0, "af2" : 0, "bc2" : 0, "de2" : 0, "hl2" : 0,
+            "i" : 0, "r" : 25, "im" : 1, "iff1" : 0, "iff2" : 0, "halted" : false },
+  "raster" : { "beam_row" : 0, "frame_ticks" : 45 },
+  "hashes" : { "algorithm" : "sha256", "ram" : "64090b03...", "memext" : "2fb5b470...",
+               "vram" : "edf097e8...", "screen" : "f58b3934...", "cpu" : "9c1e07d2..." },
+  "artifacts" : { "screenshot" : ".../out/screen.png", "snapshot" : null,
+                  "audio_capture" : null, "video" : null },
+  "inputs" : { "run_mzf" : ".../Gardner.mzf", "bpt" : null },
+  "warnings" : [ ]
+}
+```
+
+A run ended by a breakpoint has for example
+`"reason" : "exit_action"` and
+`"trigger" : { "kind" : "breakpoint", "option" : "--exit-on-pc", "bp_id" : 1, "bp_name" : "cli-exit-on-pc-1", "bp_type" : "PC_EXEC", "hits" : 1 }`
+(`option` is null for a breakpoint that did not come from the command
+line).
+
+- `emulator.build_revision`: the revision number of an official build, -1
+  for other builds.
+- `reason`: `frames`, `timeout`, `exit_action` (breakpoint action `exit`),
+  `error`, `quit` (the process was ended from outside before a
+  condition, for example by `Ctrl+C` or after `--record-frames`), or
+  `replay_end` / `replay_desync` (end of a replay played back with
+  `--exit-at-replay-end` or `--replay-verify`).
+- `replay`: `null`, or the result of the replay used in the run (`path`,
+  `outcome`: `ended`, `desync`, `recorded`, ..., `outcome_frame`,
+  `frames`, `deviated`, `desync_parts`, `message`).
+- `coverage`: `null` without code coverage data, otherwise the coverage
+  status as returned by `emu_coverage_status` (`level`, `complete`,
+  `units`, `instructions`, `branches`, ...). Collect coverage from the
+  start with `--coverage branch` or `--coverage detail` (or `[COVERAGE]
+  mode` in the INI), write all rows at the end with
+  `--coverage-save-on-exit FILE` (`.csv` = CSV, otherwise JSON, see
+  [MCP tools overview](tools-overview.md); a relative path is relative to
+  the working directory). `--coverage-key` and `--coverage-capacity` set
+  the `detail` level.
+- `trigger.hits`: hits of the breakpoint counted after the skipped ones.
+- `time.frames` and `time.gdg_ticks` count from the start of the run;
+  `frames_total` and `gdg_ticks_total` from the start of the emulation.
+  `emulated_seconds` is `gdg_ticks` in seconds of the emulated clock.
+- `cpu`: registers as numbers (`af2` ... `hl2` are the shadow registers),
+  `halted` true or false.
+- `hashes`: SHA-256 of the internal RAM (64 KB), the MemExt RAM (only when
+  connected), the VRAM (MZ-800: all four planes), the PCG (MZ-1500), the
+  screen (the framebuffer as palette indices) and `cpu` (the Z80 registers
+  including the hidden state: WZ, Q, EI delay, pending INT and NMI). Two
+  runs with the same options give the same hashes, so a script can compare
+  them with a reference.
+- After an error before the emulation starts (invalid option), the file
+  has only `schema`, `emulator`, `reason`, `exit_code`, `message`,
+  `trigger`, `artifacts`, `inputs` and `warnings`.
+
+On Windows the standard build has no console output, so the result file
+is the reliable channel for a CI job.
+
+### Exit in the GUI and with MCP
+
+The process ends only in `--headless`, and with an MCP TCP server only when
+an unattended-run option is given. In the GUI, with `--mcp-pipe`, and in
+`--headless` with an MCP TCP server but without such an option, an exit
+condition only pauses the emulation: stderr shows the code and the MCP
+event `paused` has `reason: "exit"` with `exit_code`, `exit_reason` and
+`message`. `emu_run` then returns `stopped_by: "exit"`. The result file is
+written if requested. The client decides what to do next.
 
 ## Console-enabled build (Windows)
 

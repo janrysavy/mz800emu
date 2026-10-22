@@ -88,8 +88,8 @@ Each BP type has its own enforcement hook in the emu layer:
 | Type | Called from |
 |------|-------------|
 | PC_EXEC | hot loop pre-instruction |
-| MEM_R | debugger UI / `[addr]` deref + CPU read in debugger active mode (only data reads - see M1 fetch filtering below) |
-| MEM_W | debugger UI / STMT_POKE + CPU write in debugger active mode |
+| MEM_R | CPU read in debugger active mode (only data reads - see M1 fetch filtering below) + `[addr]!` deref in an expression; reads by the debugger itself do not fire |
+| MEM_W | CPU write in debugger active mode + STMT_POKE; writes by the debugger itself do not fire |
 | IORQ_R | CPU port read |
 | IORQ_W | CPU port write |
 | IRQ | after Z80 INT dispatch (POST-dispatch) |
@@ -139,9 +139,9 @@ instruction would trigger a MEM_R fire for each opcode/operand byte (=
 spam, typically 2-4x per instruction), which devalues this BP type for
 the "I want to know when the program reads data from X" use case.
 
-The filtering applies **only on the CPU read path**. Debugger UI deref
-(`[addr]` expression) has no M1 concept and fires always (= manual
-reads should not be filtered).
+The filtering applies **only on the CPU read path**. The `[addr]!`
+expression deref has no M1 concept and fires always (= manual reads
+should not be filtered); `[addr]` without `!` does not fire.
 
 Note: an instruction fetch from a mid-instruction address (= e.g.
 self-modifying code, ROM banking during decoding) is theoretically

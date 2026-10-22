@@ -11,19 +11,47 @@
 #include "customspeed.h"
 
 /**
- * @brief Důvod posledního pozastavení emulace (diagnostika pro emu_run).
+ * @brief Důvod posledního pozastavení emulace.
  *
- * Slouží jen jako signál pro MCP `emu_run` (pole `stopped_by`), aby klient
- * rozlišil, zda emulace doběhla požadovaný počet framů, nebo ji zastavil
- * breakpoint / manuální pauza. Není to autoritativní stav emulace - pauzy
- * z jiných důvodů (HALT, fatal) ho nemusí nastavit, pak zůstane @c NONE.
+ * Nastavuje ho ten, kdo pauzu vyvolal, na emu vlákně před
+ * @c emulator_pause(true). Čte ho záznam zastavení (run_control.h) na vstupu
+ * do pauzy a MCP `emu_run` (pole `stopped_by`). Při každém rozběhu nebo
+ * kroku z pauzy se vynuluje na @c NONE (run_control_on_resume()), takže
+ * hodnota z minulé pauzy nepřežije do další. Pauza bez nastaveného důvodu
+ * (klávesa Pause v GUI z UI vlákna, příkaz fronty, který emulaci jen
+ * pozastaví) se v záznamu zastavení hlásí jako @c MANUAL, dokončený krok
+ * jako @c STEP.
  */
 typedef enum en_EMU_PAUSE_REASON
 {
     EMU_PAUSE_REASON_NONE = 0,    /**< Bez konkrétního důvodu / běží. */
     EMU_PAUSE_REASON_FRAMES,      /**< Doběhl požadovaný počet framů (emu_run). */
     EMU_PAUSE_REASON_BREAKPOINT,  /**< Zastaveno breakpointem. */
-    EMU_PAUSE_REASON_MANUAL       /**< Manuální pauza (UI nebo MCP pause). */
+    EMU_PAUSE_REASON_MANUAL,      /**< Manuální pauza (UI nebo MCP pause). */
+    EMU_PAUSE_REASON_RUN_TO,      /**< Zastaveno dočasným breakpointem (Run to cursor,
+                                       Step over přes CALL, MCP run_until_addr / step_out). */
+    EMU_PAUSE_REASON_EXIT,        /**< Žádost o konec běhu s návratovým kódem (akce `exit`
+                                       breakpointu, `--exit-after-frames`, `--timeout-*`).
+                                       Kde proces skončit nesmí (GUI, MCP), zůstane jen pauza,
+                                       viz automation.h. */
+    EMU_PAUSE_REASON_DEADLINE,    /**< Vypršel deadline běhu v emulovaném čase
+                                       (MCP parametr `deadline`, run_control.h). */
+    EMU_PAUSE_REASON_STEP,        /**< Dokončený krok jedné instrukce (step into,
+                                       step over bez CALL). Nastavuje záznam zastavení,
+                                       ne zdroj pauzy. */
+    EMU_PAUSE_REASON_BP_SATURATION, /**< Auto-pauza po překročení objemu zápisů akcí
+                                         breakpointů (breakpoints_fwd_account_bytes()). */
+    EMU_PAUSE_REASON_EVENT_TRIGGER, /**< Pauza triggerem záznamu událostí
+                                         (eventlog_trigger.h). */
+    EMU_PAUSE_REASON_REPLAY,        /**< Přechodná pauza záznamu vstupů: požadavek
+                                         (start záznamu nebo přehrávání) se vyřizuje
+                                         v paused smyčce, po něm se emulace znovu
+                                         rozběhne (replay.h). */
+    EMU_PAUSE_REASON_REPLAY_END,    /**< Přehrávání záznamu došlo na konec (replay.h). */
+    EMU_PAUSE_REASON_REPLAY_DESYNC, /**< Přehrávání záznamu se rozjelo: hash stavu
+                                         se liší od záznamu (replay.h). */
+    EMU_PAUSE_REASON_REPLAY_SEEK    /**< Přehrávání došlo na cílový snímek seeku
+                                         (replay_request_seek(), replay.h). */
 } en_EMU_PAUSE_REASON;
 
 /**
@@ -66,18 +94,20 @@ typedef struct st_EMULATOR
      * wait-loop ani control-plane drain ho NEvidí (čtou jen @c paused).
      *
      * Nastavuje a obnovuje se výhradně na emu vlákně mezi instrukcemi
-     * (BP-action FWD_SNAPSHOT), proto nevyžaduje atomic. Klidová hodnota
+     * (BP-action FWD_SNAPSHOT, checkpoint záznamu vstupů v bodě hranice
+     * snímku), proto nevyžaduje atomic. Akceptuje ho i
+     * snapshot_save_to_buffer(). Klidová hodnota
      * je false. Save/restore pattern umožňuje bezpečné vnoření.
      */
     bool snapshot_safepoint;
 
     /**
-     * @brief Důvod posledního pozastavení emulace (pro emu_run `stopped_by`).
+     * @brief Důvod posledního pozastavení emulace (záznam zastavení, emu_run `stopped_by`).
      *
      * Nastavuje ten, kdo pauzu vyvolal (frame-bounded stop, breakpoint hit,
-     * manuální pauza), na emu vlákně před @c emulator_pause(true). `emu_run`
-     * ho před spuštěním vynuluje na @c EMU_PAUSE_REASON_NONE a po doběhnutí
-     * přečte. Diagnostický signál, ne autoritativní stav (viz enum).
+     * manuální pauza, deadline), na emu vlákně před @c emulator_pause(true).
+     * Při rozběhu nebo kroku z pauzy se vynuluje na @c EMU_PAUSE_REASON_NONE
+     * (run_control_on_resume()). Viz enum.
      */
     en_EMU_PAUSE_REASON pause_reason;
 } st_EMULATOR;
@@ -105,7 +135,42 @@ extern st_EMULATOR g_emulator;
 extern "C"
 {
 #endif
+    /**
+     * @brief Ukončí emulátor (emu vlákno se vrátí do emulator_thread()).
+     *
+     * - @p exit_value == 0: běžný konec. Projde úklidem (dopsání videa,
+     *   série screenshotů, zachycení zvuku, uložení snapshotu a INI).
+     *   Při zapnuté automatizaci se předtím zapíše `result.json` s důvodem
+     *   `quit`, pokud ho nezapsal už řízený konec.
+     * - @p exit_value != 0: havarijní konec. Úklid se přeskočí (stav může
+     *   být rozbitý). Při zapnuté automatizaci se zapíše `result.json`
+     *   s důvodem `error` a návratový kód se změní na
+     *   @c AUTOMATION_EXIT_ERROR. Na Windows se mimo `--headless` čeká 5 s,
+     *   aby uživatel viděl výpis; v `--headless` se nečeká.
+     *
+     * Volá se jen z emu vlákna mimo rozpracovanou instrukci (paused smyčka,
+     * 20ms událost, háček konce snímku, inicializace).
+     *
+     * @param exit_value Návratový kód procesu (0 = úspěch).
+     * @post Funkce se nevrací (longjmp do emulator_thread()).
+     */
     void emulator_quit(int exit_value);
+
+    /**
+     * @brief Řízený konec s libovolným návratovým kódem a s úklidem.
+     *
+     * Na rozdíl od emulator_quit() s nenulovým kódem projde stejným úklidem
+     * jako běžný konec (video, zvuk, screenshoty, snapshot, INI), takže
+     * artefakty jsou po skončení procesu úplné. `result.json` sem nezapisuje,
+     * to dělá volající (automation_finish()) předem.
+     *
+     * Kontext volání stejný jako u emulator_quit().
+     *
+     * @param exit_value Návratový kód procesu (0-255).
+     * @post Funkce se nevrací (longjmp do emulator_thread()).
+     */
+    void emulator_quit_with_code(int exit_value);
+
     gpointer emulator_thread(gpointer ptr);
 
     /**

@@ -7,6 +7,10 @@ architecture. For convenient pattern construction there is the
 **Pattern Builder** (dual editable HEX + ASCII fields) and the
 **Char Inserter** (special character palette).
 
+The search is one-shot. To find a variable whose value you do not know
+(lives, score, a timer) by watching how it changes, use
+[Memory Search](../memory-search.md).
+
 ## 1. Opening the search panel
 
 | Path | What happens |

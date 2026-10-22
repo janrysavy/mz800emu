@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include "emulator/debugger/dbgapi_cmdrq.h"
+#include "emulator/replay.h"
 
 
 /* Forward deklarace dbgapi UI submit API.
@@ -68,6 +69,30 @@ typedef struct st_DISPATCH_STUB_STATE {
     st_DBGAPI_AUDIO_CAPTURE_PARAM ac_last;          /**< Kopie posledního DBGAPI_CMD_AUDIO_CAPTURE (vstup). */
     int                  ac_calls;                  /**< Počet DBGAPI_CMD_AUDIO_CAPTURE. */
     bool                 ac_fake_fail;              /**< true = stub vrátí chybu "An audio capture is already running". */
+    unsigned             tr_segment;                /**< TRACE_SNAPSHOT: segment kanálu (0 = nic nezaznamenáno). */
+    unsigned             tr_records;                /**< TRACE_SNAPSHOT: next_seq (záznamy jen v RAM). */
+    int                  tr_snap_calls;             /**< Počet DBGAPI_CMD_TRACE_SNAPSHOT. */
+    int                  tr_bump_on_call;           /**< > 0: od tohoto snímku (1 = první) je segment o 1 vyšší. */
+    st_DBGAPI_TRACE_SNAPSHOT_PARAM tr_last;         /**< Kopie vstupu posledního TRACE_SNAPSHOT (out neplatné). */
+    int                  tr_resolve_calls;          /**< Počet DBGAPI_CMD_TRACE_RESOLVE. */
+    unsigned             aud_segment;               /**< audio_capture_stream_copy: segment (0 = žádné zachycení). */
+    unsigned             aud_records;               /**< audio_capture_stream_copy: next_seq každého proudu. */
+    uint64_t             aud_origin;                /**< audio_capture_stream_copy: origin_ticks. */
+    int                  aud_copy_calls;            /**< Počet audio_capture_stream_copy. */
+    st_DBGAPI_RAMLOG_PARAM rl_last;                 /**< Kopie vstupu posledního DBGAPI_CMD_RAMLOG (výstupní ukazatele neplatné). */
+    int                  rl_calls;                  /**< Počet DBGAPI_CMD_RAMLOG. */
+    st_DBGAPI_COVERAGE_PARAM cov_last;              /**< Kopie vstupu posledního DBGAPI_CMD_COVERAGE (snap neplatný). */
+    int                  cov_calls;                 /**< Počet DBGAPI_CMD_COVERAGE. */
+    en_COVERAGE_LEVEL    cov_level;                 /**< Úroveň dat stubu (nastaví START), vrací ji stav i snímek. */
+    uint8_t              ms_ram[ 256 ];             /**< memsearch: prvních 256 B User RAM pro DBGAPI_CMD_MEMSEARCH_SAMPLE (zbytek 0). */
+    int                  ms_sample_calls;           /**< Počet DBGAPI_CMD_MEMSEARCH_SAMPLE. */
+    bool                 ms_regions;                /**< true = REGIONS_ENUMERATE vrátí RAM, MemExt RAM kus 41h a ROM_LOWER (jen pro čtení). */
+    bool                 ms_pehu;                   /**< true = GET_MEMEXT_INFO hlásí připojený PEHU, slot 4 = raw kus 41h. */
+    st_DBGAPI_FREEZE_LIST_ITEM frz_items[ 256 ];    /**< Tabulka Freeze Bytes stubu (FREEZE_ADD / _REMOVE / _LIST). */
+    uint32_t             frz_count;                 /**< Počet záznamů frz_items. */
+    int                  obs_calls;                 /**< Počet DBGAPI_CMD_STATE_OBSERVE. */
+    st_DBGAPI_STATE_OBSERVE_PARAM obs_last;         /**< Kopie posledního STATE_OBSERVE po vyplnění (windows neplatné po návratu). */
+    st_DBGAPI_OBSERVE_WINDOW obs_last_win[ 16 ];    /**< Kopie oken posledního STATE_OBSERVE (buf neplatný po návratu). */
     void                *last_result;  /**< result_ptr poslední call. */
     int                  call_count;   /**< Počet volání mocku. */
     bool                 fail_next;    /**< Pokud true, příští call vrátí false. */
@@ -150,6 +175,7 @@ typedef struct st_DISPATCH_STUB_STATE {
     uint8_t              mem_write_buf[256];   /**< Zachycená kopie dat z MEM_WRITE_CHECKED.data */
     uint16_t             mem_write_buf_len;    /**< Počet zachycených bajtů. */
     uint16_t             mem_write_addr;       /**< Zachycená adresa z param.addr. */
+    uint32_t             mem_write_req_len;    /**< Délka v param.length, jak ji dispatch předal (před ořezem kopie). */
 
     /* V0.B.6 - chybející Tools:
      *
@@ -170,7 +196,8 @@ typedef struct st_DISPATCH_STUB_STATE {
      *
      * RUN_TO - zachycená target adresa:
      *   run_to_last_addr = z uint16_t* data_ptr.
-     *   run_to_result    = hodnota, kterou stub zapíše do int* result_ptr
+     *   run_to_result    = status, který stub zapíše do result_ptr
+     *                      (st_DBGAPI_RUN_START_RESULT)
      *                      (DBGAPI_RUN_TO_STARTED = 0 default,
      *                      DBGAPI_RUN_TO_PAUSED_ONLY = emulace běžela).
      */
@@ -181,6 +208,21 @@ typedef struct st_DISPATCH_STUB_STATE {
     int                  step_over_calls;
     uint16_t             run_to_last_addr;
     int                  run_to_result;
+
+    /*
+     * run-control (M5):
+     *   run_seq        = číslo běhu, které stub vrací (RUN, RUN_TO, STEP_*, PAUSE)
+     *   step_over_runs = STEP_OVER jako CALL (běh k dočasnému BP, ne krok)
+     *   pause_last     = poslední parametr PAUSE (vstupy)
+     *   deadline_last  = poslední parametr RUN_DEADLINE
+     *   deadline_arms / deadline_clears = počty nastavení / zrušení
+     */
+    uint64_t             run_seq;
+    bool                 step_over_runs;
+    st_DBGAPI_PAUSE_PARAM pause_last;
+    st_DBGAPI_RUN_DEADLINE_PARAM deadline_last;
+    int                  deadline_arms;
+    int                  deadline_clears;
     /* Per-call fail control - pro step_n partial test:
      *   step_into_fail_after_n = pokud > 0, stub vrátí false na N+1. volání
      *   STEP_INTO. 0 = vždy success. Reset přes dispatch_stub_reset. */
@@ -370,7 +412,8 @@ typedef struct st_DISPATCH_STUB_STATE {
      *   nmi_inject_calls - kolikrát byl NMI_INJECT vyslán.
      *
      * mem_write_force:
-     *   mwf_addr / mwf_buf / mwf_len - zachycený obsah parametru.
+     *   mwf_addr / mwf_buf / mwf_len - zachycený obsah parametru (mwf_len
+ *   po ořezu na velikost mwf_buf), mwf_req_len - nezkrácená délka.
      */
     uint16_t             io_last_port;
     uint8_t              io_last_value;
@@ -384,6 +427,7 @@ typedef struct st_DISPATCH_STUB_STATE {
     int                  nmi_inject_calls;
     uint16_t             mwf_addr;
     uint16_t             mwf_len;
+    uint32_t             mwf_req_len;          /**< Délka v param.len u MEM_WRITE_FORCE, jak ji dispatch předal. */
     uint8_t              mwf_buf[ 256 ];
 
     /* V1.A.7 - Profiler Tools scenario:
@@ -816,6 +860,28 @@ typedef struct st_DISPATCH_STUB_STATE {
 
 
 extern st_DISPATCH_STUB_STATE g_stub_state;
+
+
+/**
+ * @brief Náhrada modulu záznamu vstupů (replay.h) pro testy dispatch.
+ *
+ * Požadavky (replay_request_*) se "vyřídí" hned: zapíšou se sem, číslo
+ * požadavku = počet volání, výsledek podle @c fail. Stav vrací
+ * replay_get_status() z @c status (test ho smí nastavit).
+ */
+typedef struct st_DISPATCH_STUB_REPLAY {
+    int calls;                  /**< Počet požadavků od resetu. */
+    int last_kind;              /**< 1 = record, 2 = play, 3 = stop, 4 = rewind, 5 = seek. */
+    char last_path[512];        /**< Cesta posledního požadavku ("" = žádná). */
+    uint32_t last_interval;     /**< hash_interval posledního záznamu (0 = výchozí). */
+    bool last_pause_after_load; /**< pause_after_load posledního přehrání. */
+    uint32_t last_frames;       /**< frames rewindu / frame seeku. */
+    st_REPLAY_CKPT_CFG last_ckpt; /**< Nastavení checkpointů posledního záznamu / přehrání (-1 = z INI). */
+    bool fail;                  /**< true = požadavek skončí chybou "stub failure". */
+    st_REPLAY_STATUS status;    /**< Stav vracený replay_get_status(). */
+} st_DISPATCH_STUB_REPLAY;
+
+extern st_DISPATCH_STUB_REPLAY g_stub_replay;
 
 
 /** @brief Reset stub state před testem. */

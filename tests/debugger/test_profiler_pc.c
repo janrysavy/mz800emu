@@ -303,6 +303,21 @@ void test_profiler_pc_bitmap ( void )
 }
 
 
+/**
+ * @brief Zapnutí a vypnutí profileru přepne jeho bit v masce háčků po
+ *        instrukci (brána hlavní smyčky čte jen masku) a nesahá na cizí bity.
+ */
+void test_profiler_pc_post_insn_mask ( void )
+{
+    TEST_ASSERT_TRUE ( g_mzarch_post_insn_hooks & MZARCH_POST_INSN_PROFILER_PC );
+    TEST_ASSERT_FALSE ( g_mzarch_post_insn_hooks & MZARCH_POST_INSN_CPUTRACK );
+    profiler_pc_set_active ( false );
+    TEST_ASSERT_EQUAL_UINT32 ( 0, g_mzarch_post_insn_hooks );
+    profiler_pc_set_active ( true );
+    TEST_ASSERT_EQUAL_UINT32 ( MZARCH_POST_INSN_PROFILER_PC, g_mzarch_post_insn_hooks );
+}
+
+
 int main ( int argc, char *argv[] )
 {
     mztest_parse_args ( argc, argv );
@@ -319,6 +334,7 @@ int main ( int argc, char *argv[] )
     RUN_TEST ( test_profiler_pc_rows_sort_range );
     RUN_TEST ( test_profiler_pc_export_csv );
     RUN_TEST ( test_profiler_pc_bitmap );
+    RUN_TEST ( test_profiler_pc_post_insn_mask );
 
     return UNITY_END ( );
 }

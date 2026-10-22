@@ -131,7 +131,8 @@ in the bottom bar, red caret under the glyph).
 - **LMB in the ASCII column** -> cursor jump + edit_mode = ASCII
 - **RMB in either** -> context menu (bookmark, freeze, annotation,
   fill, undo/redo, insert character, show in Memory Map, PCG editor
-  for PCG region)
+  for PCG region, Who wrote this byte? - see
+  [RAM Write Log](../ram-write-log.md))
 
 ## Keyboard navigation
 

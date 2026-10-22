@@ -24,10 +24,15 @@ static en_SNAPSHOT_RESULT snap_pio8255_save(st_SNAPSHOT_CONTEXT *ctx)
 
     snapshot_xml_open_element(w, "pio8255_state");
 
-    /* Klávesová matice — 10 sloupců */
+    /* Klávesová matice — 10 sloupců. Pro hash stavu výsledná matice, kterou
+     * čte program (keyboard_matrix & vkbd_matrix): stejné klávesy mohou
+     * držet různé zdroje (HID skript ve vkbd_matrix při záznamu vstupů,
+     * keyboard_matrix při jeho přehrání). */
     snapshot_xml_open_element(w, "keyboard_matrix");
     for (int i = 0; i < 10; i++) {
-        snapshot_xml_write_hex8(w, km_names[i], g_pio8255.keyboard_matrix[i]);
+        uint8_t v = g_pio8255.keyboard_matrix[i];
+        if (ctx->for_hash) v &= g_pio8255.vkbd_matrix[i];
+        snapshot_xml_write_hex8(w, km_names[i], v);
     }
     snapshot_xml_close_element(w); /* keyboard_matrix */
 

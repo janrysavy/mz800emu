@@ -14,7 +14,7 @@ end
 When the BP fires, a 24 B record is written to `<dir>/<name>.NNN.bin`.
 The marker name is pre-registered during BP parsing and is represented
 in the binary by a stable `uint16 marker_id`. The id -> name mapping is
-dumped to `meta.json` `subsys_header.markers`.
+dumped to the manifest `<name>.json` `subsys_header.markers`.
 
 Used for:
 - marking significant points in the recording for later seek (= "an
@@ -61,7 +61,7 @@ Alignment 8 B, compatible with intlog header (shared first 16 B).
 ### Field `marker_id`
 
 Stable within a single emulator run. The mapping to human-readable
-name is in `meta.json`:
+name is in the manifest `<name>.json`:
 
 ```json
 "subsys_header": {
@@ -87,7 +87,7 @@ Currently always zero. Reserved for future extensions:
 - 1 B marker type tag (info / warn / error)
 - 1 B padding
 
-## meta.json - full structure
+## Manifest `<name>.json` - full structure
 
 ```json
 {

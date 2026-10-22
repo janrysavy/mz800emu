@@ -25,6 +25,7 @@
 
 #include "CmtGlyphRenderer.h"
 #include "imgui_cmt.h"
+#include "emulator/replay.h"
 #include "ImGuiCmt.hpp"
 
 extern "C"
@@ -76,7 +77,7 @@ void imgui_cmt_row0_time_label_and_boost_switch(void)
         // v klidovém stavu = STOP). Aktivace bezpečná jen v STOP.
         ImGui::TableNextColumn();
         bool ui_cmt_hack = CMTHACK_TEST_IS_INSTALLED;
-        ImGui::BeginDisabled(!CMT_TEST_STOP);
+        ImGui::BeginDisabled(!CMT_TEST_STOP || imgui_cmt_replay_recording());
         if (ImGui::Checkbox(_L("CMT Hack"), &ui_cmt_hack))
         {
             cmthack_load_rom_patch(!CMTHACK_TEST_IS_INSTALLED);
@@ -427,7 +428,8 @@ void imgui_cmt_row4_combo_mzspeed(void)
         };
     };
 
-    bool is_dissabled = (!CMT_TEST_STOP);
+    /* Výchozí rychlost záznam vstupů nezopakuje - při záznamu zamčená. */
+    bool is_dissabled = (!CMT_TEST_STOP) || imgui_cmt_replay_recording();
 
     if (is_dissabled)
     {
@@ -484,66 +486,18 @@ void imgui_cmt_row4_combo_mzspeed(void)
     };
 }
 
+/* Transport kazety provádí emu vlákno (replay_host_cmt(): hned v pauze,
+ * za běhu na hranici snímku), aby ho záznam vstupů zachytil a UI vlákno
+ * nesahalo na stav kazety během emulace. Seznam bloků obnoví jádro kazety. */
+
 void imgui_cmt_button_previous_action(void)
 {
-    assert(g_cmt.ext->container->cb_previous_block);
-    if (!g_cmt.ext->container->cb_previous_block)
-        return;
-
-    gboolean fl_play = CMT_TEST_PLAY;
-    gboolean fl_paused = CMT_TEST_PAUSED;
-
-    if (fl_play)
-        cmt_stop();
-
-    if (EXIT_FAILURE == g_cmt.ext->container->cb_previous_block())
-        return;
-
-    if (fl_play)
-    {
-        if (fl_paused)
-        {
-            cmt_play_paused();
-        }
-        else
-        {
-            cmt_play();
-        };
-    };
-
-    // Aktualizace seznamu souborů se musi zavolat z UI
-    imgui_cmt_tape_update_filelist();
+    replay_host_cmt(REPLAY_CMT_PREV, 0, NULL);
 }
 
 void imgui_cmt_button_next_action(void)
 {
-    assert(g_cmt.ext->container->cb_next_block);
-    if (!g_cmt.ext->container->cb_next_block)
-        return;
-
-    gboolean fl_play = CMT_TEST_PLAY;
-    gboolean fl_paused = CMT_TEST_PAUSED;
-
-    if (fl_play)
-        cmt_stop();
-
-    if (EXIT_FAILURE == g_cmt.ext->container->cb_next_block())
-        return;
-
-    if (fl_play)
-    {
-        if (fl_paused)
-        {
-            cmt_play_paused();
-        }
-        else
-        {
-            cmt_play();
-        };
-    };
-
-    // Aktualizace seznamu souborů se musi zavolat z UI
-    imgui_cmt_tape_update_filelist();
+    replay_host_cmt(REPLAY_CMT_NEXT, 0, NULL);
 }
 
 // Konstantní velikost tlačítek
@@ -634,28 +588,7 @@ void imgui_cmt_main_controls(CmtGlyphRenderer renderer)
         ImGui::BeginDisabled(!btn_stop_enabled);
         if (ImGui::Button("##cmt_btn_stop", CMT_BUTTON_SIZE))
         {
-            if (CMT_TEST_RECORD)
-            {
-                st_CMTEXT_BLOCK *block = cmtext_get_block(g_cmt.ext);
-                uint32_t size = cmtext_block_get_size(block);
-                if (!size)
-                {
-                    cmt_eject();
-                }
-                else
-                {
-                    st_CMTEXT_CONTAINER *container = cmtext_get_container(g_cmt.ext);
-                    const char *fpath = cmtext_container_get_filepath(container);
-                    char *filepath = g_strdup(fpath);
-                    cmt_eject();
-                    cmt_open_file_by_extension(filepath);
-                    g_free(filepath);
-                };
-            }
-            else
-            {
-                cmt_stop();
-            };
+            replay_host_cmt(REPLAY_CMT_STOP_BUTTON, 0, NULL);
         };
         renderer.drawStop();
         ImGui::EndDisabled();
@@ -675,7 +608,7 @@ void imgui_cmt_main_controls(CmtGlyphRenderer renderer)
         ImGui::BeginDisabled(!btn_play_enabled);
         if (ImGui::Button("##cmt_btn_play", CMT_BUTTON_SIZE))
         {
-            cmt_play();
+            replay_host_cmt(REPLAY_CMT_PLAY, 0, NULL);
         };
         renderer.drawPlay(CMT_TEST_PLAY);
         ImGui::EndDisabled();
@@ -685,7 +618,7 @@ void imgui_cmt_main_controls(CmtGlyphRenderer renderer)
         ImGui::BeginDisabled(!btn_pause_enabled);
         if (ImGui::Button("##cmt_btn_pause", CMT_BUTTON_SIZE))
         {
-            cmt_pause(!CMT_TEST_PAUSED);
+            replay_host_cmt(REPLAY_CMT_PAUSE, CMT_TEST_PAUSED ? 0 : 1, NULL);
         };
         renderer.drawPause(CMT_TEST_PAUSED);
         ImGui::EndDisabled();
@@ -709,7 +642,8 @@ void imgui_cmt_side_controls(CmtGlyphRenderer renderer)
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + buttonOffset);
-        ImGui::BeginDisabled(!btn_open_enabled);
+        /* Vložení jiné pásky záznam nezopakuje (rozhodnutí: média za záznamu ne). */
+        ImGui::BeginDisabled(!btn_open_enabled || imgui_cmt_replay_recording());
         if (ImGui::Button(ICON_IGFD_FOLDER_OPEN, CMT_BUTTON_SIZE))
         {
             cmt_ui_open(false);
@@ -723,7 +657,7 @@ void imgui_cmt_side_controls(CmtGlyphRenderer renderer)
         ImGui::BeginDisabled(!btn_eject_enabled);
         if (ImGui::Button("##cmt_btn_eject", CMT_BUTTON_SIZE))
         {
-            cmt_eject();
+            replay_host_cmt(REPLAY_CMT_EJECT, 0, NULL);
         };
         renderer.drawEject();
         ImGui::EndDisabled();
@@ -771,6 +705,33 @@ void imgui_cmt_row5_buttons_layout()
     }
 }
 
+bool imgui_cmt_replay_recording(void)
+{
+    return g_atomic_int_get(&g_replay_mode) == REPLAY_MODE_RECORDING;
+}
+
+bool imgui_cmt_replay_lock_begin(bool whole_window)
+{
+    if (!replay_is_active())
+        return false;
+    if (imgui_cmt_replay_recording() && !whole_window)
+    {
+        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s",
+                           _("Recording a replay: tape control is recorded; another tape and speed settings are not available."));
+        return false;
+    };
+    ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s",
+                       _("Tape control is not available while a replay is recorded or played."));
+    ImGui::BeginDisabled(true);
+    return true;
+}
+
+void imgui_cmt_replay_lock_end(bool locked)
+{
+    if (locked)
+        ImGui::EndDisabled();
+}
+
 void imgui_cmt(bool *p_open)
 {
     /* Focus-on-open: detekce false -> true transition okna. Při otevření
@@ -805,6 +766,8 @@ void imgui_cmt(bool *p_open)
             auto_layout_first_use_portrait(title, 400.0f, 500.0f);
             ImGui::Begin(title, p_open, flags);
         }
+        /* Záznam i přehrání vstupů: CMT hack teď nejde přepnout. */
+        const bool replay_lock = imgui_cmt_replay_lock_begin(true);
 
         // CMT Hack checkbox vpravo nahoře - umožní vypnutí v hack-active
         // variantě okna (= bez restrikcí, CMT v hack modu nemá normální
@@ -849,6 +812,7 @@ void imgui_cmt(bool *p_open)
             *p_open = false;
         };
 
+        imgui_cmt_replay_lock_end(replay_lock);
         ImGui::End();
         return;
     };
@@ -914,6 +878,7 @@ void imgui_cmt(bool *p_open)
     const char *cmt_title = _L("Virtual CMT");
     auto_layout_first_use_portrait(cmt_title, 500.0f, 300.0f);
     ImGui::Begin(cmt_title, p_open, flags);
+    const bool replay_lock = imgui_cmt_replay_lock_begin(false);
 
     imgui_cmt_row0_time_label_and_boost_switch();
     imgui_cmt_row1_time_display();
@@ -965,5 +930,6 @@ void imgui_cmt(bool *p_open)
         *p_open = false;
     };
 
+    imgui_cmt_replay_lock_end(replay_lock);
     ImGui::End();
 }

@@ -119,9 +119,24 @@ mz_add_test(dbgapi_cmd_origin
     LABELS   "emu;debugger"
 )
 
+# Každý příkaz dbgapi má výslovnou třídu záznamu vstupů (replay_dbg_classify,
+# N48): nový příkaz bez zařazení test shodí.
+mz_add_test(replay_dbg_classify
+    TYPE     EMU
+    SOURCES  test_replay_dbg_classify.c
+    LABELS   "emu;debugger;replay"
+)
+
 mz_add_test(dbgapi_submit_timeout
     TYPE     EMU
     SOURCES  test_dbgapi_submit_timeout.c
+    LABELS   "emu;debugger"
+)
+
+# Výběr řídicího příkazu z fronty mimo pořadí (drain na hranici akce BP).
+mz_add_test(dbgapi_dequeue_matching
+    TYPE     EMU
+    SOURCES  test_dbgapi_dequeue_matching.c
     LABELS   "emu;debugger"
 )
 
@@ -150,6 +165,15 @@ mz_add_test(io_window_queue
 mz_add_test(bpt_window_queue
     TYPE     EMU
     SOURCES  test_bpt_window_queue.c
+             ${CMAKE_SOURCE_DIR}/src/ui-imgui/debugger/dbgapi_helpers.cpp
+    LABELS   "emu;debugger;ui-breakpoints"
+)
+
+# Test Eval v editačním panelu BP: výraz vyhodnotí emu vlákno přes CMDRQ
+# frontu (dbg_ui_bp_test_eval), znak `!` se ignoruje (bez spuštění MEM_R BP).
+mz_add_test(bp_test_eval_queue
+    TYPE     EMU
+    SOURCES  test_bp_test_eval_queue.c
              ${CMAKE_SOURCE_DIR}/src/ui-imgui/debugger/dbgapi_helpers.cpp
     LABELS   "emu;debugger;ui-breakpoints"
 )
@@ -216,6 +240,16 @@ mz_add_test(callstack_window_queue
     LABELS   "emu;debugger;ui-callstack"
 )
 
+# Okno RAM Write Log a Memory Browser (Who wrote this byte?): záznam zápisů
+# se ovládá a čte přes CMDRQ frontu (DBGAPI_CMD_RAMLOG, UI helper
+# dbg_ui_ramlog v dbgapi_helpers.cpp), ne přímo z UI vlákna.
+mz_add_test(ramlog_window_queue
+    TYPE     EMU
+    SOURCES  test_ramlog_window_queue.c
+             ${CMAKE_SOURCE_DIR}/src/ui-imgui/debugger/dbgapi_helpers.cpp
+    LABELS   "emu;debugger;ramlog"
+)
+
 # Okno debuggeru (Ctrl+R) a menu Emulation: vynucený refresh obrazovky jde
 # přes CMDRQ frontu (DBGAPI_CMD_SCREEN_REFRESH, UI helper v dbgapi_helpers.cpp),
 # ne přímo z UI vlákna.
@@ -229,6 +263,12 @@ mz_add_test(screen_refresh_queue
 mz_add_test(tlog_common
     TYPE     EMU
     SOURCES  test_tlog_common.c
+    LABELS   "emu;debugger;trace-suite"
+)
+
+mz_add_test(trace_reader
+    TYPE     EMU
+    SOURCES  test_trace_reader.c
     LABELS   "emu;debugger;trace-suite"
 )
 
@@ -351,6 +391,25 @@ mz_add_test(profiler_pc
     LABELS   "emu;debugger"
 )
 
+# Pokrytí kódu, dekodér kroku Z80 (coverage_decode.h): délky a výsledky
+# podmínek proti skutečnému kroku jádra z80_step a proti z80_dasm.
+mz_add_test(coverage_decode
+    TYPE     STANDALONE
+    SOURCES  test_coverage_decode.c
+             ${CMAKE_SOURCE_DIR}/src/emulator/debugger/coverage/coverage_decode.c
+    LIBS     mzlib_cpu_z80 mzlib_dasm_z80
+    LABELS   "standalone;debugger"
+)
+
+# Pokrytí kódu, jádro (coverage.h): úrovně branch a detail nad syntetickými
+# kroky - stavy větví, verze kódu, kapacita, nečinný HALT, epochy.
+mz_add_test(coverage
+    TYPE     STANDALONE
+    SOURCES  test_coverage.c
+             ${CMAKE_SOURCE_DIR}/src/emulator/debugger/coverage/coverage_decode.c
+    LABELS   "standalone;debugger"
+)
+
 mz_add_test(mhmap_resolve
     TYPE     EMU
     SOURCES  test_mhmap_resolve.c
@@ -362,5 +421,66 @@ mz_add_test(mhmap_resolve
 mz_add_test(debugger_init_flag
     TYPE     EMU
     SOURCES  test_debugger_init_flag.c
+    LABELS   "emu;debugger"
+)
+
+# Jádro záznamu zápisů do paměti (ramlog): ring, mapa posledního
+# zapisovatele, filtr, dotazy - bez emulátoru.
+mz_add_test(ramlog
+    TYPE     STANDALONE
+    SOURCES  test_ramlog.c
+             ${CMAKE_SOURCE_DIR}/src/emulator/debugger/trace/ramlog.c
+    LABELS   "standalone;debugger;ramlog"
+)
+# if(TARGET): při MZ_NO_DEBUGGER se test neregistruje a konfigurace by jinak
+# skončila chybou "target not built by this project".
+if(TARGET test_ramlog)
+    target_include_directories(test_ramlog PRIVATE ${CMAKE_SOURCE_DIR}/src/emulator/debugger/trace)
+endif()
+
+# Čísla běhů a kruh záznamů zastavení (run_log, run-control): číslování,
+# čekání s timeoutem a probuzením, přepsání kruhu, ukončení - bez emulátoru.
+mz_add_test(run_log
+    TYPE     STANDALONE
+    SOURCES  test_run_log.c
+             ${CMAKE_SOURCE_DIR}/src/emulator/debugger/run_control/run_log.c
+    LABELS   "standalone;debugger"
+)
+if(TARGET test_run_log)
+    target_include_directories(test_run_log PRIVATE ${CMAKE_SOURCE_DIR}/src/emulator/debugger/run_control)
+endif()
+
+# Drain fronty v pauze skončí po příkazu kroku: příkaz poslaný hned po
+# kroku se zpracuje až po jeho provedení (MCP step_n ztrácel kroky).
+mz_add_test(dbgapi_drain_paused
+    TYPE     EMU
+    SOURCES  test_dbgapi_drain_paused.c
+    LABELS   "emu;debugger"
+)
+
+# Napojení záznamu zápisů (ramlog_hook) na jádro MZ-800: callback, maska
+# RAM fast-path, RAM / ROM / plány VRAM, zdroje, reset.
+mz_add_test(ramlog_hook
+    TYPE     EMU
+    SOURCES  test_ramlog_hook.c
+    LABELS   "emu;debugger;ramlog"
+)
+
+# Postupné hledání proměnných (memsearch): čisté jádro nad syntetickými
+# vzorky - dekódování, filtry, undo/redo s referencí, odpojený span,
+# předvolby prostoru; informativně čas filtru nad 16 MiB.
+mz_add_test(memsearch
+    TYPE     EMU
+    SOURCES  test_memsearch.c
+    LABELS   "emu;debugger"
+)
+
+# Memory Search: vzorek prostoru hledání pořizuje emu vlákno přes CMDRQ
+# frontu (DBGAPI_CMD_MEMSEARCH_SAMPLE, UI helper dbg_ui_memsearch_sample
+# v dbgapi_helpers.cpp), odpojený span se označí.
+mz_add_test(memsearch_window_queue
+    TYPE     EMU
+    SOURCES  test_memsearch_window_queue.c
+             ${CMAKE_SOURCE_DIR}/src/ui-imgui/debugger/dbgapi_helpers.cpp
     LABELS   "emu;debugger"
 )

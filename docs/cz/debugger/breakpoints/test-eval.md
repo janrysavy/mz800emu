@@ -60,30 +60,24 @@ per-typ enforcement vrstvou, ale Test Eval žádný hook context nemá).
 - **`IsRead`, `IsWrite`, `IsExec`, `IsPort`** - všechny false. Výrazy
   jako `IsWrite && Value == 0x42` ve Test Eval vždy false.
 - **`self_id`** - explicitně -1, ne ID žádného BP (ani editovaného).
-- **I/O port read** `port[N]` - vrací 0 (bezpečnostní opatření, aby
-  Test Eval neměl side-effects na live I/O).
+Čtení portu `port[N]` funguje jako všude jinde: sonda bez vedlejšího
+efektu (viz `expression-syntax.md`: u většiny obvodů vrací místo
+hodnoty, kterou by přečetla instrukce `IN`, uložený stav obvodu nebo
+poslední stav sběrnice).
 
-## Threading caveat
+## Kdy se výraz vyhodnotí
 
-Test Eval se volá z UI vlákna (= main thread, ImGui render loop).
-Kontext čte live CPU strukturu a memory subsystem, které mutuje
-emulační vlákno.
+Výraz vyhodnotí sám emulátor, ne okno. Všechny identifikátory jednoho
+výrazu pocházejí ze stejného okamžiku:
 
-**Race s emulačním vláknem** je technicky možný:
+- **Emulace v pauze** - vyhodnotí se hned (do asi 20 ms), výsledek
+  odpovídá stavu, který ukazuje debugger.
+- **Běžící emulace** - vyhodnotí se na konci aktuálního snímku. Výsledek
+  je stav v tom okamžiku, který se dál mění; stačí na "teď je A 0x42",
+  na přesné ladění ne.
 
-- Pokud emulátor běží (= není pause), CPU registry se mění mezi
-  vyhodnocením různých identifikátorů ve výrazu (= výraz `A == HL` může
-  vidět A z jednoho cycle a HL z jiného).
-- Memory deref `[addr]` chodí přes banking, který se může přepnout
-  mid-eval.
-
-Praktická situace:
-
-- **Paused emu** (debugger zastavil běh) - ctx je stable, výsledek
-  deterministický.
-- **Running emu** - výsledek je snapshot best-effort. Per-frame
-  konzistence OK pro lidskou interpretaci ("aktuálně asi A=0x42"),
-  pro precizní debugging neslouží.
+Když emulátor neodpoví do jedné sekundy, výsledek je
+`ERR: The emulator did not respond in time.`
 
 Doporučení: Test Eval používat **při paused debugger** (= klasický
 workflow před stiskem Run).
@@ -170,9 +164,10 @@ smysluplný výsledek:
 - **`Cycle`** - vrací GDG pixel ticks (= ne čistý Z80 T-state).
   Pro per-frame relativní timing je OK.
 - **Side-effect memory read** `[addr]!` - parsováno, ale flag `!` se
-  v Test Eval ignoruje (= vždy běžný memory read bez side-effectu, viz
-  `expression-syntax.md`).
-- **Side-effect port read** `port[N]!` - dtto.
+  v Test Eval ignoruje (= vždy běžný memory read bez side-effectu:
+  MEM_R breakpointy na adrese se nespustí, viz `expression-syntax.md`).
+- **Side-effect port read** `port[N]!` - dtto: čte se jako sonda
+  `port[N]`, stav obvodu se nezmění.
 - **Hit count / skip count semantika** - per-BP runtime stav, výraz
   k němu nemá přístup.
 

@@ -33,16 +33,16 @@ relative to the vanilla version.
 <dir>/
     <name>.json                    # meta + chunks anchor + initial regs
     <name>_initial_ram.bin         # 64 KB CPU RAM dump
-    <name>_initial_vram.bin        # 32 KB VRAM (MZ-800 only)
-    <name>_initial_exvram.bin      # 32 KB EXVRAM (MZ-800 only)
-    <name>_initial_cgram.bin       # 4 KB CG-RAM (MZ-1500 only)
+    <name>_initial_vram.bin        # VRAM: 16 KB on MZ-800, 4 KB on MZ-700 and MZ-1500
+    <name>_initial_exvram.bin      # 16 KB EXVRAM (MZ-800 only)
     <name>_initial_pcg.bin         # 24 KB PCG (MZ-1500 only)
     <name>_initial_memext.bin      # 512 KB Memext (if connected)
-    <name>_initial_rdN.bin         # per-Ramdisk (if active)
     <name>.000.bin                 # chunk 0 - per-instr events
     <name>.001.bin                 # chunk 1
     ...
 ```
+
+The content of RAM disks is not part of the initial state.
 
 `<name>.json` is the text metadata file (see below). `<name>_initial_*.bin`
 are snapshots of physical memories at the moment recording starts
@@ -57,7 +57,7 @@ events.
 | 2      | 1 B      | insn_length (1-4)                              |
 | 3      | 4 B      | insn_bytes (only the first insn_length bytes are valid) |
 | 7      | 4 B      | wait_clk (uint32 LE)                           |
-| 11     | 1 B      | reserved (alignment to 12 B)                   |
+| 11     | 1 B      | t_std - standard T-states of the instruction (format v2) |
 
 Endianness of the write is host byte order; on all supported emulator
 platforms (Windows x86_64, Linux x86_64) this is little-endian.
@@ -73,10 +73,24 @@ is the address of the `JP` opcode, not the jump target.
 Number of valid bytes in `insn_bytes`. Z80 instructions have length 1-4 B
 (prefix `CB`, `DD`, `ED`, `FD` + opcode + optional offset/imm bytes).
 
+**Format v2: `insn_length` 0 = interrupt acknowledge.** Such a record
+belongs to no instruction: `regPC` is the address of the interrupt
+handler (PC after the acknowledge), `insn_bytes` and `wait_clk` are 0 and
+`t_std` (byte 11) carries the T-states of the acknowledge (e.g. 19 for
+IM 2). It is written between the last instruction before the interrupt
+(or the collapsed HALT record the interrupt ended) and the first
+instruction of the handler. Thanks to it, the sum of `t_std + wait_clk`
+over all records matches the elapsed CPU time.
+
 ### Field insn_bytes
 
 Up to 4 bytes of opcode + operands. Bytes beyond `insn_length` are
 undefined (likely 0, but the parser must not rely on it).
+
+The bytes are the ones the CPU fetched when it executed the instruction,
+so they are correct also for an instruction that overwrites its own bytes
+or switches the memory banking under itself (the memory may hold other
+bytes at `regPC` right after the instruction).
 
 From `regPC` + `insn_bytes[0..insn_length-1]` one can fully reconstruct:
 - what the Z80 executed (= disassemble)
@@ -101,9 +115,12 @@ instruction.
 The `wait_clk` value comes from two hot-path places where the emulator
 inserts WAIT cycles:
 
-1. **MREQ to VRAM in MZ-700 mode** - WAIT due to synchronization with
-   HBLN (= so that the CPU does not write to VRAM during video read).
-   Size depends on current raster position.
+1. **CPU access to the VRAM through the GDG** - the CPU waits for a free
+   cycle of the video memory. On MZ-800 in both modes (the graphic VRAM in
+   the MZ-800 mode, CG-RAM and text VRAM in the MZ-700 mode): a read
+   always waits, a write goes through a one-byte buffer. The size depends
+   on the beam position in the line. On MZ-700 and MZ-1500 only a VRAM
+   access in the visible part of a line.
 2. **OUT to PSG** - WAIT due to synchronization of CPU CLK with PSGCLK
    (PSG is 1.108 MHz, CPU 3.546 MHz; write must hit the PSG cycle
    boundary).
@@ -116,11 +133,19 @@ sum of all WAIT + all standard T-states from the first iteration).
 instruction** (= without WAIT). The standard length in T-states is
 derivable from the opcode via Z80 ISA (see below).
 
-The length of the instruction itself in T-states is **not stored** -
-it is deterministically derivable from the opcode according to the
-Z80 ISA table. For conditional jumps (taken/not-taken differ in
-T-states), external post-processing computes it from the flag state
-(from re-simulation).
+### Field t_std (byte 11, format v2)
+
+The standard length of the instruction in T-states without WAIT, as the
+emulator actually counted it on execution (for conditional jumps
+according to whether the jump was taken). For a collapsed HALT /
+self-loop record it is 0, because `wait_clk` carries the whole time of
+the loop.
+
+The record format is given by `subsys_header.event_record_version` in
+the manifest: 2 = byte 11 carries `t_std`. A manifest without this field
+is format v1, where byte 11 was reserved (always 0) and the instruction
+length had to be derived from the opcode via the Z80 table (for
+conditional jumps from the flag state).
 
 ### HALT and self-loop collapse
 
@@ -139,7 +164,7 @@ An external re-simulator detects a collapsed HALT trivially: opcode =
 `0x76` (HALT) + non-zero `wait_clk`. It detects a collapsed self-loop:
 the instruction changes PC to PC, and `wait_clk` > 0.
 
-## meta.json
+## Manifest `<name>.json`
 
 ```json
 {
@@ -147,53 +172,45 @@ the instruction changes PC to PC, and `wait_clk` > 0.
   "platform": "MZ-800",
   "pxclk_freq": 17734475,
   "cpu_divider": 5,
-  "pxclk_per_screen": 97344,
+  "pxclk_per_screen": 354432,
   "truncated": false,
   "truncated_reason": "",
   "chunks": [
     {
       "index": 0,
       "file": "cputrack.000.bin",
-      "bytes": 67108864,
-      "start_pxclk": 0,
-      "start_cpuclk": 0,
-      "start_screens": 0
-    },
-    {
-      "index": 1,
-      "file": "cputrack.001.bin",
-      "bytes": 67108864,
-      "start_pxclk": 39728432,
-      "start_cpuclk": 7945686,
-      "start_screens": 408,
-      "start_pxclk_in_screen": 21344
+      "bytes": 96252,
+      "start_pxclk": 354450,
+      "start_cpuclk": 70890,
+      "start_screens": 1
     }
   ],
   "subsys_header": {
-    "start_pxclk": 0,
-    "start_pxclk_in_screen": 0,
-    "start_screens": 0,
-    "start_cpuclk": 0,
+    "start_pxclk": 354450,
+    "start_pxclk_in_screen": 18,
+    "start_screens": 1,
+    "start_cpuclk": 70890,
+    "initial_regs": {
+      "AF": 36762, "BC": 10, "DE": 0, "HL": 57347,
+      "AF_alt": 0, "BC_alt": 0, "DE_alt": 0, "HL_alt": 0,
+      "IX": 0, "IY": 0, "SP": 4332, "PC": 58391,
+      "WZ": 58391, "IR": 108, "I": 0, "R": 108,
+      "IM": 1, "IFF1": 1, "IFF2": 1, "Q": 0, "halted": 0
+    },
+    "initial_ram_file": "cputrack_initial_ram.bin",
+    "initial_vram_file": "cputrack_initial_vram.bin",
+    "initial_exvram_file": "cputrack_initial_exvram.bin",
+    "initial_memext_file": "cputrack_initial_memext.bin",
+    "memext_size": 524288,
     "event_record_size": 12,
-    "initial_state": {
-      "regs": {
-        "AF": "0xFFFF", "BC": "0x0000", "DE": "0x0000", "HL": "0x0000",
-        "IX": "0x0000", "IY": "0x0000", "SP": "0x0000", "PC": "0x0000",
-        "AF_alt": "0x0000", "BC_alt": "0x0000",
-        "DE_alt": "0x0000", "HL_alt": "0x0000",
-        "I": "0x00", "R": "0x00",
-        "IM": 0, "IFF1": 0, "IFF2": 0
-      },
-      "memory_dumps": [
-        { "region": "ram",      "file": "cputrack_initial_ram.bin",      "bytes": 65536  },
-        { "region": "vram",     "file": "cputrack_initial_vram.bin",     "bytes": 32768  },
-        { "region": "exvram",   "file": "cputrack_initial_exvram.bin",   "bytes": 32768  },
-        { "region": "memext",   "file": "cputrack_initial_memext.bin",   "bytes": 524288 }
-      ]
-    }
+    "event_record_version": 2
   }
 }
 ```
+
+The example is a real manifest of a one-frame recording on MZ-800 with
+MemExt connected. A longer recording has more entries of the same shape
+in `chunks[]`.
 
 ### Key fields
 
@@ -224,18 +241,25 @@ screens_at(N)   = floor(cumul_pxclk(N) / pxclk_per_screen)
 pxclk_in_screen_at(N) = cumul_pxclk(N) mod pxclk_per_screen
 ```
 
-`insn_T_states[i]` is derived from opcode according to the Z80 ISA
-table.
+`insn_T_states[i]` is byte 11 (`t_std`) in format v2; in v1 it is
+derived from opcode according to the Z80 ISA table. In v2 the formula is
+exact including interrupts (interrupt acknowledge records carry their
+T-states); in v1 the T-states of each interrupt acknowledge are missing.
 
-### subsys_header.initial_state
+### subsys_header: initial state
 
-`regs` contains a complete snapshot of Z80 CPU registers at the moment
-recording starts (before the first logged event). Values are hex strings
-(uint16 as `"0xABCD"`, uint8 as `"0xCD"`).
+`initial_regs` contains a complete snapshot of Z80 CPU registers at the
+moment recording starts (before the first logged event). Values are
+integers (decimal): the 16-bit pairs (`AF` ... `PC`, `WZ`, `IR`), `I` and
+`R` separately, the interrupt mode `IM`, `IFF1`, `IFF2`, `Q` and `halted`
+(1 = the CPU stands on HALT).
 
-`memory_dumps[]` references binary files with initial dumps of physical
-memories. Each entry has `region` (= symbolic name), `file` (= relative
-path against the meta file directory), `bytes` (= size).
+`initial_*_file` are file names of the initial dumps of physical
+memories, relative to the manifest directory: `initial_ram_file` and
+`initial_vram_file` always, `initial_exvram_file` only on MZ-800,
+`initial_pcg_file` only on MZ-1500. `initial_memext_file` is `null` when
+MemExt is not connected; otherwise `memext_size` (dump size in bytes)
+comes with it. Sizes of the other dumps are in the tables below.
 
 The initial state + event sequence is a **hermetically closed dataset**
 - an external re-simulator deterministically derives the memory state
@@ -253,21 +277,28 @@ those that exist / are connected for the given architecture.
 | File | Size | Description |
 |------|------|-------------|
 | `<name>_initial_ram.bin` | 64 KB | Main DRAM |
-| `<name>_initial_vram.bin` | 32 KB | VRAM 4 banks (linear) |
-| `<name>_initial_exvram.bin` | 32 KB | EXVRAM (linear) |
+| `<name>_initial_vram.bin` | 16 KB | VRAM planes I and II (8 KB each); in the MZ-700 mode plane I also holds CG-RAM and the text VRAM |
+| `<name>_initial_exvram.bin` | 16 KB | EXVRAM, planes III and IV (8 KB each) |
 | `<name>_initial_memext.bin` | 512 KB | Memext RAM (only if connected) |
-| `<name>_initial_rd0.bin` | variable | RAM-disk 0 (only if active) |
-| `<name>_initial_rd1.bin` | variable | RAM-disk 1 (if active) |
 
 ROM is **not stored** - it is deterministically known from compile-time
-embedded ROM image (= version in `meta.json` via `platform`).
+embedded ROM image (= version in the manifest `<name>.json` via `platform`).
+RAM disk content is not stored.
+
+### MZ-700
+
+| File | Size | Description |
+|------|------|-------------|
+| `<name>_initial_ram.bin` | 64 KB | Main DRAM |
+| `<name>_initial_vram.bin` | 4 KB | Character and attribute VRAM |
+| `<name>_initial_memext.bin` | 512 KB | Memext (if connected) |
 
 ### MZ-1500
 
 | File | Size | Description |
 |------|------|-------------|
 | `<name>_initial_ram.bin` | 64 KB | Main DRAM |
-| `<name>_initial_cgram.bin` | 4 KB | CG-RAM |
+| `<name>_initial_vram.bin` | 4 KB | Character and attribute VRAM |
 | `<name>_initial_pcg.bin` | 24 KB | 3x 8 KB PCG bank (R/G/B) |
 | `<name>_initial_memext.bin` | 512 KB | Memext (if connected) |
 

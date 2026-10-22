@@ -126,7 +126,8 @@ bottom bar, červený caret pod glyfem).
 - **LMB v ASCII column** → cursor jump + edit_mode = ASCII
 - **RMB v obou** → context menu (bookmark, freeze, annotation, fill,
   undo/redo, insert character, show in Memory Map, PCG editor pro
-  PCG region)
+  PCG region, Who wrote this byte? - viz
+  [RAM Write Log](../ram-write-log.md))
 
 ## Klávesová navigace
 

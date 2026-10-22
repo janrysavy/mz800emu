@@ -40,13 +40,14 @@ Změna režimu triggeruje swap CPU callbacků. Aktuální stav vidíte v Status
 
 ## Tři typy přístupů (R / W / X)
 
-Každá buňka drží trojici 32-bit counterů:
+Každá buňka drží čtyři 32-bit countery:
 
 | Symbol | Význam |
 |--------|--------|
 | **R** | data read - běžné LOAD instrukce mimo M1 fetch |
-| **W** | write - libovolný zápis (LD, PUSH, OUT) |
+| **W** | write - libovolný zápis (LD, PUSH, OUT) mimo stack regiony |
 | **X** | execute - bajt načtený jako součást instrukce (M1 nebo její operandy) |
+| **S** | stack write - zápis do aktivního stack regionu (místo W; bez stack regionů zůstává 0) |
 
 Klasické CDL flagy ve stylu FCEUX se z toho dají odvodit: flag = (counter > 0).
 
@@ -202,8 +203,8 @@ adresáře se vytvoří:
     iorq-gdg.cdl
 ```
 
-Per-region soubor je raw binary: `size_cells * 12 bytes`, kde 12 bytes per
-cell = `r:uint32 LE, w:uint32 LE, x:uint32 LE`.
+Per-region soubor je raw binary: `size_cells * 16 bytes`, kde 16 bytes per
+cell = `r:uint32 LE, w:uint32 LE, x:uint32 LE, s:uint32 LE`.
 
 Pokud adresář existuje, soubory se přepisují bez warningu. Pokud
 neexistuje, vytvoří se (`g_mkdir_with_parents`).
@@ -215,10 +216,10 @@ neexistuje, vytvoří se (`g_mkdir_with_parents`).
   "format_version": 2,
   "format": "memory-heatmap",
   "mzarch": 800,
-  "cell_size_bytes": 12,
-  "cell_layout": "r:uint32_le, w:uint32_le, x:uint32_le",
+  "cell_size_bytes": 16,
+  "cell_layout": "r:uint32_le, w:uint32_le, x:uint32_le, s:uint32_le",
   "regions": [
-    { "name": "bus", "file": "bus.cdl", "size_cells": 65536, "size_bytes": 786432 },
+    { "name": "bus", "file": "bus.cdl", "size_cells": 65536, "size_bytes": 1048576 },
     ...
   ]
 }

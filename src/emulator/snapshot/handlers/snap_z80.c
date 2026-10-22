@@ -1,6 +1,14 @@
 /**
  * @file snap_z80.c
- * @brief Snapshot handler: Z80 CPU — uložení a načtení všech registrů
+ * @brief Snapshot handler: Z80 CPU — uložení a načtení registrů a skrytého
+ *        stavu jádra (`cpu/z80.xml`).
+ *
+ * Kromě viditelných registrů ukládá prvek `hidden_state` se stavem, který
+ * jádro drží mezi instrukcemi a který ovlivňuje další běh: WZ (MEMPTR),
+ * Q, EI delay, čekající INT a NMI, vektor přerušení, příznak LD A,I/R
+ * a `total_cycles`. Snapshot ze starší verze bez `hidden_state` nastaví
+ * skrytý stav na výchozí hodnoty resetu (@ref z80_reset) a `total_cycles`
+ * ponechá ze stroje, aby výsledek nezávisel na stavu před načtením.
  */
 
 #include <stdio.h>
@@ -10,6 +18,86 @@
 #include "snapshot/snapshot_xml.h"
 #include "mzarch/mzarch.h"
 
+/** @brief Jméno prvku se skrytým stavem Z80 v `cpu/z80.xml`. */
+#define SNAP_Z80_HIDDEN_ELEMENT "hidden_state"
+
+/**
+ * @brief Zapíše prvek `hidden_state` se skrytým stavem Z80.
+ *
+ * @param w   Otevřený XML writer uvnitř prvku `z80_state`.
+ * @param cpu Instance CPU (v pauze, mimo @ref z80_execute).
+ */
+static void snap_z80_save_hidden(snapshot_xml_writer_t *w, const z80_t *cpu)
+{
+    snapshot_xml_open_element(w, SNAP_Z80_HIDDEN_ELEMENT);
+    snapshot_xml_write_hex16(w, "WZ", cpu->wz.w);
+    snapshot_xml_write_hex8(w, "Q", cpu->q);
+    snapshot_xml_write_bool(w, "ei_delay", cpu->ei_delay);
+    snapshot_xml_write_bool(w, "int_pending", cpu->int_pending);
+    snapshot_xml_write_bool(w, "nmi_pending", cpu->nmi_pending);
+    snapshot_xml_write_hex8(w, "int_vector", cpu->int_vector);
+    snapshot_xml_write_bool(w, "ld_a_ir", cpu->ld_a_ir);
+    snapshot_xml_write_uint(w, "total_cycles", (unsigned)cpu->total_cycles);
+    snapshot_xml_close_element(w);
+}
+
+/**
+ * @brief Načte skrytý stav Z80 z prvku `hidden_state`.
+ *
+ * Pole, které v prvku chybí (nebo chybí celý prvek, snapshot ze starší
+ * verze), dostane výchozí hodnotu resetu jako v @ref z80_reset: WZ = 0,
+ * Q = 0, nic nečeká, vektor 0. `total_cycles` zůstane v takovém případě
+ * ze stroje (reset by posunul emulovaný čas CPU proti GDG, který snapshot
+ * obnovuje zvlášť).
+ *
+ * @param r   XML reader uvnitř prvku `z80_state`.
+ * @param cpu Instance CPU (v pauze, mimo @ref z80_execute).
+ *
+ * @post Skrytý stav CPU nezávisí na stavu stroje před načtením (kromě
+ *       `total_cycles` u snapshotu bez tohoto pole).
+ * @note Bez prvku vypíše varování na stderr.
+ */
+static void snap_z80_load_hidden(snapshot_xml_reader_t *r, z80_t *cpu)
+{
+    bool present = snapshot_xml_enter_element(r, SNAP_Z80_HIDDEN_ELEMENT);
+    uint16_t wz = 0;
+    uint8_t q = 0, int_vector = 0;
+    bool ei_delay = false, int_pending = false, nmi_pending = false, ld_a_ir = false;
+    unsigned total_cycles = 0;
+    bool have_total_cycles = false;
+
+    if (present) {
+        snapshot_xml_read_hex16(r, "WZ", &wz);
+        snapshot_xml_read_hex8(r, "Q", &q);
+        snapshot_xml_read_bool(r, "ei_delay", &ei_delay);
+        snapshot_xml_read_bool(r, "int_pending", &int_pending);
+        snapshot_xml_read_bool(r, "nmi_pending", &nmi_pending);
+        snapshot_xml_read_hex8(r, "int_vector", &int_vector);
+        snapshot_xml_read_bool(r, "ld_a_ir", &ld_a_ir);
+        have_total_cycles = snapshot_xml_read_uint(r, "total_cycles", &total_cycles);
+        snapshot_xml_leave_element(r);
+    } else {
+        SNAP_WARN("z80", "no %s in cpu/z80.xml (older snapshot), "
+                  "hidden CPU state set to reset defaults", SNAP_Z80_HIDDEN_ELEMENT);
+    }
+
+    cpu->wz.w = wz;
+    cpu->q = q;
+    cpu->ei_delay = ei_delay;
+    cpu->int_pending = int_pending;
+    cpu->nmi_pending = nmi_pending;
+    cpu->int_vector = int_vector;
+    cpu->ld_a_ir = ld_a_ir;
+    if (have_total_cycles) cpu->total_cycles = (uint32_t)total_cycles;
+}
+
+/**
+ * @brief Uloží stav Z80 do `cpu/z80.xml` (registry + skrytý stav).
+ *
+ * @param ctx Kontext snapshotu (zápis).
+ * @return @ref SNAPSHOT_OK nebo chyba zápisu XML do archivu.
+ * @pre Emulátor je v pauze nebo v safe-pointu snapshotu (mezi instrukcemi).
+ */
 static en_SNAPSHOT_RESULT snap_z80_save(st_SNAPSHOT_CONTEXT *ctx)
 {
     z80_t *cpu = g_mzarch_main.cpu;
@@ -52,6 +140,9 @@ static en_SNAPSHOT_RESULT snap_z80_save(st_SNAPSHOT_CONTEXT *ctx)
     snapshot_xml_write_bool(w, "IFF2", cpu->iff2 != 0);
     snapshot_xml_write_bool(w, "halted", cpu->halted != 0);
 
+    /* Skrytý stav jádra mezi instrukcemi */
+    snap_z80_save_hidden(w, cpu);
+
     snapshot_xml_close_element(w); /* z80_state */
 
     char *xml = snapshot_xml_writer_finish(w);
@@ -61,6 +152,18 @@ static en_SNAPSHOT_RESULT snap_z80_save(st_SNAPSHOT_CONTEXT *ctx)
     return res;
 }
 
+/**
+ * @brief Načte stav Z80 z `cpu/z80.xml` (registry + skrytý stav).
+ *
+ * Chybějící registr nechá hodnotu stroje (dosavadní chování), skrytý stav
+ * se nastavuje vždy (viz @ref snap_z80_load_hidden).
+ *
+ * @param ctx Kontext snapshotu (čtení).
+ * @return @ref SNAPSHOT_OK; chyba čtení archivu, nebo
+ *         @ref SNAPSHOT_ERR_XML_PARSE při nečitelném XML či chybějícím
+ *         prvku `z80_state`.
+ * @pre Emulátor je v pauze (mimo @ref z80_execute).
+ */
 static en_SNAPSHOT_RESULT snap_z80_load(st_SNAPSHOT_CONTEXT *ctx)
 {
     char *xml = NULL;
@@ -140,12 +243,18 @@ static en_SNAPSHOT_RESULT snap_z80_load(st_SNAPSHOT_CONTEXT *ctx)
         if (snapshot_xml_read_bool(r, "halted", &bval)) cpu->halted = bval ? 1 : 0;
     }
 
+    /* Skrytý stav jádra (starší snapshot bez něj = výchozí hodnoty resetu) */
+    snap_z80_load_hidden(r, cpu);
+
     snapshot_xml_leave_element(r); /* z80_state */
     snapshot_xml_reader_free(r);
 
     return SNAPSHOT_OK;
 }
 
+/**
+ * @brief Zaregistruje povinnou komponentu snapshotu "z80" (priorita CPU).
+ */
 void snap_z80_register(void)
 {
     snapshot_register_component("z80",

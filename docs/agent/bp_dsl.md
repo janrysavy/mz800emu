@@ -59,15 +59,17 @@ Filled by the BP enforcement layer at hit time. Zero outside a hit
 | `Address` | Access address (MEM_R / MEM_W / PC_EXEC); port value for IORQ. |
 | `Value` | Byte read / written. |
 | `IsRead`, `IsWrite`, `IsExec`, `IsPort` | Access type flags (0/1). |
-| `BankPC`, `BankAddr` | Banking zone IDs for PC / target. |
+| `InsnPC` | Address of the executing instruction. In MEM_R / MEM_W / IORQ BPs the live `PC` is already behind the accessing instruction (`LD (4000h),A` at 3003h gives `PC = 3006h`, `InsnPC = 3003h`); use `InsnPC` for "who accessed". |
+| `BankPC`, `BankAddr` | Banking zone IDs for the live PC / target. |
 | `Reason` | IFF change reason - valid only inside IFF*_CHANGE fire. |
 
 ### Global emulator state
 
 | Identifier | Meaning |
 |------------|---------|
-| `Cycle` | GDG pixel ticks since reset (16x faster than Z80 T-state at 3.5 MHz). |
-| `Frame` | Completed frames since reset. |
+| `Cycle` | GDG pixel ticks since the emulator started (not restarted by a machine reset; a snapshot load sets the saved value), at instruction start (5 per Z80 T-state on PAL, 4 on NTSC). Truncated to int32: wraps negative after about 121 s of emulated time (PAL). |
+| `FrameCycle` | GDG pixel ticks since the start of the current frame (0..354431 on PAL, 0..238943 on NTSC). Never wraps; prefer it for in-frame timing. |
+| `Frame` | Completed frames since the emulator started (not restarted by a machine reset). |
 | `Scanline` | Current GDG raster row (0..frame_height-1). |
 
 ### User variables
@@ -80,8 +82,8 @@ Non-existent `$name` reads as 0. See `emulator://docs/smart_vars`.
 
 | Form | Meaning |
 |------|---------|
-| `[addr]` | Read 8-bit byte from current Z80 memory map. |
-| `[addr]!` | Same, with explicit side-effect marker (parsed, currently behaves like `[addr]`). |
+| `[addr]` | Read 8-bit byte from current Z80 memory map; does not trigger MEM_R BPs. |
+| `[addr]!` | Same read, but MEM_R BPs on `addr` are evaluated (can fire). No chip side effects on 0E000h-0E008h (MZ-700 mode) in either form - use `port[N]!` for a real chip read. |
 | `{addr}` | Read 16-bit little-endian word (two byte reads). |
 
 `addr` is any expression: `[HL]`, `[HL+1]`, `[0x8000 + A]`, `{SP}`.
@@ -139,6 +141,7 @@ Notes:
 | `if(cond, a, b)` | `cond ? a : b` (only the selected branch evaluated) |
 | `bit(value, n)` | n-th bit of value (0/1); n masked to 0..31 |
 | `s8(x)`, `s16(x)`, `s32(x)` | sign-extend low byte / low word / no-op |
+| `lastwriter(addr)` | address of the instruction that last wrote the cell at CPU address `addr` (current mapping) according to the RAM write log; `-1` = not written since the log was started or emptied, no log, or a memory-mapped port. See `emulator://docs/ramlog` |
 
 ## Examples
 

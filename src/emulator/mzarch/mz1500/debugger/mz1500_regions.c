@@ -111,11 +111,13 @@ int mz1500_regions_collect(st_REGION_DESC *out, int max_count)
     }
 
     /* Memext (Luftner/PEHU) - pokud připojen. MZ-1500 má port 0xE7.
-     * Luftner: 128 RAM banks + 128 FLASH banks. PEHU: 64 RAM banks, žádný FLASH. */
+     * Luftner: 128 RAM banks + 128 FLASH banks. PEHU: 64 bank po 8 KB =
+     * 128 raw 4 KB kusů (MEMEXT_PEHU_RAW_BANKS), žádný FLASH.
+     * Region = raw 4 KB kus, sub_id = raw index. */
     if (MEMEXT_TEST_CONNECTED) {
         int is_luftner = MEMEXT_TEST_TYPE_LUFTNER ? 1 : 0;
         const char *type_label = is_luftner ? "Luftner" : "PEHU";
-        int ram_bank_count = is_luftner ? MEMEXT_LUFTNER_BANKS : MEMEXT_PEHU_BANKS;
+        int ram_bank_count = is_luftner ? MEMEXT_LUFTNER_BANKS : MEMEXT_PEHU_RAW_BANKS;
 
         for (int bank = 0; bank < ram_bank_count; bank++) {
             snprintf(s_name_buf, sizeof(s_name_buf),

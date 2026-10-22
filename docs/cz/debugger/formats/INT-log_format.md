@@ -30,7 +30,7 @@ Persistentní v ini sekci `[TRACE_INTLOG]`.
 ```
 
 Initial state interrupt sběrnice + PIO-Z80 + CPU IM/IFF stav je
-v `meta.json` `subsys_header` jako JSON pole (= žádné samostatné
+v manifestu `<name>.json` `subsys_header` jako JSON pole (= žádné samostatné
 binární dump soubory).
 
 ## Per-event záznam (24 B fixed)
@@ -155,7 +155,7 @@ Centrální hook zachytí i IRQ z non-PIOZ80 zdrojů (CTC2, FDC, bus latch).
 
 state_bitmask = 0 (= pole nepoužité, edge je v poli `edge`).
 
-## meta.json
+## Manifest `<name>.json`
 
 ```json
 {

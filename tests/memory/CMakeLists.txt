@@ -23,3 +23,19 @@ mz_add_test(memext_map_request
     SOURCES  test_memext_map_request.c
     LABELS   "emu;memory"
 )
+
+# Čtení mapovaných portů 0E000h-0E008h (režim MZ-700) debuggerem bez
+# vedlejšího efektu: autotype, vkbd probe, klopný obvod LSB/MSB 8253.
+mz_add_test(mapped_io_peek
+    TYPE     EMU
+    SOURCES  test_mapped_io_peek.c
+    LABELS   "emu;memory;debugger"
+)
+
+# Sdílený hash SHA-256 částí stavu (state_hash.c): testovací vektory a co
+# patří do hashe RAM / MemExt / VRAM / PCG / obrazu (result.json automatizace).
+mz_add_test(state_hash
+    TYPE     EMU
+    SOURCES  test_state_hash.c
+    LABELS   "emu;memory"
+)

@@ -22,6 +22,8 @@
 #include "emulator/customspeed.h"
 #include "emulator/mzarch/mzarch.h"
 #include "emulator/hw-generic/cmt/cmt_cli.h"
+#include "emulator/automation.h"
+#include "emulator/replay_cli.h"
 #include "version_info.h"
 
 #ifdef MZ800EMU_CFG_MCP_SERVER_ENABLED
@@ -60,6 +62,15 @@ SdlApp *g_sdlapp = NULL;
  */
 /* Sdílené allowed-values seznamy pro ENUM options. NULL-terminated. */
 static const char *const MODE_VALUES[] = { "off", "window", "always", NULL };
+
+/* Režim ringu záznamu zápisů pro --ramlog-ring. */
+static const char *const RAMLOG_RING_VALUES[] = { "ring", "fill", NULL };
+
+/* Úroveň pokrytí kódu pro --coverage. */
+static const char *const COVERAGE_VALUES[] = { "off", "branch", "detail", NULL };
+
+/* Klíč verze kódu pro --coverage-key. */
+static const char *const COVERAGE_KEY_VALUES[] = { "opcode", "full_bytes", NULL };
 
 /* FDC voličí pro --fdc-bus-xlate. */
 static const char *const FDC_BUS_XLATE_VALUES[] = { "invert", "passthrough", NULL };
@@ -145,6 +156,30 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
     { "--cputrack-pc-hi",        SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<addr>",
       "Upper PC bound (inclusive) for range-scoped tracking. Dec or 0x hex. "
       "Default 0xFFFF (= whole address space, no filter)." },
+    /* Záznam zápisů do paměti (ramlog). */
+    { "--ramlog-mode",           SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        MODE_VALUES, "<off|window|always>",
+      "Record writes into memory (RAM write log): off, while the debugger window is open, or from start. "
+      "Read the log over MCP (ramlog_who_wrote, trace_read channel ramlog) or in the RAM Write Log window." },
+    { "--ramlog-ring",           SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        RAMLOG_RING_VALUES, "<ring|fill>",
+      "RAM write log when full: ring keeps the newest records, fill keeps the first ones (default ring)." },
+    { "--ramlog-capacity",       SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_UINT,        NULL,        "<N>",
+      "RAM write log size in records, 32 bytes each (16-16777216, default 1048576)." },
+    { "--ramlog-lo",             SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<addr>",
+      "First CPU address recorded by the RAM write log. Dec or 0x hex. Default 0." },
+    { "--ramlog-hi",             SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<addr>",
+      "Last CPU address recorded by the RAM write log. Dec or 0x hex. Default 0xFFFF "
+      "(with --ramlog-lo 0 = all memory, no filter)." },
+    /* Pokrytí kódu (coverage). */
+    { "--coverage",              SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        COVERAGE_VALUES, "<off|branch|detail>",
+      "Collect code coverage from start: branch = executed addresses and branch results by PC, "
+      "detail = also code versions by physical cell with counters (slower). Read it over MCP "
+      "(coverage_read) or save it with --coverage-save-on-exit." },
+    { "--coverage-key",          SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        COVERAGE_KEY_VALUES, "<opcode|full_bytes>",
+      "Code version key of the detail level: opcode bytes (default) or the first 4 bytes including operands." },
+    { "--coverage-capacity",     SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_UINT,        NULL,        "<N>",
+      "Detail level size in units, 32 bytes each (1-1048576, default 65536)." },
+    { "--coverage-save-on-exit", SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<file>",
+      "Write all coverage rows into <file> when the emulator exits (.csv = CSV, otherwise JSON)." },
     /* trace-suite iorqlog options. */
     { "--iorqlog-mode",         SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_ENUM,        MODE_VALUES, "<off|window|always>",
       "Set the IORQ log recording mode (trace-suite iorqlog)." },
@@ -269,7 +304,62 @@ static const st_SDLAPP_OPTION_DEF g_known_options[] = {
       "Framebuffer is still rendered into memory (usable later via MCP frame "
       "Resources). Intended for CI / batch / subprocess scenarios where no "
       "display or audio device is available. Implies --no-first-run-windows. "
-      "The process keeps running until SIGINT (Ctrl+C) or SDL quit event." },
+      "The process keeps running until SIGINT (Ctrl+C), SDL quit event or an "
+      "exit condition (--exit-after-frames, --timeout-*, --exit-on-*, breakpoint "
+      "action 'exit')." },
+    { "--exit-after-frames", SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,     NULL,        "<N>",
+      "Unattended runs: end the run after N emulated frames (exit code 0). "
+      "Frames are counted from the start of the run (after --run-mzf)." },
+    { "--timeout-frames",   SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<N>",
+      "Unattended runs: end the run with exit code 2 (timeout) after N emulated "
+      "frames, unless another exit condition came first." },
+    { "--timeout-seconds",  SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<S>",
+      "Same as --timeout-frames, in emulated seconds (rounded up to whole frames)." },
+    { "--exit-on-pc",       SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<addr>[,skip=N][,code=C]",
+      "Unattended runs: end the run when the CPU executes <addr> (after skipping "
+      "the first N hits), exit code C (default 0). Can be repeated." },
+    { "--fail-on-pc",       SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<addr>[,skip=N]",
+      "Unattended runs: end the run with exit code 1 (test failed) when the CPU "
+      "executes <addr>. Can be repeated." },
+    { "--exit-on-write",    SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<addr>[=VAL][,skip=N][,code=C]",
+      "Unattended runs: end the run when the program writes to memory address "
+      "<addr> (only value VAL if given). The exit code is the written value "
+      "unless code=C is given. Can be repeated." },
+    { "--exit-on-out",      SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<port>[,skip=N][,code=C]",
+      "Unattended runs: end the run when the program writes to I/O port <port> "
+      "(0-255). The exit code is the written value unless code=C is given. "
+      "Can be repeated." },
+    { "--bpt",              SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<filepath>",
+      "Unattended run: load breakpoints from the given .bpt file at start. In "
+      "unattended runs the auto-loaded set is not used and nothing is saved at exit." },
+    { "--result-json",      SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<filepath>",
+      "Unattended runs: write the result of the run (reason, exit code, time, "
+      "registers, hashes, artifacts) as JSON to <filepath> at the end." },
+    { "--automation-dir",   SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<dirpath>",
+      "Unattended runs: write result.json and screen.png (final screen) into "
+      "<dirpath> (created if missing)." },
+    { "--exit-screenshot",  SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<filepath>",
+      "Unattended runs: save a PNG screenshot of the final screen at the end." },
+    { "--exit-snapshot",    SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<filepath>",
+      "Unattended runs: save a snapshot (.mzs) of the final state at the end." },
+    { "--replay-record",    SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<filepath>",
+      "Record the inputs of this run into a replay file (.mzr): start snapshot, "
+      "keyboard / joystick changes at frame boundaries, resets, debugger writes "
+      "and periodic state hashes. Recording starts at the first frame and the "
+      "file is written when the emulator exits." },
+    { "--replay-hash-interval", SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,  NULL,        "<N>",
+      "With --replay-record: frames between state hashes (1-100000, default 50)." },
+    { "--replay",           SDLAPP_OPTION_VALUE, SDLAPP_OPTVAL_STRING,      NULL,        "<filepath>",
+      "Play a replay file back from its start snapshot. Live input is ignored; "
+      "the playback pauses at the end or at the first frame whose state hash "
+      "differs from the recording." },
+    { "--exit-at-replay-end", SDLAPP_OPTION_FLAG, SDLAPP_OPTVAL_NONE,       NULL,        NULL,
+      "With --replay: end the run when the playback ends - exit code 0 "
+      "(reason replay_end), 4 when the state differs (replay_desync), 3 when "
+      "the replay cannot be started. Works with --result-json." },
+    { "--replay-verify",    SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
+      "With --replay: check the replay at MAX SPEED and exit at its end "
+      "(--exit-at-replay-end). Typically with --headless." },
     { "--maxspeed-bench",   SDLAPP_OPTION_FLAG,  SDLAPP_OPTVAL_NONE,        NULL,        NULL,
       "Start in MAX SPEED and periodically print the MAX SPEED benchmark report "
       "(efficiency %, throughput, FB-FPS, distribution) to the console. Works in "
@@ -361,7 +451,8 @@ int main(int argc, char *argv[])
     /* Validace - neznámé options nebo VALUE option bez hodnoty = chyba. */
     if (!sdlapp_options_validate(g_known_options))
     {
-        return EXIT_FAILURE;
+        /* Automatizační režim: kód 3 + result.json (automation.h). */
+        return automation_cli_error(EXIT_FAILURE, "invalid command line options");
     };
 
     /* --speed: hodnota se ověří hned (neplatná = chyba a konec), aplikuje ji
@@ -372,7 +463,7 @@ int main(int argc, char *argv[])
         int speed_percent = 100;
         if (!customspeed_parse_cli_value(sdlapp_option_value("--speed"), &speed_max, &speed_percent))
         {
-            return EXIT_FAILURE;
+            return automation_cli_error(EXIT_FAILURE, "invalid --speed value");
         };
     };
 
@@ -408,7 +499,7 @@ int main(int argc, char *argv[])
         en_MZ800_MODE_SW mode;
         if (!mzarch_mode_sw_parse_cli(sdlapp_option_value("--mode-switch"), &mode))
         {
-            return EXIT_FAILURE;
+            return automation_cli_error(EXIT_FAILURE, "invalid --mode-switch value");
         };
 #if MZARCH != 800
         fprintf(stderr, "Warning: --mode-switch is only supported on MZ-800, ignoring\n");
@@ -420,7 +511,22 @@ int main(int argc, char *argv[])
      * emulátorové vlákno po resetu (mzarch_main -> cmt_cli_apply). */
     if (!cmt_cli_validate())
     {
-        return EXIT_FAILURE;
+        return automation_cli_error(EXIT_FAILURE, "invalid tape options");
+    };
+
+    /* Automatizace (--exit-*, --timeout-*, --result-json, --bpt, ...):
+     * volby se ověří hned, běh řídí emulátorové vlákno (automation_start). */
+    if (!automation_cli_validate())
+    {
+        return automation_cli_error(EXIT_FAILURE, "invalid automation options");
+    };
+
+    /* Záznam a přehrání vstupů (--replay-record, --replay, ...): volby se
+     * ověří hned, záznam / přehrání zahájí emulátorové vlákno
+     * (replay_cli_start). */
+    if (!replay_cli_validate())
+    {
+        return automation_cli_error(EXIT_FAILURE, "invalid replay options");
     };
 
     /* --spdfd: alternativní launch mód. Větvíme dřív, než se inicializuje
@@ -489,7 +595,7 @@ int main(int argc, char *argv[])
     if (!g_sdlapp)
     {
         SDLAPP_ERROR("Failed to create SdlApp");
-        return EXIT_FAILURE;
+        return automation_cli_error(EXIT_FAILURE, "emulator initialization failed");
     };
 
     /* i18n_init musí být po sdlapp_new — používá g_sdlapp->paths->home_dir
@@ -505,7 +611,7 @@ int main(int argc, char *argv[])
     if (!iface_init())
     {
         SDLAPP_ERROR("Failed to initialize interface");
-        return EXIT_FAILURE;
+        return automation_cli_error(EXIT_FAILURE, "emulator initialization failed");
     };
 
 #ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
@@ -597,7 +703,7 @@ int main(int argc, char *argv[])
     if (!emu_thread)
     {
         SDLAPP_ERROR("Failed to start emulator thread");
-        return EXIT_FAILURE;
+        return automation_cli_error(EXIT_FAILURE, "emulator initialization failed");
     };
 
     /* Headless: hlavní vlákno nemá okno, které by smyčku brzdilo vykreslením

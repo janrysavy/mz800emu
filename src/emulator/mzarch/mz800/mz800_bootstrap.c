@@ -83,9 +83,10 @@ void mzarch_platform_load_prepare_body_map(uint16_t fstrt)
 {
     /* Pokud cílová adresa programu je v rozsahu prvních 4 KB, odmapujeme
      * ROM 0x0000-0x0FFF aby se tělo MZF korektně uložilo do RAM. Pozn.:
-     * reálná ROM toto chování dělá jen když fstrt == 0x0000, ale naše
-     * bootstrap je víc vanilkové (= mapping musí odpovídat skutečné
-     * cílové RAM). */
+     * ROM MZ-800 (]GOPGM, OUT (0E0h) na 0ED1Eh) dolní ROM odmapuje jen
+     * tehdy, když jsou zaváděcí i spouštěcí adresa obě 0000h (Owner's
+     * Manual MZ-800 a výpis ROM); bootstrap odmapuje šířeji, protože
+     * mapování musí odpovídat skutečné cílové RAM. */
     if (fstrt < 0x1000)
     {
         g_memory.map &= ~MEMORY_MZ800_MAP_FLAG_ROM_0000;
@@ -131,8 +132,7 @@ void mzarch_platform_bootstrap_post_header(uint16_t fstrt)
          * DMD, paleta i border jdou přes gdg_write_byte() stejně jako
          * OUT instrukce. U DMD to znamená i vedlejší efekty GDG, které
          * přímý zápis g_gdg.regDMD vynechával: GATE0 CTC0 = 1 (800 mód,
-         * ctc82530_on_regDMD_changed), vynulování latche zápisu MZ-700
-         * (g_vramctrl.mz700_wr_latch_is_used) a aktualizace framebufferu.
+         * ctc82530_on_regDMD_changed) a aktualizace framebufferu.
          * VRAM/CG-RAM odpojené (clear CGRAM_VRAM + ROM_1000 flagy). */
         gdg_write_byte ( 0x00ce, 0x00 );
         static const uint8_t c_black[] = { 0x00, 0x10, 0x20, 0x30, 0x40 };

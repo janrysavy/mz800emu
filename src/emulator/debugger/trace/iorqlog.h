@@ -159,6 +159,18 @@ void iorqlog_record ( en_IORQLOG_EVENT_TYPE etype,
                       uint16_t source_addr, uint16_t port_or_addr,
                       uint8_t value, uint8_t pulse_duration_pxclk );
 
+/**
+ * @brief Writer kanálu iorqlog pro čtení proudu záznamů (trace_read).
+ *
+ * Vrací writer i po stopu (popis posledního uzavřeného segmentu), viz
+ * tlog_writer_read_snapshot() a devdoc/trace/stream-read.md.
+ *
+ * @return Ukazatel na statický writer modulu (nikdy NULL).
+ * @pre Snímek writeru pořizovat jen z emu vlákna; tlog_writer_segment()
+ *      z libovolného vlákna.
+ */
+const st_TLOG_WRITER *iorqlog_get_writer ( void );
+
 #ifdef __cplusplus
 }
 #endif

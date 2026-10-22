@@ -12,11 +12,11 @@
  *   action == NULL nebo prázdný  → BP zastaví emulátor (= klasický stop)
  *   action s libovolným non-empty obsahem → BP automaticky pokračuje
  *
- * V1 omezení: žádný explicit "stop" příkaz. User musí buď ponechat
- * action prázdnou, nebo si stop vynutit pomocí "if cond then ..." +
- * absence příkazu.
+ * Explicitní zastavení: příkaz `stop` (zastaví jako prázdná akce, volitelně
+ * s hláškou) a `exit` (žádost o konec běhu s návratovým kódem, viz
+ * automation.h). Oba ukončí provádění akce: příkazy za nimi se nevykonají.
  *
- * Příkazy (18):
+ * Příkazy:
  *   log "fmt" [args...]      - printf-style do stdout (TODO V1.5: TTY/Trace)
  *   continue                 - jen explicit marker, default už je continue
  *   disable_self             - tento BP se po hitu vypne
@@ -31,10 +31,20 @@
  *   if <expr> then <stmt>    - jednořádkový conditional, žádný else
  *   cdl_start / cdl_stop / cdl_reset       - CDL (Memory Heatmap) lifecycle
  *   cdl_export "fmt" [args]  - export CDL do souboru (šablona jména přes %X..)
- *   trace_start <chan>       - spustit trace kanál (cputrack/iorqlog/intlog/hwlog)
+ *   trace_start <chan>       - spustit trace kanál (cputrack/iorqlog/intlog/hwlog/marklog)
  *   trace_stop  <chan>       - zastavit trace kanál
  *   trace_save  <chan>, "fmt" [args] - uložit/přesměrovat segment kanálu
  *   snapshot "fmt" [args]    - uložit .mzs snapshot (vyžaduje paused emu)
+ *   ramlog_start [from, to]  - spustit záznam zápisů do paměti (bez argumentů
+ *                              celá paměť; výrazy se vyhodnotí při hitu)
+ *   ramlog_stop / ramlog_clear - zastavit / vyprázdnit záznam zápisů
+ *   coverage_start [branch|detail] - spustit pokrytí kódu (bez argumentu branch,
+ *                              pokračuje do stávajících dat)
+ *   coverage_stop / coverage_mark - zastavit pokrytí / nová epocha (značka)
+ *   stop ["fmt" [, args]]    - zastavit emulaci (BP stop), volitelná hláška
+ *                              na stdout jako u log ("[BP-STOP] ...")
+ *   exit <expr> [, "fmt" [, args]] - konec běhu s kódem <expr> (0-255,
+ *                              jinak dolních 8 bitů); v GUI a s MCP jen pauza
  *
  * Forward příkazy (cdl_* / trace_* / snapshot) automatizují metodiku "jeden
  * chytrý BP místo desítek ručních MCP volání" (vize 0017) - při hitu BP
@@ -149,7 +159,7 @@ extern "C" {
      * @return true   = emulátor má pokračovat (= continue / implicit
      *                  continue); BP nezastavuje
      *         false  = emulátor má zastavit (= action je prázdná nebo
-     *                  triggeroval příkaz vyžadující stop - V1 nemá)
+     *                  vykonala `stop` / `exit`, viz bp_action_last_halt())
      *
      * Side effects:
      *   - Mutuje user $vars storage (assignment, clear_vars).
@@ -162,6 +172,40 @@ extern "C" {
      */
     extern bool bp_action_execute ( const bp_action_t *action,
                                      const struct bp_expr_ctx_s *ctx );
+
+
+    /**
+     * @brief Jak skončilo poslední bp_action_execute() (příkaz `stop` / `exit`).
+     */
+    typedef enum en_BP_ACTION_HALT {
+        BP_ACTION_HALT_NONE = 0, /**< Akce doběhla bez `stop` / `exit`. */
+        BP_ACTION_HALT_STOP,     /**< Vykonal se `stop`: běžné zastavení BP. */
+        BP_ACTION_HALT_EXIT      /**< Vykonal se `exit`: žádost o konec běhu s kódem. */
+    } en_BP_ACTION_HALT;
+
+    /**
+     * @brief Výsledek `stop` / `exit` posledního bp_action_execute().
+     *
+     * @invariant kind == BP_ACTION_HALT_EXIT => code je 0-255.
+     */
+    typedef struct st_BP_ACTION_HALT {
+        en_BP_ACTION_HALT kind; /**< Druh zastavení. */
+        int code;               /**< Návratový kód (jen EXIT). */
+        const char *message;    /**< Vykreslená hláška nebo NULL; platí do dalšího bp_action_execute(). */
+    } st_BP_ACTION_HALT;
+
+    /**
+     * @brief Vrátí, zda poslední bp_action_execute() skončilo příkazem `stop` / `exit`.
+     *
+     * "Poslední" je to nejvnější volání, které právě skončilo (vnořená akce
+     * spuštěná přes `poke` a MEM_W breakpoint výsledek vnější akce
+     * nepřepíše). Volá se hned po bp_action_execute() (breakpoints_enforce).
+     *
+     * @param[out] out Výsledek (NULL = jen dotaz).
+     * @return true = poslední akce skončila `stop` nebo `exit`.
+     * @pre Jen EMU vlákno.
+     */
+    extern bool bp_action_last_halt ( st_BP_ACTION_HALT *out );
 
 
     /**
@@ -227,7 +271,8 @@ extern "C" {
      *
      * Pravidla (vyhodnocují se v pořadí, vrací první match):
      *
-     *  1. @c action == NULL    -> @c BP_ACTION_SUB_HALT
+     *  1. @c action == NULL nebo obsahuje @c stop / @c exit
+     *                          -> @c BP_ACTION_SUB_HALT
      *  2. obsahuje @c STMT_MARK -> @c BP_ACTION_SUB_MARK
      *  3. obsahuje @c STMT_DISABLE nebo @c STMT_DISABLE_SELF
      *                          -> @c BP_ACTION_SUB_DISABLE
@@ -331,6 +376,12 @@ extern "C" {
      * Guard sdílí baseline accountingu s trace_save fire cestou -> žádný
      * double-account (viz @ref bp_action_install_disk_flush_guard interní hook).
      *
+     * Guard účtuje jen tehdy, když nahrává aspoň jeden kanál, který spustila
+     * nebo ukládá akce BP (@ref bp_action_trace_channel_note). Trace spuštěný
+     * jen z GUI nebo MCP backstop nezastaví (hlídá ho vlastní max_total_mb
+     * kanálu); guard i tak posune baseline, takže jeho bajty nezaúčtuje ani
+     * pozdější trace_save fire.
+     *
      * Volá se z @c breakpoints_init (= jednou při (re-)init debuggeru, ze stejného
      * místa, kde se resetuje byte accounting). Idempotentní (přepíše hook stejnou
      * funkcí).
@@ -339,6 +390,37 @@ extern "C" {
      * Threading: voláno při inicializaci; bez locku.
      */
     extern void bp_action_install_disk_flush_guard ( void );
+
+
+    /**
+     * @brief Označí kanál trace jako řízený akcí BP (pro flush-side guard).
+     *
+     * Volá se po akci BP @c trace_start a po úspěšné akci @c trace_save
+     * daného kanálu. Dokud kanál nahrává, flush-side guard jeho zápisy na disk
+     * účtuje do byte backstopu. Značka zmizí akcí @c trace_stop, příkazem
+     * TRACE_START/STOP z GUI nebo MCP (@ref bp_action_trace_channel_forget),
+     * nebo když guard zjistí, že kanál už nenahrává.
+     *
+     * @param channel en_DBGAPI_TRACE_CHANNEL (0-31); jiná hodnota se ignoruje.
+     * Side effects: nastaví bit v process-globální masce.
+     * Threading: jen emu vlákno (akce BP, dispatch dbgapi) nebo test.
+     */
+    extern void bp_action_trace_channel_note ( int channel );
+
+
+    /**
+     * @brief Zruší značku "řízený akcí BP" u kanálu trace.
+     *
+     * Volá se z akce BP @c trace_stop a z dispatch příkazů TRACE_START /
+     * TRACE_STOP (GUI, MCP): uživatel převzal řízení kanálu, jeho zápisy
+     * už do byte backstopu nepatří, dokud ho akce BP znovu nespustí nebo
+     * neuloží.
+     *
+     * @param channel en_DBGAPI_TRACE_CHANNEL (0-31); jiná hodnota se ignoruje.
+     * Side effects: vynuluje bit v process-globální masce.
+     * Threading: jen emu vlákno nebo test.
+     */
+    extern void bp_action_trace_channel_forget ( int channel );
 
 
 #ifdef __cplusplus

@@ -236,10 +236,10 @@ void pio8255_write(int addr, uint8_t value)
         int pahalf = value & 0x0f;
         g_pio8255.signal_PA_keybord_column = (pahalf <= 9) ? pahalf : 10;
 
-        // 4. bit Joystick-1 strobe - aktivni pri L
+        // PA4 (maska 10h) strobe JOY1 (IN 0F0h), aktivní v L.
+        // PA5 (maska 20h) strobe JOY2 (IN 0F1h), aktivní v L. PA6 není zapojen.
+        // Zdroj: SM str. 35; ROM @JOYIN (0FA00h) strobuje oba zápisem 0CFh.
         g_pio8255.signal_PA_joy1_enabled = (!(value & 0x10)) ? 1 : 0;
-
-        // 5. bit Joystick-2 strobe - aktivni pri L
         g_pio8255.signal_PA_joy2_enabled = (!(value & 0x20)) ? 1 : 0;
 
         // 7. bit cursor timer reset - aktivni pri L
@@ -332,6 +332,9 @@ void pio8255_write(int addr, uint8_t value)
                 /* vystupy jsou nastaveny na 0 */
                 g_pio8255.signal_PA = 0x00;
                 g_pio8255.signal_PA_keybord_column = 0x00;
+                /* PA4 = PA5 = 0: strobe obou joysticků aktivní */
+                g_pio8255.signal_PA_joy1_enabled = 1;
+                g_pio8255.signal_PA_joy2_enabled = 1;
                 g_pio8255.signal_pc00 = 0;
                 pio8255_set_pc01(0);
                 g_pio8255.signal_pc02 = 0;
@@ -583,6 +586,47 @@ int pio8255_autotype_get_matrix(char c, uint8_t *ret, bool *ret_shift)
 }
 
 /**
+ * @brief Složí hodnotu Port C 8255 ze signálů (společné pro read a peek).
+ *
+ * Bity: 0 = blokování CTC0_OUT (PC0), 1 = data do CMT (čte se 0),
+ * 2 = zákaz přerušení z CTC (PC2), 3 = řízení motoru CMT (čte se 0),
+ * 4 = stav motoru CMT, 5 = data z CMT, 6 = cursor timer, 7 = VBLNK.
+ *
+ * @param cmt_in_data Úroveň dat z pásky (bit 0); read ji předá po
+ *        cmt_read_data(), peek z g_cmt.output bez dosynchronizování.
+ * @return Hodnota Port C.
+ *
+ * Bez vedlejších efektů (jen čte signály). HWE BP_EVENT_CURSOR a
+ * BP_EVENT_CMT_MSTATE se vyhodnocují u zdroje signálu (mz800_gdg_event.c,
+ * cmt.c, pio8255_write), ne zde.
+ */
+static inline uint8_t pio8255_portc_compose ( unsigned cmt_in_data )
+{
+    uint8_t retval = 0x00;
+    retval |= SIGNAL_GDG_VBLNK ? 1 << 7 : 0;
+    retval |= mz800_main_get_cursor_timer_state() << 6;
+    retval |= ( cmt_in_data & 1 ) << 5;
+#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
+    retval |= pio8255_cmt_mstate ( ) << 4;
+#else
+    if (CMTHACK_TEST_IS_INSTALLED)
+    {
+        retval |= g_pio8255.signal_pc04 << 4;
+    }
+    else
+    {
+        retval |= ((CMT_TEST_STOP) || (CMT_TEST_PAUSED)) ? 0 : (1 << 4);
+    };
+#endif
+    // retval |= SIGNAL_GDG_VBLNK << 4; /* simulujeme promenlivy stav motoru (jinak neni mozne spustit hru "24" - musel by se manualne menit stav motoru ) */
+
+    retval |= g_pio8255.signal_pc02 << 2;
+    retval |= g_pio8255.signal_pc00;
+    return retval;
+}
+
+
+/**
  * @brief Čtení z 8255 (CPU cesta, IN 0D0h-0D3h / čtení 0E000h-0E003h).
  *
  * @param addr Port 8255: DEF_PIO8255_PORTA (výstupní latch PA; pro
@@ -628,9 +672,16 @@ uint8_t pio8255_read(int addr)
                 };
                 g_pio8255.vkbd_autotype_start_ticks = gdg_get_total_ticks();
                 g_pio8255.vkbd_autotype_keydown = (g_pio8255.vkbd_autotype_ret_shift) ? 0 : 1;
+                /* Konec textu: autotype skončil. Ukončí ho emu vlákno (dřív to
+                 * dělalo jen otevřené okno autotype z UI vlákna, se zavřeným
+                 * oknem zůstal "běžící" napořád). */
+                if ((g_pio8255.vkbd_autotype_col == -1) && (g_pio8255.vkbd_autotype[0] == 0x00))
+                {
+                    g_pio8255.vkbd_autotype = NULL;
+                };
             };
 
-            if (g_pio8255.vkbd_autotype_col != -1)
+            if ((g_pio8255.vkbd_autotype != NULL) && (g_pio8255.vkbd_autotype_col != -1))
             {
 
                 uint8_t ret = 0xff;
@@ -729,49 +780,17 @@ uint8_t pio8255_read(int addr)
          *
          */
 
-        retval = 0x00;
-        retval |= SIGNAL_GDG_VBLNK ? 1 << 7 : 0;
         {
-            unsigned cursor_state = mz800_main_get_cursor_timer_state();
-            retval |= cursor_state << 6;
-            /* V1.5 fáze 2.2: HWE BP_EVENT_CURSOR fire přesunut do
-             * mz800_gdg_event.c / mz1500_gdg_event.c po
-             * gdg_on_screen_done_event (= edge-based, nezávisle na
-             * PortC pollingu). */
-        }
-        {
-            unsigned cmt_in_data = cmt_read_data() & 1;
-            retval |= cmt_in_data << 5;
-            /* V1.5 fáze 2.2 + 2.3: HWE BP_EVENT_CMT_IN fire přesunut
+            /* cmt_read_data() dosynchronizuje pásku (cmt_update_output, může
+             * přejít na další blok nebo do STOP) - volá se před složením
+             * bitu 4 (stav motoru), stejně jako dřív.
+             * V1.5 fáze 2.2 + 2.3: HWE BP_EVENT_CMT_IN fire přesunut
              * do cmt.c cmt_update_output (= edge-based, fire jen na
              * skutečnou změnu vstupního signálu z pásky; legacy
              * lifecycle fire v cmt_play/cmt_eject odstraněn). */
+            unsigned cmt_in_data = cmt_read_data() & 1;
+            retval = pio8255_portc_compose ( cmt_in_data );
         }
-#ifdef MZ800EMU_CFG_DEBUGGER_ENABLED
-        {
-            /* HWE BP_EVENT_CMT_MSTATE fire přesunut na signal source:
-             * - CMTHACK případ: v pio8255_write po toggle signal_pc04
-             *   (PC03 nábežná hrana).
-             * - non-CMTHACK případ: v cmt.c při change CMT_TEST_STOP/
-             *   CMT_TEST_PAUSED state.
-             * Detail viz V1.5 fáze 2.2 refactor. */
-            unsigned mstate = pio8255_cmt_mstate ( );
-            retval |= mstate << 4;
-        }
-#else
-        if (CMTHACK_TEST_IS_INSTALLED)
-        {
-            retval |= g_pio8255.signal_pc04 << 4;
-        }
-        else
-        {
-            retval |= ((CMT_TEST_STOP) || (CMT_TEST_PAUSED)) ? 0 : (1 << 4);
-        };
-#endif
-        // retval |= SIGNAL_GDG_VBLNK << 4; /* simulujeme promenlivy stav motoru (jinak neni mozne spustit hru "24" - musel by se manualne menit stav motoru ) */
-
-        retval |= g_pio8255.signal_pc02 << 2;
-        retval |= g_pio8255.signal_pc00;
 
         // DBGPRINTF ( "PIO8255_PORTC read - retval = 0x%02x\n", retval );
         // printf ( "PIO8255_PORTC read - retval = 0x%02x, PC = 0x%04x\n", retval & 0x10, g_mzarch_main.cpu->pc );
@@ -783,6 +802,93 @@ uint8_t pio8255_read(int addr)
 
     default:
         DBGPRINTF(DBGWAR, "addr = %d - unsupported addr\n", addr);
+        break;
+    };
+    return 0x00;
+}
+
+
+/**
+ * @brief Autotype hodnota Port B bez posunu autotype (pro pio8255_peek).
+ *
+ * Zopakuje větev autotype z pio8255_read() nad lokálními kopiemi stavu:
+ * když čeká na další znak (vkbd_autotype_col == -1), najde ho jako read,
+ * ale ukazatel, sloupec, fázi stisku ani čas neuloží. Časový posun fáze
+ * (keydown -> keyup) read dělá až po výpočtu hodnoty, hodnotu tedy
+ * neovlivní.
+ *
+ * @param[out] ret Hodnota Port B, kterou by read vrátil (platí při true).
+ * @return true = hodnotu určuje autotype, false = read by pokračoval
+ *         klávesnicovou maticí (autotype neaktivní nebo text skončil).
+ */
+static bool pio8255_autotype_peek ( uint8_t *ret )
+{
+    if (!g_pio8255.vkbd_autotype) return false;
+
+    int col = g_pio8255.vkbd_autotype_col;
+    uint8_t key_ret = g_pio8255.vkbd_autotype_ret;
+    bool key_shift = g_pio8255.vkbd_autotype_ret_shift;
+    int keydown = g_pio8255.vkbd_autotype_keydown;
+
+    if (col == -1)
+    {
+        const char *p = g_pio8255.vkbd_autotype;
+        while (p[0] != 0x00)
+        {
+            col = pio8255_autotype_get_matrix(p[0], &key_ret, &key_shift);
+            p++;
+            if (col != -1) break;
+        };
+        keydown = (key_shift) ? 0 : 1;
+    };
+
+    if (col == -1) return false;
+
+    uint8_t value = 0xff;
+    if (keydown == 0)
+    {
+        if ((key_shift) && (g_pio8255.signal_PA_keybord_column == 8)) value = 0xfe;
+    }
+    else if (keydown == 1)
+    {
+        if ((key_shift) && (g_pio8255.signal_PA_keybord_column == 8))
+        {
+            value = 0xfe;
+        }
+        else if (g_pio8255.signal_PA_keybord_column == (unsigned)col)
+        {
+            value = key_ret;
+        };
+    };
+    *ret = value;
+    return true;
+}
+
+
+uint8_t pio8255_peek(int addr)
+{
+    switch (addr)
+    {
+    case DEF_PIO8255_PORTA:
+        if (g_pio8255.signal_PA_keybord_column < 10)
+            return g_pio8255.signal_PA;
+        return 0xff;
+
+    case DEF_PIO8255_PORTB:
+    {
+        uint8_t ret;
+        if (pio8255_autotype_peek(&ret)) return ret;
+        /* Bez iface_keyboard_pool_keyboard_events() a bez vkbd probe:
+         * matice z posledního zpracování událostí hostitele. */
+        if (g_pio8255.signal_PA_keybord_column >= 10) return 0xff;
+        return g_pio8255.keyboard_matrix[g_pio8255.signal_PA_keybord_column] & g_pio8255.vkbd_matrix[g_pio8255.signal_PA_keybord_column];
+    }
+
+    case DEF_PIO8255_PORTC:
+        /* Data z pásky z poslední synchronizace (bez cmt_update_output). */
+        return pio8255_portc_compose ( (unsigned) g_cmt.output & 1 );
+
+    default:
         break;
     };
     return 0x00;

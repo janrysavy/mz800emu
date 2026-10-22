@@ -136,6 +136,20 @@ extern "C"
     extern void gdg_init(void);
     extern void gdg_reset(void);
     extern uint8_t gdg_read_dmd_status_memop(void);
+
+    /**
+     * @brief Status 0xE008 (čtení v režimu MZ-700) bez vedlejšího efektu.
+     *
+     * Stejná hodnota jako gdg_read_dmd_status_memop() pro stejný stav; na
+     * MZ-700 a MZ-1500 bez načtení joysticku z hostitele (bity 1-4 ze stavu
+     * páček z posledního čtení CPU, joymz_peek_status_bits14()). Na MZ-800
+     * je čtení statusu samo bez vedlejšího efektu, funkce je shodná.
+     * Pro debugger a mapované čtení memory_read_byte_no_se().
+     *
+     * @return Status byte (HBLNK, TEMPO, ...).
+     * @pre Emu vlákno, nebo pauza.
+     */
+    extern uint8_t gdg_peek_dmd_status_memop(void);
     extern uint8_t gdg_read_dmd_status_ioop(void);
     extern void gdg_write_byte(unsigned addr, uint8_t value);
 

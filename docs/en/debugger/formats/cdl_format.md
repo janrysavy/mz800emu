@@ -5,13 +5,16 @@
 **CDL** (Code/Data Logger), internally also known as **Memory Heatmap**,
 is a module of the mz800new emulator that counts CPU accesses to every
 memory cell and every I/O port during program execution. For each cell
-it stores a triple of 32-bit counters:
+it stores four 32-bit counters:
 
 - **R** (read) - number of data reads (excluding the M1 cycle and
   operand bytes of the currently decoded instruction)
-- **W** (write) - number of writes
+- **W** (write) - number of writes outside the stack regions
 - **X** (execute) - number of reads as part of the currently decoded
   instruction (M1 opcode fetch and trailing operand bytes)
+- **S** (stack write) - number of writes into an active stack region.
+  A write counts either as W or as S, never both. Without any stack
+  region defined S stays 0.
 
 The classic CDL bitmap (FCEUX-style) can be trivially derived from the
 counters by `flag = (count > 0)`.
@@ -64,15 +67,16 @@ struct {
     uint32_t r;     // Little-endian
     uint32_t w;     // Little-endian
     uint32_t x;     // Little-endian
+    uint32_t s;     // Little-endian
 };
 ```
 
-Cell size is 12 bytes. Write endianness is host byte order; on all
+Cell size is 16 bytes. Write endianness is host byte order; on all
 supported emulator platforms (Windows x86_64, Linux x86_64) this is
-little-endian. This is explicitly declared in `meta.json` in the field
-`cell_layout`.
+little-endian. This is explicitly declared in `meta.json` in the fields
+`cell_size_bytes` and `cell_layout`.
 
-File size = `size_cells * 12 B`. Specific sizes are arch-specific - see
+File size = `size_cells * 16 B`. Specific sizes are arch-specific - see
 tables below.
 
 ## meta.json
@@ -86,11 +90,11 @@ JSON file with the following structure:
   "mzarch": 800,
   "created_at": "2026-05-01T00:38:42",
   "file_prefix": "snap1",
-  "cell_size_bytes": 12,
-  "cell_layout": "r:uint32_le, w:uint32_le, x:uint32_le",
+  "cell_size_bytes": 16,
+  "cell_layout": "r:uint32_le, w:uint32_le, x:uint32_le, s:uint32_le",
   "regions": [
-    { "name": "bus", "file": "snap1_bus.cdl", "size_cells": 65536, "size_bytes": 786432 },
-    { "name": "ram", "file": "snap1_ram.cdl", "size_cells": 65536, "size_bytes": 786432 },
+    { "name": "bus", "file": "snap1_bus.cdl", "size_cells": 65536, "size_bytes": 1048576 },
+    { "name": "ram", "file": "snap1_ram.cdl", "size_cells": 65536, "size_bytes": 1048576 },
     ...
   ]
 }
@@ -108,7 +112,9 @@ Key fields:
 - `file_prefix` - basename of the meta file without `.json`. Serves
   only as human-readable identification; specific file paths are in
   `regions[].file`.
-- `cell_size_bytes` - size of one cell in bytes, always `12`.
+- `cell_size_bytes` - size of one cell in bytes, `16`. A reader should
+  take the cell size from this field; the importer in the emulator
+  rejects any other value.
 - `cell_layout` - description of cell byte layout, for documentation.
 - `regions[]` - list of exported regions. Each region has a symbolic
   `name`, relative `file` (against the meta file directory),
@@ -122,7 +128,7 @@ tools can index by name (`name`).
 | Version | Change |
 |---------|--------|
 | 1 | Original layout. Region files named directly `<region>.cdl` (without prefix), only the `meta.json` itself in the directory. |
-| 2 | Added `created_at` and `file_prefix`. Region files named `<prefix>_<region>.cdl` in the meta file directory. Import must read `regions[].file` (must not derive from `name`). |
+| 2 | Added `created_at` and `file_prefix`. Region files named `<prefix>_<region>.cdl` in the meta file directory. Import must read `regions[].file` (must not derive from `name`). The cell has 16 B with the S counter (`cell_size_bytes` 16) in all released versions. |
 
 ## MZ-800 (and MZ-700 mode)
 
@@ -142,33 +148,34 @@ arrangements of physical banks into logical planes. Per-mode recording
 makes it possible to distinguish what was done in which mode; the
 physical view reflects the sum of real HW operations.
 
-Total **22 regions**, approximately **4 MB** of data:
+Total **22 regions**, approximately **5 MB** of data (plus 8 MB of
+`memext.cdl` with Memext connected):
 
 | File | Cells | Bytes | Description |
 |------|-------|-------|-------------|
-| `bus.cdl` | 65536 | 786432 | Logical CPU address 0000h-FFFFh |
-| `ram.cdl` | 65536 | 786432 | Main DRAM 64 KB (including under ROM) |
-| `rom-lower.cdl` | 4096 | 49152 | ROM monitor 0000h-0FFFh |
-| `rom-cg.cdl` | 4096 | 49152 | CG-ROM 1000h-1FFFh |
-| `rom-upper.cdl` | 8192 | 98304 | ROM monitor E000h-FFFFh |
-| `vram.cdl` | 32768 | 393216 | **Physical VRAM 32 KB - linear stack of 4 banks of 8 KB (VRAM1..4)** |
-| `vram700-cg.cdl` | 4096 | 49152 | MZ-700 CG-RAM (bus C000-CFFF) |
-| `vram700.cdl` | 4096 | 49152 | MZ-700 text+attr VRAM (bus D000-DFFF) |
-| `vram800-320x200_16-I.cdl` | 8192 | 98304 | 320@HICOLOR mode, logical plane I |
-| `vram800-320x200_16-II.cdl` | 8192 | 98304 | 320@HICOLOR, plane II |
-| `vram800-320x200_16-III.cdl` | 8192 | 98304 | 320@HICOLOR, plane III |
-| `vram800-320x200_16-IV.cdl` | 8192 | 98304 | 320@HICOLOR, plane IV |
-| `vram800-320x200_4A-I.cdl` | 8192 | 98304 | 320@4 bank A, plane I |
-| `vram800-320x200_4A-II.cdl` | 8192 | 98304 | 320@4 bank A, plane II |
-| `vram800-320x200_4B-I.cdl` | 8192 | 98304 | 320@4 bank B, plane I |
-| `vram800-320x200_4B-II.cdl` | 8192 | 98304 | 320@4 bank B, plane II |
-| `vram800-640x200_4-I.cdl` | 16384 | 196608 | 640@4 mode, plane I |
-| `vram800-640x200_4-II.cdl` | 16384 | 196608 | 640@4 mode, plane II |
-| `vram800-640x200_2A.cdl` | 16384 | 196608 | 640@2 bank A |
-| `vram800-640x200_2B.cdl` | 16384 | 196608 | 640@2 bank B |
-| `iorq-8bit.cdl` | 256 | 3072 | 8-bit I/O ports 00h-FFh |
-| `iorq-gdg.cdl` | 256 | 3072 | 16-bit GDG sub-functions, placeholder |
-| `memext.cdl` | 524288 | 6291456 | Memext RAM, flat 512 KB (only if Memext is connected) |
+| `bus.cdl` | 65536 | 1048576 | Logical CPU address 0000h-FFFFh |
+| `ram.cdl` | 65536 | 1048576 | Main DRAM 64 KB (including under ROM) |
+| `rom-lower.cdl` | 4096 | 65536 | ROM monitor 0000h-0FFFh |
+| `rom-cg.cdl` | 4096 | 65536 | CG-ROM 1000h-1FFFh |
+| `rom-upper.cdl` | 8192 | 131072 | ROM monitor E000h-FFFFh |
+| `vram.cdl` | 32768 | 524288 | **Physical VRAM 32 KB - linear stack of 4 banks of 8 KB (VRAM1..4)** |
+| `vram700-cg.cdl` | 4096 | 65536 | MZ-700 CG-RAM (bus C000-CFFF) |
+| `vram700.cdl` | 4096 | 65536 | MZ-700 text+attr VRAM (bus D000-DFFF) |
+| `vram800-320x200_16-I.cdl` | 8192 | 131072 | 320@HICOLOR mode, logical plane I |
+| `vram800-320x200_16-II.cdl` | 8192 | 131072 | 320@HICOLOR, plane II |
+| `vram800-320x200_16-III.cdl` | 8192 | 131072 | 320@HICOLOR, plane III |
+| `vram800-320x200_16-IV.cdl` | 8192 | 131072 | 320@HICOLOR, plane IV |
+| `vram800-320x200_4A-I.cdl` | 8192 | 131072 | 320@4 bank A, plane I |
+| `vram800-320x200_4A-II.cdl` | 8192 | 131072 | 320@4 bank A, plane II |
+| `vram800-320x200_4B-I.cdl` | 8192 | 131072 | 320@4 bank B, plane I |
+| `vram800-320x200_4B-II.cdl` | 8192 | 131072 | 320@4 bank B, plane II |
+| `vram800-640x200_4-I.cdl` | 16384 | 262144 | 640@4 mode, plane I |
+| `vram800-640x200_4-II.cdl` | 16384 | 262144 | 640@4 mode, plane II |
+| `vram800-640x200_2A.cdl` | 16384 | 262144 | 640@2 bank A |
+| `vram800-640x200_2B.cdl` | 16384 | 262144 | 640@2 bank B |
+| `iorq-8bit.cdl` | 256 | 4096 | 8-bit I/O ports 00h-FFh |
+| `iorq-gdg.cdl` | 256 | 4096 | 16-bit GDG sub-functions, placeholder |
+| `memext.cdl` | 524288 | 8388608 | Memext RAM, flat 512 KB (only if Memext is connected) |
 
 ### Layout of `vram.cdl` (physical 32 KB)
 
@@ -281,8 +288,8 @@ planes:
 ### IORQ regions
 
 `iorq-8bit.cdl` records 8-bit I/O ports (`port & 0xFF`). Only R and W
-counters are logged; X makes no sense for ports (Z80 does not read a
-port as an instruction).
+counters are logged; X and S make no sense for ports (Z80 does not read
+a port as an instruction).
 
 `iorq-gdg.cdl` is reserved for 16-bit GDG sub-functions via the B
 register high byte (the only device in MZ-800 with 16-bit IORQ
@@ -317,20 +324,21 @@ no WF/RF registers, no GDG 16-bit IORQ. Instead, it has 3 PCG banks
 (programmable character generator) and CGROM seen on the bus through
 SPEC bits in the banking map.
 
-Total **9 regions**, approximately **1.9 MB** of data:
+Total **9 regions**, approximately **2.9 MB** of data (plus 8 MB of
+`memext.cdl` with Memext connected):
 
 | File | Region | Cells | Bytes | Description |
 |------|--------|-------|-------|-------------|
-| `bus.cdl` | bus | 65536 | 786432 | Logical CPU address 0000h-FFFFh |
-| `ram.cdl` | ram | 65536 | 786432 | Main DRAM 64 KB |
-| `rom.cdl` | rom | 16384 | 196608 | Monitor ROM, 16 KB (lower 0000h + upper E010h-FFFFh in one blob) |
-| `cgrom.cdl` | cgrom | 4096 | 49152 | CG-ROM 4 KB (mapped to D000h-DFFFh or E000h-EFFFh via SPEC=1) |
-| `vram.cdl` | vram | 4096 | 49152 | Character + attribute VRAM, 4 KB |
-| `pcg-1.cdl` | pcg-1 | 8192 | 98304 | PCG bank 1, 8 KB - in hardware carries the R component of sprite color |
-| `pcg-2.cdl` | pcg-2 | 8192 | 98304 | PCG bank 2, 8 KB - G component |
-| `pcg-3.cdl` | pcg-3 | 8192 | 98304 | PCG bank 3, 8 KB - B component |
-| `iorq-8bit.cdl` | iorq-8bit | 256 | 3072 | 8-bit I/O ports 00h-FFh |
-| `memext.cdl` | memext | 524288 | 6291456 | Memext RAM, flat 512 KB (only if Memext is connected) |
+| `bus.cdl` | bus | 65536 | 1048576 | Logical CPU address 0000h-FFFFh |
+| `ram.cdl` | ram | 65536 | 1048576 | Main DRAM 64 KB |
+| `rom.cdl` | rom | 16384 | 262144 | Monitor ROM, 16 KB (lower 0000h + upper E010h-FFFFh in one blob) |
+| `cgrom.cdl` | cgrom | 4096 | 65536 | CG-ROM 4 KB (mapped to D000h-DFFFh or E000h-EFFFh via SPEC=1) |
+| `vram.cdl` | vram | 4096 | 65536 | Character + attribute VRAM, 4 KB |
+| `pcg-1.cdl` | pcg-1 | 8192 | 131072 | PCG bank 1, 8 KB - in hardware carries the R component of sprite color |
+| `pcg-2.cdl` | pcg-2 | 8192 | 131072 | PCG bank 2, 8 KB - G component |
+| `pcg-3.cdl` | pcg-3 | 8192 | 131072 | PCG bank 3, 8 KB - B component |
+| `iorq-8bit.cdl` | iorq-8bit | 256 | 4096 | 8-bit I/O ports 00h-FFh |
+| `memext.cdl` | memext | 524288 | 8388608 | Memext RAM, flat 512 KB (only if Memext is connected) |
 
 ### Mapping of CPU bus to regions
 
@@ -394,19 +402,17 @@ def load_cdl(meta_path):
     meta_path = Path(meta_path)
     meta = json.loads(meta_path.read_text())
     base_dir = meta_path.parent
+    k = meta["cell_size_bytes"] // 4          # uint32 counters per cell (4)
     cells = {}
     for region in meta["regions"]:
         data = (base_dir / region["file"]).read_bytes()
         n = region["size_cells"]
-        # 3 uint32 LE per cell
-        counters = struct.unpack(f"<{3*n}I", data)
-        cells[region["name"]] = [
-            (counters[3*i], counters[3*i+1], counters[3*i+2])
-            for i in range(n)
-        ]
+        counters = struct.unpack(f"<{k*n}I", data)
+        # (r, w, x, s) per cell
+        cells[region["name"]] = [tuple(counters[k*i:k*i+k]) for i in range(n)]
     return meta, cells
 
 meta, cells = load_cdl("./cdl-export/snap1.json")
 # Example: bytes in RAM that were ever executed as code
-code_bytes = [i for i, (r, w, x) in enumerate(cells["ram"]) if x > 0]
+code_bytes = [i for i, c in enumerate(cells["ram"]) if c[2] > 0]
 ```
