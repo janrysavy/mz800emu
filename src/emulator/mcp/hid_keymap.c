@@ -439,7 +439,7 @@ bool hid_keymap_joystick_set(int port, uint8_t mcp_mask) {
     if (mcp_mask & (1 << 3)) native &= ~(1 << JOY_STATEBIT_RIGHT);
     if (mcp_mask & (1 << 4)) native &= ~(1 << JOY_STATEBIT_TRIG1);
     if (mcp_mask & (1 << 5)) native &= ~(1 << JOY_STATEBIT_TRIG2);
-    g_joy.dev[port].state = native;
+    g_joy.dev[port].virtual_state = native;
     return true;
 #else
     (void)port;
